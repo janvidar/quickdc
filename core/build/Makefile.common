@@ -1,0 +1,43 @@
+ #
+##
+## Makefile for QuickDC core library
+## Copyright (c) 2001-2007, Jan Vidar Krey
+##
+ #
+
+PRODUCT  := QuickDC
+VERSION  := 0.4.18
+
+SYSTEM	 ?= $(shell uname -s)
+ARCH     ?= $(shell uname -m)
+BUILD    ?= $(shell svn info | grep Revision | tr -d [:alpha:][:punct:][:space:] )
+
+include $(BUILDDIR)/Makefile.system
+
+### Configurations
+CXXFLAGS += -DVERSION=\"$(VERSION)\" -DSYSTEM=\"$(SYSTEM)\" -DCPU=\"$(ARCH)\" -DPRODUCT=\"$(PRODUCT)\"
+
+SAMURAI_INC=
+SAMURAI_LIB=
+
+ifneq (, $(BUILD))
+	CXXFLAGS += -DBUILD=\"$(BUILD)\"
+endif
+
+ifeq ($(BIGENDIAN), YES)
+	CXXFLAGS += -DBIGENDIAN
+endif
+
+ifeq ($(BZIP2_SUPPORT), YES)
+	CXXFLAGS += -DBZIP2
+endif
+
+ifeq ($(ZLIB_SUPPORT), YES)
+	CXXFLAGS += -DZLIB
+endif
+
+ifeq ($(DEBUG), YES)
+	CXXFLAGS += -DDEBUG
+endif
+
+include $(BUILDDIR)/Makefile.rules

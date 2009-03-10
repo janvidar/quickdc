@@ -1,0 +1,18 @@
+ #
+##
+## Makefile for QuickDC core library
+## Copyright (c) 2001-2007, Jan Vidar Krey
+##
+ #
+
+SILENT ?= YES
+ifeq ($(SILENT), YES)
+MSG_CXX=@echo "    CC " $(notdir $<);
+endif
+
+%.d: %.cpp
+	@$(DEP) $(CXXFLAGS) -MM $(INCPATH) $< -MT $(@:.d=.o) -MF $@
+
+%.o: %.cpp
+	$(MSG_CXX) $(CXX) $(CXXFLAGS) $(EXTRAFLAGS) $(GUI_FLAGS) -o $@ $^
+

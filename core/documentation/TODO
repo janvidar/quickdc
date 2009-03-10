@@ -1,0 +1,66 @@
+TODO:
+
+Architecture:                                       target
+-----------------------------------------------------------
+- Socket monitor backends         (CRITICAL)
+    - poll                        (HIGH)             0.5.x
+    - epoll                       (MEDIUM)           0.6.x
+    - kqueue                      (MEDIUM)           0.6.x
+    - windows                     (LOW)              0.6.x
+    - libevent                    (LOW)              0.7.x
+
+- Cleanup connections properly    (CRITICAL)         0.5.0
+- Upload support                  (MEDIUM)           0.5.0
+- Download support                (MEDIUM)           0.5.0
+- Search support                  (MEDIUM)           0.5.0
+
+- 100% async DNS resolver         (MEDIUM)           0.5.0
+- Proper TLS/SSL backend          (LOW)              0.5.x
+- Listen for SIGIO and/or SIGPIPE (LOW)              0.7.x
+
+
+Hublist handling:
+-----------------------------------------------------------
+- Hublist parsing                 (LOW)              0.5.x
+- http client                     (MEDIUM)           0.6.x
+- Hublist caching                 (LOW)              0.6.x
+- http server                     (LOW)              0.6.x
+
+
+ADC:
+-----------------------------------------------------------
+    - Mode detection extension    (MEDIUM)           0.5.x
+    - BBS extension               (MEDIUM)           0.5.x
+    - webcam extension            (LOW)              0.7.x
+    - enhance IP/PD               (LOW)              0.8.x
+
+
+ADC Hub:
+-----------------------------------------------------------
+    - User ACL (ban/reg/op etc)   (HIGH)             0.5.0
+    - Ops login when full         (MEDIUM)           0.5.0
+    - Improve commandproxy        (MEDIUM)           0.5.0
+    - hub linking                 (LOW)              0.6.0
+    - hub service API cleanup     (LOW)              0.6.0
+    - Add timers and flood control(HIGH)             0.5.0
+
+User interface:
+-----------------------------------------------------------
+- QT3/4 user interface            (HIGH)             0.5.x
+- WxWidgets interface             (LOW)              0.7.x
+- KDE interface                   (LOW)              0.6.x
+
+
+
+
+
+BUGS:
+-----------------------------------------------------------
+- Bandwidth monitor is not correct, unless updated
+  frequently/regularly. If not updated for more than > 3
+  seconds, it should return 0.
+
+- Directory traversal class does not work for symbolic links.
+  Possible solution; make File able to resolve a symlink
+  by itself.
+

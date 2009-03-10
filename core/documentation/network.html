@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<title>libquickdc</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+	<link type="text/javascript" href="quickdc.css" media="all" charset="UTF-8" />
+</head>
+<body>
+<h1>Networking</h1>
+
+<h2>Connecting to a hub</h2>
+
+Create a DCHub object with parameters address and port, you
+can also specify user authentication data if you like (which allows
+multiple IDs across multiple hubs).
+
+You will need to run a message loop, where you call 
+SocketMonitor::poll() once in a while. This method will poll all 
+sockets for events and trigger the necessary callbacks, and thus should be 
+called multiple times per seconds in a tight loop. 
+You can specify how long each poll will block in milliseconds.
+
+
+<h1>Protocol and socket handling</h1>
+
+<p>
+To handle network IO, create a class you derive from <code>SocketEventHandler</code>.
+Implement the required functions:
+	<ul>
+		<li><code>EventHostLookup</code></li>
+		<li><code>EventHostFound</code></li>
+		<li><code>EventConnecting</code></li>
+		<li><code>EventConnected</code></li>
+		<li><code>EventTimeout</code></li>
+		<li><code>EventDisconnected</code></li>
+		<li><code>EventDataAvailable</code></li>
+		<li><code>EventError</code></li>
+	</ul>
+</p>
+<p>
+The socket class is 100% asynchronous so the above functions is used to notify all 
+the socket class's event changes.
+</p>
+
+<h2>Overview</h2>
+
+<p>
+Create a <code>Socket</code> object with the SocketEventHandler class (can be in the same class), a hostname/address and a port.
+The Socket class will automatically buffer anything that is written (via <code>write()</code>), so that you don't need to worry about that. A possible issue could be whether or not the write buffer will grow if the connection is slow, and in those cases is it a good idea to disconnect the client or what should be done do prevent excessive memory usage? -- But that's another story.
+</p>
+
+<p>
+Anything received can be gotten with a call to <code>read()</code>. However, that will return immediately without reading anything if there isn't anything to actually read yet. You can use the EventDataAvailable event to check for data available events. In that case a <code>read()</code> is guaranteed to return data.
+</p>
+<p>
+The DC protocol reader will read when data is available and simply push this data into the <code>DCCommandProxy</code> (proxy). This will then search repeatedly for the occurence of a command separator '|' (pipe), until it doesn't find one. If a command separator is found then, the 
+command will be looked up and handed off to the relevant <code>DCCommandParser</code> (parser). Otherwise, more data is needed before the command can be processed.
+</p>
+<p>
+A parser consists of an <code>invoke()</code> method that will parse and do the relevant things based on the command. A
+parser will automatically register itself to the specified <code>DCCommandProxy</code> using the <code>registerParser()</code> method when created, and
+will unregister when deleted. 
+</p>
+<p>
+If the proxy encounters a command for which it does not have a parser, it will run the defaultHandler(), which is equalient to 
+doing nothing, except notifying the user, or logging a message about the command.
+</p>
+<p>
+This overall structure have the advantage, that it will be possible to extend the protocol parser by creating <em>plug-ins</em> that registers to the proxyat either link time, or run time (in the future). However there would have to be more APIs exposed to accomplish this.
+</p>
+<p>
+It is not recommended to write commands over the network directly, but rather have a class that will ensure optimal command flusing and escaping
+possibly dangerous characters. Such a mechanism exists in the proxy, where you can use the write() functions.
+</p>
+
+<h2>Schematics</h2>
+
+<pre>
+
+ +--------------------+        +------------+
+ | SocketEventHandler | -----&gt; | HubSession |
+ +--------------------+        +------------+
+   |                ^                 ^
+   |                |                 |
+   |           +--------+             |
+   |           | Socket |             |
+   |           +--------+             |
+   |                ^                 |
+   v                |                 |
+ +--------------------+        +-----------------+
+ |   DCProxyHandler   | &lt;----&gt; | DCCommandParser |
+ +--------------------+        +-----------------+
+
+</pre>
+
+
+</body>
+</html>

@@ -1,0 +1,38 @@
+ #
+##
+## QuickDC core library - README
+## Copyright (c) 2001-2006 by Jan Vidar Krey
+##
+ #
+
+Common requirements.
+
+- GNU make 3.80
+- GNU g++ >= 3.x (including libraries and headers)
+- Binutils (ar)
+- Shell commands: uname, rm, find
+
+1) Building on Linux
+
+   Simply run make or use the build.sh script.
+
+2) Building on Solaris
+
+   Simply run make. However, you need to make sure
+   your libraries such as libstdc++.so.5 are located where
+   they should, or you can set LD_LIBRARY_PATH to the
+   directory they exist in.
+
+3) Building on MacOSX
+
+   Simply run make or use the build.sh script.
+
+4) Building on Win32
+
+   First of all install MinGW, make sure they are added to 
+   your path. 
+   Create a batch file called "uname.bat", it should simply 
+   just contain "@echo win32", and must be located in path.
+   Now, simply run make.
+
+

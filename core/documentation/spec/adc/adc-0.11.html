@@ -1,0 +1,1767 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+	<META HTTP-EQUIV="CONTENT-TYPE" CONTENT="text/html; charset=utf-8">
+	<TITLE>ADC Protocol</TITLE>
+	<META NAME="GENERATOR" CONTENT="OpenOffice.org 2.0  (Win32)">
+	<META NAME="AUTHOR" CONTENT="Jacek Sieka">
+	<META NAME="CREATED" CONTENT="20031203;11050000">
+	<META NAME="CHANGEDBY" CONTENT="Jacek Sieka">
+	<META NAME="CHANGED" CONTENT="20060603;12122226">
+	<STYLE>
+	<!--
+		@page { size: 209.99mm 296.99mm; margin: 14.99mm }
+		P { margin-bottom: 2.12mm; direction: ltr; color: #000000; text-align: left; widows: 2; orphans: 2 }
+		P.western { font-family: "Times New Roman", serif; font-size: 12pt; so-language: en-US }
+		P.cjk { font-family: "Times New Roman", serif; font-size: 12pt; so-language:  }
+		P.ctl { font-family: "Times New Roman", serif; font-size: 12pt; so-language: ar-SA }
+		H1 { margin-bottom: 1.06mm; direction: ltr; color: #000000; text-align: left; widows: 2; orphans: 2 }
+		H1.western { font-family: "Arial", sans-serif; font-size: 16pt; so-language: en-US }
+		H1.cjk { font-family: "Times New Roman", serif; font-size: 16pt; so-language:  }
+		H1.ctl { font-family: "Arial", sans-serif; font-size: 16pt; so-language: ar-SA }
+		H2 { margin-bottom: 1.06mm; direction: ltr; color: #000000; text-align: left; widows: 2; orphans: 2 }
+		H2.western { font-family: "Arial", sans-serif; font-size: 14pt; so-language: en-US; font-style: italic }
+		H2.cjk { font-family: "Times New Roman", serif; font-size: 14pt; so-language: ; font-style: italic }
+		H2.ctl { font-family: "Arial", sans-serif; font-size: 14pt; so-language: ar-SA; font-style: italic }
+		H3 { margin-bottom: 1.06mm; direction: ltr; color: #000000; text-align: left; widows: 2; orphans: 2 }
+		H3.western { font-family: "Arial", sans-serif; font-size: 13pt; so-language: en-US }
+		H3.cjk { font-family: "Times New Roman", serif; font-size: 13pt; so-language:  }
+		H3.ctl { font-family: "Arial", sans-serif; font-size: 13pt; so-language: ar-SA }
+		TD P { margin-bottom: 0mm; direction: ltr; color: #000000; text-align: left; widows: 2; orphans: 2 }
+		TD P.western { font-family: "Times New Roman", serif; font-size: 12pt; so-language: en-US }
+		TD P.cjk { font-family: "Times New Roman", serif; font-size: 12pt; so-language:  }
+		TD P.ctl { font-family: "Times New Roman", serif; font-size: 12pt; so-language: ar-SA }
+		A:link { color: #0000ff }
+	-->
+	</STYLE>
+</HEAD>
+<BODY LANG="en-US" TEXT="#000000" LINK="#0000ff" BGCOLOR="#ffffff" DIR="LTR">
+<P CLASS="western" ALIGN=CENTER STYLE="margin-bottom: 0mm"><FONT SIZE=6><B>ADC
+Protocol Draft 0.11</B></FONT></P>
+<P CLASS="western" ALIGN=CENTER STYLE="margin-bottom: 0mm; font-weight: medium">
+<FONT SIZE=3><I>Jacek Sieka</I></FONT></P>
+<DIV ID="Table of Contents1" DIR="LTR">
+	<DIV ID="Table of Contents1_Head" DIR="LTR">
+		<P STYLE="margin-top: 4.23mm; page-break-after: avoid"><FONT FACE="Arial, sans-serif"><FONT SIZE=4 STYLE="font-size: 16pt"><B>Table
+		of Contents</B></FONT></FONT></P>
+	</DIV>
+	<P STYLE="margin-bottom: 0mm">1 Intro	2</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">1.1 About	2</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">1.2 Credits	2</P>
+	<P STYLE="margin-bottom: 0mm">2 Line protocol	2</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">2.1 General	2</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">2.2 Message
+	syntax	2</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">2.3 Message
+	types	3</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">2.4 Client
+	identification	3</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">2.4.1 Session
+	ID	3</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">2.4.2 Private
+	ID	3</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">2.4.3 Client ID	4</P>
+	<P STYLE="margin-bottom: 0mm">3 Files	4</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">3.1 File names
+	and structure	4</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">3.2 Hashes	4</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">3.3 File list	5</P>
+	<P STYLE="margin-bottom: 0mm">4 BASE messages	5</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">4.1 Client –
+	Hub communication	5</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">4.2 Client –
+	Client communication	6</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">4.3 Actions	6</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.1 STA	6</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.2 SUP	7</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.3 SID	7</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.4 INF	7</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.5 MSG	9</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.6 SCH	9</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.7 RES	10</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.8 CTM	10</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.9 RCM	10</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.10 GPA	10</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.11 PAS	10</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.12 QUI	11</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.13 DSC	11</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.14 GET	11</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.15 GFI	12</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">4.3.16 SND	12</P>
+	<P STYLE="margin-bottom: 0mm">5 Examples	12</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">5.1 Client –
+	Hub connection	12</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">5.2 Client –
+	Client connection	12</P>
+	<P STYLE="margin-bottom: 0mm">6 Standard Extensions
+	&lt;work-in-progress&gt;	13</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">6.1 REGX -
+	Regular expressions in searches	13</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">6.2 ZLIB -
+	Compressed communication	13</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">6.2.1
+	ZLIB-FULL	13</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">6.2.2 ZLIB-GET	13</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">6.3 UCMD - User
+	commands	13</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">6.3.1 CMD	13</P>
+	<P STYLE="margin-left: 4.23mm; margin-bottom: 0mm">6.4 ADCS - Secure
+	ADC &lt;work-in-progress&gt;	14</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">6.4.1
+	Introduction	14</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">6.4.2 Client-Hub
+	encryption	14</P>
+	<P STYLE="margin-left: 8.47mm; margin-bottom: 0mm">6.4.3
+	Client-Client encryption	14</P>
+</DIV>
+<H1 CLASS="western">1Intro</H1>
+<DIV ID="Section2" DIR="LTR">
+	<H2 CLASS="western"><FONT SIZE=4><I><B>1.1About</B></I></FONT></H2>
+	<P CLASS="western">ADC is a text protocol for a network similar to
+	Direct Connect. The goal is to create a simple protocol that doesn’t
+	require much effort neither in hub nor client, and is yet
+	extensible. It addresses some of the issues in the NMDC protocol,
+	the most interesting being extensibility, but definitely not all.
+	The same protocol structure is used both for client-hub and
+	client-client communication. This document is split into two parts;
+	the first shows the structure of the protocol, while the second
+	implements a specific system using this structure. ADC stands for
+	anything you would like it to stand for; Advanced DC is the first
+	neutral thing that springs to mind =).</P>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>1.2Credits</B></I></FONT></H2>
+	<P CLASS="western">Many ideas for this I’ve taken from Jan Vidar
+	Krey’s DCTNG draft, others come from the DC dev hub people
+	(notably cologic, fusbar, farcry and sedulus). Oh, and not to
+	forget, Jon Hess for the original DC idea.</P>
+	<H1 CLASS="western"><FONT SIZE=4><B>2Line protocol</B></FONT></H1>
+	<H2 CLASS="western">2.1General</H2>
+	<UL>
+		<LI><P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>All
+		messages begin with a four-letter word. The first letter designates
+		how the message should be sent and the other three specify what to
+		do.</FONT></P>
+		<LI><P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>Parameters
+		are separated by space, and a newline (codepoint 0x0a) ends each
+		message. The string “\s” escapes space, “\n” newline and
+		“\\” backslash. This version of the protocol reserves all other
+		escapes for future use; and any message containing unknown escapes
+		must be discarded.</FONT></P>
+		<LI><P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>All
+		text must be sent as UTF-8 encoded Unicode in normalization form C.</FONT></P>
+		<LI><P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>Clients
+		must ignore unknown/badly formatted messages. Hubs must ignore
+		invalid messages and should dispatch unknown messages according to
+		their type.</FONT></P>
+		<LI><P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>Client
+		addresses must be specified in dotted-decimal form (“x.x.x.x”)
+		for IPv4 and RFC 1884 form for IPv6. Hub addresses must be
+		specified in URL form, with “adc” as protocol specifier
+		(“adc://server:port/”).</FONT></P>
+		<LI><P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>Numbers
+		are sent as strings in standard floating point notation, using ‘.’
+		as the decimal separator and no thousands separator. Integers are
+		numbers with neither a decimal portion nor an exponent.
+		Applications should be prepared to handle at least 64-bit signed
+		integers and 64-bit floating point numbers. A ‘-‘ prefix
+		negates.</FONT></P>
+		<LI><P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>S<FONT FACE="Times New Roman, serif">IDs</FONT>,
+		P<FONT FACE="Times New Roman, serif">IDs</FONT>, C<FONT FACE="Times New Roman, serif">IDs</FONT>
+		and short binary data are sent as base32-encoded strings. Long
+		binary data transfers should use the file transfer mechanism with
+		named roots.</FONT></P>
+		<LI><P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>Extension
+		names, protocol names and other text not entered by the user may
+		only include viewable characters that can be encoded by one byte in
+		the UTF-8 encoding (Unicode codepoints 33-127). ADC is
+		case-sensitive, requiring upper case.</FONT></P>
+	</UL>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>2.2Message syntax</B></I></FONT></H2>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">message
+	             ::= message_body? eol</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">message_body
+	        ::= (b_message_header | cih_message_header |
+	d_message_header | f_message_header | u_message_header |
+	message_header) (separator positional_parameter)* (separator
+	named_parameter)*</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">b_message_header
+	    ::= 'B' command_name separator my_sid</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">cih_message_header
+	  ::= ('C' | 'I' | 'H') command_name</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">d_message_header
+	    ::= 'D' command_name separator my_sid separator target_sid</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">f_message_header
+	    ::= 'F' command_name separator my_sid separator (('+'|'-')
+	feature_name)+</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">u_message_header
+	    ::= 'U' command_name separator my_cid</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">command_name
+	        ::= simple_alpha simple_alphanum simple_alphanum</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">positional_parameter
+	::= parameter_value</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">named_parameter
+	     ::= parameter_name parameter_value?</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">parameter_name
+	      ::= simple_alpha simple_alphanum</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">parameter_value
+	     ::= escaped_letter+</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">target_sid
+	          ::= encoded_sid</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">my_sid
+	              ::= encoded_sid</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">encoded_sid
+	         ::= base32_character{4}</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">my_cid
+	              ::= encoded_cid</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">encoded_cid
+	         ::= base32_character{39}</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">base32_character
+	    ::= simple_alpha	 | [2-7]</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">feature_name
+	        ::= simple_alpha simple_alphanum{3}</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">escaped_letter
+	      ::= [^ \#x0a] | escape 's' | escape 'n' | escape escape</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">escape
+	              ::= '\'</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">simple_alpha
+	        ::= [A-Z]</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">simple_alphanum
+	     ::= [A-Z0-9]</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">eol
+	                 ::= #x0a</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">separator
+	           ::= ' '</FONT></P>
+	<H2 CLASS="western">2.3Message types</H2>
+	<P CLASS="western" STYLE="margin-bottom: 0mm">Message type specifies
+	how messages should be routed, and thus which additional fields can
+	be found in the message header. Clients should use the most limiting
+	type, in terms of recipients, that makes sense for a particular
+	message when sending it to the hub for distribution. Clients should
+	disregard the message type when interpreting the message (after
+	having parsed it). The following message types are defined:</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=16*>
+		<COL WIDTH=240*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=6%>
+				<P CLASS="western"><FONT SIZE=3>B</FONT></P>
+			</TD>
+			<TD WIDTH=94%>
+				<P CLASS="western"><FONT SIZE=3>Broadcast. Hub must send message
+				to all connected clients, including the sender of the message.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=6%>
+				<P CLASS="western"><FONT SIZE=3>C</FONT></P>
+			</TD>
+			<TD WIDTH=94%>
+				<P CLASS="western"><FONT SIZE=3>Client message. Clients must use
+				this message type when communicating directly over TCP.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=6%>
+				<P CLASS="western"><FONT SIZE=3>D</FONT></P>
+			</TD>
+			<TD WIDTH=94%>
+				<P CLASS="western"><FONT SIZE=3>Direct message. The hub must send
+				the message to both the target_sid and my_sid users.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=6%>
+				<P CLASS="western"><FONT SIZE=3>F</FONT></P>
+			</TD>
+			<TD WIDTH=94%>
+				<P CLASS="western"><FONT SIZE=3>Feature broadcast. The hub must
+				send message to all clients that support both all required (+)
+				and no excluded (-) features named. The feature name is matched
+				against the corresponding SU field in INF sent by each client. </FONT>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=6%>
+				<P CLASS="western"><FONT SIZE=3>H</FONT></P>
+			</TD>
+			<TD WIDTH=94%>
+				<P CLASS="western"><FONT SIZE=3>Hub message. Clients must use
+				this message type when a message is intended for the hub only.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=6%>
+				<P CLASS="western"><FONT SIZE=3>I</FONT></P>
+			</TD>
+			<TD WIDTH=94%>
+				<P CLASS="western"><FONT SIZE=3>Info message. Hubs must use this
+				message type when sending a message to a client that didn't come
+				from another client.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=6%>
+				<P CLASS="western"><FONT SIZE=3>U</FONT></P>
+			</TD>
+			<TD WIDTH=94%>
+				<P CLASS="western"><FONT SIZE=3>UDP message. Clients must use
+				this message type when communicating directly over UDP.</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<H2 CLASS="western">2.4Client identification</H2>
+	<P CLASS="western" STYLE="margin-bottom: 0mm">Each client is
+	identified by three different <SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>,
+	Session ID (SID), Private ID (PID) and Client ID (CID).</P>
+	<H3 CLASS="western">2.4.1Session ID</H3>
+	<P CLASS="western" STYLE="margin-bottom: 0mm">Session <SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>
+	appear in all communication that interacts with the hub. They
+	identify a unique user on a single hub and are assigned by the hub
+	during initial protocol negotiation. The hub may choose any SID for
+	a connecting client apart from “0” (“AAAA” in base32). The
+	hub may reuse S<SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>
+	as they become free when clients disconnect. S<SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>
+	are 20 bits and <SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">encoded</FONT></FONT></FONT></SPAN>
+	using a 4-byte base32 encoded string.</P>
+	<H3 CLASS="western">2.4.2Private ID</H3>
+	<P CLASS="western" STYLE="margin-bottom: 0mm">Private <SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>
+	globally identify a unique client. They function during initial
+	protocol negotiation to generate the CID, and are invisible to other
+	clients. P<SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>
+	should be generated by hashing the MAC address of the generating
+	client followed by the current time using the Tiger hash algorithm.
+	Hubs and clients may not disclose P<SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>
+	to other clients; doing so weakens the security of the ADC network.
+	Clients should should keep the same PID between sessions and hubs.
+	P<SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>
+	are 192 bits and <SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">encoded</FONT></FONT></FONT></SPAN>
+	using a 39 byte base32 encoded string.</P>
+	<H3 CLASS="western">2.4.3Client ID</H3>
+	<P CLASS="western" STYLE="margin-bottom: 0mm">Client <SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>
+	globally and publicly identify a unique client and underlie client
+	to client communication. They are generated by hashing the 192 bit,
+	unencoded PID with the Tiger hash algorithm. Hubs should register
+	clients by CID. C<SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">IDs</FONT></FONT></FONT></SPAN>
+	are 192 bits and <SPAN LANG="en-US"><FONT SIZE=3><FONT FACE="Times New Roman, serif"><FONT COLOR="#000000">encoded</FONT></FONT></FONT></SPAN>
+	using a 39 byte base32 encoded string.</P>
+	<H1 CLASS="western">3Files</H1>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>3.1File names and structure</B></I></FONT></H2>
+	<P CLASS="western">Filenames are relative to a fictive root in the
+	user’s share. ‘/’ separates directories, and each file or
+	directory name must be unique in a case-insensitive context. All
+	printable characters, including whitespace, are valid names for
+	files, the ‘/’ and ‘\’ being escaped by ‘\’. Clients
+	must then properly filter the filename for the target file system,
+	as well as request filenames from other clients according to these
+	rules. The special names ‘.’ and ‘..’ may not occur as a
+	directory or filename; any file list received containing those must
+	be ignored. Shared files are identified relative to the unnamed root
+	‘/’ (“/dir/subdir/filename.ext”), while extensions can add
+	named roots to this namespace, preferably using their SUP name.
+	“TTH/&lt;root-base32&gt;”, for example,  locates a file in the
+	share by TTH root rather than filename. Rootless filenames are
+	special, for they may not appear in the file listing, and can be
+	used to supply binary transfers of arbitrary data, but should not be
+	used to avoid polluting the namespace by using a named root. All
+	directory names must end with a ‘/’. Names in the unnamed root
+	generally find little use identifying files, as the TTH root does so
+	more effectively. Hence, commands that get files or file data may
+	never use the unnamed root for selecting file.</P>
+	<P CLASS="western">The special, rootless filename “files.xml”
+	specifies the full file listing, uncompressed, in XML using the
+	UTF-8 encoding. Clients can then compress this list and offer the
+	compressed one as relevant SUP features allow.</P>
+	<P CLASS="western">The special type “list” is used to browse
+	partial lists. A partial file list has the same structure as a
+	normal list, but directories may be tagged with an attribute
+	‘Incomplete=”1”’ to specify that they have unexpanded
+	sub-entries. Only directory names in the unnamed root may be
+	requested, for instance “/” and “/share/”. The content of
+	that directory will then be sent to the requesting client to a depth
+	chosen by the sending client (it should normally only send the
+	directory level requested, but may choose to send more if there are
+	few entries, for example a directory only containing a few files).
+	The “Base” attribute of “FileListing” specifies which
+	directory a particular file list represents.</P>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>3.2Hashes</B></I></FONT></H2>
+	<P CLASS="western">ADC clients must share only files hashed using
+	Merkle Hash trees, as defined by
+	<FONT COLOR="#0000ff"><U><A HREF="http://www.open-content.net/specs/draft-jchapweske-thex-02.html">http://www.open-content.net/specs/draft-jchapweske-thex-02.html.</A></U></FONT>
+	The Tiger algorithm, as specified
+	by<FONT COLOR="#0000ff"><U><A HREF="http://www.cs.technion.ac.il/~biham/Reports/Tiger/">http://www.cs.technion.ac.il/~biham/Reports/Tiger/,</A></U></FONT>
+	functions as the hash algorithm. A base segment size of 1024 bytes
+	must be used when generating the tree, but clients may then discard
+	parts of the tree as long as at least 7 levels are kept or a block
+	granularity of 64 KiB is achieved.</P>
+	<P CLASS="western">Generally, the root of the tree serves to
+	identify a file uniquely. Searches use it and it must be present in
+	the file list. Further, the root of the file list must also be
+	available, and discoverable via GFI. A client may also request the
+	rest of the tree using the normal client-client transfer procedure.
+	The root must be encoded using base32 encoding when converted to
+	text.</P>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>3.3File list</B></I></FONT></H2>
+	<P CLASS="western">Files.xml is the list of files intended for
+	browsing. It has the following general structure:</P>
+	<P STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">&lt;?xml
+	version=”1.0” encoding=”utf-8” standalone=”yes”?&gt; </FONT>
+	</P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">&lt;FileListing
+	Version=”1” CID=”my-cid” Generator=”DC++ 0.401”
+	Base=”/”&gt;</FONT></P>
+	<P STYLE="margin-bottom: 0mm"> <FONT FACE="Courier New, monospace">&lt;Directory
+	Name=”share”&gt;</FONT></P>
+	<P STYLE="margin-bottom: 0mm">  <FONT FACE="Courier New, monospace">&lt;Directory
+	Name=”DC++ Prerelease”&gt;</FONT></P>
+	<P STYLE="margin-bottom: 0mm">   <FONT FACE="Courier New, monospace">&lt;File
+	Name=”DCPlusPlus.pdb” Size=”17648640” TTH=”xxxxxxxxx”/&gt;</FONT></P>
+	<P STYLE="margin-bottom: 0mm">   <FONT FACE="Courier New, monospace">&lt;File
+	Name=”DCPlusPlus.exe” Size=”946176” TTH=”xxxxxxxxx”/&gt;</FONT></P>
+	<P STYLE="margin-bottom: 0mm">  <FONT FACE="Courier New, monospace">&lt;/Directory&gt;</FONT></P>
+	<P STYLE="margin-bottom: 0mm">  <FONT FACE="Courier New, monospace">&lt;File
+	Name=”ADC.doc” Size=”154112” TTH=”xxxxxxxxx”/&gt;</FONT></P>
+	<P STYLE="margin-bottom: 0mm"> <FONT FACE="Courier New, monospace">&lt;/Directory&gt;</FONT></P>
+	<P STYLE="margin-bottom: 0mm"> <FONT FACE="Courier New, monospace">&lt;!--
+	Only used by partial lists --&gt; </FONT>
+	</P>
+	<P STYLE="margin-bottom: 0mm"> <FONT FACE="Courier New, monospace">&lt;Directory
+	Name=”share2” Incomplete=”1”/&gt; </FONT>
+	</P>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">&lt;/FileListing&gt;</FONT></P>
+	<P STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western">“encoding” must always be set to UTF-8.
+	Clients must be prepared to handle XML files both with and without a
+	BOM (byte order mark), although should not output one.</P>
+	<P CLASS="western">“Version” will not change unless a breaking
+	change is done to the structure of the file.</P>
+	<P CLASS="western">“CID” is the CID of the client that generated
+	the list.</P>
+	<P CLASS="western">“Generator” is for informative purposes only.</P>
+	<P CLASS="western">“Base” is used for partial file lists, but
+	must be present even in the non-partial list.</P>
+	<P CLASS="western">“TTH” is the base32-encoded TTH root of the
+	file.</P>
+	<P CLASS="western">“Incomplete” signals whether a directory in a
+	partial file list contains unlisted items. “1” means the
+	directory contains unlisted items, “0” that it does not.
+	Incomplete=”0” is the default and may thus be omitted.</P>
+	<P CLASS="western">More information may be added to the file by
+	extensions, but is not guaranteed to be interpreted by other
+	clients.</P>
+	<H1 CLASS="western"><FONT SIZE=4><B>4BASE messages</B></FONT></H1>
+	<P CLASS="western">ADC clients/hubs that support the following
+	messages may advertise the feature “BASE” in the PROTOCOL phase.
+		</P>
+	<P CLASS="western">The connecting party will be known as client, the
+	other as server. The server always controls state transitions. For
+	each message, the action code and the message contexts under which
+	it is valid are specified. 
+	</P>
+	<P CLASS="western">The message context specifies how the message may
+	be received / sent. Hubs and clients may support using the message
+	in additional contexts as well. The context codes are as follows:</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=4 CELLSPACING=0>
+		<COL WIDTH=5*>
+		<COL WIDTH=251*>
+		<THEAD>
+			<TR VALIGN=TOP>
+				<TD WIDTH=2%>
+					<P CLASS="western">F</P>
+				</TD>
+				<TD WIDTH=98%>
+					<P CLASS="western">From hub (hub-client TCP)</P>
+				</TD>
+			</TR>
+		</THEAD>
+		<TBODY>
+			<TR VALIGN=TOP>
+				<TD WIDTH=2%>
+					<P CLASS="western">T</P>
+				</TD>
+				<TD WIDTH=98%>
+					<P CLASS="western">To hub (hub-client TCP)</P>
+				</TD>
+			</TR>
+			<TR VALIGN=TOP>
+				<TD WIDTH=2%>
+					<P CLASS="western">C</P>
+				</TD>
+				<TD WIDTH=98%>
+					<P CLASS="western">Between clients (client-client TCP)</P>
+				</TD>
+			</TR>
+			<TR VALIGN=TOP>
+				<TD WIDTH=2%>
+					<P CLASS="western">U</P>
+				</TD>
+				<TD WIDTH=98%>
+					<P CLASS="western">Between clients (client-client UDP)</P>
+				</TD>
+			</TR>
+		</TBODY>
+	</TABLE>
+	<P CLASS="western"><BR><BR>
+	</P>
+	<P CLASS="western">For client-client communication, this protocol is
+	identified by the string “ADC/1.0”.</P>
+	<P CLASS="western">In the descriptions of the commands, the message
+	header and trailing named parameters have been omitted.</P>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>4.1Client – Hub
+	communication</B></I></FONT></H2>
+	<P CLASS="western">During login, the client goes through a number of
+	stages. An action is valid only in the NORMAL stage unless otherwise
+	noted. The stages, in login order, are PROTOCOL (feature support
+	discovery), IDENTIFY (user identification, static checks), VERIFY
+	(password check), NORMAL (normal operation) and DATA (for binary
+	transfers). 
+	</P>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>4.2Client – Client
+	communication</B></I></FONT></H2>
+	<P CLASS="western">The client – client protocol use the same
+	stages as client – hub, but clients are not required to support
+	the VERIFY state and GPA/PAS commands. Support for VERIFY/GPA/PAS
+	must be advertised as an extension. It is always the client that
+	sends the first CTM/RCM command that is given control of the
+	connection once the NORMAL state has been reached.</P>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>4.3Actions</B></I></FONT></H2>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.1STA</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">STA
+	code description</FONT></P>
+	<P CLASS="western">Contexts: F, T, C, U</P>
+	<P CLASS="western">States: All</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=17*>
+		<COL WIDTH=239*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=7%>
+				<P CLASS="western"><FONT SIZE=3>Code</FONT></P>
+			</TD>
+			<TD WIDTH=93%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>Status
+				code in the form “xyy” where x specifies severity, and yy the
+				specific error code. The severity and error code are treated
+				separately, the same error could occur at different severity
+				levels.</FONT></P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+				</P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm">Severity values:</P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm">0 Success (used for
+				confirming commands), error code must be “00” and an
+				additional flag “FC” contains the FOURCC of  the command
+				being confirmed if applicable.</P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm">1 Recoverable
+				(error but no disconnect)</P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm">2 Fatal
+				(disconnect)</P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+				</P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm">Error codes:</P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>00 Generic, show description</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>x0 Same as 00, but categorized according to the
+				rough structure set below</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>10 Generic hub error</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>11 Hub full</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>12 Hub disabled</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>20 Generic login/access error</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>21 Nick invalid</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>22 Nick taken</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>23 Invalid password </FONT>
+				</P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>24 CID taken</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>25 Access denied, flag “FC” is the FOURCC of the
+				offending command. Sent when a user is not allowed to execute a
+				particular command</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>26 Registered users only</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>27 Invalid PID supplied</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>30 Kicks/bans/disconnects generic</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>31 Permanently banned</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>32 Temporarily banned, flag “TL” is an integer
+				specifying the number of seconds left until it expires (This is
+				used for kick as well…).</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>40 Protocol error</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>41 Transfer protocol unsupported, flag “TO” the
+				token, flag “PR” the protocol string. The client receiving a
+				CTM or RCM should send this if it doesn’t support the C-C
+				protocol.</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>42 Direct connection failed, flag “TO” the
+				token, flag “PR” the protocol string. The client receiving a
+				CTM or RCM should send this if it tried but couldn’t connect.</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>42 Required INF field missing/bad, flag “FL”
+				specifies the name of field.</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>43 Invalid state, flag “FC” the FOURCC of the
+				offending command.</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>44 Required feature missing, flag “FC” specifies
+				the FOURCC of the missing feature. </FONT>
+				</P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>45 Invalid IP supplied in INF, flag “IP”
+				specifies the correct IP.</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>50 Client-client / file transfer error</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>51 File not available</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm; margin-bottom: 0mm">
+				<FONT SIZE=3>52 File part not available</FONT></P>
+				<P CLASS="western" STYLE="margin-left: 6.35mm"><FONT SIZE=3>53
+				Slots full</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=7%>
+				<P CLASS="western"><FONT SIZE=3>Description</FONT></P>
+			</TD>
+			<TD WIDTH=93%>
+				<P CLASS="western"><FONT SIZE=3>Text description of the error,
+				suitable for viewing directly by the user</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western">Even if an error code is unknown by the client,
+	it should display the text message alone. Error codes are used so
+	that the client can take different action on different errors. Most
+	error codes don’t have parameters and only make sense in C and I
+	types.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.2SUP</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">SUP
+	('AD' | 'RM') feature (separator ('AD' | 'RM') feature)* </FONT>
+	</P>
+	<P CLASS="western">Contexts: F, T, C</P>
+	<P CLASS="western">States: PROTOCOL, NORMAL</P>
+	<P CLASS="western">This command identifies which features a specific
+	client / hub supports. The feature name consists of four uppercase
+	letters, where the last letter may be changed to a number to
+	indicate a revised version of the feature. A central register of
+	known features should be kept, to avoid clashes. All ADC clients
+	must support the BASE feature (unless a future revision takes its
+	place), which is this protocol. The server may use any feature that
+	the client  indicates support for regardless of its own SUP, and
+	vice versa. 
+	</P>
+	<P CLASS="western">This command can also be used to dynamically add
+	/ remove features, ‘AD’ meaning add and ‘RM’ remove. 
+	</P>
+	<P CLASS="western">When the server receives this message the first
+	time, it should reply in kind, assign an SID to the client, send an
+	INF about itself and move to the IDENTIFY state. 
+	</P>
+	<H3 CLASS="western">4.3.3SID</H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">SID
+	sid</FONT></P>
+	<P CLASS="western">Contexts: F</P>
+	<P CLASS="western">States: PROTOCOL</P>
+	<P CLASS="western">This command assigns a SID to a user who is
+	currently logging on. The hub must send this command after SUP but
+	before INF in the PROTOCOL state. The client, when it receives it,
+	should send an INF about itself.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.4INF</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">INF
+	</FONT>
+	</P>
+	<P CLASS="western">Contexts: F, T, C</P>
+	<P CLASS="western">States: IDENTIFY, NORMAL</P>
+	<P CLASS="western">This command updates the information about a
+	client. Each time this is received, it means that the fields
+	specified have been added or updated. Each field is identified by
+	two characters, directly followed by the data associated with that
+	field. A field (and the effects of its presence) can be canceled by
+	sending the field name without data. Clients must ignore fields they
+	don’t recognize. Most of these fields are only interesting in the
+	client-hub communication; during client-client this command is
+	mainly used for identification purposes. Hubs can choose to require
+	or ignore any or all of these fields; clients must work without any
+	of them. Many of these fields, such as share size and client
+	version, are purely informative, and should be taken with a grain of
+	salt, as it is very easy to fake them. However, clients should
+	strive to provide accurate data for the general health of the
+	system, as providing invalid information probably will annoy a great
+	deal of people. Updates are made in an incremental manner, by
+	sending only the fields that have changed.</P>
+	<P CLASS="western">Fields:</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=8*>
+		<COL WIDTH=248*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>ID</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>The CID of the client. Mandatory
+				for C-C connections.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>PD</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>The PID of the client. Hubs must
+				check that the Tiger(PID) == CID and then discard the field
+				before broadcasting it to other clients. Must not be sent in C-C
+				connections.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>I4</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>IPv4 address without port. A zero
+				address (0.0.0.0) means that the server should replace it with
+				the real IP of the client. Hubs must check that a specified
+				address corresponds to what the client is connecting from to
+				avoid DoS attacks, and only allow trusted clients to specify a
+				different address. Clients should use the zero address when
+				connecting, but may opt not to do so at the user's discretion.
+				Any client that supports incoming TCPv4 connections must also add
+				the feature TCP4 to their SU field.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>I6</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>IPv6 address without port. A zero
+				address (::) means that the server should replace it with the IP
+				of the client. Any client that supports incoming TCPv6
+				connections must also add the feature TCP6 to their SU field.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>U4</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Client UDP port. Any client that
+				supports incoming UDPv4 packets must also add the feature UDP4 to
+				their SU field.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>U6</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Same as U4, but for IPv6. Any
+				client that supports incoming UDPv6 packets must also add the
+				feature UDP6 to their SU field.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>SS</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Share size in bytes, integer.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>SF</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Number of shared files, integer</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>VE</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Client identification, version
+				(client-specific, a short identifier then a floating-point
+				version number is recommended). Hubs should not discriminate
+				agains clients based on their VE tag but instead rely on SUP when
+				it comes to which clients should be allowed (for example, “we
+				only want regex clients”). </FONT>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>US</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Maximum upload speed, bits/sec,
+				integer</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>DS</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Maximum download speed, bits/sec,
+				integer</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>SL</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Upload slots open, integer</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>AS</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Automatic slot allocator speed
+				limit, bytes/sec, integer. This is the recommended method of slot
+				allocation, the client keeps opening slots as long as its total
+				upload speed doesn’t exceed this value. SL then serves as a
+				minimum number of slots open.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>AM</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Maximum number of slots open in
+				automatic slot manager mode, integer.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>EM</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>E-mail address, string.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>NI</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>Nickname,
+				string. The hub must ensure that this is unique in the hub up to
+				case-sensitivity. Valid are all characters in the Unicode
+				character set with code point above 32, although hubs may limit
+				this further as they like with an appropriate error message.</FONT></P>
+				<P CLASS="western">When sent for hub, this is the nick that
+				should be displayed before messages from the hub, and may also be
+				used as short name for the hub.</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>DE</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>Description,
+				string. Valid are all characters in the Unicode character set
+				with code point equal to or greater than 32.</FONT></P>
+				<P CLASS="western">When sent by hub, this string should be
+				displayed in the window title of the hub window (if one exists).</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>HN</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Hubs where user is a normal user
+				and in NORMAL state, integer. While connecting, clients should
+				not count the hub they're connecting to. Hubs should increase one
+				of the three the hub counts by one before passing the client to
+				NORMAL state.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>HR</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Hubs where user is registered
+				(had to supply password) and in NORMAL state, integer.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>HO</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Hubs where user is op and in
+				NORMAL state, integer.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>TO</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Token, as received in RCM/CTM,
+				when establishing a C-C connection.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>OP</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>1=op</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>AW</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>1=Away
+				</FONT>
+				</P>
+				<P CLASS="western">2=Extended away, not interested in hub chat
+				(hubs may skip sending broadcast type MSG commands to clients
+				with this flag)</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>BO</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>1=Bot (in particular, this means
+				that the client does not support file transfers, and thus should
+				never be queried for direct connections)</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>HI</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>1=Hidden, should not be shown on
+				the user list.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>HU</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>1=Hub, this INF is about the hub
+				itself</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>SU</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Comma-separated list of feature
+				FOURCC's. This notifies other clients of extended capabilities of
+				the connecting client. Use with discretion.</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western" STYLE="margin-bottom: 0mm">For OP, AW, BO, HI and
+	HU, unspecified values are reserved for the future.</P>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western" STYLE="margin-bottom: 0mm">Hubs may mandate or
+	discard any set of fields, but obviously the more the merrier (and
+	clients could be disconnected for not sending some of them…).</P>
+	<P CLASS="western">Note; normally one would only accept an IP (I4 or
+	I6) that is the same as the source IP of the connecting peer,
+	allowing otherwise for trusted users only because your could channel
+	DDoS attacks. Use caution when accepting unknown Ips. Only for
+	trusted users one may allow a different IP or an IP from a different
+	domain (Ipv4 or Ipv6) to be specified. If you fail to do this, your
+	hub can be used as a medium for DDoS attacks.</P>
+	<P CLASS="western">When a hub receives this message in the IDENTIFY
+	state, it should proceed to the VERIFY state by sending a PAS
+	request or NORMAL state by starting sending the INF of all clients,
+	where the INF of the connecting client must come last. When the hub
+	that sends an INF about itself, the NI becomes hub name, VE version
+	etc.</P>
+	<P CLASS="western">When the server receives this during
+	client-client communication in IDENTIFY state, it should verify the
+	ID and TO fields, send an INF about itself and pass to the NORMAL
+	state.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.5MSG</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">MSG
+	text</FONT></P>
+	<P CLASS="western">Contexts: F, T</P>
+	<P CLASS="western">A chat message. The receiving clients should
+	precede it with ‘&lt;’ nick ‘&gt;’, to allow for uniform
+	message displays. 
+	</P>
+	<P CLASS="western">Flags:</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=21*>
+		<COL WIDTH=235*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=8%>
+				<P CLASS="western"><FONT SIZE=3>PM&lt;group-SID&gt;</FONT></P>
+			</TD>
+			<TD WIDTH=92%>
+				<P CLASS="western"><FONT SIZE=3>Private message, &lt;group-SID&gt;
+				is the SID clients must send responses to. This field must
+				contain the originating SID if this is a normal private
+				conversation.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=8%>
+				<P CLASS="western"><FONT SIZE=3>ME</FONT></P>
+			</TD>
+			<TD WIDTH=92%>
+				<P CLASS="western"><FONT SIZE=3>1 = message should be displayed
+				as /me in IRC (“*nick text”)</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.6SCH</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">SCH</FONT></P>
+	<P CLASS="western">Contexts: F, T, C, (U)</P>
+	<P CLASS="western">Search. Each parameter is an operator followed by
+	a term. Each term is a two-letter code followed by the data to
+	search for. Clients must ignore any unknown fields and complete the
+	search request as if they were not present, unless no known fields
+	are present in which case the client must ignore the search.</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=17*>
+		<COL WIDTH=239*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=7%>
+				<P CLASS="western"><FONT SIZE=3>AN, NO, EX</FONT></P>
+			</TD>
+			<TD WIDTH=93%>
+				<P CLASS="western"><FONT SIZE=3>String search term, where AN is
+				include (and), NO is exclude (and not), and EX is extension. Each
+				filename (including the path to it) should be matched using case
+				insensitive substring search as follows: match all AN, remove
+				those that match any NO, and make sure the extension matches at
+				least one of the EX (if it is present). Extensions must be sent
+				without the leading ‘.’.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=7%>
+				<P CLASS="western"><FONT SIZE=3>LE</FONT></P>
+			</TD>
+			<TD WIDTH=93%>
+				<P CLASS="western"><FONT SIZE=3>Smaller (less) than or equal size
+				in bytes</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=7%>
+				<P CLASS="western"><FONT SIZE=3>GE</FONT></P>
+			</TD>
+			<TD WIDTH=93%>
+				<P CLASS="western"><FONT SIZE=3>Larger (greater) than or equal
+				size in bytes</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=7%>
+				<P CLASS="western"><FONT SIZE=3>EQ</FONT></P>
+			</TD>
+			<TD WIDTH=93%>
+				<P CLASS="western"><FONT SIZE=3>Exact size in bytes</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=7%>
+				<P CLASS="western"><FONT SIZE=3>TO</FONT></P>
+			</TD>
+			<TD WIDTH=93%>
+				<P CLASS="western"><FONT SIZE=3>Token, string. Used by the client
+				to tell one search from the other. If present, the responding
+				client must copy this field to each search result.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=7%>
+				<P CLASS="western"><FONT SIZE=3>TR</FONT></P>
+			</TD>
+			<TD WIDTH=93%>
+				<P CLASS="western"><FONT SIZE=3>Tiger tree hash root, encoded
+				with base32. </FONT>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=7%>
+				<P CLASS="western"><FONT SIZE=3>TY</FONT></P>
+			</TD>
+			<TD WIDTH=93%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>File
+				type, to be chosen from the following (none specified = any
+				type):</FONT></P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm">1 = File</P>
+				<P CLASS="western">2 = Directory</P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western">Searching by UDP is subject to IP spoofing, and
+	can thus be used to initiate a DoS attack. Clients should only
+	accept incoming UDP searches in a trusted environment.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.7RES</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">RES</FONT></P>
+	<P CLASS="western">Contexts: F, T, C, U</P>
+	<P CLASS="western">Search result, made up of fields syntactically
+	and structurally similar to the INF ones. Clients must provide
+	filename, TTH root, size and token, but are encouraged to supply
+	additional fields if available. Passive results should be limited to
+	5 and active to 10.</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=8*>
+		<COL WIDTH=248*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>FN</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Full filename including path in
+				share</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>SI</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Size, in bytes</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>SL</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Slots currently available</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>TO</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Token</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>TR</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Tiger tree hash root, encoded
+				with base32.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>TD</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Tiger tree depth, index of the
+				highest level of tree data available, root-only = 0, first level
+				(2 leaves) = 1, second level = 2, etc…</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.8CTM</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">CTM
+	protocol separator port separator “TO” token </FONT>
+	</P>
+	<P CLASS="western">Contexts: F, T</P>
+	<P CLASS="western">Connect to me. Used by active clients that want
+	to connect to someone, or in response to RCM. Only TCP active
+	clients may send this. TO is a string that identifies the incoming
+	connection triggered by this command, and must be present in the INF
+	command of the connecting client. Clients should not accept incoming
+	connections with a token they did not send earlier. &lt;proto&gt; is
+	an arbitrary string specifying the protocol to connect with; in the
+	case of an ADC compliant connection attempt, this should be the
+	string “ADC/1.0”. If &lt;protocol&gt; is supported, a response
+	to a supported &lt;protocol&gt; RCM must copy the &lt;token&gt; and
+	&lt;proto&gt; fields directly. If a protocol is not supported, a
+	DSTA must be sent indicating this.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.9RCM</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">RCM
+	protocol separator “TO” token</FONT></P>
+	<P CLASS="western">Contexts: F, T</P>
+	<P CLASS="western">Reverse CTM. Used by passive clients to request a
+	connection token from an active client.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.10GPA</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">GPA
+	data</FONT></P>
+	<P CLASS="western">Contexts: F</P>
+	<P CLASS="western">States: VERIFY</P>
+	<P CLASS="western">Get Password. The data parameter is at least 24
+	random bytes (base32 encoded), used to avoid replay attacks on the
+	password.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.11PAS</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">PAS
+	password</FONT></P>
+	<P CLASS="western">Contexts: T</P>
+	<P CLASS="western">States: VERIFY</P>
+	<P CLASS="western">Password. The CID (binary), then the password,
+	followed by the random data (binary), passed through the Tiger hash
+	algorithm (not TTH) then base32. When validated, this transitions
+	the server into NORMAL state.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.12QUI</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">QUI
+	sid</FONT></P>
+	<P CLASS="western">Contexts: F</P>
+	<P CLASS="western">States: IDENTIFY, VERIFY, NORMAL</P>
+	<P CLASS="western">The client identified by &lt;sid&gt; disconnected
+	from the hub. If the SID belongs to the client receiving the QUI, it
+	means that it should take action according to the reason (i.e.
+	redirect or not reconnect in case of ban). The hub must not send
+	data after the QUI to the client being disconnected.</P>
+	<P CLASS="western">The following flags may be present:</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=8*>
+		<COL WIDTH=248*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>ID</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>SID of the initiator of the
+				disconnect (for example the one that issued a kick).</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>TL</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Time Left until reconnect is
+				allowed, in seconds. -1 = forever. </FONT>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>MS</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Message.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>RD</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Redirect server URL.</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>DI</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Any client that has this flag in
+				the QUI message should have its transfers terminated by other
+				clients connected to it, as it is unwanted in the system.</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.13DSC</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">DSC
+	victim_sid</FONT></P>
+	<P CLASS="western">Contexts: T</P>
+	<P CLASS="western">Disconnects user. The same flags as in the QUI
+	command may be added, in which case the hub must copy them to the
+	QUI sent to the victim.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.14GET</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">GET
+	type identifier start_pos bytes</FONT></P>
+	<P CLASS="western">Contexts: C</P>
+	<P CLASS="western">Requests that a certain file or binary data be
+	transmitted. &lt;start_pos&gt; counts 0 as the first byte. &lt;bytes&gt;
+	may be set to -1 to indicate that the sending client should fill it
+	in with the number of bytes needed to complete the file from
+	&lt;start_pos&gt;. &lt;type&gt; is a [a-zA-Z0-9]+ string that
+	specifies the namespace for identifier and BASE requires that
+	clients recognize the types “file”, “tthl” and “list”.
+	Extensions may add to the identifier names as well as add new types.</P>
+	<P CLASS="western">“file” transfers transfer the file data in
+	binary, starting at &lt;start_pos&gt; and sending &lt;bytes&gt;
+	bytes. Identifier must be a TTH root value from the “TTH/” root.</P>
+	<P CLASS="western">“tthl” transfers send the largest set of 
+	leaves available) as a binary stream of leaf data, right-to-left,
+	with no spacing in between them. &lt;start_pos&gt; must be set to 0
+	and &lt;bytes&gt; to -1 when requesting the data. &lt;bytes&gt; must
+	contain the total binary size of the leaf stream in SND, and by
+	dividing this length by the individual hash length, the number of
+	leaves, and thus the leaf level can be deducted. The received leaves
+	can then be used to reconstruct the entire tree, and the resulting
+	root must match the root of the file (this verifies the integrity of
+	the tree itself). Identifier must be a TTH root value from the
+	“TTH/” root.</P>
+	<P CLASS="western">“list” transfers are used for partial file
+	lists and have a directory as identifier. &lt;start_pos&gt; is
+	always 0 and &lt;bytes&gt; contains the uncompressed length of the
+	generated XML text in the corresponding SND. An optional flag “RE1”
+	means that the client is requesting a recursive list and that the
+	sending client should send the directory itself and all
+	subdirectories as well. If this is too much, the sending client may
+	choose to send only parts. The flag should be taken as a hint that
+	the requesting client will be getting the  subdirectories as well,
+	so they might as well be sent in one go. Identifier must be a
+	directory in the unnamed root, ending (and beginning) with ‘/’.</P>
+	<P CLASS="western">Note that GET can also be used by extensions for
+	binary transfers between hub and client.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.15GFI</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">GFI
+	type identifier</FONT></P>
+	<P CLASS="western">Contexts: C</P>
+	<P CLASS="western">Get File Information. Requests that the other
+	client returns a RES about the file as if it had responded to a SCH
+	command. Type and identifier are the same as for GET.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>4.3.16SND</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">SND
+	type identifier start_pos bytes</FONT></P>
+	<P CLASS="western">Contexts: C</P>
+	<P CLASS="western">Transitions to DATA state. The sender will
+	transmit until &lt;bytes&gt; bytes of binary data have been sent,
+	and then will transition back to NORMAL state. The parameters
+	essentially correspond to the GET parameters, but if &lt;bytes&gt;
+	equals -1 it must be replaced by the number of bytes needed to
+	complete the file starting at &lt;start_pos&gt;.</P>
+	<H1 CLASS="western"><FONT SIZE=4><B>5Examples</B></FONT></H1>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>5.1Client – Hub connection</B></I></FONT></H2>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=128*>
+		<COL WIDTH=128*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>Client</FONT></P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>Hub</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>HSUP +BASE &lt;other-features&gt;</FONT></P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>ISUP
+				+BASE &lt;other-features&gt;</FONT></P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>ISID
+				&lt;client-sid&gt;</FONT></P>
+				<P CLASS="western">IINF HU1 HI1 …</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>BINF &lt;my-sid&gt; ID... PD… </FONT>
+				</P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>IGPA …</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>HPAS …</FONT></P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>BINF
+				&lt;all clients&gt;</FONT></P>
+				<P CLASS="western">BINF &lt;Client-SID&gt; …</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western">…</P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western">…</P>
+			</TD>
+		</TR>
+	</TABLE>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>5.2Client – Client
+	connection</B></I></FONT></H2>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=128*>
+		<COL WIDTH=128*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>Client</FONT></P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>Server</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>CSUP +BASE &lt;other-features&gt;</FONT></P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>CSUP
+				+BASE &lt;other-features&gt;</FONT></P>
+				<P CLASS="western">CINF IDxxx</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>CINF IDxxx TO&lt;token&gt;</FONT></P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>CGET …</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>CSND …</FONT></P>
+				<P CLASS="western">&lt;data&gt;</P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=50%>
+				<P CLASS="western"><BR>
+				</P>
+			</TD>
+			<TD WIDTH=50%>
+				<P CLASS="western"><FONT SIZE=3>&lt;disconnect&gt;</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<H1 CLASS="western"><FONT SIZE=4><B>6Standard Extensions
+	&lt;work-in-progress&gt;</B></FONT></H1>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>6.1REGX - Regular expressions
+	in searches</B></I></FONT></H2>
+	<P CLASS="western">This extension adds to the SCH command an
+	additional operator RE that takes a Perl regular expression
+	(<A HREF="http://perldoc.perl.org/perlre.html">http://perldoc.perl.org/perlre.html</A>)
+	with full Unicode support. Clients that support this must send
+	“REGX” in their support string in the INF SU field.</P>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>6.2ZLIB - Compressed
+	communication</B></I></FONT></H2>
+	<P CLASS="western">There are two variants of zlib support, FULL and
+	GET, and only one should be used on a each communications channel
+	set up.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>6.2.1ZLIB-FULL</B></FONT></H3>
+	<P CLASS="western">If, during SUP negotiation, a peer sends “ZLIF”
+	in its support string, it must accept two additional commands, ZON
+	and ZOF. Upon reception of ZON the peer must start decompressing the
+	incoming stream of data with zlib before interpreting it, and stop
+	doing so after ZOF is received (in the compressed stream). The
+	compressing end must partially flush the zlib buffer after each
+	chunk of data to allow for decompression by the peer.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>6.2.2ZLIB-GET</B></FONT></H3>
+	<P CLASS="western">The alternative is to send “ZLIG” to indicate
+	that zlib is supported for binary transfers using the GET command,
+	but not otherwise. A flag “ZL1” is added to the to the SND
+	command to indicate that the data will come compressed, and the
+	client receiving requests it by adding the same flag to GET (the
+	sending client may ignore a request for a compressed transfer, but
+	may also use it even when not requested by the receiver). The
+	&lt;bytes&gt; parameter of the GET and SND commands is to be
+	interpreted as the number of uncompressed bytes to be transferred.</P>
+	<H2 CLASS="western"><FONT SIZE=4><I><B>6.3UCMD - User commands</B></I></FONT></H2>
+	<P CLASS="western">User commands are used to send hub-specific
+	commands to the client which provide useful shortcuts for the user.
+	These commands contain strings which must be sent back to the hub,
+	and parameter substitutions in the strings. Each user command has a
+	display name, a string to be sent to the hub, and one or more
+	categories where it may appear. The strings passed to the hub must
+	first be passed through a dictionary replacement that replaces all
+	keywords in the string, and then through the equivalent of the C
+	standard function “strftime”, with the current time.</P>
+	<H3 CLASS="western"><FONT SIZE=3><B>6.3.1CMD</B></FONT></H3>
+	<P STYLE="margin-bottom: 0mm"><FONT FACE="Courier New, monospace">CMD
+	name</FONT></P>
+	<P CLASS="western">Types: I</P>
+	<P CLASS="western">Name uniquely (per hub) identifies a particular
+	user command. The name may contain ‘/’ to indicate a logical
+	structure on the viewing client, where each ‘/’ introduces a new
+	submenu level. Other than name, the command also has a number of
+	flags that further detail what to do with it.</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=8*>
+		<COL WIDTH=248*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>RM</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>1 = Remove command</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>CT</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western" STYLE="margin-bottom: 0mm"><FONT SIZE=3>Context,
+				the following flags summed:</FONT></P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm">1 = Hub command,
+				client parameters only</P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm">2 = User list
+				command, client and user parameters</P>
+				<P CLASS="western" STYLE="margin-bottom: 0mm">4 = Search result
+				command, client, user and file parameters</P>
+				<P CLASS="western">8 = File list command, client, user and file
+				parameters</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>TT</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>Text to be sent to hub</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>CO</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>1 = Constrained, when sending
+				this command on multiple users (for example in search results),
+				constrain it to once per CID only</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=3%>
+				<P CLASS="western"><FONT SIZE=3>SP</FONT></P>
+			</TD>
+			<TD WIDTH=97%>
+				<P CLASS="western"><FONT SIZE=3>1 = Insert separator instead of
+				command name (name must still be present to uniquely identify the
+				command)</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western">Keywords are specified using “%[keyword]”.
+	Unknown keywords must be replaced by the empty string. Additionally,
+	all %-substitutions of the C function “strftime” must be
+	supported. 
+	</P>
+	<P CLASS="western">The following tables specify the parameters that
+	must be available.</P>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western">Client parameters</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=12*>
+		<COL WIDTH=244*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=5%>
+				<P CLASS="western"><FONT SIZE=3>myCID</FONT></P>
+			</TD>
+			<TD WIDTH=95%>
+				<P CLASS="western"><FONT SIZE=3>Client CID</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=5%>
+				<P CLASS="western"><FONT SIZE=3>mySID</FONT></P>
+			</TD>
+			<TD WIDTH=95%>
+				<P CLASS="western"><FONT SIZE=3>Client SID</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=5%>
+				<P CLASS="western"><FONT SIZE=3>myXX</FONT></P>
+			</TD>
+			<TD WIDTH=95%>
+				<P CLASS="western"><FONT SIZE=3>One for each flag on that
+				particular hub, for example myI4, myNI, etc.</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western">User parameters</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=12*>
+		<COL WIDTH=244*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=5%>
+				<P CLASS="western"><FONT SIZE=3>userCID</FONT></P>
+			</TD>
+			<TD WIDTH=95%>
+				<P CLASS="western"><FONT SIZE=3>User CID</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=5%>
+				<P CLASS="western"><FONT SIZE=3>UserSID</FONT></P>
+			</TD>
+			<TD WIDTH=95%>
+				<P CLASS="western"><FONT SIZE=3>SID of the user</FONT></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=5%>
+				<P CLASS="western"><FONT SIZE=3>userXX</FONT></P>
+			</TD>
+			<TD WIDTH=95%>
+				<P CLASS="western"><FONT SIZE=3>One for each flag the user sent,
+				for example userI4, userNI, etc.</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western">File parameters</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=7 CELLSPACING=0>
+		<COL WIDTH=12*>
+		<COL WIDTH=244*>
+		<TR VALIGN=TOP>
+			<TD WIDTH=5%>
+				<P CLASS="western"><FONT SIZE=3>fileXX</FONT></P>
+			</TD>
+			<TD WIDTH=95%>
+				<P CLASS="western"><FONT SIZE=3>One for each flag contained
+				within a search result or file list entry (see RES)</FONT></P>
+			</TD>
+		</TR>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<P CLASS="western">Hub parameters</P>
+	<TABLE WIDTH=100% BORDER=1 BORDERCOLOR="#000000" CELLPADDING=4 CELLSPACING=0>
+		<COL WIDTH=12*>
+		<COL WIDTH=244*>
+		<THEAD>
+			<TR VALIGN=TOP>
+				<TD WIDTH=5%>
+					<P CLASS="western">hubXX</P>
+				</TD>
+				<TD WIDTH=95%>
+					<P CLASS="western">One for each flag of the hub</P>
+				</TD>
+			</TR>
+		</THEAD>
+	</TABLE>
+	<P CLASS="western" STYLE="margin-bottom: 0mm"><BR>
+	</P>
+	<H2 CLASS="western">6.4ADCS - Secure ADC &lt;work-in-progress&gt;</H2>
+	<H3 CLASS="western">6.4.1Introduction</H3>
+	<P CLASS="western">Secure ADC connections can be established using a
+	TLS tunnel, both for hub and for client connections. Certificates
+	can be used to authenticate both hub and user, for example by making
+	the hub the root CA, and only allow clients signed by the hub to
+	connect. Ephemeral keys should be use to ensure forward secrecy when
+	possible.</P>
+	<H3 CLASS="western">6.4.2Client-Hub encryption</H3>
+	<P CLASS="western">TLS client-hub connections can be initiated
+	either by negotiating the feature “ADCS” on connection or by
+	using the protocol adcs:// when initiating the connection. Hubs can
+	choose to request a certificate for the user on login, and use this
+	certificate to replace password-based login.</P>
+	<H3 CLASS="western">6.4.3Client-Client encryption</H3>
+	<P CLASS="western">TLS client-client connections can be established
+	either by negotiating the feature “ADCS” on connection or by
+	specifying “ADCS/1.0” in the CTM protocol field. Clients
+	supporting encrypted connections must indicate this in the INF SU
+	field with “ADCS”</P>
+</DIV>
+</BODY>
+</HTML>

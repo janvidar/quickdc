@@ -1,0 +1,19 @@
+body {
+	margin: 2em;
+	padding: 1em 0;
+	background: white;
+	color: black;
+	font-family: sans-serif;
+}
+
+code {
+	color: blue;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+h2 {
+	background: #EEE;
+}

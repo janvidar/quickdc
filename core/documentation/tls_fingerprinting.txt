@@ -1,0 +1,147 @@
+Different TLS/SSL handshakes:
+
+Safari:    2154627331  = 0x806D0103 = { 128,  109,   1,   3 } // OLD V2ClientHello (ignore high bit)
+Opera:     2150301955  = 0x802B0103 = { 128,   43,   1,   3 } // OLD V2ClientHello
+wget:      2155086083  = 0x80740103 = { 128,  116,   1,   3 } // OLD V2ClientHello
+lynx:      369295616   = 0x16030100 = {  22,    3,   1,   0 } // TLS plaintext
+konqueror: 369295616   = 0x16030100 = {  22,    3,   1,   0 } // TLS plaintext
+
+With 8 bytes fingerprinting:
+Lynx:      369295616   = 0x1603010044010000
+wget:      2155086083  = 0x8074010301004b00
+safari:                = 0x806d010300005400
+
+For SSL 2.0:
+Not TLS Handshake '80 22 1 0 2 0 9 0',
+
+Fingerprinting from 16 bytes:
+
+For TLS:
+
+if (byte[0] == 22) {
+	/* SSL3+/TLS checks - need at least 11 bytes for this! */
+	- byte[1,2] should be: (protocol version)
+		- verify { 3, 0 } = SSL 3.0
+		- verify { 3, 1 } = TLS 1.0
+		- verify { 3, 2 } = TLS 1.1
+		- verify { 3, 3 } = TLS 1.2
+	- byte[3, 4] - ignore
+	- byte[5] verify '1' (client_hello)
+	- byte[6,7,8] -- Ignore
+	- Next 2 bytes should be: (protocol version)
+		- verify { 3, 0 } = SSL 3.0
+		- verify { 3, 1 } = TLS 1.0
+		- verify { 3, 2 } = TLS 1.1
+		- verify { 3, 3 } = TLS 1.2
+
+	- Verify that both protocol types match!
+
+} else if (byte[0] & 0x80) {
+	/* SSLv2 compatibility checks */
+	- byte[2] should be '1': (client hello)
+	- byte[3, 4] should be:
+		- verify { 2, 0 } = SSL 2.0
+		- verify { 3, 0 } = SSL 3.0
+		- verify { 3, 1 } = TLS 1.0
+		- verify { 3, 2 } = TLS 1.1
+		- verify { 3, 3 } = TLS 1.2
+}
+
+
+From the SSL v3.0 specs, a client hello consists of these bits:
+
+ 8 bits Message type (client hello): 
+16 bits SSL version number
+16 bits length of cipher list
+16 bits length of session id
+16 bits length of chalenge data
+
+.. cipher list
+.. session id (min 16, max 32 bytes)
+.. challenge data
+
+
+------------------------------------------------------------
+
+struct {
+	uint8_t major;
+	uint8_t minor;
+} ProtocolVersion;
+
+ProtocolVersion version = { 3, 0 }; /* SSL 3.0 */
+ProtocolVersion version = { 3, 1 }; /* TLS 1.0 */
+
+enum {
+	hello_request(0),
+	client_hello(1),
+	server_hello(2),
+	certificate(11),
+	server_key_exchange(12),
+	certificate_request(13),
+	server_hello_done(14),
+	certificate_verify(15),
+	client_key_exchange(16),
+	finished(20), (255)
+} HandshakeType;
+
+struct {
+	HandshakeType msg_type;
+	uint24 length;
+	select (HandshakeType) {
+		case hello_request:       HelloRequest;
+		case client_hello:        ClientHello;
+		case server_hello:        ServerHello;
+		case certificate:         Certificate;
+		case server_key_exchange: ServerKeyExchange;
+		case certificate_request: CertificateRequest;
+		case server_hello_done:   ServerHelloDone;
+		case certificate_verify:  CertificateVerify;
+		case client_key_exchange: ClientKeyExchange;
+		case finished:            Finished;
+	} body;
+} Handshake
+
+
+struct {
+        ProtocolVersion client_version;
+        Random random;
+        SessionID session_id;
+        CipherSuite cipher_suites<2..2^16-1>;
+        CompressionMethod compression_methods<1..2^8-1>;
+} ClientHello;
+
+enum { rsa, diffie_hellman } KeyExchangeAlgorithm;
+
+struct {
+        select (KeyExchangeAlgorithm) {
+            case rsa: EncryptedPreMasterSecret;
+            case diffie_hellman: DiffieHellmanClientPublicValue;
+        } exchange_keys;
+} ClientKeyExchange;
+
+enum {
+           change_cipher_spec(20), alert(21), handshake(22),
+           application_data(23), (255)
+} ContentType;
+
+struct {
+	ContentType type;
+	ProtocolVersion version;
+	uint16 length;
+	opaque fragment[TLSPlaintext.length];
+} TLSPlaintext;
+
+------------------------
+
+struct {
+	uint16 msg_length; /* Ignore the high bit! */
+	uint8 msg_type;    /* Should be 1 */
+	Version version;
+	uint16 cipher_spec_length;
+	uint16 session_id_length;
+	uint16 challenge_length;
+	V2CipherSpec cipher_specs[V2ClientHello.cipher_spec_length];
+	opaque session_id[V2ClientHello.session_id_length];
+	opaque challenge[V2ClientHello.challenge_length;
+} V2ClientHello;
+

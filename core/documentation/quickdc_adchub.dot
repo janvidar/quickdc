@@ -1,0 +1,8 @@
+/**
+ * Overview of QuickDC's ADC Hub - state transitions.
+ */
+digraph G {
+	"State_None" ->	"State_Protocol" -> "State_Identify" ->  "State_Verify" -> "State_Normal" -> "State_WaitDisconnect"
+}
+
+	

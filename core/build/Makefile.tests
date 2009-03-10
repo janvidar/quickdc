@@ -1,0 +1,51 @@
+ #
+##
+## Makefile for QuickDC core library
+## Copyright (c) 2001-2008, Jan Vidar Krey
+##
+ #
+
+REQLIBS=-lssl -lbz2 -lz -lsamurai -lpthread
+LDFLAGS += $(REQLIBS)
+
+TESTS=quickdc_cli testfile testshare testdebug testlock hublist
+
+test_SOURCES := \
+		$(COREDIR)/test/cli/main.cpp \
+		$(COREDIR)/test/cli/util.cpp \
+		$(COREDIR)/test/cli/commands.cpp \
+		$(COREDIR)/test/cli/console.cpp \
+		$(COREDIR)/test/cli/hubconnection.cpp \
+		$(COREDIR)/test/file.cpp \
+		$(COREDIR)/test/share.cpp \
+		$(COREDIR)/test/debug.cpp \
+		$(COREDIR)/test/lock.cpp \
+		$(COREDIR)/test/crash.cpp \
+		$(COREDIR)/test/hublist.cpp
+
+test_OBJECTS	:= $(test_SOURCES:.cpp=.o)
+
+## $(TESTS): $(libquickdc_ARCHIVE) $(test_OBJECTS)
+## $(COREDIR)/test/cli/util.o: $(COREDIR)/test/cli/util.cpp
+
+quickdc_cli: $(COREDIR)/test/cli/main.o $(COREDIR)/test/cli/util.o $(COREDIR)/test/cli/hubconnection.o $(COREDIR)/test/cli/commands.o $(COREDIR)/test/cli/console.o $(libquickdc_ARCHIVE)
+	@echo "Creating $@" &&  $(LD) -o $@ -L$(COREDIR) $^ $(LDFLAGS)
+
+testfile: $(COREDIR)/test/file.o $(libquickdc_ARCHIVE)
+	@echo "Creating $@" &&  $(LD) -o $@ -L$(COREDIR) $^ $(LDFLAGS)
+
+testshare: $(COREDIR)/test/share.o $(libquickdc_ARCHIVE)
+	@echo "Creating $@" &&  $(LD) -o $@ -L$(COREDIR) $^ $(LDFLAGS)
+
+testdebug: $(COREDIR)/test/debug.o $(libquickdc_ARCHIVE) $(COREDIR)/test/cli/console.o
+	@echo "Creating $@" &&  $(LD) -o $@ -L$(COREDIR) $^ $(LDFLAGS)
+
+testlock: $(COREDIR)/test/lock.o $(libquickdc_ARCHIVE)
+	@echo "Creating $@" &&  $(LD) -o $@ -L$(COREDIR) $^ $(LDFLAGS)
+
+hublist: $(COREDIR)/test/hublist.o $(libquickdc_ARCHIVE)
+	@echo "Creating $@" &&  $(LD) -o $@ -L$(COREDIR) $^ $(LDFLAGS)
+
+
+tests: $(TESTS)
+

@@ -1,0 +1,57 @@
+#!/bin/sh
+
+PRODUCT="QuickDC"
+VERSION="0.4.18"
+
+LIBS="ssl bz2 z pthread"
+LIBPATHS="/usr/lib /usr/local/lib"
+TOOLCHAIN="gcc"
+PREFIX="/usr/local/"
+
+echo "Configuring ${PRODUCT} ${VERSION}..."
+echo
+
+# Determine Operating system type.
+if [ -x /bin/uname ]; then
+	SYSTEM=`/bin/uname -s`
+	LIBPRE="lib"
+	if [ "${SYSTEM}" = "Darwin" ]; then
+		DLLEXT="dylib"
+	else
+		DLLEXT="so"
+	fi
+else
+	LIBPRE="lib"
+	if [ "${OS}" = "Windows_NT" ]; then
+		SYSTEM=${OS}
+		DLLEXT="dll"
+	else
+		echo "Unable to determine operating system."
+		exit
+	fi
+fi
+
+# Check if needed libraries exist.
+for lib in ${LIBS};
+do
+	found=0
+	for libpath in ${LIBPATHS};
+	do
+		if [ "$found" = "0" ]; then
+			checklib="${libpath}/${LIBPRE}${lib}.${DLLEXT}"
+			echo -n "Looking for ${LIBPRE}${lib} ... "
+			if [ -f "$checklib" ]; then
+				echo "OK"
+				found=1
+			else
+				echo "Not found".
+			fi
+		fi
+	done
+done
+
+
+
+echo "Product:   ${PRODUCT} ${VERSION}"
+echo "System:    ${SYSTEM}"
+

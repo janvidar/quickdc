@@ -1,0 +1,58 @@
+ #
+##
+## Makefile for Samurai library
+## Copyright (c) 2001-2007, Jan Vidar Krey
+##
+## This file determines operating system, and CPU architecture, and
+## enables the supported configurations for each system.
+##
+ #
+
+# Most basic configuration
+BZIP2_SUPPORT := YES
+ZLIB_SUPPORT  := YES
+DEBUG         := YES
+
+# Autodetect operating system and CPU architecture
+SYSTEM  ?= $(shell uname -s)
+ARCH    ?= $(shell uname -m)
+
+# Toolchain settings
+TOOLCHAIN     := GNU
+
+# Detect endiannes. Unless we detect big endian, we assume little endian.
+# We need a working Perl installation for this to work.
+ENDIANESS=$(shell perl -e 'print pack("L", 0x554E4958)')
+ifeq ($(ENDIANESS), UNIX)
+	BIGENDIAN := YES
+else
+	BIGENDIAN := NO
+endif
+
+
+# GNU compiler collection
+ifeq ($(TOOLCHAIN), GNU)
+CC            := gcc
+CXX           := g++
+LD            := g++
+AR            := ar rc
+RM            := rm -f
+
+CXXFLAGS      := -c
+EXTRAFLAGS    := -pipe -Wall -W -ansi -D_FILE_OFFSET_BITS=64
+LDFLAGS       := -pipe
+
+ifeq ($(DEBUG), YES)
+EXTRAFLAGS    += -g
+LDFLAGS       += -g
+endif
+endif
+
+
+# Visual studio compiler
+ifeq ($(TOOLCHAIN), VC)
+$(error - not implemented support for Visual studio)
+endif
+
+
+

@@ -1,0 +1,83 @@
+ #
+##
+## Makefile for QuickDC core library
+## Copyright (c) 2001-2007, Jan Vidar Krey
+##
+ #
+
+libquickdc_SOURCES := \
+		$(COREDIR)/network/commandparser.cpp \
+		$(COREDIR)/network/commandproxy.cpp \
+		$(COREDIR)/network/connection.cpp \
+		$(COREDIR)/network/connectionmanager.cpp \
+		$(COREDIR)/network/downloadqueue.cpp \
+		$(COREDIR)/network/filesource.cpp \
+		$(COREDIR)/network/hubmanager.cpp \
+		$(COREDIR)/network/probe.cpp \
+		$(COREDIR)/network/securitymanager.cpp \
+		$(COREDIR)/network/transfer.cpp \
+		$(COREDIR)/network/transfermanager.cpp \
+		$(COREDIR)/network/user.cpp \
+		$(COREDIR)/network/usermanager.cpp \
+		$(COREDIR)/network/dc/clientcommands.cpp \
+		$(COREDIR)/network/dc/clientsession.cpp \
+		$(COREDIR)/network/dc/commands.cpp \
+		$(COREDIR)/network/dc/dccommandparser.cpp \
+		$(COREDIR)/network/dc/dccommandproxy.cpp \
+		$(COREDIR)/network/dc/dcconnection.cpp \
+		$(COREDIR)/network/dc/dcfile.cpp \
+		$(COREDIR)/network/dc/hubcommands.cpp \
+		$(COREDIR)/network/dc/hubsession.cpp \
+		$(COREDIR)/network/dc/lock.cpp \
+		$(COREDIR)/network/dc/tag.cpp \
+		$(COREDIR)/network/dc/textescape.cpp \
+		$(COREDIR)/network/adc/adcbbs.cpp \
+		$(COREDIR)/network/adc/adccommandparser.cpp \
+		$(COREDIR)/network/adc/adccommandproxy.cpp \
+		$(COREDIR)/network/adc/adccommands.cpp \
+		$(COREDIR)/network/adc/cid.cpp \
+		$(COREDIR)/network/adc/client/adcclientsession.cpp \
+		$(COREDIR)/network/adc/client/adchubsession.cpp \
+		$(COREDIR)/network/adc/server/acl.cpp \
+		$(COREDIR)/network/adc/server/adchub.cpp \
+		$(COREDIR)/network/adc/server/adchubservice.cpp \
+		$(COREDIR)/network/adc/server/adchubuser.cpp \
+		$(COREDIR)/network/adc/parser.cpp \
+		$(COREDIR)/network/http/client.cpp \
+		$(COREDIR)/network/http/entity.cpp \
+		$(COREDIR)/network/http/header.cpp \
+		$(COREDIR)/network/http/httpconnection.cpp \
+		$(COREDIR)/network/http/httpparser.cpp \
+		$(COREDIR)/network/http/pipeline.cpp \
+		$(COREDIR)/network/http/request.cpp \
+		$(COREDIR)/network/http/response.cpp \
+		$(COREDIR)/network/http/server.cpp \
+		$(COREDIR)/share/dcfilelist.cpp \
+		$(COREDIR)/share/sharedir.cpp \
+		$(COREDIR)/share/sharefile.cpp \
+		$(COREDIR)/share/sharemanager.cpp \
+		$(COREDIR)/share/searchmanager.cpp \
+		$(COREDIR)/share/searchrequest.cpp \
+		$(COREDIR)/share/searchresult.cpp \
+		$(COREDIR)/config/backend.cpp \
+		$(COREDIR)/config/iniparser.cpp \
+		$(COREDIR)/config/preferences.cpp \
+		$(COREDIR)/api/core.cpp \
+		$(COREDIR)/api/hub.cpp \
+		$(COREDIR)/api/server.cpp \
+		$(COREDIR)/hash/hashmanager.cpp \
+		$(COREDIR)/hash/hashjob.cpp \
+		$(COREDIR)/hash/hashcache.cpp \
+		$(COREDIR)/hash/hashstorage.cpp \
+		$(COREDIR)/xml/node.cpp \
+		$(COREDIR)/xml/reader.cpp \
+		$(COREDIR)/xml/writer.cpp
+
+
+ifeq ($(DEBUG), YES)
+libquickdc_SOURCES += \
+		$(COREDIR)/debug/malloc.cpp \
+		$(COREDIR)/debug/memdbg.cpp
+		# $(COREDIR)/debug/dbg.cpp
+endif
+

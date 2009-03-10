@@ -1,0 +1,55 @@
+/**
+ * Overview of QuickDC's connection probing.
+ */
+digraph G {
+
+	subgraph {
+		style=filled;
+		color=gray;
+		label = "Transfer subsystem";
+		node [style=filled,color=yellow];
+		"Transfer" -> "Free Slots?" -> "Security Manager";
+		"Security Manager" -> "Transfer";
+	}
+
+	subgraph {
+		rankdir=LR
+		style=filled;
+		color=grey;
+		node [style=filled,color=red];
+			"ADC Hub" -> "Local Hub";
+			"Secure ADC Hub" -> "Local Hub";
+			"Local Hub" -> "Security Manager";
+		label = "ADC Hub service";
+	}
+
+	"Probe" [style=filled,color=lightgreen];
+	"Probe TLS" [style=filled,color=lightgreen];
+	"Accept connection" [style=filled,color=lightgrey];
+
+ 	"Accept connection" -> "Probe";
+
+	"Probe" -> "HTTP";
+	"Probe" -> "NMDC";
+	"Probe" -> "ADC";
+	"Probe" -> "ADC Hub";
+	"Probe" -> "TLS";
+	"TLS" -> "Probe TLS";
+
+	"Probe TLS" -> "HTTPS";
+	"Probe TLS" -> "Secure ADC";
+	"Probe TLS" -> "Secure ADC Hub";
+
+	"HTTPS" -> "HTTP Service";
+	"HTTP" -> "HTTP Service";
+
+	"ADC" -> "Client Handler";
+	"Secure ADC" -> "Client Handler";
+	"NMDC" -> "Client Handler";
+
+	"Client Handler" -> "Transfer";
+	"HTTP Service" -> "Transfer";
+
+}
+
+	

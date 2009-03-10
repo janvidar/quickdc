@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<title>libquickdc</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+	<link type="text/javascript" href="quickdc.css" media="all" charset="UTF-8" />
+</head>
+<body>
+
+<h1>Share module overview</h1>
+<p>
+The <code>ShareManager</code> is running in a separate process, 
+where the main process is communicating with the <code>ShareManager</code> 
+through a pipe. This is done in the main process as an asynchronous poll, while 
+the ShareManager is a synchronous process.
+</p>
+<p>
+For this very reason, the ShareManager have a protocol on it's own, so that it 
+can communicate over the pipe. This is a binary protocol.
+</p>
+
+<h2>Process protocol</h2>
+
+<p>
+	Message layout: [MessageID] [length] [DATA].
+	<dl>
+		<dt>MessageID</dt>
+			<dd>32 bit integer</dd>
+		<dt>length</dt>
+			<dd>32 bit integer specifying the lenght of the data block</dd>
+		<dt>DATA</dt>
+			<dd>The data block, depending on the message ID</dd>
+	</dl>
+</p>
+<h2>Share Cache file</h2>
+<p>
+The share cache file has the following format (text file, lineseparated):
+
+<pre>
+type,size,date,hash,name
+
+Where type is either 'd' or 'f' for directory and file, accordingly.
+
+If type is f it means:
+Where size is 64bit unsigned integer.
+Date is the number of seconds since the Unix Epoch.
+Hash is the TTH: hash or nothing (if not indexed)
+Name is the full path to the file.
+
+If type is 'd' it means, 
+size = the number of files in this dir
+date = the time the directory was last changed
+hash = number of subdirectories
+name = full path
+
+
+<b>Example:</b>
+
+d,2,1122650218,0,/home/janvidar/shared
+f,1120,1122650216,SHA1:acc3f9923487d98dd8c90a82bd967170f6a09830,/home/janvidar/shared/readme.txt
+f,1320,1122650218,,/home/janvidar/shared/readme2.txt
+
+
+These are two files, one with a SHA1 hash, another without.
+</pre>
+
+</p>
+
+
+
+</body>
+</html>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<title>libquickdc</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+	<link type="text/javascript" href="quickdc.css" media="all" charset="UTF-8" />
+</head>
+<body>
+<h1>QuickDC Core Library</h1>
+<em>Copyright &copy; 2001-2005 by Jan Vidar Krey</em>
+<br />&#060;janvidar&#064;extatic.org&#062;
+
+<h2>Introduction</h2>
+
+<p>
+	The QuickDC core library is the core component of QuickDC, which should be fairly portable and
+	platform independent. The core is for this reason separated from the GUI, so it is possible
+	to build on different platforms with different windowing systems, or build a client without
+	a GUI at all if you like.
+</p>
+<p>
+	The whole API is designed to operate in an asynchronous environment, which means that you don't have
+	to use multiple threads unless you want to. This also means that you will have to feed timeslices to
+	the message loop once in a while so that it can dispatch events, otherwise it will not work.
+</p>
+
+<h2>Component overview</h2>
+
+<ul>
+	<LI><a href="network.html">Network</a>
+		<ul>
+			<LI>Socket</LI>
+			<LI>SocketEventHandler <em>interface</em></LI>
+			<LI>ServerSocket</LI>
+			<LI>SocketMonitor</LI>
+		</ul>
+	</LI>
+	
+	<LI><a href="share.html">Share</a>
+		<UL>
+			<LI>ShareManager</LI>
+			<LI>DCFile</LI>
+			<LI>DCFileList</LI>
+			<LI>SearchRequest</LI>
+			<LI>SearchResult</LI>
+		</UL>
+	</LI>
+	
+</ul>
+
+</body>
+</html>
