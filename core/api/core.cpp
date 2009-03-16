@@ -90,7 +90,7 @@ QuickDC::Core::~Core() {
 void QuickDC::Core::run() {
 	// Poll sockets
 	// FIXME: Wait for sigio, it's no point actually waiting!
-	monitor->wait(1000);
+	monitor->wait(0);
 	
 	// Make sure hashing is continued
 	hash->process();
