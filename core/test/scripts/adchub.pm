@@ -22,6 +22,7 @@ sub new {
 		nick     => "",
 		server   => undef,
 		ua       => "Perl ADC Compliance Tester/0.3",
+		i4       => "0.0.0.0"
 	};
 
 	print "Adchub at " . $self->{host} . ":" . $self->{port} . "\n";
@@ -56,6 +57,13 @@ sub set_cid
 	my $self = shift;
 	my($str) = @_;
 	$self->{cid} = $str;
+}
+
+sub set_i4
+{
+	my $self = shift;
+	my ($str) = @_;
+	$self->{i4} = $str;
 }
 
 
@@ -147,7 +155,7 @@ sub send_hsup
 sub send_binf
 {
 	my $self = shift;
-	$self->send("BINF " . $self->{sid} . " ID" . $self->{cid} . " PD" . $self->{pid} . " NI" . &adc::escape($self->{nick}). " VE" . &adc::escape($self->{ua}) . " SS0 SF0\n");
+	$self->send("BINF " . $self->{sid} . " ID" . $self->{cid} . " PD" . $self->{pid} . " NI" . &adc::escape($self->{nick}). " VE" . &adc::escape($self->{ua}) . " SS0 SF0 I4" . $self->{i4} . "\n");
 }
 
 
