@@ -40,4 +40,7 @@ ifeq ($(DEBUG), YES)
 	CXXFLAGS += -DDEBUG
 endif
 
+
+CXXFLAGS += -DSSL_SUPPORT
+
 include $(BUILDDIR)/Makefile.rules
