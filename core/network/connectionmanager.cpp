@@ -44,7 +44,7 @@ void QuickDC::ConnectionManager::remove(Connection* conn) {
 		if (*it == conn) {
 			connections.erase(it);
 			conn->setManager(0);
-			postMessage(Samurai::MsgConnectionDropped, conn, 0, 0);
+			Samurai::postMessage(QuickDC::MsgConnectionDropped, conn, 0, 0);
 			return;
 		}
 	}
@@ -71,10 +71,10 @@ QuickDC::Connection* QuickDC::ConnectionManager::next() {
 }
 
 bool QuickDC::ConnectionManager::EventMessage(const Samurai::Message* msg) {
-	if (msg->id == Samurai::MsgConnectionDropped)
+	if (msg->getID() == QuickDC::MsgConnectionDropped)
 	{
 		QDBG("EventMessage: MsgConnectionDropped");
-		Connection* conn = (Connection*) msg->data;
+		Connection* conn = (Connection*) msg->getData();
 		delete conn;
 		return true;
 	}

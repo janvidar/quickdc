@@ -305,16 +305,18 @@ void ADC::Hub::onWelcome(ADC::HubUser* user) {
 }
 
 void ADC::Hub::onQuit(ADC::HubUser* user, const char* msg) {
-	if (processing) {
+	if (processing)
+	{
 		if (user->state == State_Normal) {
-			postMessage(Samurai::MsgHubUserDelayedQuit, user, (size_t) (char*) msg, 0);
+			Samurai::postMessage(QuickDC::MsgHubUserDelayedQuit, user, (size_t) (char*) msg, 0);
 			user->state = State_WaitDisconnect;
 		}
 		return;
 	}
 	
-	if (user->locked) {
-			postMessage(Samurai::MsgHubUserDelayedQuit, user, (size_t) (char*) msg, 0);
+	if (user->locked)
+	{
+			Samurai::postMessage(QuickDC::MsgHubUserDelayedQuit, user, (size_t) (char*) msg, 0);
 			user->state = State_WaitDisconnect;
 			return;
 	}
@@ -496,7 +498,7 @@ ADC::HubUser* ADC::Hub::lookupUserCID(const char* cid) {
 
 void ADC::Hub::userAdd(HubUser* user) {
 	if (processing) {
-		postMessage(Samurai::MsgHubUserAppendUser, user, 0, 0);
+		Samurai::postMessage(QuickDC::MsgHubUserAppendUser, user, 0, 0);
 		return;
 	}
 
@@ -507,7 +509,7 @@ void ADC::Hub::userAdd(HubUser* user) {
 
 void ADC::Hub::userRemove(HubUser* user) {
 	if (processing) {
-		postMessage(Samurai::MsgHubUserRemoveUser, user, 0, 0);
+		Samurai::postMessage(QuickDC::MsgHubUserRemoveUser, user, 0, 0);
 		return;
 	}
 
@@ -540,20 +542,23 @@ void ADC::Hub::EventTimeout(Samurai::Timer*) { }
 
 bool ADC::Hub::EventMessage(const Samurai::Message* msg) {
 	if (!processing) {
-		if (msg->id == Samurai::MsgHubUserRemoveUser) {
-			ADC::HubUser* user = (ADC::HubUser*) msg->data;
+		if (msg->getID() == QuickDC::MsgHubUserRemoveUser)
+		{
+			ADC::HubUser* user = (ADC::HubUser*) msg->getData();
 			userRemove(user);
 			return true;
 		}
 		
-		if (msg->id == Samurai::MsgHubUserAppendUser) {
-			ADC::HubUser* user = (ADC::HubUser*) msg->data;
+		if (msg->getID() == QuickDC::MsgHubUserAppendUser)
+		{
+ 			ADC::HubUser* user = (ADC::HubUser*) msg->getData();
 			userAdd(user);
 			return true;
 		}
 		
-		if (msg->id == Samurai::MsgHubUserDelayedQuit) {
-			ADC::HubUser* user = (ADC::HubUser*) msg->data;
+		if (msg->getID() == QuickDC::MsgHubUserDelayedQuit)
+		{
+			ADC::HubUser* user = (ADC::HubUser*) msg->getData();
 			const char* msg = "Delayed quit"; // FIXME: Retrieve this from msg.
 			onQuit(user, msg);
 			return true;

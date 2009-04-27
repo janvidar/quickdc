@@ -83,8 +83,10 @@ size_t QuickDC::TransferManager::countUploads() {
 
 }
 
-bool QuickDC::TransferManager::EventMessage(const Samurai::Message* msg) {
-	if (msg->id == Samurai::MsgTransferStopped) {
+bool QuickDC::TransferManager::EventMessage(const Samurai::Message* msg)
+{
+	if (msg->getID() == QuickDC::MsgTransferStopped)
+	{
 		process();
 		return true;
 	}

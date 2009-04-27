@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2001-2006 Jan Vidar Krey, janvidar@extatic.org
+ * Copyright (C) 2001-2009 Jan Vidar Krey, janvidar@extatic.org
  * See the file "COPYING" for licensing details.
  */
 
@@ -76,8 +76,9 @@ ADC::HubConnection::HubConnection(Samurai::IO::Net::Socket* socket_) {
 	last_act = new Samurai::TimeStamp();
 }
 
-ADC::HubConnection::~HubConnection() {
-	postMessage(Samurai::MsgSocketMonitorDelete, socket, 0, 0);
+ADC::HubConnection::~HubConnection()
+{
+	Samurai::postMessage(QuickDC::MsgSocketMonitorDelete, socket, 0, 0);
 	socket->setEventHandler(0);
 }
 
