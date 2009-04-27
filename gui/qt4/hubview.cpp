@@ -170,6 +170,13 @@ void Chrome::Qt4::HubView::EventNetStatus(enum StatusNetwork netstate)
 	}
 }
 
+void Chrome::Qt4::HubView::EventSystemError(const char* msg)
+{
+	QString message("Error: ");
+	message += msg;
+	setStatusMessage(message, true);
+}
+
 
 void Chrome::Qt4::HubView::EventChat(const QuickDC::User* user, const char* message, bool)
 {

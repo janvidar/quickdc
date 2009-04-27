@@ -38,6 +38,7 @@ class HubView :
 	public:
 		void EventNetStatus(enum StatusNetwork netstate);
 		void EventHubStatus(enum StatusHub hubstate);
+		void EventSystemError(const char* msg);
 		void EventChat(const QuickDC::User* user, const char* message, bool);
 		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action);
 		void EventHubMessage(const char* user, const char* message);
@@ -51,6 +52,7 @@ class HubView :
 		void EventHubAutenticate();
 		bool EventClientConnect(const char* addr, uint16_t port, const QuickDC::User* u);
 		bool EventClientConnect(const QuickDC::User* u);
+		
 		
 	protected slots:
 		void slotSendMessage(const QString& msg);
