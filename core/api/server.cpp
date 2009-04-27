@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2001-2006 Jan Vidar Krey, janvidar@extatic.org
+ * Copyright (C) 2001-2009 Jan Vidar Krey, janvidar@extatic.org
  * See the file "COPYING" for licensing details.
  */
 
@@ -23,9 +23,8 @@
 
 QuickDC::Core* quickdc_core;
 
-namespace QuickDC {
-
-DCServer::DCServer() {
+QuickDC::DCServer::DCServer()
+{
 	Preferences* config = Core::getInstance()->config;
 	config->setGroup("Network");
 
@@ -40,27 +39,32 @@ DCServer::DCServer() {
 	socket = new Samurai::IO::Net::ServerSocket(this, bindAddr);
 	dgram  = new Samurai::IO::Net::DatagramSocket(this, bindAddr);
 	
-	if (!socket->listen()) {
+	if (!socket->listen())
+	{
 		QDBG("Error: could not bind to port for TCP service. Disabling service");
 		delete socket; socket = 0;
 	}
 	       
-	if (!dgram->listen()) {
+	if (!dgram->listen())
+	{
 		QDBG("Error: could not bind to port for UDP service. Disabling service");
 		delete dgram; dgram = 0;
 	}
 }
 
-DCServer::~DCServer() {
+QuickDC::DCServer::~DCServer()
+{
 	delete dgram; dgram = 0;
 	delete socket; socket = 0;
 }
 
-void DCServer::EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char* msg) {
+void QuickDC::DCServer::EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char* msg)
+{
 	QERR("Socket accept error: %s", msg);
 }
 
-void DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, Samurai::IO::Net::Socket* socket) {
+void QuickDC::DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, Samurai::IO::Net::Socket* socket)
+{
 #ifdef DATADUMP
 	QDBG("Socket accepted: %s", socket->getAddress());
 #endif
@@ -69,20 +73,22 @@ void DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, Samurai:
 	socket->setNonBlocking(true);
 }
 
-void DCServer::EventGotDatagram(Samurai::IO::Net::DatagramSocket* sock, Samurai::IO::Net::DatagramPacket* packet) {
+void QuickDC::DCServer::EventGotDatagram(Samurai::IO::Net::DatagramSocket* sock, Samurai::IO::Net::DatagramPacket* packet)
+{
 	ProtocolProbe::probeDatagram(sock, packet);
 }
 
-void DCServer::EventDatagramError(const Samurai::IO::Net::DatagramSocket*, const char* msg) {
+void QuickDC::DCServer::EventDatagramError(const Samurai::IO::Net::DatagramSocket*, const char* msg)
+{
 	QERR("Datgram/UDP error: %s", msg);
 }
 
-void DCServer::send(Samurai::IO::Net::DatagramPacket* packet) {
+void QuickDC::DCServer::send(Samurai::IO::Net::DatagramPacket* packet)
+{
 	// NOTE: Might not be initialized if socket was busy
-	if (dgram) {
+	if (dgram)
+	{
 		dgram->send(packet);
 	}
 }
 
-
-} // namespace QuickDC

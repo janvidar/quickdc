@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2001-2008 Jan Vidar Krey, janvidar@extatic.org
+ * Copyright (C) 2001-2009 Jan Vidar Krey, janvidar@extatic.org
  * See the file "COPYING" for licensing details.
  */
 
@@ -69,7 +69,8 @@ QuickDC::Core::Core()
 }
 
 
-QuickDC::Core::~Core() {
+QuickDC::Core::~Core()
+{
 	quickdc_core = 0;
 	delete timers; timers = 0;
 	delete transfers; transfers = 0;
@@ -87,19 +88,18 @@ QuickDC::Core::~Core() {
 }
 
 
-void QuickDC::Core::run() {
+void QuickDC::Core::run()
+{
 	// Poll sockets
 	// FIXME: Wait for sigio, it's no point actually waiting!
 	monitor->wait(0);
 	
-	// Make sure hashing is continued
+	// Make sure hashing is continued - we should post messages instead.
 	hash->process();
 	
 	// Process timers.
-	// FIXME: it should be sorted so we don't have to iterate ALL timers to
-    // before exit.
+	// FIXME: it should be sorted so we don't have to iterate ALL timers to before exit.
 	timers->process();
-	
 	messageHandler->process();
 }
 

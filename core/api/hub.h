@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2001-2007 Jan Vidar Krey, janvidar@extatic.org
+ * Copyright (C) 2001-2009 Jan Vidar Krey, janvidar@extatic.org
  * See the file "COPYING" for licensing details.
  */
 
@@ -48,11 +48,13 @@ class UserManager;
 
 
 
-class HubListener {
+class HubListener
+{
 	public:
 		virtual ~HubListener() {}
 		
-		enum StatusNetwork {
+		enum StatusNetwork
+		{
 			NetInvalid,
 			NetLookup,
 			NetConnecting,
@@ -67,7 +69,8 @@ class HubListener {
 			NetTlsError
 		};
 		
-		enum StatusHub {
+		enum StatusHub
+		{
 			HubNone,
 			HubLogin,
 			HubPassword,
@@ -85,7 +88,8 @@ class HubListener {
 			HubRedirected,
 		};
 
-		enum ChatType {
+		enum ChatType
+		{
 			ChatPublic,
 			ChatPrivate,
 			ChatMessageIsBotGenerated,
@@ -106,6 +110,11 @@ class HubListener {
 	 */
 	virtual void EventHubStatus(enum StatusHub hubstate) = 0;
 
+	/**
+	 * Notify a system error
+	 */
+	virtual void EventSystemError(const char* msg) = 0;
+	
 	/**
 	 * 'user' sent a public message to everybody on the hub.
 	 *
@@ -207,7 +216,8 @@ class HubListener {
 	virtual bool EventClientConnect(const User* user) = 0;
 };
 
-class DCServerListener {
+class DCServerListener
+{
 	public:
 		virtual ~DCServerListener() {}
 		virtual bool EventGotConnection(const char* address, uint16_t port) = 0;
@@ -216,7 +226,9 @@ class DCServerListener {
 /**
  * Subclass this to receive hub state information.
  */
-class Hub : public Samurai::TimerListener {
+class Hub
+	: public Samurai::TimerListener
+{
 
 	public:
 		Hub(HubListener*, Samurai::IO::Net::URL* url);
@@ -254,8 +266,6 @@ class Hub : public Samurai::TimerListener {
 	friend class HubSession;
 	friend class DC::ClientSession;
 	friend class DC::HubSession;
-
-
 };
 
 }
