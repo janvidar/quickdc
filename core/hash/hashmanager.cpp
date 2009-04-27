@@ -46,13 +46,16 @@ size_t QuickDC::Hash::getHashSize(enum HashType type)
 }
 
 
-QuickDC::Hash::Manager::Manager() : /*file(0), */current(0), dirty(false)
+QuickDC::Hash::Manager::Manager()
+	: current(0)
+	, dirty(false)
 {
 	loadCache();
 }
 
 
-QuickDC::Hash::Manager::~Manager() {
+QuickDC::Hash::Manager::~Manager()
+{
 	saveCache();
 	
 	while (!cache.empty())
@@ -122,6 +125,7 @@ void QuickDC::Hash::Manager::addJob(const Samurai::IO::File& jobfile, QuickDC::H
 	
 	QuickDC::Hash::Job* job = new QuickDC::Hash::Job(this, QuickDC::Hash::HashTigerTree, listener, jobfile);
 	jobs.push_back(job);
+	scheduleWork();
 	listener->EventFileQueued(job);
 }
 
@@ -248,3 +252,22 @@ void QuickDC::Hash::Manager::saveCache()
 	}
 }
 
+#define MSG_HASH_MANAGER_PROCESS 991299
+
+void QuickDC::Hash::Manager::scheduleWork()
+{
+	postMessage(MSG_HASH_MANAGER_PROCESS, this, 0, 0);
+}
+
+bool QuickDC::Hash::Manager::EventMessage(const Samurai::Message* msg)
+{
+	if (msg->getID() == MSG_HASH_MANAGER_PROCESS)
+	{
+		if (process())
+		{
+			scheduleWork();
+		}
+		return true;
+	}
+	return false;
+}

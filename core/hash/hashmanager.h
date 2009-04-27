@@ -51,7 +51,9 @@ size_t getHashSize(enum HashType type);
  * the file will be added to the work queue for hashing.
  *
  */
-class Manager {
+class Manager
+	: Samurai::MessageListener
+{
 	public:
 		Manager();
 		virtual ~Manager();
@@ -94,6 +96,9 @@ class Manager {
 	protected:
 		void loadCache();
 		void saveCache();
+		
+		bool EventMessage(const Samurai::Message*);
+		void scheduleWork();
 
 	protected:
 		std::vector<QuickDC::Hash::Job*> jobs;
