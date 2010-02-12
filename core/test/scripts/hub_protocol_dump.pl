@@ -41,6 +41,7 @@ while ($state ne "exit" && defined($line = $adchub->recv()))
 		$adchub->parse_sid($line);
 		$state = "BINF";
 		$adchub->send_binf();
+		$adchub->send("\n\n");
 		$state = "IINF";
 		next;
 	}

@@ -22,7 +22,8 @@ sub new {
 		nick     => "",
 		server   => undef,
 		ua       => "Perl ADC Compliance Tester/0.3",
-		i4       => "0.0.0.0"
+		i4       => "0.0.0.0",
+		debug    => 0
 	};
 
 	print "Adchub at " . $self->{host} . ":" . $self->{port} . "\n";
@@ -98,7 +99,7 @@ sub send
 {
 	my $self = shift;
 	my ($line) = @_;
-	print "send: $line";
+	print "send: $line" if ($self->{debug});
 	$self->{server}->send($line);
 }
 
@@ -149,13 +150,19 @@ sub parse_sta
 sub send_hsup
 {
 	my $self = shift;
-	$self->send("HSUP ADBASE ADBAS0\n");
+	$self->send("HSUP ADBASE ADPING ADTIGR\n");
 }
 
 sub send_binf
 {
 	my $self = shift;
-	$self->send("BINF " . $self->{sid} . " ID" . $self->{cid} . " PD" . $self->{pid} . " NI" . &adc::escape($self->{nick}). " VE" . &adc::escape($self->{ua}) . " SS0 SF0 I4" . $self->{i4} . "\n");
+	$self->send("BINF " . $self->{sid} . " ID" . $self->{cid} . " PD" . $self->{pid} . " NI" . &adc::escape($self->{nick}). " VE" . &adc::escape($self->{ua}) . " SS0 SF0 HN1 HR1 HO0 I4" . $self->{i4} . "\n");
 }
 
+sub send_self_message
+{
+	my $self = shift;
+	my ($msg) = @_;
+	$self->send("DMSG " . $self->{sid} . " " . $self->{sid} . " " . &adc::escape($msg) . "\n");
+}
 

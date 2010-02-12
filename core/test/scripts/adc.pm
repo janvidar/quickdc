@@ -117,7 +117,7 @@ sub get_status_message
 		$code -= 100;
 	}
 	
-	if ($code ==  0) { $message = "generic error"; $use_srv_msg = 1; }
+	if ($code ==  0) { $message = "generic message"; $use_srv_msg = 1; }
 	if ($code == 10) { $message = "generic hub error"; $use_srv_msg = 1; }
 	if ($code == 11) { $message = "hub is full"; }
 	if ($code == 12) { $message = "hub is disabled"; }
