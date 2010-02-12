@@ -35,15 +35,15 @@ bool DC::ConnectToMe::invoke(const char* data, size_t) {
 	char* sendernick = 0;
 	
 	// isolate senderip:port from last space
-	char* req = strrchr(data, ' ');
+	const char* req = strrchr(data, ' ');
 	if (!req) return false;
 	
 	// detect address:port.
-	char* port_split = strchr(&req[1], ':');
+	const char* port_split = strchr(&req[1], ':');
 	if (!port_split) return false;
 	
 	// detect if one or two nicks are present
-	char* usplit = strchr(&data[13], ' ');
+	const char* usplit = strchr(&data[13], ' ');
 	if (usplit != req) {
 		sendernick = strndup(&data[13], &usplit[0]-&data[13]);
 		remotenick = strndup(&usplit[1], &req[0]-&usplit[1]);
@@ -227,7 +227,7 @@ bool DC::MyINFO::invoke(const char* data_, size_t) {
 	char* split = 0;
 
 	const char* nickname = 0;
-	const char* description = 0;
+	char* description = 0;
 	const char* email = 0;
 	const char* sharesize = 0;
 	DC::Tag* tag = 0;
@@ -391,7 +391,7 @@ bool DC::OpList::invoke(const char* data, size_t length) {
 bool DC::PublicChat::invoke(const char* data, size_t length) {
 	if (length < 4) return false;
 	
-	char* split = strstr(data, "> ");
+	const char* split = strstr(data, "> ");
 	if (!split) return false;
 
 	char* nick = strndup(&data[1], &split[0]-&data[1]);
@@ -416,7 +416,7 @@ bool DC::PublicChat::invoke(const char* data, size_t length) {
 bool DC::ActionChat::invoke(const char* data, size_t length) {
 	if (length < 5) return false;
 
-	char* split = strchr(&data[2], ' ');
+	const char* split = strchr(&data[2], ' ');
 	if (!split) return false;
 
 	char* nick = strndup(&data[2], &split[0]-&data[2]);
@@ -453,7 +453,7 @@ bool DC::Quit::invoke(const char* data, size_t length) {
 bool DC::Search::invoke(const char* data, size_t length) {
 	if (length < 20) return false;
 	
-	char* req = strchr(&data[8], ' ');
+	const char* req = strchr(&data[8], ' ');
 	if (!req) return false;
 
 	if (&req[0] - &data[8] < 5) return false;
@@ -475,7 +475,7 @@ bool DC::Search::invoke(const char* data, size_t length) {
 	}
 
 	// split the search type from size given
-	char* typeoffset = strchr(&req[6], '?');
+	const char* typeoffset = strchr(&req[6], '?');
 	if (!typeoffset) return false;
 
 	int type = 0;
@@ -571,10 +571,10 @@ bool DC::To::invoke(const char* data, size_t length) {
 	const char* msgdata = 0;
 
 	// split 'to' and 'from'
-	char* split1 = strstr(&data[5], " From: ");
+	const char* split1 = strstr(&data[5], " From: ");
 	if (!split1) return false;
 
-	char* split2 = strstr(&split1[6], " $");
+	const char* split2 = strstr(&split1[6], " $");
 	if (!split2) return false;
 	
 	char* to = strndup(&data[5], &split1[0]-&data[5]);

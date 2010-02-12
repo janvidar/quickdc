@@ -12,7 +12,7 @@ Http::Header::Header(const char* line) {
 	name = 0;
 	value = 0;
 	if (line && strlen(line)) {
-		char* split = strchr(line, ':');
+		const char* split = strchr(line, ':');
 		if (split && strlen(split) > 1) {
 			name = strndup(line, &split[0]-&line[0]);
 			
