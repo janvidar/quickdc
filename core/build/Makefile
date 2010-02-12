@@ -5,7 +5,8 @@
 ##
  #
 
-BUILDDIR ?= $(CURDIR:%/src/core/build/=%)
+BUILDDIR ?= .
+#BUILDDIR ?= $(CURDIR:%/src/core/build/=%)
 COREDIR  ?= $(BUILDDIR)/../
 
 include Makefile.common
