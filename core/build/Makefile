@@ -1,12 +1,11 @@
  #
 ##
 ## Makefile for QuickDC core library
-## Copyright (c) 2001-2007, Jan Vidar Krey
+## Copyright (c) 2001-2010, Jan Vidar Krey
 ##
  #
 
 BUILDDIR ?= .
-#BUILDDIR ?= $(CURDIR:%/src/core/build/=%)
 COREDIR  ?= $(BUILDDIR)/../
 
 include Makefile.common
@@ -30,21 +29,15 @@ $(libquickdc_ARCHIVE): $(libquickdc_OBJECTS)
 ### Include dir
 CXXFLAGS += -I$(COREDIR) -I$(SAMURAI_INC)
 
-
-TARBALL=quickdc-svn-$(shell date +%Y%m%d)
-
-# this only works on unix
-tarball:
-	@svn -q export $(COREDIR) $(TARBALL)
-	@tar czf $(TARBALL).tar.gz $(TARBALL)
-	@rm -rf $(TARBALL)
-
+.PHONY: clean
 clean:
 	@$(RM) $(libquickdc_OBJECTS)
 	@$(RM) $(ALL)
 	@$(RM) $(TESTS)
+	@$(RM) $(libquickdc_ARCHIVE)
 
-autotest: $(libquickdc_ARCHIVE) all
+.PHONY: autotest
+autotest: $(libquickdc_ARCHIVE)
 	@$(MAKE) clean all -C $(COREDIR)/test/autotests
 	@gdb -x $(COREDIR)/test/autotests/autotest.gdb --args $(COREDIR)/test/autotests/autotest -s -f
 

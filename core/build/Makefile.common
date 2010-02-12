@@ -1,16 +1,16 @@
  #
 ##
 ## Makefile for QuickDC core library
-## Copyright (c) 2001-2007, Jan Vidar Krey
+## Copyright (c) 2001-2010, Jan Vidar Krey
 ##
  #
 
 PRODUCT  := QuickDC
-VERSION  := 0.4.18
+VERSION  := 0.4.19
 
 SYSTEM	 ?= $(shell uname -s)
 ARCH     ?= $(shell uname -m)
-BUILD    ?= $(shell svn info | grep Revision | tr -d [:alpha:][:punct:][:space:] )
+BUILD    ?= $(shell git describe 2>/dev/null )
 
 include $(BUILDDIR)/Makefile.system
 
