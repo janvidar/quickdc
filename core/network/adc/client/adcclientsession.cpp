@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2001-2008 Jan Vidar Krey, janvidar@extatic.org
+ * Copyright (C) 2001-2010 Jan Vidar Krey, janvidar@extatic.org
  * See the file "COPYING" for licensing details.
  */
 
@@ -127,6 +127,7 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 		QDBG("Authorized for upload: %s", upload_approved ? "yes" : "no");
 	} else if (remote_token) {
 		QDBG("FIXME: We have a remote token. So lets lookup what to do about it");
+		upload_approved = true;
 	} else {
 		QDBG("FIXME: nobody wants to do anything! - Close connection");
 	}

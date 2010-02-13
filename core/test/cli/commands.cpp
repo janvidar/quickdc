@@ -224,7 +224,7 @@ void parseCommand(const char* cmd, size_t size) {
 		hub->disconnect();
 	} else if (MATCH("version")) {
 		cmd_output(	"%s\n"
-					"    Copyright (C) 2001-2007 Jan Vidar Krey, janvidar@extatic.org\n"
+					"    Copyright (C) 2001-2010 Jan Vidar Krey, janvidar@extatic.org\n"
 					"    This is free software with ABSOLUTELY NO WARRANTY.\n\n", core->getVersion());
 			
 	} else if (MATCH("help")) {
@@ -237,7 +237,7 @@ void parseCommand(const char* cmd, size_t size) {
 		*/
 		
 	} else if (MATCH("msg ")) {
-		char* split = strchr(&cmd[6], ' ');
+		const char* split = strchr(&cmd[6], ' ');
 		if (split) {
 			char* nick = strndup(&cmd[5], &split[0]-&cmd[5]);
 			const QuickDC::User* user = hub->getUserManager()->getUserByNick(nick);
