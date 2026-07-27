@@ -107,6 +107,7 @@ void ADC::ClientSession::initialize()
 	chunk_length      = 0;
 	upload_approved   = false;
 	download_approved = false;
+	fetchingLeaves    = false;
 	state             = StateNone;
 }
 
@@ -277,6 +278,27 @@ void ADC::ClientSession::requestNextChunk()
 		return;
 	}
 
+	/*
+	 * Leaves first: they are what makes each chunk verifiable on its own, and
+	 * they are only a few hundred bytes. Going without is not fatal, so a peer
+	 * that refuses is not held against the download.
+	 */
+	if (!qfile->getLeaves() && !qfile->loadLeavesFromDisk())
+	{
+		QDBG("Asking for the leaf hashes of '%s'", qfile->getTTH());
+		fetchingLeaves = true;
+
+		ADC::Command* cmd = new ADC::Command(FOURCC('C','G','E','T'));
+		cmd->addArgument("tthl");
+		std::string name("TTH/");
+		name += qfile->getTTH();
+		cmd->addArgument(name.c_str());
+		cmd->addArgument("0");
+		cmd->addArgument("-1");
+		send(cmd);
+		return;
+	}
+
 	uint64_t offset = 0;
 	uint64_t length = 0;
 	if (!queue->reserveChunk(qfile, request->getSource(), offset, length))
@@ -398,6 +420,8 @@ void ADC::ClientSession::onTransferStopped()
 
 	/* Work out how it went before the transfer object goes away. */
 	bool complete = (transfer && transfer->isFinished());
+	bool wasFetchingLeaves = fetchingLeaves;
+	fetchingLeaves = false;
 	uint64_t offset = chunk_offset;
 	uint64_t length = (chunk_length > 0) ? (uint64_t) chunk_length : 0;
 
@@ -436,6 +460,33 @@ void ADC::ClientSession::onTransferStopped()
 		return;
 
 	QuickDC::QueueFile* qfile = request->getFile();
+
+	if (wasFetchingLeaves)
+	{
+		if (complete && qfile && !qfile->loadLeavesFromDisk())
+			QDBG("The leaf hashes for '%s' were no use", qfile->getTTH());
+
+		/* Either way, get on with the file itself. */
+		requestNextChunk();
+		return;
+	}
+
+	if (complete && length && !queue->verifyChunk(qfile, offset, length))
+	{
+		/*
+		 * The bytes are on disk but do not match the tree, so this source gave
+		 * us rubbish. Only this chunk is lost, which is the whole point of
+		 * having the leaves.
+		 */
+		QERR("The chunk at %d of '%s' failed verification; discarding it",
+			(int) offset, qfile ? qfile->getLocalFilename() : "");
+
+		queue->releaseChunk(qfile, offset, length);
+		request->clearReservation();
+		queue->onRequestFailed(token);
+		socket->disconnect();
+		return;
+	}
 
 	if (complete && length)
 	{
@@ -693,11 +744,34 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 
 	if (type == FOURCC('t','t','h','l'))
 	{
-		/*
-		 * Leaf hashes are not requested yet; with them a hash mismatch could be
-		 * pinned on a single chunk instead of costing the whole file.
-		 */
-		QDBG("Ignoring an unsolicited tthl response");
+		QuickDC::QueueFile* qfile = request->getFile();
+		if (!fetchingLeaves || !qfile)
+		{
+			QDBG("Ignoring an unsolicited tthl response");
+			return;
+		}
+
+		char* name = qfile->makeLeafFilename();
+		if (!name)
+		{
+			fetchingLeaves = false;
+			requestNextChunk();
+			return;
+		}
+
+		file = new Samurai::IO::File(name);
+		ownsFile = true;
+		free(name);
+
+		Samurai::IO::File(file->getName()).remove();
+
+		chunk_offset = 0;
+		chunk_length = length;
+
+		QuickDC::Download* download = new QuickDC::Download(xfrmgr, this, proxy->socket, file, 0, length);
+		transfer = download;
+		state = StateData;
+		proxy->handOverTo(download);
 		return;
 	}
 

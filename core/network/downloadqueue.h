@@ -69,6 +69,7 @@ namespace Share {
 namespace QuickDC {
 
 class FileSource;
+class LeafHashes;
 class QueueManager;
 class QueueVerifier;
 class QueueXMLReader;
@@ -174,6 +175,17 @@ class QueueFile {
 		uint64_t getDoneBytes() const;
 
 		/**
+		 * The tiger tree leaves, once a peer has given them to us.
+		 * Without them a chunk cannot be checked until the whole file is in.
+		 */
+		inline LeafHashes* getLeaves() { return leafHashes; }
+		bool loadLeaves(const char* data, size_t length);
+		bool loadLeavesFromDisk();
+
+		/** Where the leaves are cached between runs; caller frees. */
+		char* makeLeafFilename() const;
+
+		/**
 		 * Only files we are able to resume and re-source are written to disk:
 		 * that means a known TTH, a known size, and not already finished.
 		 *
@@ -194,6 +206,7 @@ class QueueFile {
 		std::set<FileSource*> active;       // sources with a transfer in flight
 		enum Priority priority;
 		ChunkMap chunks;
+		LeafHashes* leafHashes;
 
 		friend class QueueManager;
 		friend class QueueXMLReader;
@@ -400,6 +413,12 @@ class QueueManager {
 
 		/** The chunk arrived intact. */
 		void commitChunk(QueueFile* file, uint64_t offset, uint64_t length);
+
+		/**
+		 * Check a freshly written chunk against the leaf hashes.
+		 * @return true if it matches, or if we have no leaves to check against.
+		 */
+		bool verifyChunk(QueueFile* file, uint64_t offset, uint64_t length);
 
 		/** The chunk did not arrive; let someone else have another go. */
 		void releaseChunk(QueueFile* file, uint64_t offset, uint64_t length);

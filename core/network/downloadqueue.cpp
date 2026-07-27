@@ -6,6 +6,7 @@
 #include "quickdc.h"
 #include "network/downloadqueue.h"
 #include "network/filesource.h"
+#include "network/leafhashes.h"
 #include "network/hubmanager.h"
 #include "api/core.h"
 #include "api/hub.h"
@@ -42,6 +43,7 @@ QuickDC::QueueFile::QueueFile(const char* filename_, const char* tth_, uint64_t 
 	, size(size_)
 	, priority(PrioNormal)
 	, chunks(size_)
+	, leafHashes(0)
 {
 	filename = strdup(filename_ ? filename_ : "");
 
@@ -65,6 +67,57 @@ QuickDC::QueueFile::~QueueFile()
 	free(filename);
 	free(tempname);
 	free(tth);
+	delete leafHashes;
+}
+
+char* QuickDC::QueueFile::makeLeafFilename() const
+{
+	return LeafHashes::makeFilename(tempname);
+}
+
+bool QuickDC::QueueFile::loadLeaves(const char* data, size_t length)
+{
+	if (!tth || !size) return false;
+
+	LeafHashes* fresh = new LeafHashes();
+	if (!fresh->load(tth, size, data, length))
+	{
+		delete fresh;
+		return false;
+	}
+
+	delete leafHashes;
+	leafHashes = fresh;
+
+	/* Keep them, so a restart does not have to ask a peer again. */
+	char* name = makeLeafFilename();
+	if (name)
+	{
+		leafHashes->save(name);
+		free(name);
+	}
+	return true;
+}
+
+bool QuickDC::QueueFile::loadLeavesFromDisk()
+{
+	if (leafHashes || !tth || !size) return false;
+
+	char* name = makeLeafFilename();
+	if (!name) return false;
+
+	LeafHashes* fresh = new LeafHashes();
+	bool ok = fresh->load(name, tth, size);
+	free(name);
+
+	if (!ok)
+	{
+		delete fresh;
+		return false;
+	}
+
+	leafHashes = fresh;
+	return true;
 }
 
 const char* QuickDC::QueueFile::convertPriority(enum Priority prio)
@@ -694,6 +747,14 @@ void QuickDC::QueueManager::remove(QueueFile* file)
 
 	clearRequestsFor(file);
 
+	/* The leaves were only ever a means to an end. */
+	char* leafname = file->makeLeafFilename();
+	if (leafname)
+	{
+		Samurai::IO::File(leafname).remove();
+		free(leafname);
+	}
+
 	for (std::vector<QueueFile*>::iterator it = files.begin(); it != files.end(); it++)
 	{
 		if (*it == file)
@@ -810,10 +871,43 @@ bool QuickDC::QueueManager::reserveChunk(QueueFile* file, FileSource* source, ui
 	/* Without a known size there is nothing to divide into chunks yet. */
 	if (!file->getSize()) return false;
 
-	if (!file->getChunks().reserve(getChunkSize(), offset, length)) return false;
+	uint64_t want = getChunkSize();
+
+	/* Round to whole leaves, so each chunk can be checked on its own. */
+	LeafHashes* leaves = file->getLeaves();
+	if (leaves && leaves->isLoaded())
+	{
+		uint64_t leaf = leaves->getLeafSize();
+		if (leaf)
+		{
+			want = (want / leaf) * leaf;
+			if (!want) want = leaf;
+		}
+	}
+
+	if (!file->getChunks().reserve(want, offset, length)) return false;
 
 	if (source) file->setSourceActive(source, true);
 	return true;
+}
+
+bool QuickDC::QueueManager::verifyChunk(QueueFile* file, uint64_t offset, uint64_t length)
+{
+	if (!file) return true;
+
+	LeafHashes* leaves = file->getLeaves();
+	if (!leaves || !leaves->isLoaded()) return true;   /* nothing to check against */
+
+	Samurai::IO::File part(file->getTempFilename());
+	if (!part.open(Samurai::IO::File::Read))
+	{
+		QERR("Unable to open '%s' to verify it", file->getTempFilename());
+		return false;
+	}
+
+	bool ok = leaves->verify(part, offset, length);
+	part.close();
+	return ok;
 }
 
 void QuickDC::QueueManager::commitChunk(QueueFile* file, uint64_t offset, uint64_t length)

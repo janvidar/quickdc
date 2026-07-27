@@ -98,6 +98,9 @@ class ClientSession :
 		 */
 		void requestNextChunk();
 
+		/** True while the current transfer is leaf hashes rather than file data. */
+		bool fetchingLeaves;
+
 		void addSupport(const char* features);
 		bool supports(const char* feature);
 
