@@ -21,12 +21,13 @@ add_executable(testfile  file.cpp)
 add_executable(testshare share.cpp)
 add_executable(testlock  lock.cpp)
 add_executable(hublist   hublist.cpp)
+add_executable(testzupload zupload.cpp)
 
 # testdebug needs console.cpp for its output helpers.
 add_executable(testdebug debug.cpp cli/console.cpp)
 
 set(QUICKDC_TEST_APPS
-    quickdc_cli testfile testshare testlock hublist testdebug)
+    quickdc_cli testfile testshare testlock hublist testdebug testzupload)
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
     # quickdc pulls in samurai (and thus OpenSSL, zlib, bzip2 and pthread)
@@ -42,5 +43,8 @@ foreach(app IN LISTS QUICKDC_TEST_APPS)
         target_compile_options(${app} PRIVATE -Wall -Wextra)
     endif()
 endforeach()
+
+# Unlike its neighbours this one is self-contained, so it does get to run.
+add_test(NAME zupload COMMAND testzupload)
 
 add_subdirectory(autotests)
