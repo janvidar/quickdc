@@ -11,6 +11,7 @@
 #include "network/dc/hubcommands.h"
 #include "network/user.h"
 #include "network/usermanager.h"
+#include "network/securitymanager.h"
 
 #define QUEUE_TEST_TTH_A "MWXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A"
 #define QUEUE_TEST_TTH_B "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -1103,6 +1104,113 @@ EXO_TEST(usermanager_lookup_by_client_id, {
 
 	/* The nick lookup still works, which is the NMDC path. */
 	return users.getUserByNick("alice") == first;
+});
+
+/* ------------------------------------------------------------------------- *
+ * Remote input handling
+ *
+ * Every string on a User arrives from a hub or a peer, so none of the lengths
+ * are ours to assume.
+ * ------------------------------------------------------------------------- */
+
+EXO_TEST(user_long_strings_stay_terminated, {
+	QuickDC::User u("AAAA");
+
+	/* 'nick' is 64 bytes; anything at least that long used to be stored with
+	   no terminator at all. */
+	std::string huge(200, 'n');
+	u.setNick(huge.c_str());
+
+	const char* nick = u.getNick();
+	if (!nick) return false;
+	if (strlen(nick) != 63) return false;
+	for (size_t n = 0; n < 63; n++)
+		if (nick[n] != 'n') return false;
+
+	/* 'speed' is only 16 bytes, so it is the easiest one to overrun. */
+	u.setSpeed(std::string(64, 's').c_str());
+	if (strlen(u.getSpeed()) != 15) return false;
+
+	u.setDescription(std::string(1000, 'd').c_str());
+	if (strlen(u.getDescription()) != 255) return false;
+
+	u.setEmail(std::string(1000, 'e').c_str());
+	return strlen(u.getEmail()) == 127;
+});
+
+EXO_TEST(user_long_useragent_does_not_reach_clientid, {
+	/*
+	 * userAgent is declared immediately before clientID. While a full length
+	 * userAgent went in unterminated, reading the client ID ran on into it,
+	 * which is what the download queue resolves its sources by.
+	 */
+	QuickDC::User u("AAAA");
+	u.setClientID((uint8_t*) QUEUE_TEST_CID_A);
+
+	u.setUserAgent(std::string(64, 'V').c_str());
+	if (strlen(u.getUserAgent()) != 63) return false;
+
+	const char* cid = (const char*) u.getClientID();
+	if (!cid) return false;
+
+	/* The client ID has to be exactly what was set, and nothing more. */
+	return strcmp(cid, QUEUE_TEST_CID_A) == 0;
+});
+
+EXO_TEST(user_short_client_id_is_not_overread, {
+	/*
+	 * The copy used to take a fixed 40 bytes whatever the argument's length
+	 * was, reading past the end of anything shorter. The stored value must be
+	 * the string that was passed, terminated.
+	 */
+	QuickDC::User u("AAAA");
+
+	u.setClientID((uint8_t*) "SHORT");
+	if (strcmp((const char*) u.getClientID(), "SHORT")) return false;
+
+	/* A full length CID still round trips. */
+	u.setClientID((uint8_t*) QUEUE_TEST_CID_B);
+	if (strcmp((const char*) u.getClientID(), QUEUE_TEST_CID_B)) return false;
+
+	/* And a null clears it rather than crashing. */
+	u.setClientID(0);
+	if (*u.getClientID() != 0) return false;
+
+	u.setPrivateID((uint8_t*) "ALSOSHORT");
+	return strcmp((const char*) u.getPrivateID(), "ALSOSHORT") == 0;
+});
+
+EXO_TEST(securitymanager_revoke_by_session, {
+	/*
+	 * revoke(HubSession*) erased while iterating and then incremented the dead
+	 * iterator, so it ran off the vector as soon as it matched. The sessions
+	 * are only ever compared, never dereferenced, so opaque tags will do.
+	 */
+	QuickDC::SecurityManager security;
+
+	QuickDC::HubSession* doomed = (QuickDC::HubSession*) 0x1;
+	QuickDC::HubSession* keep = (QuickDC::HubSession*) 0x2;
+
+	/* Several consecutive entries for the same session is the case that broke. */
+	for (int n = 0; n < 4; n++)
+	{
+		security.grant(new QuickDC::Clearance(QuickDC::Clearance::AuthorizedUser,
+			QuickDC::Clearance::ADC, doomed, QUEUE_TEST_CID_A, "doomedtoken"));
+	}
+	security.grant(new QuickDC::Clearance(QuickDC::Clearance::AuthorizedUser,
+		QuickDC::Clearance::ADC, keep, QUEUE_TEST_CID_B, "keeptoken"));
+
+	/* Passing no socket keeps the loopback shortcut out of the way. */
+	if (!security.isAuthorized(QuickDC::Clearance::ADC, doomed, 0, QUEUE_TEST_CID_A, "doomedtoken"))
+		return false;
+
+	security.revoke(doomed);
+
+	/* Every entry for that session is gone, and the other one survived. */
+	if (security.isAuthorized(QuickDC::Clearance::ADC, doomed, 0, QUEUE_TEST_CID_A, "doomedtoken"))
+		return false;
+
+	return security.isAuthorized(QuickDC::Clearance::ADC, keep, 0, QUEUE_TEST_CID_B, "keeptoken");
 });
 
 EXO_TEST(queue_empty_saves_and_reloads, {

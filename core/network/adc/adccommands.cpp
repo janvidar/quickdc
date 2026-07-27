@@ -172,7 +172,15 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 				cmd->getArgument("EM", 2),
 				0);
 			changed = true;
-			u->setClientID((uint8_t*) cid);
+
+			/*
+			 * Unlike CCmdINF above, nothing has checked this one: a broadcast
+			 * INF can carry any ID it likes, or none at all. Storing a
+			 * malformed CID would leave us matching queue sources against
+			 * something that is not a client ID.
+			 */
+			if (ADC::CID::verify(cid))
+				u->setClientID((uint8_t*) cid);
 		}
 
 		uint64_t oldSize = u->getSharedBytes();

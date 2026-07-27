@@ -118,14 +118,22 @@ void QuickDC::SecurityManager::revoke(Clearance* authorization) {
 }
 
 void QuickDC::SecurityManager::revoke(QuickDC::HubSession* hubsession) {
-	if (!access_table.size()) return;
-
+	/*
+	 * erase() invalidates the iterator, so it cannot simply be incremented
+	 * afterwards - which is what this used to do, walking off the end of the
+	 * vector as soon as it matched anything. erase() hands back the next valid
+	 * position instead, and only the non-matching case advances.
+	 */
 	std::vector<Clearance*>::iterator it = access_table.begin();
-	for (; it != access_table.end(); it++) {
+	while (it != access_table.end()) {
 		QuickDC::Clearance* authorization = (*it);
+
 		if (authorization->hubsession == hubsession) {
-			access_table.erase(it);
+			it = access_table.erase(it);
 			delete authorization;
+		}
+		else {
+			it++;
 		}
 	}
 }
