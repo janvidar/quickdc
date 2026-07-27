@@ -124,7 +124,8 @@ class Manager {
 		
 	protected:	
 		std::vector<QuickDC::Share::Dir*> dirs;
-		std::vector< std::pair<const char*, QuickDC::Share::File*> > searchTable;
+		/* Owns the name; the callers pass one that does not outlive the call. */
+		std::vector< std::pair<std::string, QuickDC::Share::File*> > searchTable;
 		std::map<std::string, QuickDC::Share::File*> tthTable;
 
 		// The number of files and bytes shared.

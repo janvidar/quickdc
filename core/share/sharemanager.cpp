@@ -334,7 +334,7 @@ void QuickDC::Share::Manager::createFileList(Samurai::IO::Buffer* xmlout, QuickD
 }
 
 void QuickDC::Share::Manager::addLookupFile(const char* name, const char* tth, QuickDC::Share::File* ptr) {
-	searchTable.push_back( std::pair<const char*, QuickDC::Share::File*>(name, ptr) );
+	searchTable.push_back( std::pair<std::string, QuickDC::Share::File*>(std::string(name), ptr) );
 	tthTable.insert( std::pair<std::string, QuickDC::Share::File*>(std::string(tth), ptr) );
 }
 
@@ -373,8 +373,8 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 		if (!req->include.size()) return; /* Invalid search */
 	
 		for (size_t n = 0; n < searchTable.size(); n++) {
-			std::pair<const char*, QuickDC::Share::File*> current = searchTable[n];
-			const char* line = current.first;
+			std::pair<std::string, QuickDC::Share::File*>& current = searchTable[n];
+			const char* line = current.first.c_str();
 	
 			/* inclusive search */
 			for (size_t i = 0; i < req->include.size() && line; i++) {
