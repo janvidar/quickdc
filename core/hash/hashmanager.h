@@ -10,6 +10,11 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <deque>
+#include <atomic>
+#include <mutex>
+#include <thread>
+#include <condition_variable>
 
 #include <samurai/crypto/digest/hash.h>
 #include <samurai/crypto/digest/tigertree.h>
@@ -51,19 +56,30 @@ size_t getHashSize(enum HashType type);
  * the file will be added to the work queue for hashing.
  *
  */
+/**
+ * Hashing itself runs on a single worker thread: Job::runToCompletion() is
+ * pure CPU and file I/O, so keeping it off the main thread stops it from
+ * competing with the networking loop (and stops the loop from having to spin
+ * to keep hashing moving).
+ *
+ * The split is deliberately narrow. The worker only ever touches the job it
+ * has taken off 'pending'. Everything with side effects outside that job -
+ * the cache, the listener callbacks, the share file lists, the debug log -
+ * stays on the main thread, which picks finished jobs up from 'completed' in
+ * process().
+ */
 class Manager
-	: Samurai::MessageListener
 {
 	public:
 		Manager();
 		virtual ~Manager();
-		
+
 		/**
 		 * Add a cache job to the manager.
 		 */
 		void addJob(const Samurai::IO::File&, QuickDC::Hash::JobListener*);
 		void removeJob(const Samurai::IO::File&);
-		
+
 		/**
 		 * Returns true if more work remains, or false
 		 * if no more work needs to be done at the moment.
@@ -71,7 +87,9 @@ class Manager
 		bool isBusy() const;
 
 		/**
-		 * Process the hash jobs.
+		 * Announce whatever the worker thread has finished, and report
+		 * progress for the job it is on. Cheap to call: it does no hashing,
+		 * so the main loop can call it every iteration.
 		 *
 		 * Returns true if more work remains, or false
 		 * if no more work needs to be done at the moment.
@@ -96,15 +114,38 @@ class Manager
 	protected:
 		void loadCache();
 		void saveCache();
-		
-		bool EventMessage(const Samurai::Message*);
-		void scheduleWork();
+
+		/** The worker thread body. */
+		void workerLoop();
+
+		struct Completion {
+			QuickDC::Hash::Job* job;
+			bool ok;
+		};
 
 	protected:
-		std::vector<QuickDC::Hash::Job*> jobs;
+		/* Main thread only. */
 		std::map<std::string, QuickDC::Hash::CacheEntry*> cache;
-		QuickDC::Hash::Job* current;
 		bool dirty;
+
+		/* Latches the "all jobs complete" work so it fires on the edge rather
+		   than on every idle call. Starts true: an idle client that never
+		   queues anything has nothing to announce. */
+		bool idle_announced;
+
+		/* Shared with the worker thread, guarded by 'lock'. */
+		mutable std::mutex lock;
+		std::condition_variable wakeup;
+		std::deque<QuickDC::Hash::Job*> pending;
+		std::deque<Completion> completed;
+		QuickDC::Hash::Job* inflight;
+		bool stopping;
+
+		/* Written by the worker, read by the main thread for progress. */
+		std::atomic<uint64_t> progress_done;
+		std::atomic<uint64_t> progress_total;
+
+		std::thread worker;
 };
 
 }

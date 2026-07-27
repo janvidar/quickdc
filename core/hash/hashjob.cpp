@@ -19,7 +19,7 @@
 #include <samurai/crypto/digest/merkletree.h>
 
 
-QuickDC::Hash::Job::Job(QuickDC::Hash::Manager* mgr_, enum QuickDC::Hash::HashType type, QuickDC::Hash::JobListener* listener_, const Samurai::IO::File& file_) : buffer(0), file(file_), listener(listener_), mgr(mgr_), offset(0), hasher(0), algo(0), hashValue(0), algorithm(type)
+QuickDC::Hash::Job::Job(QuickDC::Hash::Manager* mgr_, enum QuickDC::Hash::HashType type, QuickDC::Hash::JobListener* listener_, const Samurai::IO::File& file_) : buffer(0), file(file_), listener(listener_), mgr(mgr_), offset(0), hasher(0), algo(0), hashValue(0), algorithm(type), error(0)
 {
 	switch (algorithm)
 	{
@@ -67,9 +67,11 @@ QuickDC::Hash::SimpleJob::~SimpleJob()
 {
 }
 
-ssize_t QuickDC::Hash::SimpleJob::process()
+bool QuickDC::Hash::SimpleJob::runToCompletion(std::atomic<uint64_t>& done, std::atomic<uint64_t>& total)
 {
-	return 0;
+	total.store(0);
+	done.store(0);
+	return true;
 }
 
 
@@ -82,50 +84,55 @@ QuickDC::Hash::Job::~Job()
 }
 
 #define DEFAULT_HASH_BUFFER_SIZE 1024*1024
-ssize_t QuickDC::Hash::Job::process(/*size_t chunk_size*/)
-{
-	const size_t chunk_size = DEFAULT_HASH_BUFFER_SIZE;	
 
-	if (!buffer)
+/**
+ * Runs on the hash worker thread - see the contract in hashjob.h. Everything
+ * touched here (file, buffer, hasher, hashValue, error) belongs to this job
+ * alone, and the two atomics are the only things the main thread reads while
+ * this is running.
+ */
+bool QuickDC::Hash::Job::runToCompletion(std::atomic<uint64_t>& done, std::atomic<uint64_t>& total)
+{
+	const size_t chunk_size = DEFAULT_HASH_BUFFER_SIZE;
+
+	error = 0;
+	done.store(0);
+	total.store(0);
+
+	if (!file.open(Samurai::IO::File::Read))
 	{
-		if (file.open(Samurai::IO::File::Read))
+		error = errno;
+		return false;
+	}
+
+	total.store((uint64_t) file.size());
+	buffer = new uint8_t[chunk_size];
+
+	for (;;)
+	{
+		ssize_t sz = file.read((char*) buffer, chunk_size);
+
+		if (sz > 0)
 		{
-			QDBG("QuickDC::Hash::Job::start(), file='%s'", file.getName().c_str());
-			listener->EventFileStarted(this);
-			buffer = new uint8_t[chunk_size];
+			hasher->update((uint8_t*) buffer, sz);
+			offset += sz;
+			done.store((uint64_t) offset);
+		}
+		else if (sz == 0)
+		{
+			hashValue = hasher->digest();
+			break;
 		}
 		else
 		{
-			return -1;
+			error = errno;
+			delete[] buffer; buffer = 0;
+			return false;
 		}
 	}
-	
-	ssize_t sz = file.read((char*) buffer, chunk_size);
-	
-	if (sz > 0)
-	{
-		hasher->update((uint8_t*) buffer, sz);
-		listener->EventFileHashProgress(this, offset + sz, file.size());
-	}
-	else if (sz == 0)
-	{
-		hashValue = hasher->digest();
-		
-		if (mgr)
-		{
-			QDBG("QuickDC::Hash::Job::process() - finished, file='%s'", file.getName().c_str());
-			QuickDC::Hash::CacheEntry* entry = QuickDC::Hash::CacheEntry::create(file, this);
-			mgr->addCache(file.getName().c_str(), entry);
-		}
-		listener->EventFileHashed(this);
-		delete[] buffer; buffer = 0;
-	}
-	else
-	{
-		QERR("HashJob::hash_chunk(): (%s) File reading failed. %d: %s.", file.getName().c_str(), errno, strerror(errno));
-		delete[] buffer; buffer = 0;
-	}
-	return sz;
+
+	delete[] buffer; buffer = 0;
+	return true;
 }
 
 const char* QuickDC::Hash::Job::getHashSum() const

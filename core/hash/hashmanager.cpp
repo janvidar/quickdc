@@ -47,17 +47,45 @@ size_t QuickDC::Hash::getHashSize(enum HashType type)
 
 
 QuickDC::Hash::Manager::Manager()
-	: current(0)
-	, dirty(false)
+	: dirty(false)
+	, idle_announced(true)
+	, inflight(0)
+	, stopping(false)
+	, progress_done(0)
+	, progress_total(0)
 {
 	loadCache();
+	worker = std::thread(&QuickDC::Hash::Manager::workerLoop, this);
 }
 
 
 QuickDC::Hash::Manager::~Manager()
 {
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		stopping = true;
+	}
+	wakeup.notify_all();
+	if (worker.joinable())
+		worker.join();
+
+	/* The worker is gone, so these need no locking any more. Jobs still in
+	   flight are dropped without notifying their listeners - by this point the
+	   share manager they point into is already being torn down. */
+	while (!pending.empty())
+	{
+		delete pending.front();
+		pending.pop_front();
+	}
+
+	while (!completed.empty())
+	{
+		delete completed.front().job;
+		completed.pop_front();
+	}
+
 	saveCache();
-	
+
 	while (!cache.empty())
 	{
 		std::map<std::string, QuickDC::Hash::CacheEntry*>::iterator it = cache.begin();
@@ -70,45 +98,105 @@ QuickDC::Hash::Manager::~Manager()
 
 bool QuickDC::Hash::Manager::isBusy() const
 {
-	return current || jobs.size();
+	std::lock_guard<std::mutex> guard(lock);
+	return inflight || !pending.empty() || !completed.empty();
+}
+
+
+void QuickDC::Hash::Manager::workerLoop()
+{
+	for (;;)
+	{
+		QuickDC::Hash::Job* job = 0;
+
+		{
+			std::unique_lock<std::mutex> guard(lock);
+			while (!stopping && pending.empty())
+				wakeup.wait(guard);
+
+			if (stopping)
+				return;
+
+			job = pending.front();
+			pending.pop_front();
+			inflight = job;
+			progress_done.store(0);
+			progress_total.store(0);
+		}
+
+		bool ok = job->runToCompletion(progress_done, progress_total);
+
+		{
+			std::lock_guard<std::mutex> guard(lock);
+			inflight = 0;
+
+			Completion done;
+			done.job = job;
+			done.ok = ok;
+			completed.push_back(done);
+		}
+	}
 }
 
 
 bool QuickDC::Hash::Manager::process()
 {
-	if (jobs.size())
+	std::deque<Completion> done;
+	QuickDC::Hash::Job* running = 0;
+	bool more = false;
+
 	{
-		if (!current)
-			current = jobs[0];
-		
-		int ret = current->process();
-		if (ret < 0) {
-			QERR("Hash job aborted, an error occured");
-			jobs.erase(jobs.begin());
-			delete current; current = 0;
-			
-		}
-		else if (ret == 0)
+		std::lock_guard<std::mutex> guard(lock);
+		done.swap(completed);
+		running = inflight;
+		more = (running != 0) || !pending.empty();
+	}
+
+	/* 'running' stays valid without the lock: only this thread deletes jobs,
+	   and a job the worker finishes meanwhile just moves to 'completed' to be
+	   picked up by the next call. */
+	if (running)
+		running->getListener()->EventFileHashProgress(running, progress_done.load(), progress_total.load());
+
+	while (!done.empty())
+	{
+		Completion c = done.front();
+		done.pop_front();
+
+		if (c.ok)
 		{
-			QDBG("Hash job finished");
-			jobs.erase(jobs.begin());
-			delete current; current = 0;
+			QDBG("Hash job finished, file='%s'", c.job->getFile().getName().c_str());
+			QuickDC::Hash::CacheEntry* entry = QuickDC::Hash::CacheEntry::create(c.job->getFile(), c.job);
+			addCache(c.job->getFile().getName(), entry);
+			c.job->getListener()->EventFileHashed(c.job);
 		}
-		
-		// start new hash job
-		if (!current && !jobs.size())
+		else
 		{
+			QERR("Hash job aborted for '%s': %d: %s",
+				c.job->getFile().getName().c_str(), c.job->getError(), strerror(c.job->getError()));
+		}
+
+		delete c.job;
+	}
+
+	if (!more)
+	{
+		/* Announce completion once, on the edge where the last job was
+		   collected. process() is called every main loop iteration, so without
+		   the latch an idle client would re-save the cache forever. */
+		if (!idle_announced)
+		{
+			idle_announced = true;
 			QDBG("*** All hash jobs are now complete!");
 			saveCache();
-			
+
 			// Make sure we regenerate the file lists since we now have all TTH roots.
 			QuickDC::Core::getInstance()->shares->createFileLists(false);
-			
-			return false;
 		}
-		return true;
+		return false;
 	}
-	return false;
+
+	return true;
 }
 
 
@@ -124,8 +212,14 @@ void QuickDC::Hash::Manager::addJob(const Samurai::IO::File& jobfile, QuickDC::H
 	}
 	
 	QuickDC::Hash::Job* job = new QuickDC::Hash::Job(this, QuickDC::Hash::HashTigerTree, listener, jobfile);
-	jobs.push_back(job);
-	scheduleWork();
+
+	{
+		std::lock_guard<std::mutex> guard(lock);
+		pending.push_back(job);
+		idle_announced = false;
+	}
+	wakeup.notify_one();
+
 	listener->EventFileQueued(job);
 }
 
@@ -252,22 +346,6 @@ void QuickDC::Hash::Manager::saveCache()
 	}
 }
 
-#define MSG_HASH_MANAGER_PROCESS 991299
-
-void QuickDC::Hash::Manager::scheduleWork()
-{
-	postMessage(MSG_HASH_MANAGER_PROCESS, this, 0, 0);
-}
-
-bool QuickDC::Hash::Manager::EventMessage(const Samurai::Message* msg)
-{
-	if (msg->getID() == MSG_HASH_MANAGER_PROCESS)
-	{
-		if (process())
-		{
-			scheduleWork();
-		}
-		return true;
-	}
-	return false;
-}
+/* The manager used to post itself a message to keep process() being called.
+   That is redundant now: the main loop calls process() every iteration, and
+   the hashing it used to drive happens on the worker thread. */

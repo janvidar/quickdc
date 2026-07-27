@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <atomic>
 
 #include <samurai/io/file.h>
 #include <samurai/crypto/digest/hash.h>
@@ -69,14 +70,28 @@ class Job
 
 		
 		enum QuickDC::Hash::HashType getAlgorithm() const { return algorithm; }
-		
+
 		/**
-		 * Partial hash, 'chunk_size' bytes from 'offset' 
-		 * return >0 if more is to be hash.
-		 * return =0 if no more to hash (successfull end).
-		 * return <0 if an error occured.
+		 * Hash the whole file, updating 'done' and 'total' as it goes so the
+		 * main thread can report progress.
+		 *
+		 * This runs on the hash worker thread, so it deliberately touches
+		 * nothing but this job: no listener callbacks, no cache updates and no
+		 * QDBG/QERR (the debug log is a shared unsynchronised file). Failures
+		 * are reported through the return value and getError(), and the main
+		 * thread does the announcing.
+		 *
+		 * Returns true when the file was hashed, false on an I/O error.
 		 */
-		virtual ssize_t process();
+		virtual bool runToCompletion(std::atomic<uint64_t>& done, std::atomic<uint64_t>& total);
+
+		/**
+		 * errno captured by runToCompletion() when it returned false.
+		 */
+		int getError() const { return error; }
+
+		const Samurai::IO::File& getFile() const { return file; }
+		QuickDC::Hash::JobListener* getListener() const { return listener; }
 
 		virtual const char* getHashSum() const;
 		virtual Samurai::Crypto::Digest::HashValue* getHash() const { return hashValue; }
@@ -93,7 +108,8 @@ class Job
 		Samurai::Crypto::Digest::Hash* algo;
 		Samurai::Crypto::Digest::HashValue* hashValue;
 		enum QuickDC::Hash::HashType algorithm;
-		
+		int error;
+
 	friend class HashManager;
 };
 
@@ -110,9 +126,10 @@ class SimpleJob : public Job
 	public:
 		SimpleJob(QuickDC::Hash::Manager* mgr, QuickDC::Hash::JobListener* listener, QuickDC::Hash::CacheEntry* cache);
 		virtual ~SimpleJob();
-	
-		virtual ssize_t process();
-		
+
+		/* The leaves come from the cache, so there is nothing left to hash. */
+		virtual bool runToCompletion(std::atomic<uint64_t>& done, std::atomic<uint64_t>& total);
+
 	private:
 };
 
