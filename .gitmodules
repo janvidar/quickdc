@@ -1,3 +1,3 @@
 [submodule "samurai"]
 	path = samurai
-	url = git@gitea:janvidar/samurai.git
+	url = ../samurai.git
