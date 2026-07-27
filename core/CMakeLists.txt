@@ -21,6 +21,7 @@ set(QUICKDC_SOURCES
     network/downloadqueue.cpp
     network/filesource.cpp
     network/hubmanager.cpp
+    network/leafhashes.cpp
     network/probe.cpp
     network/securitymanager.cpp
     network/transfer.cpp

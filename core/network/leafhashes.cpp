@@ -1,0 +1,213 @@
+/*
+ * Copyright (C) 2001-2010 Jan Vidar Krey, janvidar@extatic.org
+ * See the file "COPYING" for licensing details.
+ */
+
+#include "quickdc.h"
+#include "network/leafhashes.h"
+
+#include <samurai/io/file.h>
+#include <samurai/io/buffer.h>
+#include <samurai/crypto/digest/tiger.h>
+#include <samurai/crypto/digest/merkletree.h>
+
+#include <string.h>
+
+/* The smallest leaf a tiger tree uses; every larger one doubles it. */
+#define TTH_MIN_LEAF_SIZE 1024
+
+QuickDC::LeafHashes::LeafHashes()
+	: leaves(0)
+	, leafCount(0)
+	, hashSize(0)
+	, leafSize(0)
+	, fileSize(0)
+{
+}
+
+QuickDC::LeafHashes::~LeafHashes()
+{
+	free(leaves);
+}
+
+/**
+ * The leaf size is not sent, only implied: it is the smallest one that covers
+ * the file in the number of leaves we were given.
+ */
+static uint64_t leaf_size_for(uint64_t fileSize, size_t leafCount)
+{
+	if (!leafCount) return 0;
+	if (!fileSize) return TTH_MIN_LEAF_SIZE;
+
+	for (uint64_t size = TTH_MIN_LEAF_SIZE; size; size *= 2)
+	{
+		uint64_t needed = (fileSize + size - 1) / size;
+		if (needed == (uint64_t) leafCount) return size;
+		if (needed <= 1) break;
+	}
+	return 0;
+}
+
+bool QuickDC::LeafHashes::load(const char* tth, uint64_t fileSize_, const char* data, size_t length)
+{
+	if (!tth || !data || !length || !fileSize_) return false;
+
+	Samurai::Crypto::Digest::Tiger tiger;
+	size_t size = tiger.size();
+	if (!size || (length % size)) return false;
+
+	size_t count = length / size;
+	uint64_t leaf = leaf_size_for(fileSize_, count);
+	if (!leaf)
+	{
+		QDBG("Leaf data for '%s' does not describe a %d byte file", tth, (int) fileSize_);
+		return false;
+	}
+
+	/* Hash the leaves back into a root; it has to be the one we asked for. */
+	Samurai::IO::Buffer buffer;
+	buffer.append(data, length);
+
+	Samurai::Crypto::Digest::Tiger* hasher = new Samurai::Crypto::Digest::Tiger();
+	Samurai::Crypto::Digest::MerkleTree tree(hasher);
+	tree.setLeavesLTR(buffer, count, fileSize_);
+
+	char root[100];
+	Samurai::Crypto::Digest::HashValue* digest = tree.digest();
+	bool ok = digest
+		&& digest->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, root, sizeof(root))
+		&& !strcmp(root, tth);
+
+	delete hasher;
+
+	if (!ok)
+	{
+		QDBG("Leaf data does not hash up to '%s'; discarding it", tth);
+		return false;
+	}
+
+	free(leaves);
+	leaves = (char*) malloc(length);
+	if (!leaves)
+	{
+		leafCount = 0;
+		return false;
+	}
+
+	memcpy(leaves, data, length);
+	leafCount = count;
+	hashSize = size;
+	leafSize = leaf;
+	fileSize = fileSize_;
+
+	QDBG("Got %d verified leaves of %d bytes each for '%s'", (int) leafCount, (int) leafSize, tth);
+	return true;
+}
+
+bool QuickDC::LeafHashes::verify(Samurai::IO::File& file, uint64_t offset, uint64_t length) const
+{
+	if (!leaves || !length) return false;
+	if (offset % leafSize) return false;
+	if (offset + length > fileSize) return false;
+
+	/* Whole leaves, unless this is the tail of the file. */
+	if ((length % leafSize) && (offset + length != fileSize)) return false;
+
+	size_t first = (size_t) (offset / leafSize);
+	char buffer[65536];
+	bool ok = true;
+
+	for (uint64_t at = offset; ok && at < offset + length; at += leafSize)
+	{
+		uint64_t want = leafSize;
+		if (at + want > fileSize) want = fileSize - at;
+
+		/*
+		 * A leaf covering more than one block is the root of the tree over
+		 * those blocks, not a hash of the whole span, so let a tree do it.
+		 */
+		Samurai::Crypto::Digest::Tiger* algo = new Samurai::Crypto::Digest::Tiger();
+		Samurai::Crypto::Digest::MerkleTree leaf(algo);
+
+		if (!file.seek((off_t) at)) ok = false;
+
+		for (uint64_t done = 0; ok && done < want; )
+		{
+			size_t piece = sizeof(buffer);
+			if (done + piece > want) piece = (size_t) (want - done);
+
+			if (file.read(buffer, piece) != (ssize_t) piece)
+			{
+				QERR("Unable to read %d bytes at %d of '%s' to verify it",
+					(int) piece, (int) (at + done), file.getName().c_str());
+				ok = false;
+				break;
+			}
+
+			leaf.update((uint8_t*) buffer, piece);
+			done += piece;
+		}
+
+		if (ok)
+		{
+			Samurai::Crypto::Digest::HashValue* value = leaf.digest();
+			size_t index = first + (size_t) ((at - offset) / leafSize);
+
+			if (!value || index >= leafCount
+				|| memcmp(value->getData(), &leaves[index * hashSize], hashSize))
+			{
+				QDBG("Leaf %d of '%s' does not match", (int) index, file.getName().c_str());
+				ok = false;
+			}
+		}
+
+		delete algo;
+	}
+
+	return ok;
+}
+
+char* QuickDC::LeafHashes::makeFilename(const char* tempFilename)
+{
+	if (!tempFilename) return 0;
+
+	size_t length = strlen(tempFilename) + 6;
+	char* out = (char*) malloc(length);
+	if (out) snprintf(out, length, "%s.tthl", tempFilename);
+	return out;
+}
+
+bool QuickDC::LeafHashes::save(const char* filename) const
+{
+	if (!leaves || !filename) return false;
+
+	Samurai::IO::File file(filename);
+	if (!file.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate)) return false;
+
+	bool ok = (file.write(leaves, leafCount * hashSize) == (ssize_t) (leafCount * hashSize));
+	file.close();
+	return ok;
+}
+
+bool QuickDC::LeafHashes::load(const char* filename, const char* tth, uint64_t fileSize_)
+{
+	if (!filename) return false;
+
+	Samurai::IO::File file(filename);
+	if (!file.exists() || !file.open(Samurai::IO::File::Read)) return false;
+
+	size_t length = (size_t) file.size();
+	if (!length)
+	{
+		file.close();
+		return false;
+	}
+
+	char* data = (char*) malloc(length);
+	bool ok = data && (file.read(data, length) == (ssize_t) length);
+	file.close();
+
+	if (ok) ok = load(tth, fileSize_, data, length);
+	free(data);
+	return ok;
+}
