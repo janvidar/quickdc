@@ -40,7 +40,8 @@ bool ADC::CCmdINF::invoke(ADC::Command* cmd) {
 bool ADC::CCmdSTA::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::High);
 	QDBG("ADC::CCmd:STA:invoke");
-	return false;
+	session->onSTA(cmd->getArgument(0), cmd->getArgument(1));
+	return true;
 }
 
 bool ADC::CCmdGET::invoke(ADC::Command* cmd) {

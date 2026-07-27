@@ -317,6 +317,27 @@ void ADC::ClientSession::onGFI(const char*, uint32_t)
 	}
 }
 
+void ADC::ClientSession::onSTA(const char* code, const char* message)
+{
+	QDBG("The peer says '%s' (%s)", message ? message : "", code ? code : "");
+
+	/* Severity 0 is informational and says nothing about our request. */
+	if (!code || code[0] == '0') return;
+
+	/*
+	 * Anything else means we are not getting what we asked for. Hand the chunk
+	 * back and blame the source, which also makes the scheduler wait before
+	 * trying it again - it may simply be out of upload slots.
+	 */
+	if (download_approved && token)
+	{
+		QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+		if (queue) queue->onRequestFailed(token);
+	}
+
+	socket->disconnect();
+}
+
 void ADC::ClientSession::onRES()
 {
 
@@ -458,12 +479,16 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	file = 0;
 	uint64_t internal_offset = 0; // Our internal file position (might differ from what we send).
 	uint64_t internal_length = 0; // Our internal length (might differ from the file's length, when only a part of it is being transferred).
-	bool slots_full = false;  // FIXME: Check if slots are available
-	
+
 	QuickDC::Share::Manager* sharemgr = QuickDC::Core::getInstance()->shares;
 	QuickDC::Hash::Manager*   hashmgr = QuickDC::Core::getInstance()->hash;
 	QuickDC::TransferManager*  xfrmgr = QuickDC::Core::getInstance()->transfers;
-	
+
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	int slots = config->getNumber("Slots", 3);
+	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= (size_t) slots);
+
 	if (type == FOURCC('l','i','s','t'))
 	{
 		QDBG("looking up files.xml");

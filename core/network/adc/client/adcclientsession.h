@@ -85,6 +85,9 @@ class ClientSession :
 		void onSND(const char* file, uint32_t type, uint64_t offset, int64_t length, bool);
 		void onGFI(const char* file, uint32_t type);
 
+		/** The peer refused, or reported a problem with, what we asked for. */
+		void onSTA(const char* code, const char* message);
+
 		void sendINF();
 
 		/**

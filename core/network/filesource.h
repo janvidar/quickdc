@@ -15,6 +15,9 @@
 /** A source is forgotten after this many consecutive failures. */
 #define QUICKDC_SOURCE_MAX_RETRIES 50
 
+/** How long to leave a source alone after it failed us. */
+#define QUICKDC_SOURCE_RETRY_INTERVAL 60
+
 /** A source is forgotten when we have not seen it for this long (30 days). */
 #define QUICKDC_SOURCE_MAX_AGE (30*24*60*60)
 
@@ -130,6 +133,15 @@ class FileSource {
 		 */
 		void onFailure();
 
+		/** We are about to ask this source for something. */
+		void onAttempt();
+
+		/**
+		 * @return false if this source failed recently and should be left
+		 *         alone for now. A busy peer must not be hammered.
+		 */
+		bool isReadyToRetry() const;
+
 		inline size_t getRetryCount() const { return retryCount; }
 		inline const Samurai::TimeStamp& getLastSeen() const { return lastSeen; }
 
@@ -155,6 +167,7 @@ class FileSource {
 		char* filename;       // filename, full path, or NULL (tth is used instead).
 		size_t retryCount;    // expire this after ~50 tries
 		Samurai::TimeStamp lastSeen; // expire this after ~30 days.
+		Samurai::TimeStamp lastAttempt; // not persisted; a restart may retry at once.
 };
 
 }

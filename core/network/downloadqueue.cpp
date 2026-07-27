@@ -1217,6 +1217,7 @@ void QuickDC::QueueManager::schedule()
 				FileSource* source = file->getSource(s);
 				if (!source || source->isExpired()) continue;
 				if (file->isSourceActive(source)) continue;
+				if (!source->isReadyToRetry()) continue;
 
 				QuickDC::Hub* hub = core->hubs->getHubByUrl(source->getHubUrl());
 				if (!hub) continue;   /* not logged in there at the moment */
@@ -1232,6 +1233,7 @@ void QuickDC::QueueManager::schedule()
 				}
 
 				/* Claim the source now, so we do not ask it twice. */
+				source->onAttempt();
 				file->setSourceActive(source, true);
 				inFlight++;
 			}

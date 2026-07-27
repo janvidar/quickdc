@@ -93,6 +93,21 @@ void QuickDC::FileSource::onFailure()
 	retryCount++;
 }
 
+void QuickDC::FileSource::onAttempt()
+{
+	lastAttempt.reset();
+}
+
+bool QuickDC::FileSource::isReadyToRetry() const
+{
+	if (!retryCount) return true;
+
+	time_t now = Samurai::TimeStamp().getInternalData();
+	time_t last = lastAttempt.getInternalData();
+
+	return (now < last || (now - last) >= QUICKDC_SOURCE_RETRY_INTERVAL);
+}
+
 bool QuickDC::FileSource::isExpired() const
 {
 	if (retryCount > QUICKDC_SOURCE_MAX_RETRIES)
