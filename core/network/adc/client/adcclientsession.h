@@ -61,8 +61,13 @@ class ClientSession :
 
 		/**
 		 * NOTE: hubsession may be 0. It always is if we don't know who we are talking to, yet.
+		 *
+		 * @param secure the peer asked for ADCS, so wrap the connection in TLS
+		 *               before speaking ADC. Only meaningful when we are the
+		 *               one dialling out: accepting an inbound TLS peer
+		 *               connection is not implemented, see probe.cpp.
 		 */
-		ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession = 0, const char* token = 0, const char* sid = 0);
+		ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession = 0, const char* token = 0, const char* sid = 0, bool secure = false);
 		ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* hubsession = 0);
 		virtual ~ClientSession();
 		
@@ -98,6 +103,8 @@ class ClientSession :
 		void EventHostFound(const Samurai::IO::Net::Socket*);
 		void EventConnecting(const Samurai::IO::Net::Socket*);
 		void EventConnected(const Samurai::IO::Net::Socket*);
+		void EventTLSConnected(const Samurai::IO::Net::Socket*);
+		void EventTLSDisconnected(const Samurai::IO::Net::Socket*);
 		void EventTimeout(const Samurai::IO::Net::Socket*);
 		void EventDisconnected(const Samurai::IO::Net::Socket*);
 		void EventDataAvailable(const Samurai::IO::Net::Socket*);
@@ -153,6 +160,10 @@ class ClientSession :
 
 	private:
 		bool isClient;
+
+		/** The peer wants ADCS, so TLS has to come up before any ADC. */
+		bool secure;
+
 		bool upload_approved;
 		bool download_approved;
 		friend class QuickDC::Connection;

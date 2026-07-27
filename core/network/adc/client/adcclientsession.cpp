@@ -36,7 +36,8 @@
 ADC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* hubsession_) :
 	QuickDC::Connection(url, "ADC client"),
 	hubsession(hubsession_),
-	isClient(true)
+	isClient(true),
+	secure(false)
 {
 	/* The destructor free()s all of these, so they cannot be left unset. */
 	token = 0;
@@ -48,10 +49,11 @@ ADC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* h
 	QDBG("ADC::ClientSession()");
 }
 
-ADC::ClientSession::ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession_, const char* token_, const char* sid_) :
-	QuickDC::Connection(sock, "ADC client"),
+ADC::ClientSession::ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession_, const char* token_, const char* sid_, bool secure_) :
+	QuickDC::Connection(sock, secure_ ? "ADCS client" : "ADC client"),
 	hubsession(hubsession_),
-	isClient(false)
+	isClient(false),
+	secure(secure_)
 {
 	if (token_) token = strdup(token_);
 	else token = 0;
@@ -715,7 +717,44 @@ void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
 {
 	isClient = true;
 	manager->add(this);
-	onStartClient();
+
+	if (!secure)
+	{
+		onStartClient();
+		return;
+	}
+
+	/*
+	 * The peer asked for ADCS, so nothing may be sent in the clear: TLS comes
+	 * up first and the protocol starts from EventTLSConnected(). Same shape as
+	 * ADC::HubSession::EventConnected().
+	 */
+#ifdef SSL_SUPPORT
+	QDBG("Peer wants ADCS; starting the TLS handshake");
+	if (!socket->TLSInitialize(false))
+	{
+		QERR("Unable to initialize TLS for the peer connection");
+		abandonDownload();
+		manager->remove(this);
+		return;
+	}
+	socket->TLSsendHandshake();
+#else
+	QERR("The peer asked for ADCS, but TLS support is not built in");
+	abandonDownload();
+	manager->remove(this);
+#endif
+}
+
+void ADC::ClientSession::EventTLSConnected(const Samurai::IO::Net::Socket*)
+{
+	QDBG("TLS established with the peer");
+	if (secure) onStartClient();
+}
+
+void ADC::ClientSession::EventTLSDisconnected(const Samurai::IO::Net::Socket*)
+{
+	QDBG("TLS shut down on the peer connection");
 }
 
 /**
