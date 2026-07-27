@@ -150,7 +150,8 @@ void HubConnection::EventSearchResult(void* ptr)
 	/* Recorded rather than just printed, so /download can refer to it. */
 	cmd_addSearchResult(result->getFile(), result->getSize(), result->getTTH(),
 		user ? user->getNick() : "?",
-		user ? (const char*) user->getClientID() : 0);
+		user ? (const char*) user->getClientID() : 0,
+		result->getToken());
 }
 
 void HubConnection::EventHubName(const char* hubname)

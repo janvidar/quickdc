@@ -57,6 +57,6 @@ extern void parseCommand(const char* line, size_t size);
  * file needs its TTH and size, and a search reply is where those come from.
  */
 extern void cmd_addSearchResult(const char* filename, uint64_t size,
-	const char* tth, const char* nick, const char* cid);
+	const char* tth, const char* nick, const char* cid, const char* token);
 
 #endif // HAVE_QUICKDC_CLI_COMMANDS_H

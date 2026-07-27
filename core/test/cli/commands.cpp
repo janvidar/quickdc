@@ -198,10 +198,40 @@ struct SearchHit {
 
 static std::vector<SearchHit> searchHits;
 
+/* Which search the listed results belong to. A slow peer can answer long after
+   the next search was started, and those results must not be numbered in with
+   the current ones. */
+static std::string searchToken;
+
+/**
+ * Begin a new search, discarding the results of the previous one.
+ * @return the token to send with it.
+ */
+static const char* cmd_newSearchToken()
+{
+	static unsigned long counter = 0;
+
+	char buf[32];
+	snprintf(buf, sizeof(buf), "cli%lu", ++counter);
+
+	searchToken = buf;
+	searchHits.clear();
+	return searchToken.c_str();
+}
+
 void cmd_addSearchResult(const char* filename, uint64_t size,
-	const char* tth, const char* nick, const char* cid)
+	const char* tth, const char* nick, const char* cid, const char* token)
 {
 	if (!filename) return;
+
+	/* No token means the sender did not echo ours back; take those rather than
+	   dropping results from peers that leave it out. */
+	if (token && *token && searchToken != token)
+	{
+		QDBG("Ignoring a result for search '%s'; we are showing '%s'",
+			token, searchToken.c_str());
+		return;
+	}
 
 	SearchHit hit;
 	hit.filename = filename;
@@ -218,7 +248,7 @@ void cmd_addSearchResult(const char* filename, uint64_t size,
 	else
 		hit.cid = hit.nick;
 
-	/* Keep the numbering stable within a run; just stop growing when full. */
+	/* Keep the numbering stable within a search; just stop growing when full. */
 	if (searchHits.size() >= MAX_SEARCH_HITS)
 	{
 		cmd_error("Too many search results; ignoring the rest");
@@ -638,7 +668,8 @@ static void cmd_redirect(const std::vector<std::string>& args)
 static void cmd_search(const std::vector<std::string>& args)
 {
 	QuickDC::Share::SearchRequest* request =
-		new QuickDC::Share::SearchRequest(QuickDC::Share::SearchRequest::SizeAny, 0, 0, "console", 0);
+		new QuickDC::Share::SearchRequest(QuickDC::Share::SearchRequest::SizeAny, 0, 0,
+			cmd_newSearchToken(), 0);
 
 	char* terms = strdup(args[0].c_str());
 	char* start = terms;
