@@ -45,7 +45,7 @@
 #define QUICKDC_REQUEST_TIMEOUT 120
 
 /** The queue is flushed to disk at most this often while running. */
-#define QUICKDC_QUEUE_SAVE_INTERVAL 30
+#define QUICKDC_QUEUE_SAVE_INTERVAL 5
 
 /** A TTH root in base32 is always this long. */
 #define QUICKDC_TTH_LENGTH 39
