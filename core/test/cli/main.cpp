@@ -12,6 +12,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <signal.h>
 #include <string.h>
 #include <strings.h>
 #include <math.h>
@@ -38,6 +39,15 @@
 QuickDC::Core* core;
 HubConnection* hub;
 bool running;
+
+/* Leaving the main loop is the only way the queue and caches get written, so a
+   signal must not simply kill us. */
+static volatile sig_atomic_t interrupted = 0;
+
+static void onTerminate(int)
+{
+	interrupted = 1;
+}
 
 /**
  * Reports transfers as they start and finish.
@@ -207,9 +217,13 @@ int main(int argc, char** argv) {
 	console_printf("Welcome to " PRODUCT " " VERSION " test command shell\n");
 	console_printf("Type `/connect' to connect to `%s:%d', or `/help' to see available commands.\n\n", host, port);
 
+	signal(SIGINT, onTerminate);
+	signal(SIGTERM, onTerminate);
+	signal(SIGHUP, onTerminate);
+
 	running = true;
 	char* line = 0;
-	while (running) {
+	while (running && !interrupted) {
 		core->run();
 
 		/* One wakeup can carry more than one line, so drain the queue rather
@@ -217,6 +231,9 @@ int main(int argc, char** argv) {
 		while (running && (line = Console::getInstance()->getLine()) != 0)
 			processKeyboard(line);
 	}
+
+	if (interrupted)
+		console_printf("\nInterrupted, shutting down.\n");
 
 	Console::shutdown();
 	delete hub;
