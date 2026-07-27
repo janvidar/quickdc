@@ -99,15 +99,16 @@ int main(int argc, char** argv) {
 	}
 
 	Console::getInstance();
-	
+
 	if (port <= 0 || port > 65535 || !host)
 	{
 		console_printf("Usage: %s host[:port]\n", argv[0]);
 		exit(-1);
 	}
-	
-	char* url_ = (char*) malloc(strlen(host)+strlen(protocol)+10); /* 10 = "://" + ":" + "12345" + \0 */
-	sprintf(url_, "%s://%s:%d", protocol, host, port);
+
+	size_t url_size = strlen(host) + strlen(protocol) + 10; /* 10 = "://" + ":" + "12345" + \0 */
+	char* url_ = (char*) malloc(url_size);
+	snprintf(url_, url_size, "%s://%s:%d", protocol, host, port);
 	Samurai::IO::Net::URL* url = new Samurai::IO::Net::URL(url_);
 	core = new QuickDC::Core();
 	hub = new HubConnection(url);
@@ -116,7 +117,7 @@ int main(int argc, char** argv) {
 
 	console_printf("Welcome to " PRODUCT " " VERSION " test command shell\n");
 	console_printf("Type `/connect' to connect to `%s:%d', or `/help' to see available commands.\n\n", host, port);
-	
+
 	running = true;
 	char* line = 0;
 	while (running) {
@@ -134,4 +135,3 @@ int main(int argc, char** argv) {
 	free(url_);
 	delete url;
 }
-
