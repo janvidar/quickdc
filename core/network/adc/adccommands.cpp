@@ -378,14 +378,24 @@ bool ADC::CmdResult::invoke(ADC::Command* cmd) {
 	return true;
 }
 
+/*
+ * The grammar in ADC 0.12 flags the token "TO", but the DC++ family sends it as
+ * a plain positional field and reads it back the same way, so accept either.
+ */
+static char* adc_connect_token(ADC::Command* cmd, size_t position) {
+	char* token = cmd->getArgument(position);
+	if (token && strncmp(token, "TO", 2) == 0) return &token[2];
+	if (token) return token;
+	return cmd->getArgument("TO", 2, position);
+}
+
 bool ADC::CmdCTM::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::Normal);
 	char* proto = cmd->getArgument(0);
 	int port    = quickdc_atoi(cmd->getArgument(1));
-	
-	// char* token = cmd->getArgument("TO", 2, 2); // FIXME: DC++ error, not sending TO prefix ???
-	char* token = cmd->getArgument(2);
-	
+
+	char* token = adc_connect_token(cmd, 2);
+
 	if (port > 0 && port < 65536) {
 		session->onActiveConnect(cmd->getSourceID(), proto, port, token);
 		return true;
@@ -396,7 +406,7 @@ bool ADC::CmdCTM::invoke(ADC::Command* cmd) {
 bool ADC::CmdRCTM::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::Normal);
 	char* proto = cmd->getArgument(0);
-	char* token = cmd->getArgument("TO", 2, 1);
+	char* token = adc_connect_token(cmd, 1);
 	session->onPassiveConnect(cmd->getSourceID(), proto, token);
 	return true;
 }

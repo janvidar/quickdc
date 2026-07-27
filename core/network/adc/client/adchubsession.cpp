@@ -623,7 +623,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), sid, user->getID());
 		cmd->addArgument(ADC_COMPLIANCE);
 		cmd->addArgument(quickdc_itoa(config->getNumber("Port"), 10));
-		cmd->addArgument("TO", token);
+		cmd->addArgument(token);
 		send(cmd);
 
 		/* Add to securitymanager */
@@ -1077,7 +1077,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), sid, user->getID());
 		cmd->addArgument(protocol);
 		cmd->addArgument(quickdc_itoa(config->getNumber("Port"), 10));
-		if (token) cmd->addArgument("TO", token);
+		if (token) cmd->addArgument(token);
 
 		/* Add to securitymanager */
 		QuickDC::Clearance* clearance = new QuickDC::Clearance(
