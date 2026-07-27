@@ -30,39 +30,6 @@ extern QuickDC::Core* core;
 extern HubConnection* hub;
 extern bool running;
 
-/*
-
-static const struct CommandData commands[] =
-{
-	{ "allow_connections", 17, 0, "",          "Toggle allow connections ON or OFF"            , 1 },
-	{ "browse",      6, 1, "n",                "Browse user"                                   , 0 },
-	{ "close",       5, 1, "i",                "Close transfer"                                , 1 },
-	{ "connect",     7, 0, "?s",               "Connect to hub"                                , 0 },
-	{ "connections",11, 0, "",                 "List all active p2p connections"               , 0 },
-	{ "ctm",         3, 1, "n",                "Request connection to user"                    , 0 },
-	{ "disconnect", 10, 0, "",                 "Disconnect from hub"                           , 0 },
-	{ "download",    8, 2, "ns",               "Download file from user"                       , 0 },
-	{ "help",        4, 0, "",                 "Show this cruft"                               , 0 },
-	{ "hubstats",    8, 0, "",                 "Show hub statistics"                           , 0 },
-	{ "hubban",      6, 1, "n",                "Ban user from local hub"                       , 1 },
-	{ "hubunban",    8, 1, "n",                "Unban user from local hub"                     , 1 },
-	{ "hubkick",     7, 1, "n",                "Kick user from local hub"                      , 1 },
-	{ "info",        4, 1, "n",                "Show information about a given user"           , 0 },
-	{ "joins",       5, 0, "",                 "Toggle showing join/leave messages"            , 0 },
-	{ "kick",        4, 1, "n",                "Kick user from hub (operators only)"           , 0 },
-	{ "list",        4, 0, "",                 "Show users"                                    , 0 },
-	{ "msg",         3, 2, "ns" ,              "Send private message to user"                  , 0 },
-	{ "quit",        4, 0, "",                 "Quit program"                                  , 0 },
-	{ "redirect",    8, 2, "ns",               "Redirect user to another hub (operators only)" , 1 },
-	{ "search",      6, 0, "s",                "Search for files"                              , 0 },
-	{ "stats",       5, 0, "",                 "Show statistics"                               , 0 },
-	{ "transfers",   9, 0, "",                 "Show active transfers"                         , 0 },
-	{ "uptime",      6, 0, "",                 "Show QuickDC uptime information"               , 0 },
-	{ "version",     7, 0, "",                 "Show software version"                         , 0 },
-	{ 0, 0, 0, 0, 0, 1 }
-};
-
-*/
 
 void cmd_output(const char* format, ...)
 {
@@ -84,385 +51,656 @@ void cmd_error(const char* format, ...)
 	printf("*** ERROR: %s\n", logmsg);
 }
 
-ArgHandle::ArgHandle(char* s) {
-	user = 0;
-	if (hub && hub->getUserManager())
-		user = const_cast<QuickDC::User*>(hub->getUserManager()->getUserByNick(s));
-}
 
-ArgHandle::~ArgHandle() {
-	user = 0;
-}
+/* ------------------------------------------------------------------------ *
+ * Argument specifications
+ * ------------------------------------------------------------------------ */
 
-bool ArgHandle::isValid()
+struct ArgSpec {
+	char        type;
+	std::string name;
+	bool        optional;
+};
+
+static std::vector<ArgSpec> parseArgSpec(const char* spec)
 {
+	std::vector<ArgSpec> out;
+	if (!spec) return out;
+
+	for (const char* p = spec; *p; )
+	{
+		while (*p == ' ') p++;
+		if (!*p) break;
+
+		ArgSpec arg;
+		arg.optional = false;
+		if (*p == '?') { arg.optional = true; p++; }
+		if (!*p) break;
+
+		arg.type = *p++;
+		if (*p == ':') p++;
+
+		const char* start = p;
+		while (*p && *p != ' ') p++;
+		arg.name.assign(start, p - start);
+
+		out.push_back(arg);
+	}
+	return out;
+}
+
+/**
+ * Build the usage line shown by /help and by argument errors, for example
+ * "/msg <nick> <message>".
+ */
+static std::string usageString(const struct CommandData* command)
+{
+	std::string usage("/");
+	usage += command->cmd;
+
+	std::vector<ArgSpec> spec = parseArgSpec(command->args);
+	for (size_t n = 0; n < spec.size(); n++)
+	{
+		usage += spec[n].optional ? " [" : " <";
+		usage += spec[n].name;
+		usage += spec[n].optional ? "]" : ">";
+	}
+	return usage;
+}
+
+static bool isInteger(const std::string& s)
+{
+	size_t n = (s.size() && (s[0] == '-' || s[0] == '+')) ? 1 : 0;
+	if (n >= s.size()) return false;
+	for (; n < s.size(); n++)
+		if (!isdigit((unsigned char) s[n])) return false;
+	return true;
+}
+
+/**
+ * Split 'rest' (everything after the command word) according to the command's
+ * argument specification. Reports the problem and returns false if the input
+ * does not match, so the caller can simply bail out.
+ */
+static bool splitArguments(const struct CommandData* command, const char* rest, std::vector<std::string>& out)
+{
+	std::vector<ArgSpec> spec = parseArgSpec(command->args);
+	const char* p = rest;
+
+	for (size_t n = 0; n < spec.size(); n++)
+	{
+		while (*p == ' ') p++;
+
+		if (!*p)
+		{
+			/* Optional arguments only ever trail, so we are done. */
+			if (spec[n].optional) return true;
+
+			cmd_error("Missing argument <%s>. Usage: %s", spec[n].name.c_str(), usageString(command).c_str());
+			return false;
+		}
+
+		if (spec[n].type == 's')
+		{
+			out.push_back(std::string(p));
+			p += strlen(p);
+		}
+		else
+		{
+			const char* start = p;
+			while (*p && *p != ' ') p++;
+			out.push_back(std::string(start, p - start));
+		}
+
+		if (spec[n].type == 'i' && !isInteger(out.back()))
+		{
+			cmd_error("Argument <%s> must be a number, got `%s'. Usage: %s",
+				spec[n].name.c_str(), out.back().c_str(), usageString(command).c_str());
+			return false;
+		}
+	}
+
+	while (*p == ' ') p++;
+	if (*p)
+	{
+		cmd_error("Too many arguments. Usage: %s", usageString(command).c_str());
+		return false;
+	}
+	return true;
+}
+
+
+/* ------------------------------------------------------------------------ *
+ * Shared helpers
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Resolve a nick against the connected hub, reporting why it failed.
+ */
+static const QuickDC::User* resolveUser(const std::string& nick)
+{
+	QuickDC::UserManager* users = hub->getUserManager();
+	if (!users)
+	{
+		cmd_error("Not connected to a hub");
+		return 0;
+	}
+
+	const QuickDC::User* user = users->getUserByNick(nick.c_str());
+	if (!user)
+		cmd_error("No user named `%s'", nick.c_str());
+
 	return user;
 }
 
-ArgString::ArgString(char* s)
-{
-	string = strdup(s);
-}
 
-ArgString::~ArgString()
+/* ------------------------------------------------------------------------ *
+ * The command table
+ *
+ * Kept sorted by name; /help prints it in this order. Commands with a null
+ * handler have no implementation behind them yet - they are listed so the
+ * gap stays visible rather than silently missing.
+ * ------------------------------------------------------------------------ */
+
+static void cmd_allow_connections(const std::vector<std::string>&);
+static void cmd_browse(const std::vector<std::string>&);
+static void cmd_connect(const std::vector<std::string>&);
+static void cmd_connections(const std::vector<std::string>&);
+static void cmd_ctm(const std::vector<std::string>&);
+static void cmd_disconnect(const std::vector<std::string>&);
+static void cmd_help(const std::vector<std::string>&);
+static void cmd_hubkick(const std::vector<std::string>&);
+static void cmd_hubstats(const std::vector<std::string>&);
+static void cmd_info(const std::vector<std::string>&);
+static void cmd_joins(const std::vector<std::string>&);
+static void cmd_kick(const std::vector<std::string>&);
+static void cmd_list(const std::vector<std::string>&);
+static void cmd_msg(const std::vector<std::string>&);
+static void cmd_quit(const std::vector<std::string>&);
+static void cmd_redirect(const std::vector<std::string>&);
+static void cmd_search(const std::vector<std::string>&);
+static void cmd_stats(const std::vector<std::string>&);
+static void cmd_transfers(const std::vector<std::string>&);
+static void cmd_tthsearch(const std::vector<std::string>&);
+static void cmd_uptime(const std::vector<std::string>&);
+static void cmd_version(const std::vector<std::string>&);
+
+static const struct CommandData commands[] =
 {
-	free(string);
+	{ "allow_connections", "",                           "Toggle accepting incoming client connections",     1, cmd_allow_connections },
+	{ "browse",            "n:nick",                     "Browse a user's file list",                        0, cmd_browse            },
+	{ "close",             "i:transfer",                 "Close a transfer",                                 1, 0                     },
+	{ "connect",           "",                           "Connect to the hub",                               0, cmd_connect           },
+	{ "connections",       "",                           "List all active p2p connections",                  0, cmd_connections       },
+	{ "ctm",               "n:nick",                     "Request a connection to a user",                   0, cmd_ctm               },
+	{ "disconnect",        "",                           "Disconnect from the hub",                          0, cmd_disconnect        },
+	{ "download",          "n:nick s:file",              "Download a file from a user",                      0, 0                     },
+	{ "help",              "?s:command",                 "Show this command reference",                      0, cmd_help              },
+	{ "hubban",            "n:nick",                     "Ban a user from the local hub",                    1, 0                     },
+	{ "hubkick",           "n:nick",                     "Kick a user from the local hub",                   1, cmd_hubkick           },
+	{ "hubstats",          "",                           "Show local hub statistics",                        0, cmd_hubstats          },
+	{ "hubunban",          "n:nick",                     "Unban a user from the local hub",                  1, 0                     },
+	{ "info",              "n:nick",                     "Show information about a given user",              0, cmd_info              },
+	{ "joins",             "",                           "Toggle showing join/leave messages",               0, cmd_joins             },
+	{ "kick",              "n:nick",                     "Kick a user from the hub (operators only)",        0, cmd_kick              },
+	{ "list",              "",                           "Show users on the hub",                            0, cmd_list              },
+	{ "msg",               "n:nick s:message",           "Send a private message to a user",                 0, cmd_msg               },
+	{ "quit",              "",                           "Quit the program",                                 0, cmd_quit              },
+	{ "redirect",          "n:nick w:address ?s:reason", "Redirect a user to another hub (operators only)",  1, cmd_redirect          },
+	{ "search",            "s:terms",                    "Search the hub for files (+term, -term)",          0, cmd_search            },
+	{ "stats",             "",                           "Show hub statistics",                              0, cmd_stats             },
+	{ "transfers",         "",                           "Show active transfers",                            0, cmd_transfers         },
+	{ "tthsearch",         "s:tth",                      "Search the local share for a TTH root",            0, cmd_tthsearch         },
+	{ "uptime",            "",                           "Show QuickDC uptime information",                  0, cmd_uptime            },
+	{ "version",           "",                           "Show software version",                            0, cmd_version           },
+	{ 0, 0, 0, 1, 0 }
 };
 
-bool ArgString::isValid()
+static const struct CommandData* findCommand(const char* name)
 {
-	return string;
-}
-
-ArgInteger::ArgInteger(char* s)
-{
-	valid = true;
-	number = atoi(s);
-	if (number == 0 && strcmp(s, "0")) valid = false;
-}
-
-ArgInteger::~ArgInteger()
-{
-}
-
-bool ArgInteger::isValid()
-{
-	return valid;
+	for (size_t n = 0; commands[n].cmd; n++)
+		if (strcasecmp(commands[n].cmd, name) == 0)
+			return &commands[n];
+	return 0;
 }
 
 
-Command::Command(const char* line_, size_t)
-{
-	line = strdup(line_);
-	cmd = 0;
-	valid = false;
-	parse();
-}
+/* ------------------------------------------------------------------------ *
+ * Command handlers
+ * ------------------------------------------------------------------------ */
 
-Command::~Command()
+static void cmd_help(const std::vector<std::string>& args)
 {
-	free(cmd);
-	
-	while (arguments.size()) {
-		Arg* a = arguments.back();
-		arguments.pop_back();
-		delete a;
-	}
-	
-}
+	bool all = args.size() && strcasecmp(args[0].c_str(), "all") == 0;
 
-bool Command::parse()
-{
-	if (!line || !strlen(line)) return false;
-
-	// separate command from arguments (if present).
-	char* space = strchr(line, ' ');
-	if (space) {
-		if (space == line) return false;
-		cmd = strndup(line, &space[0]-&line[0]);
-	} else {
-		cmd = strdup(line);
-		return true;
-	}
-	
-	std::vector<char*> args;
-	
-	// Now, split arguments in multiple strings
-	char* oldpos = space;
-	space = strchr(space, ' ');
-	while (space)
+	/* /help <command> - describe a single command. */
+	if (args.size() && !all)
 	{
-		args.push_back(strndup(oldpos+1, &space[0]-(&oldpos[0]+1)));
-		oldpos = space;
-		space = strchr(space, ' ');
-	}
+		const char* name = args[0].c_str();
+		if (name[0] == '/') name++;
 
-	if (strlen(oldpos))
-		args.push_back(strdup(oldpos));
-	
-	
-	/*
-	// cmd_output("Command reference:");
-	const struct CommandData* CMD = 0;
-	for (size_t n = 0; commands[n].cmd; n++) {
-		if (commands[n].length == strlen(cmd) && strcasecmp(commands[n].cmd, cmd) == 0)
+		const struct CommandData* command = findCommand(name);
+		if (!command)
 		{
-			CMD = &commands[n];
-			break;
+			cmd_error("Unknown command: `%s'. Try `/help'", args[0].c_str());
+			return;
 		}
+
+		cmd_output("%s", usageString(command).c_str());
+		printf("    %s%s\n", command->description, command->handler ? "" : " (not implemented)");
+		return;
 	}
-	
-	if (!CMD) {
-		return false;
+
+	cmd_output("Command reference:");
+	for (size_t n = 0; commands[n].cmd; n++)
+	{
+		if (commands[n].hidden && !all) continue;
+		printf("  %-38s %s%s\n",
+			usageString(&commands[n]).c_str(),
+			commands[n].description,
+			commands[n].handler ? "" : " (not implemented)");
 	}
-	
-	return true;
-	*/
-	
-	return false;
+
+	if (!all)
+		printf("\n  `/help all' also lists advanced commands, `/help <command>' describes one.\n");
 }
 
-bool Command::isValid()
+static void cmd_version(const std::vector<std::string>&)
 {
-	return valid;
+	cmd_output(	"%s\n"
+				"    Copyright (C) 2001-2010 Jan Vidar Krey, janvidar@extatic.org\n"
+				"    This is free software with ABSOLUTELY NO WARRANTY.\n", core->getVersion());
 }
 
-#define MATCH(x) strncmp(x, &cmd[1], strlen(x)) == 0
+static void cmd_uptime(const std::vector<std::string>&)
+{
+	time_t secs = core->startup.elapsed();
+	int days  = (int)  (secs / 86400);
+	int hours = (int) ((secs / 3600) % 24);
+	int mins  = (int) ((secs / 60) % 60);
+	int rest  = (int)  (secs % 60);
 
-void parseCommand(const char* cmd, size_t size) {
-//	printf("parseCommand(\"%s\", %d)\n", cmd, (int) size);
-	
-	if (MATCH("allow_connections")) {
-		hub->allowConnections = !hub->allowConnections;
-		cmd_output("Allow connections %s", (hub->allowConnections ? "ON" : "OFF"));
+	cmd_output("Uptime: %d day%s, %02d:%02d:%02d", days, (days == 1) ? "" : "s", hours, mins, rest);
+}
 
-	} else if (MATCH("quit")) {
-		running = false;
-		
+static void cmd_quit(const std::vector<std::string>&)
+{
+	running = false;
+}
 
-	} else if (MATCH("disconnect")) {
-		hub->disconnect();
-	} else if (MATCH("version")) {
-		cmd_output(	"%s\n"
-					"    Copyright (C) 2001-2010 Jan Vidar Krey, janvidar@extatic.org\n"
-					"    This is free software with ABSOLUTELY NO WARRANTY.\n\n", core->getVersion());
-			
-	} else if (MATCH("help")) {
-		cmd_output("Command reference:");
-		/*
-		for (size_t n = 0; commands[n].cmd; n++) {
-			if (!commands[n].hidden)
-				printf("    %15s %16s   - %s\n", commands[n].cmd, commands[n].args, commands[n].description);
-		}
-		*/
-		
-	} else if (MATCH("msg ")) {
-		const char* split = strchr(&cmd[6], ' ');
-		if (split) {
-			char* nick = strndup(&cmd[5], &split[0]-&cmd[5]);
-			const QuickDC::User* user = hub->getUserManager()->getUserByNick(nick);
-			if (user) {
-				const char* msg = &split[1];
-				if (strlen(msg))
-					hub->sendPrivateChatMessage(user, msg);
-			} else {
-				cmd_error("No user named '%s'", nick);
-			}
-			free(nick);
-		}
-	
-	} else if (MATCH("ctm ")) {
-		const char* nick = &cmd[5];
-		const QuickDC::User* user = hub->getUserManager()->getUserByNick(nick);
-		if (user) {
-				hub->connectUser(user->getID());
-		} else {
-			cmd_error("*** No user named '%s'", nick);
-		}
-	
-	} else if (MATCH("info ")) {
-		const QuickDC::User* user = hub->getUserManager()->getUserByNick(&cmd[6]);
-		if (user) {
-			printf("*** User information for '%s'\n", &cmd[6]);
-			printf("    Nick:            %s\n", user->getNick());
-			printf("    Description:     %s\n", user->getDescription());
-			printf("    E-mail:          %s\n", user->getEmail());
-			printf("    Shared size:     %s\n", getFormatSize(user->getSharedBytes()));
-			printf("    User-agent:      %s\n", user->getUserAgent());
-			printf("    Stats:           %d slots, %d/%d/%d (op/reg/norm)\n",
-					user->getNumSlots(),
-					user->getHubsOperator(),
-					user->getHubsRegistered(),
-					user->getHubsRegular()
-				);
-		} else {
-			cmd_error("*** No user named '%s'", &cmd[6]);
-		}
-	} else if (MATCH("join")) {
-		hub->showjoins = !hub->showjoins;
-		cmd_output("*** Hub joins are now %s", (hub->showjoins ? "ON" : "OFF"));
+static void cmd_connect(const std::vector<std::string>&)
+{
+	hub->connect();
+}
 
-	} else if (MATCH("list")) {
-		QuickDC::UserManager* users = hub->getUserManager();
-		if (users) {
-			printf("*** Users online: %d\n", (int) users->countUsers());
-			QuickDC::User* u = users->first();
-			while (u) {
-				printf("  %32s  %16s  '%s'\n", u->getNick(), getFormatSize(u->getSharedBytes()), u->getDescription());
+static void cmd_disconnect(const std::vector<std::string>&)
+{
+	hub->disconnect();
+}
 
-				u = users->next();
-			}
-		} else {
-			cmd_error("*** Unable to obtain user list, not online");
-		}
+static void cmd_allow_connections(const std::vector<std::string>&)
+{
+	hub->allowConnections = !hub->allowConnections;
+	cmd_output("Allow connections %s", (hub->allowConnections ? "ON" : "OFF"));
+}
 
-	} else if (MATCH("transfers")) {
-		cmd_output("*** Transfers: %d\n", (int) core->transfers->size());
-		QuickDC::Transfer* t = core->transfers->first();
-		while (t) {
-			printf("  %15s:%d\t%8d bps (%s) '%s'\n", t->getSocket()->getAddress()->toString(), t->getSocket()->getPort(), (int) t->getBps(), t->isDownload() ? "DN" : "UP", t->getFile()->getName().c_str());
-			t = core->transfers->next();
-		}
+static void cmd_joins(const std::vector<std::string>&)
+{
+	hub->showjoins = !hub->showjoins;
+	cmd_output("Hub joins are now %s", (hub->showjoins ? "ON" : "OFF"));
+}
 
-	} else if (MATCH("connections")) {
-		cmd_output("*** Connections: %d\n", (int) core->connections->size());
-		QuickDC::Connection* c = core->connections->first();
-		while (c) {
-			printf("  %s:%5d    %s\n", c->getSocket()->getAddress()->toString(), c->getSocket()->getPort(), c->getProtocol());
-			c = core->connections->next();
-		}
-		
-	} else if (MATCH("connect")) {
-		hub->connect();
-	} else if (MATCH("search ")) {
-		if (size < 8) return;
-		
-		QuickDC::Share::SearchRequest* request = new QuickDC::Share::SearchRequest(QuickDC::Share::SearchRequest::SizeAny, 0, 0, "console", 0);
-		char* term = strdup(&cmd[8]);
-		char* start = term;
+static void cmd_list(const std::vector<std::string>&)
+{
+	QuickDC::UserManager* users = hub->getUserManager();
+	if (!users)
+	{
+		cmd_error("Unable to obtain user list, not online");
+		return;
+	}
+
+	cmd_output("Users online: %d", (int) users->countUsers());
+	QuickDC::User* u = users->first();
+	while (u)
+	{
+		printf("  %32s  %16s  '%s'\n", u->getNick(), getFormatSize(u->getSharedBytes()), u->getDescription());
+		u = users->next();
+	}
+}
+
+static void cmd_stats(const std::vector<std::string>&)
+{
+	QuickDC::UserManager* users = hub->getUserManager();
+	if (!users)
+	{
+		cmd_error("Unable to obtain user list, not online");
+		return;
+	}
+	cmd_output("Users online: %d", (int) users->countUsers());
+}
+
+static void cmd_info(const std::vector<std::string>& args)
+{
+	const QuickDC::User* user = resolveUser(args[0]);
+	if (!user) return;
+
+	cmd_output("User information for '%s'", user->getNick());
+	printf("    Nick:            %s\n", user->getNick());
+	printf("    Description:     %s\n", user->getDescription());
+	printf("    E-mail:          %s\n", user->getEmail());
+	printf("    Shared size:     %s\n", getFormatSize(user->getSharedBytes()));
+	printf("    User-agent:      %s\n", user->getUserAgent());
+	printf("    Stats:           %d slots, %d/%d/%d (op/reg/norm)\n",
+			user->getNumSlots(),
+			user->getHubsOperator(),
+			user->getHubsRegistered(),
+			user->getHubsRegular()
+		);
+}
+
+static void cmd_msg(const std::vector<std::string>& args)
+{
+	const QuickDC::User* user = resolveUser(args[0]);
+	if (!user) return;
+	hub->sendPrivateChatMessage(user, args[1].c_str());
+}
+
+static void cmd_ctm(const std::vector<std::string>& args)
+{
+	const QuickDC::User* user = resolveUser(args[0]);
+	if (!user) return;
+	hub->connectUser(user->getID());
+}
+
+static void cmd_browse(const std::vector<std::string>& args)
+{
+	const QuickDC::User* user = resolveUser(args[0]);
+	if (!user) return;
+	cmd_output("Browsing user '%s'", user->getNick());
+	hub->connectUser(user->getID());
+}
+
+static void cmd_kick(const std::vector<std::string>& args)
+{
+	const QuickDC::User* user = resolveUser(args[0]);
+	if (!user) return;
+	hub->sendKickUser(user->getID());
+}
+
+static void cmd_redirect(const std::vector<std::string>& args)
+{
+	const QuickDC::User* user = resolveUser(args[0]);
+	if (!user) return;
+
+	const char* reason = (args.size() > 2) ? args[2].c_str() : "Redirected by operator";
+	hub->sendRedirect(user->getID(), args[1].c_str(), reason);
+}
+
+static void cmd_search(const std::vector<std::string>& args)
+{
+	QuickDC::Share::SearchRequest* request =
+		new QuickDC::Share::SearchRequest(QuickDC::Share::SearchRequest::SizeAny, 0, 0, "console", 0);
+
+	char* terms = strdup(args[0].c_str());
+	char* start = terms;
+	for (;;)
+	{
 		char* end = strchr(start, ' ');
-		while (end) {
-			end[0] = '\0';
-			
-			if (start[0] == '+' && strlen(start) > 1)
-				request->addInclusion(&start[1]);
-			else if (start[0] == '-' && strlen(start) > 1)
-				request->addExclusion(&start[1]);
-			else
-				request->addInclusion(start);
+		if (end) end[0] = '\0';
 
-			start = &end[1];
-			end = strchr(start, ' ');
-		}
-		
 		if (start[0] == '+' && strlen(start) > 1)
 			request->addInclusion(&start[1]);
 		else if (start[0] == '-' && strlen(start) > 1)
 			request->addExclusion(&start[1]);
-		else
+		else if (strlen(start))
 			request->addInclusion(start);
-		
-		hub->sendSearchRequest(request);
-		
-		delete request;
-		free(term);
-		
-	} else if (MATCH("tthsearch ")) {
-		if (size < 11) return;
-		
-		QuickDC::Share::SearchRequest* request = new QuickDC::Share::SearchRequest(QuickDC::Share::SearchRequest::SizeAny, 0, (char*) &cmd[11], "consoletth", 0);
-		
-		QuickDC::Core::getInstance()->shares->search(request);
-		delete request;
-	
-	} else if (MATCH("browse ")) {
-		if (size < 8) return;
-		const QuickDC::User* user = hub->getUserManager()->getUserByNick(&cmd[8]);
-		printf("Browse user '%s'\n", &cmd[8]);
-		if (user) {
-			hub->connectUser(user->getID());
-		} else {
-			printf("*** No user named '%s'\n", &cmd[8]);
-		}
-		
-	} else if (MATCH("kick ")) {
-		if (size < 6) return;
-		const QuickDC::User* user = hub->getUserManager()->getUserByNick(&cmd[6]);
-		if (user) {
-			hub->sendKickUser(user->getID());
-		} else {
-			printf("*** No user named '%s'\n", &cmd[6]);
-		}		
-	
-	} else if (MATCH("stats")) {
-                QuickDC::UserManager* users = hub->getUserManager();
-		if (users) {
-			printf("*** Users online: %d\n", (int) users->countUsers());
-		} else {
-			printf("*** Unable to obtain user list\n");
-		}
 
-	} else if (MATCH("hubstats")) {
-		ADC::Hub* localHub = QuickDC::Core::getInstance()->localHub;
-		if (localHub) {
-			printf("*** Local hub started. %d/%d user(s) online\n", 
-				(int) localHub->users.size(),
-				(int) localHub->maxUsers);
-
-			int count_state_none     = 0;
-			int count_state_protocol = 0;
-			int count_state_identify = 0;
-			int count_state_verify   = 0;
-			int count_state_normal   = 0;
-			int count_state_wait     = 0;
-			int count_cred_user      = 0;
-			int count_cred_operator  = 0;
-			int count_cred_admin     = 0;
-			size_t max_send_queue    = 0;
-			size_t tot_send_queue    = 0;
-
-			std::vector<ADC::HubUser*>::iterator it;
-			for (it = localHub->users.begin(); it != localHub->users.end(); it++) {
-				ADC::HubUser* user = (*it);
-				switch (user->getCredentials()) {
-					case ADC::Cred_User:            count_cred_user++;      break;
-					case ADC::Cred_Operator:        count_cred_operator++;  break;
-					case ADC::Cred_Admin:           count_cred_admin++;     break;
-				}
-				switch (user->getState()) {
-					case ADC::State_None:           count_state_none++;     break;
-					case ADC::State_Protocol:       count_state_protocol++; break;
-					case ADC::State_Identify:       count_state_identify++; break;
-					case ADC::State_Verify:         count_state_verify++;   break;
-					case ADC::State_Normal:         count_state_normal++;   break;
-					case ADC::State_WaitDisconnect: count_state_wait++;     break;
-				}
-
-				
-				if (user->getSendQueueSize() > max_send_queue)
-					max_send_queue = user->getSendQueueSize();
-				
-				tot_send_queue += user->getSendQueueSize();
-				
-
-			}
-			
-			printf("    User statistics:\n");
-			printf("    - Users:         %d\n"
-			       "    - Operators:     %d\n"
-			       "    - Admins:        %d\n\n",
-				count_cred_user,
-				count_cred_operator,
-				count_cred_admin
-			);
-
-			printf("    Connection states:\n");
-			printf("    - Connecting:    %d\n"
-			       "    - Normal:        %d\n"
-                               "    - Disconnecting: %d\n\n",
-				count_state_none + count_state_protocol + count_state_identify + count_state_verify,
-				count_state_normal,
-				count_state_wait);
-
-			printf("    Send queue:\n"
-			       "    - Max queue:     %d (bytes)\n"
-			       "    - Total:         %d (bytes)\n\n",
-				(int) max_send_queue,
-				(int) tot_send_queue);
-
-			printf("    Bandwidth utilization:\n"
-			       "    - Upstream:      %d (bytes/sec)\n"
-			       "    - Downstream:    %d (bytes/sec)\n\n",
-				(int) core->bandwidthManager->getSendBps(),
-				(int) core->bandwidthManager->getRecvBps());
-
-
-		} else {
-			printf("*** Local hub not started\n");
-		}
-
-		
-	} else {
-		printf("*** Unknown command: `%s'. Try `/help'\n", cmd);
+		if (!end) break;
+		start = &end[1];
 	}
+
+	hub->sendSearchRequest(request);
+
+	delete request;
+	free(terms);
+}
+
+static void cmd_tthsearch(const std::vector<std::string>& args)
+{
+	/* SearchRequest silently ignores anything that is not a TTH root, so check
+	   here to be able to say why nothing happened. */
+	if (args[0].size() != 39)
+	{
+		cmd_error("A TTH root is 39 characters, `%s' is %d", args[0].c_str(), (int) args[0].size());
+		return;
+	}
+
+	char* tth = strdup(args[0].c_str());
+	QuickDC::Share::SearchRequest* request =
+		new QuickDC::Share::SearchRequest(QuickDC::Share::SearchRequest::SizeAny, 0, tth, "consoletth", 0);
+
+	QuickDC::Core::getInstance()->shares->search(request);
+
+	delete request;
+	free(tth);
+}
+
+static void cmd_transfers(const std::vector<std::string>&)
+{
+	cmd_output("Transfers: %d", (int) core->transfers->size());
+	QuickDC::Transfer* t = core->transfers->first();
+	while (t)
+	{
+		printf("  %15s:%d\t%8d bps (%s) '%s'\n",
+			t->getSocket()->getAddress()->toString(),
+			t->getSocket()->getPort(),
+			(int) t->getBps(),
+			t->isDownload() ? "DN" : "UP",
+			t->getFile()->getName().c_str());
+		t = core->transfers->next();
+	}
+}
+
+static void cmd_connections(const std::vector<std::string>&)
+{
+	cmd_output("Connections: %d", (int) core->connections->size());
+	QuickDC::Connection* c = core->connections->first();
+	while (c)
+	{
+		printf("  %s:%5d    %s\n",
+			c->getSocket()->getAddress()->toString(),
+			c->getSocket()->getPort(),
+			c->getProtocol());
+		c = core->connections->next();
+	}
+}
+
+static void cmd_hubkick(const std::vector<std::string>& args)
+{
+	ADC::Hub* localHub = QuickDC::Core::getInstance()->localHub;
+	if (!localHub)
+	{
+		cmd_error("Local hub not started");
+		return;
+	}
+
+	ADC::HubUser* user = localHub->lookupUser(args[0].c_str());
+	if (!user)
+	{
+		cmd_error("No user named `%s' on the local hub", args[0].c_str());
+		return;
+	}
+
+	localHub->kick(user);
+	cmd_output("Kicked `%s' from the local hub", args[0].c_str());
+}
+
+static void cmd_hubstats(const std::vector<std::string>&)
+{
+	ADC::Hub* localHub = QuickDC::Core::getInstance()->localHub;
+	if (!localHub)
+	{
+		cmd_error("Local hub not started");
+		return;
+	}
+
+	cmd_output("Local hub started. %d/%d user(s) online",
+		(int) localHub->users.size(),
+		(int) localHub->maxUsers);
+
+	int count_state_none     = 0;
+	int count_state_protocol = 0;
+	int count_state_identify = 0;
+	int count_state_verify   = 0;
+	int count_state_normal   = 0;
+	int count_state_wait     = 0;
+	int count_cred_user      = 0;
+	int count_cred_operator  = 0;
+	int count_cred_admin     = 0;
+	size_t max_send_queue    = 0;
+	size_t tot_send_queue    = 0;
+
+	std::vector<ADC::HubUser*>::iterator it;
+	for (it = localHub->users.begin(); it != localHub->users.end(); it++)
+	{
+		ADC::HubUser* user = (*it);
+		switch (user->getCredentials()) {
+			case ADC::Cred_User:            count_cred_user++;      break;
+			case ADC::Cred_Operator:        count_cred_operator++;  break;
+			case ADC::Cred_Admin:           count_cred_admin++;     break;
+		}
+		switch (user->getState()) {
+			case ADC::State_None:           count_state_none++;     break;
+			case ADC::State_Protocol:       count_state_protocol++; break;
+			case ADC::State_Identify:       count_state_identify++; break;
+			case ADC::State_Verify:         count_state_verify++;   break;
+			case ADC::State_Normal:         count_state_normal++;   break;
+			case ADC::State_WaitDisconnect: count_state_wait++;     break;
+		}
+
+		if (user->getSendQueueSize() > max_send_queue)
+			max_send_queue = user->getSendQueueSize();
+
+		tot_send_queue += user->getSendQueueSize();
+	}
+
+	printf("    User statistics:\n");
+	printf("    - Users:         %d\n"
+	       "    - Operators:     %d\n"
+	       "    - Admins:        %d\n\n",
+		count_cred_user,
+		count_cred_operator,
+		count_cred_admin
+	);
+
+	printf("    Connection states:\n");
+	printf("    - Connecting:    %d\n"
+	       "    - Normal:        %d\n"
+	       "    - Disconnecting: %d\n\n",
+		count_state_none + count_state_protocol + count_state_identify + count_state_verify,
+		count_state_normal,
+		count_state_wait);
+
+	printf("    Send queue:\n"
+	       "    - Max queue:     %d (bytes)\n"
+	       "    - Total:         %d (bytes)\n\n",
+		(int) max_send_queue,
+		(int) tot_send_queue);
+
+	printf("    Bandwidth utilization:\n"
+	       "    - Upstream:      %d (bytes/sec)\n"
+	       "    - Downstream:    %d (bytes/sec)\n\n",
+		(int) core->bandwidthManager->getSendBps(),
+		(int) core->bandwidthManager->getRecvBps());
+}
+
+
+/* ------------------------------------------------------------------------ *
+ * Dispatch
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Look up a command, accepting any unambiguous abbreviation. An exact match
+ * always wins, so a command that is a prefix of another (/connect against
+ * /connections) stays reachable by its full name. Sets 'reported' when it has
+ * already explained the failure to the user.
+ */
+static const struct CommandData* matchCommand(const char* name, bool& reported)
+{
+	reported = false;
+
+	const struct CommandData* exact = findCommand(name);
+	if (exact) return exact;
+
+	size_t len = strlen(name);
+	const struct CommandData* found = 0;
+	size_t matches = 0;
+
+	for (size_t n = 0; commands[n].cmd; n++)
+	{
+		if (strncasecmp(commands[n].cmd, name, len) != 0) continue;
+		found = &commands[n];
+		matches++;
+	}
+
+	if (matches == 1) return found;
+
+	if (matches > 1)
+	{
+		std::string list;
+		for (size_t n = 0; commands[n].cmd; n++)
+		{
+			if (strncasecmp(commands[n].cmd, name, len) != 0) continue;
+			if (list.size()) list += ", ";
+			list += "/";
+			list += commands[n].cmd;
+		}
+		cmd_error("Ambiguous command: `/%s' matches %s", name, list.c_str());
+		reported = true;
+	}
+
+	return 0;
+}
+
+void parseCommand(const char* line, size_t size)
+{
+	if (!line) return;
+
+	std::string input(line, size);
+
+	/* The console hands us the line without its newline, but be tolerant. */
+	while (input.size() && isspace((unsigned char) input[input.size()-1]))
+		input.erase(input.size()-1);
+
+	if (input.empty() || input[0] != '/') return;
+
+	size_t split = input.find(' ');
+	std::string name = (split == std::string::npos) ? input.substr(1) : input.substr(1, split - 1);
+	std::string rest = (split == std::string::npos) ? std::string() : input.substr(split + 1);
+
+	if (name.empty())
+	{
+		cmd_error("Empty command. Try `/help'");
+		return;
+	}
+
+	bool reported = false;
+	const struct CommandData* command = matchCommand(name.c_str(), reported);
+	if (!command)
+	{
+		if (!reported)
+			cmd_error("Unknown command: `/%s'. Try `/help'", name.c_str());
+		return;
+	}
+
+	if (!command->handler)
+	{
+		cmd_error("`/%s' is not implemented yet", command->cmd);
+		return;
+	}
+
+	std::vector<std::string> args;
+	if (!splitArguments(command, rest.c_str(), args)) return;
+
+	command->handler(args);
 }

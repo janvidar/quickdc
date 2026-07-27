@@ -90,10 +90,19 @@ QuickDC::Core::~Core()
 
 void QuickDC::Core::run()
 {
-	// Poll sockets
-	// FIXME: Wait for sigio, it's no point actually waiting!
-	monitor->wait(0);
-	
+	// Poll sockets. A zero timeout turns the caller's main loop into a spin -
+	// kevent/poll returns immediately and we burn a core doing nothing. Block
+	// briefly instead; callers that also poll a non-socket input source (the
+	// CLI polls /dev/tty) see at most this much added latency.
+	//
+	// While hashing is in progress we must not block at all: hash->process()
+	// below only advances one chunk per call, so any wait here throttles
+	// hashing to 1000/POLL_INTERVAL_MS chunks per second.
+	// FIXME: register the other input sources with the monitor, and drive
+	// hashing off a worker thread, so this can block indefinitely.
+	static const int POLL_INTERVAL_MS = 50;
+	monitor->wait(hash->isBusy() ? 0 : POLL_INTERVAL_MS);
+
 	// Make sure hashing is continued - we should post messages instead.
 	hash->process();
 	

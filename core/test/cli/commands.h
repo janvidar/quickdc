@@ -6,95 +6,47 @@
 #ifndef HAVE_QUICKDC_CLI_COMMANDS_H
 #define HAVE_QUICKDC_CLI_COMMANDS_H
 
-namespace QuickDC {
-	class User;
-}
+#include <string>
+#include <vector>
 
+/**
+ * Handler for one command. The arguments have already been split and
+ * validated against CommandData::args by the dispatcher, so a handler can
+ * index the ones it declared as required without checking the size first.
+ */
+typedef void (*CommandFunc)(const std::vector<std::string>& args);
+
+/**
+ * One entry in the command table.
+ *
+ * 'args' is the single source of truth for a command's arguments: the
+ * dispatcher uses it to split the input and to reject malformed invocations,
+ * and /help uses it to generate the usage line. Keeping one description
+ * instead of a separate parser and help text is what stops the two from
+ * drifting apart.
+ *
+ * It is a space separated list of "type:name" tokens, where type is:
+ *
+ *   n   a nick (one word, resolved against the hub by the handler)
+ *   w   any single word
+ *   i   an integer (validated by the dispatcher)
+ *   s   a string, consuming the rest of the line
+ *
+ * A token prefixed with '?' is optional; everything after an optional token
+ * must also be optional. Since 's' consumes the rest of the line it may only
+ * appear as the last token.
+ *
+ * A null handler marks a command that is listed but not implemented yet;
+ * /help shows it as such rather than pretending it works.
+ */
 struct CommandData {
 	const char* cmd;
-	size_t     length;
-	size_t     params;
-	const char* args; /* n = nick/handle,  s = string (spaced), i = number. ?s = optional string (can only be used once)*/
+	const char* args;
 	const char* description;
-	int hidden;
-};
- 
-
-class Arg {
-	public:
-		virtual ~Arg() { }
-		virtual bool isValid() = 0;
+	int         hidden;    /* only listed by `/help all' */
+	CommandFunc handler;
 };
 
-class ArgHandle : public Arg {
-	public:
-		ArgHandle(char* s);
-		~ArgHandle();
-		bool isValid();
-		QuickDC::User* user;
-};
-
-class ArgString : public Arg {
-	public:
-		ArgString(char* s);
-		~ArgString();
-		bool isValid();
-		char* string;
-};
-
-class ArgInteger : public Arg {
-	public:
-		ArgInteger(char* s);
-		~ArgInteger();
-		bool isValid();
-		int number;
-		bool valid;
-};
-
-typedef std::vector<Arg*> argumentList;
-
-class Command {
-	public:
-		Command(const char* line, size_t size);
-		~Command();
-		
-		bool isValid();
-		
-	protected:
-		bool match();
-		bool parse();
-
-		char* line;
-		char* cmd;
-		bool valid;
-		std::vector<Arg*> arguments;
-};
-
-class CommandHandler
-{
-	public:
-		CommandHandler(const char* cmd);
-		virtual ~CommandHandler();
-		
-		const char* getCommand() const;
-		virtual void exec(argumentList arguments) = 0;
-		
-	protected:
-		const char* cmd;
-};
-
-class CommandHandlerManager {
-	public:
-		CommandHandlerManager();
-		virtual ~CommandHandlerManager();
-		
-		void add(CommandHandler* handler);
-		
-	private:
-		std::vector<CommandHandler*> handlers;
-};
-
-
-extern void parseCommand(const char* cmd, size_t size);
+extern void parseCommand(const char* line, size_t size);
 
 #endif // HAVE_QUICKDC_CLI_COMMANDS_H

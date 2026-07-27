@@ -20,10 +20,11 @@ QuickDC::Share::SearchRequest::SearchRequest(QuickDC::Share::SearchReplyHandler*
 QuickDC::Share::SearchRequest::SearchRequest(enum SizePolicy sp, uint64_t size_, const char* tth_, const char* token_, QuickDC::Share::SearchReplyHandler* eh) :
 	tth(0), token(0), size(size_), size_type(sp), event_handler(eh), user(0)
 {
-	if (tth_) {
-		if (strlen(tth_) == 39)
-			tth = strdup(tth_);
-			
+	/* A TTH root is always 39 base32 characters; anything else is not one and
+	   leaves tth null. The uppercasing has to stay inside that check - it used
+	   to sit outside it and dereference the null. */
+	if (tth_ && strlen(tth_) == 39) {
+		tth = strdup(tth_);
 		for (size_t n = 0; n < 39; n++)
 			tth[n] = toupper(tth[n]);
 	}
