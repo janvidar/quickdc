@@ -109,6 +109,16 @@ void QuickDC::Core::run()
 	// Collect whatever the hash worker thread has finished.
 	hash->process();
 
+	// Announce transfers that have finished.
+	//
+	// A transfer reports completion from inside its own exec(), and the session
+	// that owns it responds by deleting it, so the notification has to be
+	// deferred to here rather than made on the spot. TransferManager parks them
+	// on a list for exactly that reason; nothing was draining the list, which
+	// left a finished download sitting with its socket open waiting for data
+	// that was never coming.
+	transfers->process();
+
 	// Expire dead sources, start queued transfers, and flush the queue now
 	// and then. Cheap enough to run on every iteration.
 	queue->process();
