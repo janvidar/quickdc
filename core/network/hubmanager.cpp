@@ -89,6 +89,24 @@ QuickDC::Hub* QuickDC::HubManager::lookupUserByClientID(const char* cid) {
 }
 
 
+size_t QuickDC::HubManager::searchAllHubs(QuickDC::Share::SearchRequest* request) {
+	if (!request) return 0;
+
+	size_t sent = 0;
+	for (size_t i = 0; i < hubs.size(); i++)
+	{
+		QuickDC::Hub* hub = hubs[i];
+
+		/* sendSearchRequest() would report this to the user as an error. */
+		if (!hub->session || !hub->session->isLoggedIn()) continue;
+
+		hub->sendSearchRequest(request);
+		sent++;
+	}
+	return sent;
+}
+
+
 size_t QuickDC::HubManager::countHubsNormal() {
 	size_t n = 0;
 	for (size_t i = 0; i < hubs.size(); i++)

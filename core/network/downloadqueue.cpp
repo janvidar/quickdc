@@ -14,6 +14,7 @@
 #include "hash/hashjob.h"
 #include "xml/reader.h"
 #include "share/dcfilelist.h"
+#include "share/searchrequest.h"
 
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
@@ -562,6 +563,8 @@ QuickDC::QueueManager::QueueManager()
 	: verifier(0)
 	, dirty(false)
 	, tokenCounter(0)
+	, lastSourceSearch(0)
+	, searchRotation(0)
 {
 	QDBG("QueueManager::QueueManager()");
 
@@ -602,9 +605,48 @@ void QuickDC::QueueManager::process()
 	processVerifications();
 	expire();
 	schedule();
+	searchForSources();
 
 	if (dirty && lastSaved.elapsed() >= QUICKDC_QUEUE_SAVE_INTERVAL)
 		save();
+}
+
+void QuickDC::QueueManager::searchForSources()
+{
+	if (lastSourceSearch.elapsed() < QUICKDC_SOURCE_SEARCH_INTERVAL) return;
+
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	if (!core || !core->hubs) return;
+
+	std::vector<QueueFile*> wanted;
+	getFilesNeedingSources(wanted, QUICKDC_SOURCE_SEARCH_MIN_SOURCES);
+	if (wanted.empty()) return;
+
+	/* One file per interval, taken in turn. Only a hash can find a source. */
+	for (size_t n = 0; n < wanted.size(); n++)
+	{
+		size_t index = (searchRotation + n) % wanted.size();
+		QueueFile* file = wanted[index];
+
+		const char* tth = file->getTTH();
+		if (!tth || strlen(tth) != QUICKDC_TTH_LENGTH) continue;
+
+		std::string token("src");
+		token += makeToken();
+
+		QuickDC::Share::SearchRequest request(QuickDC::Share::SearchRequest::SizeAny,
+			0, tth, token.c_str(), 0);
+
+		/* Not logged in anywhere yet; retry rather than lose the interval. */
+		if (!core->hubs->searchAllHubs(&request)) return;
+
+		searchRotation = index + 1;
+		lastSourceSearch.reset();
+
+		QDBG("Looking for more sources for '%s'; it has %d",
+			file->getLocalFilename(), (int) file->countSources());
+		return;
+	}
 }
 
 /* ---- contents ---- */

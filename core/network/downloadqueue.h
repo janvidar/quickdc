@@ -47,6 +47,12 @@
 /** The queue is flushed to disk at most this often while running. */
 #define QUICKDC_QUEUE_SAVE_INTERVAL 5
 
+/** How long between automatic searches for more sources, one file at a time. */
+#define QUICKDC_SOURCE_SEARCH_INTERVAL 120
+
+/** Files with fewer sources than this are searched for. */
+#define QUICKDC_SOURCE_SEARCH_MIN_SOURCES 5
+
 /** A TTH root in base32 is always this long. */
 #define QUICKDC_TTH_LENGTH 39
 
@@ -500,6 +506,9 @@ class QueueManager {
 		void expire();
 		void processVerifications();
 
+		/** Search for more sources for one file that is short of them. */
+		void searchForSources();
+
 		void clearRequestsFor(QueueFile*);
 		void removeRequest(const char* token);
 
@@ -534,6 +543,9 @@ class QueueManager {
 		bool dirty;
 		size_t tokenCounter;
 		Samurai::TimeStamp lastSaved;
+
+		Samurai::TimeStamp lastSourceSearch;
+		size_t searchRotation;
 };
 
 

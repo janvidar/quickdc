@@ -13,6 +13,10 @@ namespace QuickDC {
 class Socket;
 class Hub;
 
+namespace Share {
+	class SearchRequest;
+}
+
 /**
  * This class manages multiple hub connections.
  */
@@ -41,6 +45,9 @@ class HubManager {
 		 * which is what a FileSource stores.
 		 */
 		Hub* getHubByUrl(const char* url);
+
+		/** Send a search to every hub we are logged in to. */
+		size_t searchAllHubs(Share::SearchRequest* request);
 
 		/**
 		 * Returns the number of hubs where we are logged in
