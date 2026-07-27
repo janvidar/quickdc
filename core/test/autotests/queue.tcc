@@ -164,6 +164,52 @@ EXO_TEST(chunkmap_reserve_skips_other_reservations, {
 	return s1 == 0 && s2 == 100 && m.getReservationCount() == 2;
 });
 
+EXO_TEST(chunkmap_hasfreerange_tracks_reserve, {
+	QuickDC::ChunkMap m(1000);
+	if (!m.hasFreeRange()) return false;
+
+	m.addRange(0, 600);
+	if (!m.hasFreeRange()) return false;
+
+	uint64_t start = 0;
+	uint64_t length = 0;
+	if (!m.reserve(400, start, length)) return false;
+
+	/* Everything is now either done or being fetched, so there is nothing
+	   left to give a second source. */
+	return !m.hasFreeRange();
+});
+
+EXO_TEST(chunkmap_hasfreerange_does_not_reserve, {
+	QuickDC::ChunkMap m(1000);
+
+	if (!m.hasFreeRange()) return false;
+	if (m.getReservationCount() != 0) return false;
+
+	/* Asking must not consume anything: reserve() still starts at zero. */
+	uint64_t start = 99;
+	uint64_t length = 0;
+	return m.reserve(100, start, length) && start == 0;
+});
+
+EXO_TEST(chunkmap_hasfreerange_released_becomes_free_again, {
+	QuickDC::ChunkMap m(1000);
+
+	uint64_t start = 0;
+	uint64_t length = 0;
+	if (!m.reserve(1000, start, length)) return false;
+	if (m.hasFreeRange()) return false;
+
+	m.release(start, length);
+	return m.hasFreeRange();
+});
+
+EXO_TEST(chunkmap_hasfreerange_false_when_complete, {
+	QuickDC::ChunkMap m(1000);
+	m.addRange(0, 1000);
+	return m.isComplete() && !m.hasFreeRange();
+});
+
 EXO_TEST(chunkmap_reserve_clamped_by_next_range, {
 	QuickDC::ChunkMap m(1000);
 	m.addRange(0, 400);

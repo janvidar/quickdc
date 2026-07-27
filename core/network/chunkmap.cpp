@@ -103,6 +103,15 @@ bool QuickDC::ChunkMap::isReserved(uint64_t start, uint64_t end) const
 	return false;
 }
 
+bool QuickDC::ChunkMap::hasFreeRange() const
+{
+	uint64_t start = 0;
+	uint64_t length = 0;
+
+	ChunkMap copy(*this);
+	return copy.reserve(1, start, length);
+}
+
 bool QuickDC::ChunkMap::reserve(uint64_t preferred, uint64_t& start, uint64_t& length)
 {
 	if (!size || !preferred) return false;

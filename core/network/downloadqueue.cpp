@@ -1167,6 +1167,9 @@ void QuickDC::QueueManager::schedule()
 			if (file->isComplete()) continue;
 			if (!file->getSize()) continue;
 
+			/* Nothing left to hand out, so a source would find nothing to do. */
+			if (!file->getChunks().hasFreeRange()) continue;
+
 			for (size_t s = 0; s < file->countSources() && inFlight < budget; s++)
 			{
 				FileSource* source = file->getSource(s);

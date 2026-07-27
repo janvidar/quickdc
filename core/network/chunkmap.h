@@ -86,6 +86,11 @@ class ChunkMap {
 		bool reserve(uint64_t preferred, uint64_t& start, uint64_t& length);
 
 		/**
+		 * @return true if reserve() would hand something out.
+		 */
+		bool hasFreeRange() const;
+
+		/**
 		 * The reservation delivered; promote 'length' bytes of it to a
 		 * downloaded range and drop the reservation.
 		 *
