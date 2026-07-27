@@ -171,35 +171,25 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 
 	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
 
-	if (token) {
-		upload_approved = security->isAuthorized(QuickDC::Clearance::ADC, hubsession, socket, cid, token);
+	/*
+	 * Whichever side dialled, the token has to be one we issued and granted a
+	 * clearance for. The peer quotes it back in their CINF when they dialled us.
+	 */
+	const char* job = (token) ? token : remote_token;
+
+	if (job) {
+		upload_approved = security->isAuthorized(QuickDC::Clearance::ADC, hubsession, socket, cid, job);
 		QDBG("Authorized for upload: %s", upload_approved ? "yes" : "no");
-	} else if (remote_token) {
-		upload_approved = true;
 	} else {
 		QDBG("Neither side named a token; nothing to do on this connection");
 	}
 
-	/*
-	 * The clearance covered getting this one connection set up, and the
-	 * connection is now here, so it has done its job. Nothing revoked them
-	 * before, which left the table growing by one entry per connection request
-	 * for as long as the process ran - and isAuthorized() walks all of it.
-	 *
-	 * Both branches above are covered: the token is ours when we dialled out,
-	 * and the peer echoes it back in their CINF when they dialled us.
-	 */
-	if (cid)
-		security->revoke(QuickDC::Clearance::ADC, hubsession, cid, token ? token : remote_token);
+	/* The clearance covered setting this connection up, and it is now here. */
+	if (cid && job)
+		security->revoke(QuickDC::Clearance::ADC, hubsession, cid, job);
 
-	/*
-	 * The token is the only thing tying this connection back to a job. When we
-	 * dialled out we already have it; when the peer dialled us it arrives in
-	 * their CINF. Either way, if the download queue recognises it, we are here
-	 * to fetch something.
-	 */
+	/* The token is also what ties this connection to a queued download. */
 	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
-	const char* job = (token) ? token : remote_token;
 
 	if (queue && job && queue->lookupRequest(job))
 	{
