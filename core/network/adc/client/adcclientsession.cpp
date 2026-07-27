@@ -651,8 +651,10 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 		chunk_length = length;
 		request->setReservation(0, (uint64_t) length);
 
-		transfer = new QuickDC::Download(xfrmgr, this, proxy->socket, file, 0, length);
+		QuickDC::Download* download = new QuickDC::Download(xfrmgr, this, proxy->socket, file, 0, length);
+		transfer = download;
 		state = StateData;
+		proxy->handOverTo(download);
 		return;
 	}
 
@@ -705,8 +707,10 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 	 */
 	request->setReservation(offset, (uint64_t) length);
 
-	transfer = new QuickDC::Download(xfrmgr, this, proxy->socket, file, offset, length);
+	QuickDC::Download* download = new QuickDC::Download(xfrmgr, this, proxy->socket, file, offset, length);
+	transfer = download;
 	state = StateData;
+	proxy->handOverTo(download);
 }
 
 void ADC::ClientSession::EventHostLookup(const Samurai::IO::Net::Socket*) { }

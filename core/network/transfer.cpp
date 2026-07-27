@@ -248,6 +248,7 @@ void QuickDC::ZUpload::transfer()
 QuickDC::Download::Download(TransferManager* mgr, PrivateTransferListener* listener, Samurai::IO::Net::Socket* conn, Samurai::IO::File* file_, off_t offset, off_t length)
 	: QuickDC::Transfer(mgr, listener, conn, file_, QuickDC::Transfer::Download, offset, length)
 	, downloadBuffer(0), downloadBufferSize(0)
+	, pending(0), pendingSize(0), pendingOffset(0)
 {
 	QDBG("QuickDC::Download::Download()");
 
@@ -283,6 +284,29 @@ QuickDC::Download::~Download() {
 	QDBG("QuickDC::Download::~Download()");
 	file->close();
 	delete[] downloadBuffer;
+	free(pending);
+}
+
+void QuickDC::Download::pushPending(const char* data, size_t length)
+{
+	if (!data || !length) return;
+
+	size_t left = pendingSize - pendingOffset;
+	char* buf = (char*) malloc(left + length);
+	if (!buf)
+	{
+		QERR("Download: out of memory taking over %d buffered bytes", (int) length);
+		status = IOFail;
+		return;
+	}
+
+	if (left) memcpy(buf, &pending[pendingOffset], left);
+	memcpy(&buf[left], data, length);
+
+	free(pending);
+	pending = buf;
+	pendingSize = left + length;
+	pendingOffset = 0;
 }
 
 void QuickDC::Download::close()
@@ -305,6 +329,35 @@ void QuickDC::Download::transfer()
 	uint64_t remaining = total - offset;
 	if (remaining < (uint64_t) want) want = (size_t) remaining;
 	if (!want) return;
+
+	if (pending)
+	{
+		size_t take = pendingSize - pendingOffset;
+		if ((uint64_t) take > remaining) take = (size_t) remaining;
+
+		ssize_t out = file->write(&pending[pendingOffset], take);
+		if (out != (ssize_t) take)
+		{
+			QERR("Download: wrote %d of %d buffered bytes to '%s'",
+				(int) out, (int) take, file->getName().c_str());
+			status = IOFail;
+			return;
+		}
+
+		rate.add(out);
+		offset += (uint64_t) out;
+		pendingOffset += take;
+
+		if (pendingOffset >= pendingSize)
+		{
+			free(pending);
+			pending = 0;
+			pendingSize = 0;
+			pendingOffset = 0;
+		}
+
+		return;
+	}
 
 	ssize_t in = socket->read(downloadBuffer, want);
 	if (in <= 0)

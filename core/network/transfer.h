@@ -212,6 +212,12 @@ class Download : public Transfer {
 		Download(TransferManager*, PrivateTransferListener*, Samurai::IO::Net::Socket*, Samurai::IO::File*, off_t offset, off_t length);
 		virtual ~Download();
 
+		/**
+		 * Take over bytes already read from the socket by the command parser,
+		 * to be written before anything more is read.
+		 */
+		void pushPending(const char* data, size_t length);
+
 	protected:
 		virtual void transfer();
 		virtual void close();
@@ -219,6 +225,10 @@ class Download : public Transfer {
 	protected:
 		char* downloadBuffer;
 		size_t downloadBufferSize;
+
+		char* pending;
+		size_t pendingSize;
+		size_t pendingOffset;
 };
 
 }

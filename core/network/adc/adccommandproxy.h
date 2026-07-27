@@ -21,6 +21,7 @@ namespace Samurai {
 
 namespace QuickDC {
 class QueuedCommand;
+class Download;
 }
 
 namespace ADC {
@@ -60,13 +61,20 @@ class CommandProxy : public QuickDC::CommandProxy
 		virtual void close();
 		virtual void connect();
 		void send(ADC::Command* cmd);
-	
+
 		size_t getSendQueueSize() const;
-	
+
+		/**
+		 * Give the rest of the connection over to a download; what is still
+		 * buffered is file data and must not be parsed as commands.
+		 */
+		void handOverTo(QuickDC::Download* download);
+
 	protected:
 		std::map<uint32_t, ADC::CommandParser*> mapper;
 		void clearParsers();
 		QuickDC::CommandFIFO queue;
+		QuickDC::Download* handover;
 };
 
 }

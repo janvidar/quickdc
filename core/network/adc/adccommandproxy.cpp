@@ -10,6 +10,7 @@
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/adccommands.h"
 #include "network/adc/parser.h"
+#include "network/transfer.h"
 #include <map>
 
 #define READ_BUF_SIZE 65536 * 2
@@ -20,7 +21,7 @@
 	mapper.insert(std::pair<uint32_t, ADC::CommandParser*>( \
 	((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d)), cls));
 
-ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::ClientSession* session) : QuickDC::CommandProxy(socket)
+ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::ClientSession* session) : QuickDC::CommandProxy(socket), handover(0)
 {
 	FOURCC_REG('C','S','U','P', new ADC::CCmdSUP(this, session))
 	FOURCC_REG('C','I','N','F', new ADC::CCmdINF(this, session))
@@ -31,7 +32,7 @@ ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::ClientSes
 	FOURCC_REG('C','R','E','S', new ADC::CCmdRES(this, session))
 }
 
-ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::HubSession* session) : QuickDC::CommandProxy(socket)
+ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::HubSession* session) : QuickDC::CommandProxy(socket), handover(0)
 {
 	FOURCC_REG('I','S','I','D', new ADC::CmdSID(this, session));
 	FOURCC_REG('I','I','N','F', new ADC::CmdInfo(this, session));
@@ -53,7 +54,7 @@ ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::HubSessio
 	FOURCC_REG('D','R','C','M', new ADC::CmdRCTM(this, session));
 }
 
-ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::Hub* hub) : QuickDC::CommandProxy(socket)
+ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::Hub* hub) : QuickDC::CommandProxy(socket), handover(0)
 {
 	// hub messages
 	FOURCC_REG('H','S','U','P', new ADC::HubCmdSUP(this, hub));
@@ -187,10 +188,38 @@ bool ADC::CommandProxy::read()
 		readbuffer->remove(split+1);
 		invoke(command, split);
 		free(command);
-		
+
+		if (handover) break;
+
 		split = readbuffer->find('\n');
 	}
+
+	if (handover)
+	{
+		QuickDC::Download* download = handover;
+		handover = 0;
+
+		size_t left = readbuffer->size();
+		if (left)
+		{
+			char* data = readbuffer->memdup(0, left);
+			readbuffer->remove(left);
+			download->pushPending(data, left);
+			free(data);
+
+			/* A small chunk may be here in full, with no further read event
+			   coming. Only safe with data in hand, since the download then
+			   returns without reading. May finish and delete the transfer. */
+			download->exec();
+		}
+	}
+
 	return true;
+}
+
+void ADC::CommandProxy::handOverTo(QuickDC::Download* download)
+{
+	handover = download;
 }
 
 void ADC::CommandProxy::send(Command* cmd)
