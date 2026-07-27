@@ -9,6 +9,12 @@
 #include <string.h>
 #include <strings.h>
 
+#include <samurai/io/net/socket.h>
+#include <samurai/io/net/socketevent.h>
+#include <samurai/io/net/socketmonitor.h>
+#include <samurai/io/net/inetaddress.h>
+#include <samurai/io/net/socketaddress.h>
+
 #ifdef SAMURAI_UNIX
 #include <sys/poll.h>
 #include <fcntl.h>
@@ -76,7 +82,10 @@ class ConsoleInputUnix : public ConsoleInput
 		
 		bool isOK();
 		bool getByte(char& byte);
-				
+
+		/** The terminal descriptor, for the reader thread to poll on. */
+		int getFD() const { return fd; }
+
 	protected:
 		int fd;
 };
@@ -144,6 +153,28 @@ bool ConsoleInputUnix::isOK()
 #endif
 
 
+/**
+ * Watches the read end of the wake socket pair. The bytes are meaningless -
+ * receiving them is the whole point, because it is what breaks the monitor out
+ * of its wait. They still have to be consumed: the monitor is level triggered,
+ * so an undrained wake socket would report readable forever and spin the loop.
+ */
+class ConsoleWakeHandler : public Samurai::IO::Net::SocketEventHandler
+{
+	public:
+		ConsoleWakeHandler(Console* console_) : console(console_) { }
+
+	protected:
+		void EventDataAvailable(const Samurai::IO::Net::Socket*)
+		{
+			console->drainWakeup();
+		}
+
+	private:
+		Console* console;
+};
+
+
 Console* Console::instance = 0;
 Console* Console::getInstance()
 {
@@ -154,58 +185,229 @@ Console* Console::getInstance()
 	return instance;
 }
 
-Console::Console() : input(0), output(0)
+void Console::shutdown()
+{
+	delete instance;
+	instance = 0;
+}
+
+Console::Console()
+	: input(0)
+	, output(0)
+	, last(0)
+	, reader_running(false)
+	, wake_read(-1)
+	, wake_write(-1)
+	, quit_read(-1)
+	, quit_write(-1)
+	, wakeSocket(0)
+	, wakeHandler(0)
 {
 #ifdef SAMURAI_UNIX
 	input  = new ConsoleInputUnix();
 	output = new ConsoleOutputUnix();
+	startReader();
 #endif
 }
 
 Console::~Console()
 {
+	stopReader();
+
+	if (wakeSocket)
+	{
+		Samurai::IO::Net::SocketMonitor::getInstance()->remove(wakeSocket);
+		delete wakeSocket;              /* closes wake_read */
+		wakeSocket = 0;
+		wake_read = -1;
+	}
+	delete wakeHandler; wakeHandler = 0;
+
+#ifdef SAMURAI_UNIX
+	if (wake_read  != -1) close(wake_read);
+	if (wake_write != -1) close(wake_write);
+	if (quit_read  != -1) close(quit_read);
+	if (quit_write != -1) close(quit_write);
+#endif
+
+	free(last);
 	delete input;
 	delete output;
 }
 
+#ifdef SAMURAI_UNIX
+
+void Console::startReader()
+{
+	if (!input->isOK())
+		return;
+
+	int wake[2];
+	int quit[2];
+
+	/* A socket pair, not a pipe: the monitor can only watch sockets. */
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, wake) == -1)
+	{
+		fprintf(stderr, "Unable to create the console wakeup socket pair\n");
+		return;
+	}
+
+	if (pipe(quit) == -1)
+	{
+		fprintf(stderr, "Unable to create the console shutdown pipe\n");
+		close(wake[0]);
+		close(wake[1]);
+		return;
+	}
+
+	wake_read  = wake[0];
+	wake_write = wake[1];
+	quit_read  = quit[0];
+	quit_write = quit[1];
+
+	/* Non-blocking so drainWakeup() can read until it runs dry. */
+	fcntl(wake_read, F_SETFL, O_NONBLOCK);
+
+	Samurai::IO::Net::InetAddress addr("127.0.0.1");
+	Samurai::IO::Net::InetSocketAddress sockaddr(addr, 0);
+
+	/* This constructor adopts an existing descriptor and marks it Connected,
+	   which is exactly the state the monitor expects to deliver reads for. */
+	wakeSocket  = new Samurai::IO::Net::Socket(wake_read, sockaddr);
+	wakeHandler = new ConsoleWakeHandler(this);
+	wakeSocket->setEventHandler(wakeHandler);
+	Samurai::IO::Net::SocketMonitor::getInstance()->add(wakeSocket);
+
+	reader_running = true;
+	reader = std::thread(&Console::readerLoop, this);
+}
+
+void Console::stopReader()
+{
+	if (!reader_running)
+		return;
+
+	reader_running = false;
+
+	/* Wake the reader out of poll() rather than waiting for a keypress. */
+	if (quit_write != -1)
+	{
+		char byte = 'q';
+		ssize_t ignored = write(quit_write, &byte, 1);
+		(void) ignored;
+	}
+
+	if (reader.joinable())
+		reader.join();
+}
+
+/**
+ * The reader thread. It only ever touches the terminal, the line queue and the
+ * two descriptors it owns - never the socket monitor or anything else the main
+ * thread is using.
+ */
+void Console::readerLoop()
+{
+	ConsoleInputUnix* tty = static_cast<ConsoleInputUnix*>(input);
+
+	std::string current;
+
+	const int ttyfd = tty->getFD();
+	const int maxfd = (ttyfd > quit_read ? ttyfd : quit_read) + 1;
+
+	for (;;)
+	{
+		/* select(), not poll(): on macOS poll() reports POLLNVAL for a
+		   perfectly good terminal descriptor, so it can not be used to wait on
+		   a tty. select() handles them correctly on every platform we build
+		   for. */
+		fd_set rfds;
+		FD_ZERO(&rfds);
+		FD_SET(ttyfd, &rfds);
+		FD_SET(quit_read, &rfds);
+
+		if (select(maxfd, &rfds, 0, 0, 0) == -1)
+		{
+			if (errno == EINTR) continue;
+			return;
+		}
+
+		if (FD_ISSET(quit_read, &rfds))
+			return;
+
+		if (!FD_ISSET(ttyfd, &rfds))
+			continue;
+
+		char buf[MAXLINE];
+		ssize_t n = read(ttyfd, buf, sizeof(buf));
+		if (n <= 0)
+		{
+			if (n == -1 && (errno == EINTR || errno == EAGAIN))
+				continue;
+			return;
+		}
+
+		bool complete = false;
+		for (ssize_t i = 0; i < n; i++)
+		{
+			char c = buf[i];
+			if (c == '\n' || c == '\r')
+			{
+				std::lock_guard<std::mutex> guard(lock);
+				lines.push_back(current);
+				current.clear();
+				complete = true;
+			}
+			else if (current.size() < MAXLINE - 1)
+			{
+				current += c;
+			}
+		}
+
+		/* One byte is enough - the payload carries no meaning. */
+		if (complete && wake_write != -1)
+		{
+			char byte = 'x';
+			ssize_t ignored = write(wake_write, &byte, 1);
+			(void) ignored;
+		}
+	}
+}
+
+void Console::drainWakeup()
+{
+	if (wake_read == -1)
+		return;
+
+	char buf[64];
+	while (read(wake_read, buf, sizeof(buf)) > 0)
+		/* keep going until it runs dry */;
+}
+
+#else // !SAMURAI_UNIX
+
+/* No reader thread yet on this platform: the console layer here still polls
+   with _kbhit(), so there is nothing to wake the main loop with. Porting this
+   means giving the reader thread a ReadConsole() body and emulating
+   socketpair() over a loopback TCP connection, since Windows has neither. */
+void Console::startReader() { }
+void Console::stopReader()  { }
+void Console::readerLoop()  { }
+void Console::drainWakeup() { }
+
+#endif // SAMURAI_UNIX
+
 char* Console::getLine()
 {
-	static size_t chars = 0;
-	static char line[MAXLINE] = {0, };
-	static char* last = 0;
-	
-	if (last)
-	{
-		free(last);
-		last = 0;
-	}
-	
-	char c;
-	bool ok = input->getByte(c);
-	
-	if (!ok)
+	free(last);
+	last = 0;
+
+	std::lock_guard<std::mutex> guard(lock);
+	if (lines.empty())
 		return 0;
-	
-	switch (c)
-	{
-		case '\t':
-			puts("<tab>");
-			break;
-	}
-	
-	line[chars] = c;
-	
-	if (c == '\n' || chars == MAXLINE-1)
-	{
-		line[chars++] = '\0';
-		last = strdup(line);
-		
-		memset(line, 0, chars);
-		chars = 0;
-	}
-	else
-		chars++;
-	
+
+	last = strdup(lines.front().c_str());
+	lines.pop_front();
 	return last;
 }
 

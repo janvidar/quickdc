@@ -121,10 +121,14 @@ int main(int argc, char** argv) {
 	char* line = 0;
 	while (running) {
 		core->run();
-		line = Console::getInstance()->getLine();
-		if (line) processKeyboard(line);
+
+		/* One wakeup can carry more than one line, so drain the queue rather
+		   than handling a single line per pass. */
+		while (running && (line = Console::getInstance()->getLine()) != 0)
+			processKeyboard(line);
 	}
-	
+
+	Console::shutdown();
 	delete hub;
 	delete core;
 	free(url_);

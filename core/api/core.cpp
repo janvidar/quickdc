@@ -90,20 +90,19 @@ QuickDC::Core::~Core()
 
 void QuickDC::Core::run()
 {
-	// Poll sockets. A zero timeout turns the caller's main loop into a spin -
-	// kevent/poll returns immediately and we burn a core doing nothing. Block
-	// briefly instead; callers that also poll a non-socket input source (the
-	// CLI polls /dev/tty) see at most this much added latency.
+	// Poll sockets. A zero timeout turns this into a spin - kevent/poll returns
+	// immediately and we burn a core doing nothing - so always block.
 	//
-	// While hashing is in progress we must not block at all: hash->process()
-	// below only advances one chunk per call, so any wait here throttles
-	// hashing to 1000/POLL_INTERVAL_MS chunks per second.
-	// FIXME: register the other input sources with the monitor, and drive
-	// hashing off a worker thread, so this can block indefinitely.
-	static const int POLL_INTERVAL_MS = 50;
-	monitor->wait(hash->isBusy() ? 0 : POLL_INTERVAL_MS);
+	// Neither of the two things that used to force a short timeout applies any
+	// more: hashing runs on its own thread, and console input reaches us
+	// through a socket the monitor watches, so a keypress wakes the loop
+	// immediately rather than on the next tick. What is left is what is still
+	// polled rather than event driven, and that sets the interval: collecting
+	// finished hash jobs, and timers, which are all whole seconds anyway.
+	static const int POLL_INTERVAL_MS = 250;
+	monitor->wait(POLL_INTERVAL_MS);
 
-	// Make sure hashing is continued - we should post messages instead.
+	// Collect whatever the hash worker thread has finished.
 	hash->process();
 	
 	// Process timers.
