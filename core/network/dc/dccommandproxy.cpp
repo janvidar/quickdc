@@ -41,6 +41,7 @@ DC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, DC::HubSession*
 	new DC::Hello(this, session);
 	new DC::UserIP(this, session);
 	new DC::Search(this, session);
+	new DC::SearchResultParser(this, session);
 	new DC::MyINFO(this, session);
 	new DC::OpList(this, session);
 	new DC::HubName(this, session);

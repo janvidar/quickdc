@@ -32,15 +32,29 @@ QuickDC::Hub::Hub(HubListener* listener_, Samurai::IO::Net::URL* url_)
 	: session(0)
 	, listener(listener_)
 	, url(new Samurai::IO::Net::URL(url_))
+	, canonicalUrl(0)
 	, timer(0)
 {
+	/*
+	 * Build the canonical form once. URL::toString() keeps whatever path the
+	 * user typed, and a FileSource stores only "{scheme}://{host}:{port}", so
+	 * the two would not compare equal without this.
+	 */
+	std::string canonical = url->getScheme();
+	canonical += "://";
+	canonical += url->getHost().toString();
+	canonical += ":";
+	canonical += quickdc_itoa(url->getPort(), 10);
+	canonicalUrl = strdup(canonical.c_str());
+
 	QuickDC::Core::getInstance()->hubs->add(this);
 }
 
 QuickDC::Hub::~Hub()
 {
 	delete url;
-	
+	free(canonicalUrl);
+
 	if (QuickDC::Core::getInstance())
 	{
 		QuickDC::Core::getInstance()->hubs->remove(this);
@@ -167,18 +181,44 @@ void QuickDC::Hub::sendRedirect(const char* user, const char* address, const cha
 		listener->EventSystemError("sendRedirect(): No such user");
 }
 
-void QuickDC::Hub::connectUser(const char* user)
+bool QuickDC::Hub::connectUser(const char* user, const char* token)
 {
 	if (!session || !session->isLoggedIn())
 	{
 		listener->EventSystemError("connectUser(): No session");
-		return;
+		return false;
 	}
+
 	const QuickDC::User* u = session->getUser(user);
-	if (u) /* FIXME: Generate a token */
-		session->sendConnectionRequest(u, "TOKENIZEDFIXME");
-	else
+	if (!u)
+	{
 		listener->EventSystemError("connectUser(): No such user");
+		return false;
+	}
+
+	if (token)
+	{
+		session->sendConnectionRequest(u, token);
+		return true;
+	}
+
+	/*
+	 * Nothing in the download queue is behind this one - it is a manual
+	 * connect - so there is no job to correlate and any unique token will do.
+	 */
+	static size_t counter = 0;
+	char generated[32];
+	snprintf(generated, sizeof(generated), "MAN%lu%lu",
+		(unsigned long) Samurai::TimeStamp().getInternalData(),
+		(unsigned long) ++counter);
+
+	session->sendConnectionRequest(u, generated);
+	return true;
+}
+
+const char* QuickDC::Hub::getUrl() const
+{
+	return canonicalUrl;
 }
 
 const QuickDC::User* QuickDC::Hub::getLocalUser() const

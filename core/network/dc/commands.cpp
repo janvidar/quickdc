@@ -203,6 +203,21 @@ DC::SendDirection::SendDirection(bool download, size_t priority) : DC::Command()
 	buffer->append('|');
 }
 
+DC::SendADCGet::SendADCGet(const char* type, const char* name, uint64_t offset, int64_t length) : DC::Command()
+{
+	/* Built with snprintf because the length may legitimately be -1. */
+	char numbers[48];
+	snprintf(numbers, sizeof(numbers), " %llu %lld",
+		(unsigned long long) offset, (long long) length);
+
+	buffer->append("$ADCGET ");
+	buffer->append(type);
+	buffer->append(' ');
+	buffer->append(name);
+	buffer->append(numbers);
+	buffer->append('|');
+}
+
 DC::SendErrorFileNotAvailable::SendErrorFileNotAvailable() : DC::Command()
 {
 	buffer->append("$Error File Not Available|");

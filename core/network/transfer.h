@@ -62,7 +62,20 @@ class Transfer {
 		
 		inline bool isUpload() const { return direction == Upload; }
 		inline bool isDownload() const { return direction == Download; }
-		
+
+		/**
+		 * @return true once every byte we asked for has been transferred.
+		 * This is what tells a download whether the chunk can be committed
+		 * to the queue, or has to be handed back for someone else to fetch.
+		 */
+		inline bool isFinished() const { return offset >= total; }
+
+		inline enum TransferStatus getStatus() const { return status; }
+
+		/** How far we have got, in absolute file position. */
+		inline uint64_t getOffset() const { return offset; }
+		inline uint64_t getTotal() const { return total; }
+
 		/**
 		 * The ratio of data going through the networking.
 		 * Unless compression is involved, this is always 1.0
@@ -88,7 +101,16 @@ class Transfer {
 	protected:
 		virtual void transfer() = 0;
 		virtual void close()    = 0;
-		
+
+		/**
+		 * Whether the transfer is done and may be closed.
+		 *
+		 * Having consumed every input byte is enough for a plain transfer, but
+		 * a compressed one still has to flush the codec and push the last
+		 * compressed bytes out, so ZUpload extends this.
+		 */
+		virtual bool isTransferComplete() const { return offset >= total; }
+
 	protected:
 		TransferManager* manager;
 		PrivateTransferListener* listener;
@@ -97,11 +119,17 @@ class Transfer {
 		enum Direction direction;
 		Samurai::Util::RateEstimator rate;
 		double ratio;
-		
+
+		/** Anything other than OK stops the transfer at the next exec(). */
+		enum TransferStatus status;
+
+		/** close() has been called; exec() must not run again. */
+		bool closed;
+
 		uint64_t offset;
 		uint64_t length;
 		uint64_t total;
-		
+
 };
 
 class Upload : public Transfer
@@ -119,30 +147,72 @@ class Upload : public Transfer
 		size_t uploadBufferSize;
 };
 
+/**
+ * An upload that deflates the file on the way out (the ADC "ZLIG" extension).
+ *
+ * Compression makes the bookkeeping different from a plain Upload in three
+ * ways, and all three have to be respected or the peer receives a stream it
+ * cannot inflate:
+ *
+ *  - 'offset' is a position in the uncompressed file, so it advances by what
+ *    the compressor consumed, never by what went out on the wire.
+ *  - compressed output cannot be regenerated, so a short socket write has to
+ *    be buffered and retried rather than dropped.
+ *  - deflate has to be flushed at the end, which produces bytes after the
+ *    last input byte has already been consumed.
+ */
 class ZUpload : public Upload
 {
 	public:
 		ZUpload(TransferManager*, PrivateTransferListener*, Samurai::IO::Net::Socket*, Samurai::IO::File*, off_t offset, off_t length);
 		virtual ~ZUpload();
-		
+
 	protected:
 		virtual void transfer();
 		virtual void close();
-		
+
+		/** Also requires the codec to be flushed and the buffer drained. */
+		virtual bool isTransferComplete() const;
+
+	private:
+		/**
+		 * Push out whatever compressed data is still buffered.
+		 * @return true once the buffer is empty.
+		 */
+		bool flushPending();
+
 	protected:
 		Samurai::IO::GzipCompressor* compressor;
+
+		/** Holds uncompressed bytes read from the file. */
 		char* compressBuffer;
 		size_t compressBufferSize;
+
+		/** Holds compressed bytes on their way to the socket. */
+		char* pendingBuffer;
+		size_t pendingCapacity;
+		size_t pendingSize;     /* valid bytes in pendingBuffer */
+		size_t pendingOffset;   /* how much of pendingSize has been written */
+
+		/** deflate() has been flushed and has no more output to give. */
+		bool finished;
+
+		/** Total bytes actually written, for getRatio(). */
+		uint64_t compressedBytes;
 };
 
 class Download : public Transfer {
 	public:
 		Download(TransferManager*, PrivateTransferListener*, Samurai::IO::Net::Socket*, Samurai::IO::File*, off_t offset, off_t length);
 		virtual ~Download();
-		
+
 	protected:
 		virtual void transfer();
 		virtual void close();
+
+	protected:
+		char* downloadBuffer;
+		size_t downloadBufferSize;
 };
 
 }

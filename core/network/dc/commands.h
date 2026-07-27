@@ -135,6 +135,22 @@ class SendErrorFileNotAvailable : public Command
 		SendErrorFileNotAvailable();
 };
 
+/**
+ * Ask a peer for data; the "ADCGet" extension.
+ *
+ * $ADCGET {type} {name} {offset} {length}|
+ *
+ * @param type   "file", "list" or "tthl".
+ * @param name   "TTH/{base32 root}" for a file (needs the peer's "TTHF"),
+ *               or "/" for the file list.
+ * @param length how many bytes are wanted, or -1 for "all of it".
+ */
+class SendADCGet : public Command
+{
+	public:
+		SendADCGet(const char* type, const char* name, uint64_t offset, int64_t length);
+};
+
 class SendFileLength : public Command
 {
 	public:

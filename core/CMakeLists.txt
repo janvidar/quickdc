@@ -13,6 +13,7 @@
 #                     built into samurai (src/debug/dbg.cpp), so linking this
 #                     one too would be a duplicate definition.
 set(QUICKDC_SOURCES
+    network/chunkmap.cpp
     network/commandparser.cpp
     network/commandproxy.cpp
     network/connection.cpp

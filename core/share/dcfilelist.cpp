@@ -144,7 +144,10 @@ Share::RemoteFileList::RemoteFileList(Samurai::IO::File* file_) {
 	root = new RemoteDir("", 0);
 }
 		
-Share::RemoteFileList::~RemoteFileList() { }
+Share::RemoteFileList::~RemoteFileList() {
+	delete root;
+	delete buffer;
+}
 	
 bool Share::RemoteFileList::decode() {
 	size_t size = (size_t) file->size();

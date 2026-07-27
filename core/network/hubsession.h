@@ -122,6 +122,13 @@ class HubSession {
 		 * successfully logged in session on the hub.
 		 */
 		 virtual bool isLoggedIn() const = 0;
+
+		/**
+		 * The hub this session belongs to, which is where its canonical URL
+		 * comes from. A FileSource records that URL, so anything creating
+		 * sources needs it.
+		 */
+		virtual Hub* getHub() const { return hub; }
 		
 		
 	protected:

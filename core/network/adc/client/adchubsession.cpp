@@ -25,6 +25,11 @@
 #include "share/sharefile.h"
 #include "share/sharemanager.h"
 #include "share/searchrequest.h"
+#include "share/searchresult.h"
+#include "network/downloadqueue.h"
+#include "network/filesource.h"
+#include "network/user.h"
+#include <string>
 #include <samurai/crypto/digest/tigertree.h>
 #include <samurai/io/buffer.h>
 #include <samurai/io/net/datagram.h>
@@ -380,6 +385,56 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 }
 
 
+/**
+ * A search reply came back. Two things want to know: the download queue, for
+ * which this may be a new source, and the user interface.
+ *
+ * Takes ownership of 'result'.
+ */
+void ADC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
+{
+	if (!result) return;
+
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+	const char* hubUrl = (hub) ? hub->getUrl() : 0;
+
+	QDBG("Search result: '%s' (%d bytes) from '%s'",
+		result->getFile() ? result->getFile() : "",
+		(int) result->getSize(),
+		result->getUser() ? result->getUser()->getNick() : "");
+
+	/*
+	 * Match on the TTH rather than the name: the whole point of queueing by
+	 * hash is that the same file can be called different things elsewhere.
+	 */
+	if (queue && hubUrl && result->getTTH() && result->getUser())
+	{
+		QuickDC::QueueFile* qfile = queue->getFileByTTH(result->getTTH());
+		const char* cid = (const char*) result->getUser()->getClientID();
+
+		if (qfile && cid)
+		{
+			if (!qfile->getSize() && result->getSize())
+				qfile->setSize(result->getSize());
+
+			if (!qfile->findSource(hubUrl, cid))
+			{
+				/* adc://host:port/{cid}/TTH:{root} - see filesource.h */
+				std::string name("TTH:");
+				name += result->getTTH();
+
+				qfile->addSource(new QuickDC::FileSource(hubUrl, cid, name.c_str()));
+				QDBG("A search reply gave us a new source for '%s'", qfile->getLocalFilename());
+			}
+		}
+	}
+
+	if (listener) listener->EventSearchResult(result);
+
+	delete result;
+}
+
 bool ADC::HubSession::knowUser(const char* id)
 {
 	return (users->getUser(id) != 0);
@@ -541,7 +596,7 @@ void ADC::HubSession::sendSearchRequest(QuickDC::Share::SearchRequest* request)
 
 void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const char* token)
 {
-	if  (!user) return;
+	if (!user) return;
 	if (!token) return;
 
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;

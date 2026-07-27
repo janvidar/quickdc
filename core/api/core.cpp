@@ -44,6 +44,8 @@ QuickDC::Core::Core()
 	Samurai::IO::File::mkdir("~/.quickdc/hub/bbs", 0700);
 	Samurai::IO::File::mkdir("~/.quickdc/lists",   0700);
 	Samurai::IO::File::mkdir("~/.quickdc/ssl",     0700);
+	/* The default download destination; [Downloads]/Directory overrides it. */
+	Samurai::IO::File::mkdir(QUICKDC_DOWNLOAD_DIR, 0700);
 	
 	config = new Preferences("~/.quickdc/quickdc.conf");
 	quickdc_core = this;
@@ -72,6 +74,8 @@ QuickDC::Core::Core()
 QuickDC::Core::~Core()
 {
 	quickdc_core = 0;
+	/* Flush the download queue before anything it might refer to goes away. */
+	delete queue; queue = 0;
 	delete timers; timers = 0;
 	delete transfers; transfers = 0;
 	delete connections; connections = 0;
@@ -104,7 +108,11 @@ void QuickDC::Core::run()
 
 	// Collect whatever the hash worker thread has finished.
 	hash->process();
-	
+
+	// Expire dead sources, start queued transfers, and flush the queue now
+	// and then. Cheap enough to run on every iteration.
+	queue->process();
+
 	// Process timers.
 	// FIXME: it should be sorted so we don't have to iterate ALL timers to before exit.
 	timers->process();

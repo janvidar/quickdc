@@ -5,6 +5,7 @@
 
 #include "debug/dbg.h"
 #include <stdio.h>
+#include <string.h>
 #include <vector>
 
 #include "network/hubmanager.h"
@@ -46,6 +47,18 @@ void QuickDC::HubManager::remove(QuickDC::Hub* hub) {
 			break;
 		}
 	}
+}
+
+
+QuickDC::Hub* QuickDC::HubManager::getHubByUrl(const char* url) {
+	if (!url) return 0;
+	for (size_t i = 0; i < hubs.size(); i++)
+	{
+		QuickDC::Hub* hub = hubs[i];
+		const char* hubUrl = hub->getUrl();
+		if (hubUrl && !strcmp(hubUrl, url)) return hub;
+	}
+	return 0;
 }
 
 

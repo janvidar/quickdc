@@ -25,9 +25,12 @@ namespace Samurai {
 }
 
 namespace QuickDC {
+class FilelistRequest;
 class HubSession;
+class QueueFile;
 class Transfer;
 }
+
 
 namespace ADC {
 class Command;
@@ -79,9 +82,17 @@ class ClientSession :
 
 		void sendINF();
 
+		/**
+		 * Ask the peer for the next thing the download queue wants from it,
+		 * and drop the connection when there is nothing left to ask for.
+		 *
+		 * Safe to call repeatedly; each call issues at most one CGET.
+		 */
+		void requestNextChunk();
+
 		void addSupport(const char* features);
 		bool supports(const char* feature);
-		
+
 	protected:
 		void EventHostLookup(const Samurai::IO::Net::Socket*);
 		void EventHostFound(const Samurai::IO::Net::Socket*);
@@ -105,17 +116,45 @@ class ClientSession :
 		QuickDC::HubSession* hubsession;
 		
 		char* remote_sid;
+
+		/**
+		 * The peer's CID, learned from their CINF. Unlike the SID this is
+		 * stable across sessions, so it is what a FileSource records.
+		 */
+		char* remote_cid;
+
 		char* token;
 		
 	protected: /* transfer related */
+
+		/** Tear down the current transfer, and the file if we own it. */
+		void releaseTransfer();
+
+		/**
+		 * Hand an unfinished chunk back to the queue, so that losing a peer
+		 * does not block that part of the file for the rest of the run.
+		 */
+		void abandonDownload();
+
+		/** The canonical URL of the hub this peer was found on, or 0. */
+		const char* hubUrl() const;
+
 		QuickDC::Transfer* transfer;
 		Samurai::IO::File* file;
+
+		/**
+		 * Uploads hand out a file owned by the share manager, downloads use
+		 * one we made ourselves. Only the latter may be deleted.
+		 */
+		bool ownsFile;
+
 		uint64_t chunk_offset;
 		int64_t chunk_length;
-		
+
 	private:
 		bool isClient;
 		bool upload_approved;
+		bool download_approved;
 		friend class QuickDC::Connection;
 };
 

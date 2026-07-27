@@ -8,8 +8,37 @@
 
 #include "network/dc/hubsession.h"
 #include "network/dc/dccommandparser.h"
+#include <string>
 
 namespace DC {
+
+/**
+ * Decode a $SR line, a reply to a search we sent out, into its parts.
+ *
+ * Syntax:
+ *   $SR {nick} {path}\x05{size} {free}/{total}\x05{hub name} ({host}:{port})
+ *   $SR {nick} {path} {free}/{total}\x05{hub name} ({host}:{port})
+ *
+ * The first is a file, the second a directory - a directory has no size, so
+ * the \x05 before it is simply absent. When the sender knows the TTH root, the
+ * hub name is replaced by "TTH:{root}". A reply relayed through the hub, in
+ * answer to a passive search, has "\x05{our nick}" appended.
+ *
+ * The path and the hub name may both contain spaces, and the number of \x05
+ * separators varies, so the fields are found by locating the
+ * "({host}:{port})" trailer and working outwards from it.
+ *
+ * Split out from SearchResultParser::invoke() so that the decoding can be
+ * tested without a live session.
+ *
+ * @param size      zero for a directory result.
+ * @param tth       empty unless the sender supplied a 39 character root.
+ * @return false if the line is not a well formed $SR.
+ */
+bool parseSearchResult(const char* data, size_t length,
+	std::string& nick, std::string& path, uint64_t& size,
+	size_t& freeslots, std::string& tth);
+
 
 class HubSession;
 class CommandProxy;
@@ -42,6 +71,8 @@ class Tag;
 	DC_HCMD_CLASS(Quit,           "$Quit");
 	DC_HCMD_CLASS(RevConnectToMe, "$RevConnectToMe");
 	DC_HCMD_CLASS(Search,         "$Search");
+	/* Named ...Parser to stay clear of QuickDC::Share::SearchResult. */
+	DC_HCMD_CLASS(SearchResultParser, "$SR");
 	DC_HCMD_CLASS(Supports,       "$Supports");
 	DC_HCMD_CLASS(To,             "$To:");
 	DC_HCMD_CLASS(UserCommand,    "$UserCommand");

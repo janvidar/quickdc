@@ -97,7 +97,15 @@ class ClientSession :
 		void sendKey();
 		void sendErrorFileUnavailable();
 		void sendFileSize();
-		
+
+		/**
+		 * Ask the peer for the next thing the download queue wants from it,
+		 * and drop the connection when there is nothing left to ask for.
+		 *
+		 * Only meaningful once we have won the direction negotiation.
+		 */
+		void requestNextChunk();
+
 		void addSupport(const char* features);
 		bool supports(const char* feature);
 		bool isExtendedProtocol() const { return extendedProtocol; }
@@ -136,15 +144,51 @@ class ClientSession :
 		QuickDC::HubSession* hubsession;
 		
 	protected: /* transfer related */
+
+		/** Tear down the current transfer, and the file if we own it. */
+		void releaseTransfer();
+
+		/**
+		 * Hand an unfinished chunk back to the queue, so that losing a peer
+		 * does not block that part of the file for the rest of the run.
+		 */
+		void abandonDownload();
+
+		/** The canonical URL of the hub this peer was found on, or 0. */
+		const char* hubUrl() const;
+
+		/**
+		 * Whether the download queue wants anything from this user, which is
+		 * what decides the direction we ask for.
+		 */
+		bool wantToDownload();
+
 		QuickDC::Transfer* transfer;
 		Samurai::IO::File* file;
+
+		/**
+		 * Uploads hand out a file owned by the share manager, downloads use
+		 * one we made ourselves. Only the latter may be deleted.
+		 */
+		bool ownsFile;
+
 		uint64_t chunk_offset;
 		int64_t chunk_length;
-		
+
+		/**
+		 * Which queue job this connection is servicing.
+		 *
+		 * NMDC has nowhere to put a token on the wire, so unlike ADC this is
+		 * not exchanged with the peer - it is looked up from the queue by which
+		 * user we are talking to, and then kept for the rest of the session.
+		 */
+		char* token;
+
 	private:
 		bool challenged;
 		bool isClient;
 		bool upload_approved;
+		bool download_approved;
 		
 		friend class QuickDC::Connection;
 };

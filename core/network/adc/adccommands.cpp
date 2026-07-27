@@ -4,6 +4,7 @@
  */
 
 #include "share/searchrequest.h"
+#include "share/searchresult.h"
 #include "network/adc/adccommands.h"
 #include "network/adc/cid.h"
 
@@ -49,11 +50,12 @@ bool ADC::CCmdGET::invoke(ADC::Command* cmd) {
 	char* file = cmd->getArgument(1);
 	char* toff = cmd->getArgument(2);
 	char* tlen = cmd->getArgument(3);
+	/* getArgument() strips the name, so the flag is at [0]. */
 	char* t_zl = cmd->getArgument("ZL", 2, 4);
 	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
 	uint64_t offset = quickdc_atoull(toff);
 	int64_t len = quickdc_atoll(tlen);
-	bool zl = (t_zl && t_zl[1] == '1');
+	bool zl = (t_zl && t_zl[0] == '1');
 
 	session->onGET(file, type, offset, len, zl);
 	return true;
@@ -66,12 +68,14 @@ bool ADC::CCmdSND::invoke(ADC::Command* cmd) {
 	char* file = cmd->getArgument(1);
 	char* toff = cmd->getArgument(2);
 	char* tlen = cmd->getArgument(3);
-	char* t_zl = cmd->getArgument("ZL1", 3, 4);
+	/* getArgument() strips the name, so the flag is at [0]. */
+	char* t_zl = cmd->getArgument("ZL", 2, 4);
 	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
 	uint64_t offset = quickdc_atoull(toff);
 	int64_t len = quickdc_atoll(tlen);
+	bool zl = (t_zl && t_zl[0] == '1');
 
-	session->onSND(file, type, offset, len, t_zl);
+	session->onSND(file, type, offset, len, zl);
 	return true;
 }
 
@@ -325,7 +329,45 @@ bool ADC::CmdSearch::invoke(ADC::Command* cmd) {
 bool ADC::CmdResult::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::Low);
 	QDBG("ADC Command: RES");
-	return false;
+
+	/* The argument names mirror what HubSession::EventSearchReply() sends. */
+	char* filename = cmd->getArgument("FN", 2, 0);
+	char* s_size   = cmd->getArgument("SI", 2, 0);
+	char* tth      = cmd->getArgument("TR", 2, 0);
+	char* s_depth  = cmd->getArgument("TD", 2, 0);
+	char* token    = cmd->getArgument("TO", 2, 0);
+	char* s_slots  = cmd->getArgument("SL", 2, 0);
+
+	if (!filename || !*filename)
+	{
+		QDBG("Ignoring a search result with no filename");
+		return false;
+	}
+
+	const char* source = cmd->getSourceID();
+	if (!source)
+	{
+		QDBG("Ignoring a search result from nobody");
+		return false;
+	}
+
+	uint64_t size = (s_size) ? quickdc_atoull(s_size) : 0;
+	size_t depth  = (s_depth) ? (size_t) quickdc_atoi(s_depth) : 0;
+	size_t slots  = (s_slots) ? (size_t) quickdc_atoi(s_slots) : 0;
+
+	QuickDC::Share::SearchResult* result =
+		new QuickDC::Share::SearchResult(filename, size, slots, tth, depth, token);
+
+	/*
+	 * The user manager owns the user; the search result only borrows it. The
+	 * cast is because getUser() hands out a const pointer while SearchResult
+	 * stores a mutable one.
+	 */
+	result->setUser(const_cast<QuickDC::User*>(session->getUser(source)));
+
+	/* Takes ownership of 'result'. */
+	session->onSearchResult(result);
+	return true;
 }
 
 bool ADC::CmdCTM::invoke(ADC::Command* cmd) {

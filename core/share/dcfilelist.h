@@ -33,7 +33,13 @@ class RemoteFile {
 		virtual ~RemoteFile();
 
 		size_t getSize() const { return size; }
-		
+
+		/** @return the base name, never 0. */
+		const char* getName() const { return name; }
+
+		/** @return the TTH root in base32, or 0 if the list did not carry one. */
+		const char* getTTH() const { return tth; }
+
 	protected:
 		char* name;
 		char* tth;
@@ -48,9 +54,19 @@ class RemoteDir {
 		
 		uint64_t getSize()  const { return size; }
 		uint64_t getFiles() const { return filecount; }
-		
+
 		RemoteDir* getParent() const { return parent; }
-		
+
+		/** @return the directory name, never 0. */
+		const char* getName() const { return name; }
+
+		/* Walking the decoded tree. */
+		size_t countEntries() const { return files.size(); }
+		Share::RemoteFile* getEntry(size_t n) const { return (n < files.size()) ? files[n] : 0; }
+
+		size_t countSubdirs() const { return subdirs.size(); }
+		Share::RemoteDir* getSubdir(size_t n) const { return (n < subdirs.size()) ? subdirs[n] : 0; }
+
 	protected:
 		void addSize(uint64_t size_);
 		

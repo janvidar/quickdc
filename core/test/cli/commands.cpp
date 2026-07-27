@@ -23,6 +23,10 @@
 #include "network/usermanager.h"
 #include "network/transfermanager.h"
 #include "network/transfer.h"
+#include "network/downloadqueue.h"
+#include "network/filesource.h"
+#include "config/preferences.h"
+#include "api/hub.h"
 #include <samurai/io/file.h>
 #include <samurai/io/net/url.h>
 
@@ -174,6 +178,86 @@ static bool splitArguments(const struct CommandData* command, const char* rest, 
  * Shared helpers
  * ------------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------------ *
+ * Search results
+ *
+ * Queueing a download needs a TTH and a size, and a search reply is the only
+ * place the shell gets them. Replies are kept here so that `/download <n>'
+ * can name one by number instead of the user retyping a 39 character hash.
+ * ------------------------------------------------------------------------ */
+
+#define MAX_SEARCH_HITS 200
+
+struct SearchHit {
+	std::string filename;
+	std::string tth;
+	std::string nick;
+	std::string cid;
+	uint64_t size;
+};
+
+static std::vector<SearchHit> searchHits;
+
+void cmd_addSearchResult(const char* filename, uint64_t size,
+	const char* tth, const char* nick, const char* cid)
+{
+	if (!filename) return;
+
+	SearchHit hit;
+	hit.filename = filename;
+	hit.tth = (tth) ? tth : "";
+	hit.nick = (nick) ? nick : "";
+	hit.size = size;
+
+	/*
+	 * A FileSource is keyed on the CID for ADC and on the nick for NMDC, which
+	 * has no CID at all. Fall back rather than storing an empty identifier.
+	 */
+	if (cid && *cid)
+		hit.cid = cid;
+	else
+		hit.cid = hit.nick;
+
+	/* Keep the numbering stable within a run; just stop growing when full. */
+	if (searchHits.size() >= MAX_SEARCH_HITS)
+	{
+		cmd_error("Too many search results; ignoring the rest");
+		return;
+	}
+
+	searchHits.push_back(hit);
+
+	printf("  %3d  %10s  %-24s %s%s\n",
+		(int) searchHits.size(),
+		getFormatSize(size),
+		hit.nick.c_str(),
+		filename,
+		hit.tth.empty() ? "  (no TTH, cannot be queued)" : "");
+}
+
+/**
+ * The last path component, which is what the file is called locally.
+ * Remote lists use '/' but NMDC peers use '\', so both count.
+ */
+static std::string baseName(const std::string& path)
+{
+	size_t cut = path.find_last_of("/\\");
+	if (cut == std::string::npos) return path;
+	return path.substr(cut + 1);
+}
+
+/**
+ * Where finished downloads go. Configurable, because ~/.quickdc is a poor
+ * place to leave large files.
+ */
+static std::string downloadDirectory()
+{
+	QuickDC::Preferences* config = core->config;
+	config->setGroup("Downloads");
+	return std::string(config->getString("Directory", QUICKDC_DOWNLOAD_DIR));
+}
+
+
 /**
  * Resolve a nick against the connected hub, reporting why it failed.
  */
@@ -208,6 +292,7 @@ static void cmd_connect(const std::vector<std::string>&);
 static void cmd_connections(const std::vector<std::string>&);
 static void cmd_ctm(const std::vector<std::string>&);
 static void cmd_disconnect(const std::vector<std::string>&);
+static void cmd_download(const std::vector<std::string>&);
 static void cmd_help(const std::vector<std::string>&);
 static void cmd_hubkick(const std::vector<std::string>&);
 static void cmd_hubstats(const std::vector<std::string>&);
@@ -216,6 +301,7 @@ static void cmd_joins(const std::vector<std::string>&);
 static void cmd_kick(const std::vector<std::string>&);
 static void cmd_list(const std::vector<std::string>&);
 static void cmd_msg(const std::vector<std::string>&);
+static void cmd_queue(const std::vector<std::string>&);
 static void cmd_quit(const std::vector<std::string>&);
 static void cmd_redirect(const std::vector<std::string>&);
 static void cmd_search(const std::vector<std::string>&);
@@ -234,7 +320,7 @@ static const struct CommandData commands[] =
 	{ "connections",       "",                           "List all active p2p connections",                  0, cmd_connections       },
 	{ "ctm",               "n:nick",                     "Request a connection to a user",                   0, cmd_ctm               },
 	{ "disconnect",        "",                           "Disconnect from the hub",                          0, cmd_disconnect        },
-	{ "download",          "n:nick s:file",              "Download a file from a user",                      0, 0                     },
+	{ "download",          "i:result",                   "Queue search result <n> for download",             0, cmd_download          },
 	{ "help",              "?s:command",                 "Show this command reference",                      0, cmd_help              },
 	{ "hubban",            "n:nick",                     "Ban a user from the local hub",                    1, 0                     },
 	{ "hubkick",           "n:nick",                     "Kick a user from the local hub",                   1, cmd_hubkick           },
@@ -245,6 +331,7 @@ static const struct CommandData commands[] =
 	{ "kick",              "n:nick",                     "Kick a user from the hub (operators only)",        0, cmd_kick              },
 	{ "list",              "",                           "Show users on the hub",                            0, cmd_list              },
 	{ "msg",               "n:nick s:message",           "Send a private message to a user",                 0, cmd_msg               },
+	{ "queue",             "",                           "Show the download queue",                          0, cmd_queue             },
 	{ "quit",              "",                           "Quit the program",                                 0, cmd_quit              },
 	{ "redirect",          "n:nick w:address ?s:reason", "Redirect a user to another hub (operators only)",  1, cmd_redirect          },
 	{ "search",            "s:terms",                    "Search the hub for files (+term, -term)",          0, cmd_search            },
@@ -416,8 +503,105 @@ static void cmd_browse(const std::vector<std::string>& args)
 {
 	const QuickDC::User* user = resolveUser(args[0]);
 	if (!user) return;
+
+	const char* hubUrl = hub->getUrl();
+
+	/* The CID on ADC, the nick on NMDC. See filesource.h. */
+	const char* cid = (const char*) user->getClientID();
+	if (!cid || !*cid) cid = user->getNick();
+
+	if (!hubUrl || !cid || !*cid)
+	{
+		cmd_error("Cannot browse `%s': no identifier is known for them", args[0].c_str());
+		return;
+	}
+
 	cmd_output("Browsing user '%s'", user->getNick());
-	hub->connectUser(user->getID());
+
+	/*
+	 * Queue the request and let the queue drive it. Note this never lands in
+	 * queue.xml - a file list has no TTH and nothing to resume.
+	 */
+	core->queue->requestFilelist(hubUrl, cid);
+	hub->connectUser(user->getID(),
+		core->queue->createRequest(core->queue->getFilelistRequest(hubUrl, cid)));
+}
+
+static void cmd_download(const std::vector<std::string>& args)
+{
+	int index = atoi(args[0].c_str());
+	if (index < 1 || (size_t) index > searchHits.size())
+	{
+		if (searchHits.empty())
+			cmd_error("No search results yet; try /search first");
+		else
+			cmd_error("No result number %d; there are %d", index, (int) searchHits.size());
+		return;
+	}
+
+	const SearchHit& hit = searchHits[index - 1];
+
+	if (hit.tth.empty())
+	{
+		cmd_error("That result carried no TTH, so it cannot be queued");
+		return;
+	}
+	if (!hit.size)
+	{
+		cmd_error("That result carried no size, so it cannot be queued");
+		return;
+	}
+
+	std::string target = downloadDirectory();
+	target += "/";
+	target += baseName(hit.filename);
+
+	QuickDC::QueueFile* qfile = core->queue->add(target.c_str(), hit.tth.c_str(), hit.size);
+	if (!qfile)
+	{
+		cmd_error("Unable to queue `%s'", target.c_str());
+		return;
+	}
+
+	const char* hubUrl = hub->getUrl();
+	if (hubUrl && !hit.cid.empty())
+	{
+		/* adc://host:port/{cid}/TTH:{root} - see filesource.h */
+		std::string source("TTH:");
+		source += hit.tth;
+		qfile->addSource(new QuickDC::FileSource(hubUrl, hit.cid.c_str(), source.c_str()));
+	}
+
+	cmd_output("Queued `%s' (%s, %d source(s)). The queue will start it.",
+		target.c_str(), getFormatSize(hit.size), (int) qfile->countSources());
+}
+
+static void cmd_queue(const std::vector<std::string>&)
+{
+	std::vector<QuickDC::QueueStatus> status;
+	core->queue->getStatus(status);
+
+	cmd_output("Queued files: %d (%d transfer(s) running)",
+		(int) status.size(), (int) core->queue->countActiveTransfers());
+
+	for (size_t n = 0; n < status.size(); n++)
+	{
+		const QuickDC::QueueStatus& item = status[n];
+
+		int percent = 0;
+		if (item.size) percent = (int) ((item.done * 100) / item.size);
+
+		printf("  %3d%%  %10s  %s  src %d/%d  %s\n",
+			percent,
+			getFormatSize(item.size),
+			QuickDC::QueueFile::convertPriority(item.priority),
+			(int) item.activeSources,
+			(int) item.sources,
+			item.filename);
+	}
+
+	if (core->queue->countFilelistRequests())
+		cmd_output("File list requests pending: %d", (int) core->queue->countFilelistRequests());
 }
 
 static void cmd_kick(const std::vector<std::string>& args)

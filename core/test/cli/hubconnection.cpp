@@ -7,6 +7,9 @@
 #include "test/cli/hubconnection.h"
 #include "test/cli/util.h"
 #include "test/cli/console.h"
+#include "test/cli/commands.h"
+#include "share/searchresult.h"
+#include "network/user.h"
 
 HubConnection::HubConnection(Samurai::IO::Net::URL* url) : QuickDC::Hub(this, url) {
 	showjoins = true;
@@ -137,9 +140,17 @@ void HubConnection::EventUsersCleanup()
 
 }
 
-void HubConnection::EventSearchResult(void*)
+void HubConnection::EventSearchResult(void* ptr)
 {
-	console_printf("search result\n");
+	QuickDC::Share::SearchResult* result = (QuickDC::Share::SearchResult*) ptr;
+	if (!result) return;
+
+	const QuickDC::User* user = result->getUser();
+
+	/* Recorded rather than just printed, so /download can refer to it. */
+	cmd_addSearchResult(result->getFile(), result->getSize(), result->getTTH(),
+		user ? user->getNick() : "?",
+		user ? (const char*) user->getClientID() : 0);
 }
 
 void HubConnection::EventHubName(const char* hubname)

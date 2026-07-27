@@ -18,6 +18,7 @@ endif()
 
 set(QUICKDC_EXOTIC_INPUTS
     adc_parser.tcc
+    queue.tcc
     user.tcc)
 
 set(QUICKDC_EXOTIC_INPUT_PATHS "")

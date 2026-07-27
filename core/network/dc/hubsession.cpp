@@ -27,6 +27,10 @@
 #include "share/sharemanager.h"
 #include "share/sharefile.h"
 #include "share/searchrequest.h"
+#include "share/searchresult.h"
+#include "network/downloadqueue.h"
+#include "network/filesource.h"
+#include "network/user.h"
 #include <samurai/timer.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/datagram.h>
@@ -409,6 +413,56 @@ void DC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 	{
 		QuickDC::Core::getInstance()->shares->search(request);
 	}
+}
+
+/**
+ * A search reply came back. Two things want to know: the download queue, for
+ * which this may be a new source, and the user interface.
+ *
+ * Takes ownership of 'result'.
+ */
+void DC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
+{
+	if (!result) return;
+
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+	const char* hubUrl = (hub) ? hub->getUrl() : 0;
+
+	QDBG("Search result: '%s' (%d bytes) from '%s'",
+		result->getFile() ? result->getFile() : "",
+		(int) result->getSize(),
+		result->getUser() ? result->getUser()->getNick() : "");
+
+	/*
+	 * Match on the TTH, not the name: the point of queueing by hash is that
+	 * the same file is called something else on someone else's disk. A reply
+	 * without a TTH is still shown, it just cannot become a source.
+	 */
+	if (queue && hubUrl && result->getTTH() && result->getUser())
+	{
+		QuickDC::QueueFile* qfile = queue->getFileByTTH(result->getTTH());
+
+		/* NMDC has no CID, so a source is keyed on the nick. */
+		const char* nick = result->getUser()->getNick();
+
+		if (qfile && nick && *nick)
+		{
+			if (!qfile->getSize() && result->getSize())
+				qfile->setSize(result->getSize());
+
+			if (!qfile->findSource(hubUrl, nick))
+			{
+				/* dchub://host:port/{nick}/{path} - see filesource.h */
+				qfile->addSource(new QuickDC::FileSource(hubUrl, nick, result->getFile()));
+				QDBG("A search reply gave us a new source for '%s'", qfile->getLocalFilename());
+			}
+		}
+	}
+
+	if (listener) listener->EventSearchResult(result);
+
+	delete result;
 }
 
 void DC::HubSession::EventUserJoin(const char* nick)

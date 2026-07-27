@@ -18,7 +18,10 @@
 #include "network/usermanager.h"
 #include "share/sharemanager.h"
 #include "share/searchrequest.h"
+#include "share/searchresult.h"
 #include "share/filetypes.h"
+#include <string>
+#include <vector>
 #include "network/dc/lock.h"
 #include "network/dc/textescape.h"
 
@@ -528,13 +531,174 @@ bool DC::Search::invoke(const char* data, size_t length) {
 	}
 	
 	session->onSearch(request);
-	
+
 	// NOTE: Do NOT free query -> managed by SearchRequest.
 	free(size_str);
 	free(replyaddr);
 	free(query);
 	delete request;
 
+	return true;
+}
+
+/**
+ * Does this look like the "{hub name} ({host}:{port})" trailer?
+ *
+ * Requiring a colon inside the parentheses is what keeps it apart from a
+ * nickname that merely happens to contain brackets, which matters because the
+ * trailer and an optional trailing nick are otherwise indistinguishable.
+ */
+/**
+ * Strict unsigned decode: every character has to be a digit.
+ *
+ * quickdc_atoi()/quickdc_atoull() are no use for a field that might contain
+ * anything else. They count every non-digit anywhere in the string as leading
+ * padding to be skipped, then read from there to the end without validating,
+ * so "2/4" comes back as -6 rather than 2.
+ */
+static bool dc_sr_number(const std::string& text, uint64_t& out)
+{
+	/* 20 digits is the most that can fit in a uint64_t. */
+	if (text.empty() || text.size() > 20) return false;
+
+	out = 0;
+	for (size_t n = 0; n < text.size(); n++)
+	{
+		if (text[n] < '0' || text[n] > '9') return false;
+		out = out * 10 + (uint64_t) (text[n] - '0');
+	}
+	return true;
+}
+
+static bool dc_sr_is_hub_info(const std::string& field)
+{
+	if (field.empty() || field[field.size()-1] != ')') return false;
+
+	size_t open = field.rfind('(');
+	if (open == std::string::npos) return false;
+
+	return (field.find(':', open) != std::string::npos);
+}
+
+/**
+ * See hubcommands.h for the syntax this decodes.
+ * Smallest plausible string: "$SR n f 0/1\x05h (1:1)", 21 bytes.
+ */
+bool DC::parseSearchResult(const char* data, size_t length,
+	std::string& nick, std::string& path, uint64_t& size,
+	size_t& freeslots, std::string& tth)
+{
+	size = 0;
+	freeslots = 0;
+	nick.clear();
+	path.clear();
+	tth.clear();
+
+	if (!data || length < 21) return false;
+	if (strncmp(data, "$SR ", 4)) return false;
+
+	const char* nickStart = &data[4];
+	const char* nickEnd = strchr(nickStart, ' ');
+	if (!nickEnd || nickEnd == nickStart) return false;
+
+	nick.assign(nickStart, nickEnd - nickStart);
+	std::string rest(nickEnd + 1);
+
+	/* Split on the 0x05 separators. */
+	std::vector<std::string> fields;
+	size_t at = 0;
+	for (;;)
+	{
+		size_t next = rest.find((char) 0x05, at);
+		if (next == std::string::npos)
+		{
+			fields.push_back(rest.substr(at));
+			break;
+		}
+		fields.push_back(rest.substr(at, next - at));
+		at = next + 1;
+	}
+
+	/* The last field that looks like the trailer is the trailer. */
+	size_t hubIndex = fields.size();
+	for (size_t n = fields.size(); n > 0; n--)
+	{
+		if (dc_sr_is_hub_info(fields[n-1])) { hubIndex = n-1; break; }
+	}
+	if (hubIndex == fields.size() || hubIndex < 1 || hubIndex > 2) return false;
+
+	/* "{hub name} (...)" or "TTH:{root} (...)" */
+	std::string info = fields[hubIndex].substr(0, fields[hubIndex].rfind('('));
+	while (info.size() && info[info.size()-1] == ' ') info.erase(info.size()-1);
+
+	if (info.size() > 4 && !strncasecmp(info.c_str(), "TTH:", 4))
+	{
+		std::string candidate = info.substr(4);
+		if (candidate.size() == 39) tth = candidate;
+	}
+
+	std::string slots;
+
+	if (hubIndex == 2)
+	{
+		/* A file: fields are {path} and "{size} {free}/{total}". */
+		path = fields[0];
+
+		size_t split = fields[1].find(' ');
+		if (split == std::string::npos) return false;
+
+		if (!dc_sr_number(fields[1].substr(0, split), size)) return false;
+		slots = fields[1].substr(split + 1);
+	}
+	else
+	{
+		/* A directory: "{path} {free}/{total}" in a single field. */
+		size_t split = fields[0].rfind(' ');
+		if (split == std::string::npos) return false;
+
+		path = fields[0].substr(0, split);
+		slots = fields[0].substr(split + 1);
+	}
+
+	if (path.empty()) return false;
+
+	/* "{free}/{total}" */
+	size_t slash = slots.find('/');
+	if (slash == std::string::npos) return false;
+
+	uint64_t free_slots = 0;
+	if (!dc_sr_number(slots.substr(0, slash), free_slots)) return false;
+
+	uint64_t total_slots = 0;
+	if (!dc_sr_number(slots.substr(slash + 1), total_slots)) return false;
+
+	freeslots = (size_t) free_slots;
+	return true;
+}
+
+bool DC::SearchResultParser::invoke(const char* data, size_t length)
+{
+	std::string nick;
+	std::string path;
+	std::string tth;
+	uint64_t size = 0;
+	size_t freeslots = 0;
+
+	if (!DC::parseSearchResult(data, length, nick, path, size, freeslots, tth))
+		return false;
+
+	/*
+	 * The path keeps its '\' separators: that is the name the peer knows the
+	 * file by, and so it is what a source has to record.
+	 */
+	QuickDC::Share::SearchResult* result = new QuickDC::Share::SearchResult(
+		path.c_str(), size, freeslots, tth.empty() ? 0 : tth.c_str(), 0, 0);
+
+	/* The user manager owns the user; the result only borrows it. */
+	result->setUser(const_cast<QuickDC::User*>(session->getUser(nick.c_str())));
+
+	/* Takes ownership of 'result'. */
+	session->onSearchResult(result);
 	return true;
 }
 

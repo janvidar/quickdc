@@ -22,17 +22,27 @@
 #include "network/hubmanager.h"
 #include "network/securitymanager.h"
 #include "network/transfer.h"
+#include "network/transfermanager.h"
+#include "network/downloadqueue.h"
+#include "network/filesource.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/adccommands.h"
 #include "network/adc/parser.h"
 #include "network/adc/cid.h"
 #include <samurai/io/file.h>
+#include <samurai/io/buffer.h>
+#include <string>
 
 ADC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* hubsession_) :
 	QuickDC::Connection(url, "ADC client"),
 	hubsession(hubsession_),
 	isClient(true)
 {
+	/* The destructor free()s all of these, so they cannot be left unset. */
+	token = 0;
+	remote_sid = 0;
+	remote_cid = 0;
+
 	initialize();
 	proxy = new ADC::CommandProxy(socket, this);
 	QDBG("ADC::ClientSession()");
@@ -48,7 +58,9 @@ ADC::ClientSession::ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSessio
 	
 	if (sid_) remote_sid = strdup(sid_);
 	else remote_sid = 0;
-	
+
+	remote_cid = 0;
+
 	initialize();
 	proxy = new ADC::CommandProxy(socket, this);
 	QDBG("ADC::ClientSession() - token=%s", token);
@@ -63,8 +75,8 @@ ADC::ClientSession::~ClientSession()
 		extensions.erase(extensions.begin());
 		free(feature);
 	}
-	
-	delete transfer; transfer = 0;
+
+	releaseTransfer();
 	delete proxy;
 	QDBG("~ADC::ClientSession()");
 	
@@ -72,17 +84,43 @@ ADC::ClientSession::~ClientSession()
 	
 	free(token);
 	free(remote_sid);
+	free(remote_cid);
 }
 
 void ADC::ClientSession::initialize()
 {
-	proxy            = 0;
-	transfer         = 0;
-	file             = 0;
-	chunk_offset     = 0;
-	chunk_length     = 0;
-	upload_approved  = false;
-	state            = StateNone;
+	proxy             = 0;
+	transfer          = 0;
+	file              = 0;
+	ownsFile          = false;
+	chunk_offset      = 0;
+	chunk_length      = 0;
+	upload_approved   = false;
+	download_approved = false;
+	state             = StateNone;
+}
+
+const char* ADC::ClientSession::hubUrl() const
+{
+	if (!hubsession) return 0;
+	QuickDC::Hub* hub = hubsession->getHub();
+	return (hub) ? hub->getUrl() : 0;
+}
+
+void ADC::ClientSession::releaseTransfer()
+{
+	delete transfer; transfer = 0;
+
+	/*
+	 * An upload's file belongs to the share manager and must be left alone;
+	 * a download's was made here, so it is ours to clean up.
+	 */
+	if (ownsFile) delete file;
+	file = 0;
+	ownsFile = false;
+
+	chunk_offset = 0;
+	chunk_length = 0;
 }
 
 void ADC::ClientSession::send(ADC::Command* cmd, bool more)
@@ -121,25 +159,140 @@ void ADC::ClientSession::onSUP()
 void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 {
 	QDBG("ADC::ClientSession::onINF(): client=%d. got cid='%s', token='%s'", (int) isClient, cid, remote_token);
-	
+
+	/* Remember who this is; a FileSource is keyed on the CID, not the SID. */
+	if (cid)
+	{
+		free(remote_cid);
+		remote_cid = strdup(cid);
+	}
+
 	if (token) {
 		upload_approved = QuickDC::Core::getInstance()->securityManager->isAuthorized(QuickDC::Clearance::ADC, hubsession, socket, cid, token);
 		QDBG("Authorized for upload: %s", upload_approved ? "yes" : "no");
 	} else if (remote_token) {
-		QDBG("FIXME: We have a remote token. So lets lookup what to do about it");
 		upload_approved = true;
 	} else {
-		QDBG("FIXME: nobody wants to do anything! - Close connection");
+		QDBG("Neither side named a token; nothing to do on this connection");
 	}
-		
+
+	/*
+	 * The token is the only thing tying this connection back to a job. When we
+	 * dialled out we already have it; when the peer dialled us it arrives in
+	 * their CINF. Either way, if the download queue recognises it, we are here
+	 * to fetch something.
+	 */
+	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	const char* job = (token) ? token : remote_token;
+
+	if (queue && job && queue->lookupRequest(job))
+	{
+		if (!token) token = strdup(job);
+		download_approved = true;
+		QDBG("This connection is for a queued download (token=%s)", token);
+	}
+
 	if (isClient)
-	{
 		sendINF();
-	}
-	else
+
+	if (download_approved)
+		requestNextChunk();
+}
+
+void ADC::ClientSession::requestNextChunk()
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+
+	if (!queue || !token)
 	{
-		/* request download */
+		QERR("requestNextChunk() with nothing to go on");
+		return;
 	}
+
+	QuickDC::PendingRequest* request = queue->lookupRequest(token);
+	if (!request)
+	{
+		QDBG("Nothing left in the queue for token '%s'; closing", token);
+		socket->disconnect();
+		return;
+	}
+
+	if (request->getKind() == QuickDC::PendingRequest::KindFilelist)
+	{
+		QuickDC::FilelistRequest* list = request->getFilelist();
+		if (!list)
+		{
+			queue->onRequestFailed(token);
+			socket->disconnect();
+			return;
+		}
+
+		if (list->isActive())
+		{
+			/* We already asked; one list per connection is enough. */
+			QDBG("The file list has already been requested; closing");
+			socket->disconnect();
+			return;
+		}
+
+		QDBG("Requesting the file list of '%s'", list->getClientID());
+		list->setActive(true);
+
+		/*
+		 * Deliberately no ZL1: that is stream compression, and there is no
+		 * decompressing counterpart to ZUpload on the receiving side yet. A
+		 * bzip2 encoded list is a different matter - that is a file format,
+		 * and QueueManager::onFilelistDownloaded() detects and unpacks it.
+		 */
+		ADC::Command* cmd = new ADC::Command(FOURCC('C','G','E','T'));
+		cmd->addArgument("list");
+		cmd->addArgument("/");
+		cmd->addArgument("0");
+		cmd->addArgument("-1");
+		send(cmd);
+		return;
+	}
+
+	QuickDC::QueueFile* qfile = request->getFile();
+	if (!qfile || !qfile->getTTH())
+	{
+		QERR("A queued file without a TTH cannot be requested over ADC");
+		queue->onRequestFailed(token);
+		socket->disconnect();
+		return;
+	}
+
+	uint64_t offset = 0;
+	uint64_t length = 0;
+	if (!queue->reserveChunk(qfile, request->getSource(), offset, length))
+	{
+		QDBG("Nothing left to fetch of '%s' from this peer", qfile->getLocalFilename());
+		queue->onRequestFinished(token);
+		socket->disconnect();
+		return;
+	}
+
+	request->setReservation(offset, length);
+	chunk_offset = offset;
+	chunk_length = (int64_t) length;
+
+	char tthpath[64];
+	char s_offset[32];
+	char s_length[32];
+	snprintf(tthpath, sizeof(tthpath), "TTH/%s", qfile->getTTH());
+	snprintf(s_offset, sizeof(s_offset), "%llu", (unsigned long long) offset);
+	snprintf(s_length, sizeof(s_length), "%llu", (unsigned long long) length);
+
+	QDBG("Requesting %d bytes at offset %d of '%s'",
+		(int) length, (int) offset, qfile->getLocalFilename());
+
+	ADC::Command* cmd = new ADC::Command(FOURCC('C','G','E','T'));
+	cmd->addArgument("file");
+	cmd->addArgument(tthpath);
+	cmd->addArgument(s_offset);
+	cmd->addArgument(s_length);
+	send(cmd);
 }
 
 void ADC::ClientSession::onGFI(const char*, uint32_t)
@@ -196,20 +349,86 @@ bool ADC::ClientSession::supports(const char* feature)
 // connection cancelled/closed
 void ADC::ClientSession::onTransferStopped()
 {
-	QDBG("DC::ClientSession::onTransferStopped()");
-	
-	delete transfer; transfer = 0;
-	file = 0; // NOTE: NEVER DELETE!
-	chunk_offset = 0;
-	chunk_length = -1;
+	QDBG("ADC::ClientSession::onTransferStopped()");
 
-	if (upload_approved) {
-		/* do nothing, just await new request */
-	} else {
-		// Fetch next file from queue.
+	if (!download_approved)
+	{
+		/* An upload finished; do nothing, just await a new request. */
+		releaseTransfer();
+		return;
 	}
-}
 
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+
+	/* Work out how it went before the transfer object goes away. */
+	bool complete = (transfer && transfer->isFinished());
+	uint64_t offset = chunk_offset;
+	uint64_t length = (chunk_length > 0) ? (uint64_t) chunk_length : 0;
+
+	QuickDC::PendingRequest* request = (queue && token) ? queue->lookupRequest(token) : 0;
+
+	/* A file list is not chunked, so it either arrived whole or not at all. */
+	QuickDC::FilelistRequest* list = 0;
+	if (request && request->getKind() == QuickDC::PendingRequest::KindFilelist)
+		list = request->getFilelist();
+
+	releaseTransfer();
+
+	if (!queue || !token)
+		return;
+
+	if (list)
+	{
+		if (complete)
+		{
+			/* Shared with NMDC: unpack, read, and mine it for sources. */
+			queue->onFilelistDownloaded(list, hubUrl(), remote_cid);
+			queue->onRequestFinished(token);
+			queue->removeFilelistRequest(list);
+		}
+		else
+		{
+			QDBG("The file list did not arrive in full");
+			queue->onRequestFailed(token);
+		}
+
+		socket->disconnect();
+		return;
+	}
+
+	if (!request)
+		return;
+
+	QuickDC::QueueFile* qfile = request->getFile();
+
+	if (complete && length)
+	{
+		queue->commitChunk(qfile, offset, length);
+		request = queue->lookupRequest(token);
+		if (request) request->clearReservation();
+
+		/*
+		 * commitChunk() may have completed the file, in which case the queue
+		 * has already dropped the entry and this request with it.
+		 */
+		if (!queue->lookupRequest(token))
+		{
+			socket->disconnect();
+			return;
+		}
+
+		/* Keep the connection and ask for the next piece. */
+		requestNextChunk();
+		return;
+	}
+
+	QDBG("The chunk at %d did not complete; handing it back", (int) offset);
+	if (length) queue->releaseChunk(qfile, offset, length);
+	request->clearReservation();
+	queue->onRequestFailed(token);
+	socket->disconnect();
+}
 
 #define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
 
@@ -359,17 +578,129 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	}
 }
 
-void ADC::ClientSession::onSND(const char* file, uint32_t type, uint64_t offset, int64_t length, bool)
+void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t offset, int64_t length, bool compressed)
 {
-	QDBG("Receiving file (ADCSND): '%s', offset=%u, length=%l", file, offset, length);
-	
-	if (type == FOURCC('l','i','s','t')) {
-		
-	} else if (type == FOURCC('t','t','h','l')) {
-		
-	} else { /* type == file */
-		
+	QDBG("Receiving file (ADCSND): '%s', offset=%d, length=%d", filename, (int) offset, (int) length);
+
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+	QuickDC::TransferManager* xfrmgr = (core) ? core->transfers : 0;
+
+	if (!download_approved || !queue || !xfrmgr || !token)
+	{
+		QERR("Unexpected ADCSND; no download is in progress on this connection");
+		return;
 	}
+
+	if (compressed)
+	{
+		/*
+		 * We never ask for ZL1, because there is no decompressing counterpart
+		 * to ZUpload yet. A peer that sends it anyway is not something we can
+		 * read, so do not pretend otherwise by writing the raw stream to disk.
+		 */
+		QERR("The peer sent a compressed stream, which is not supported");
+		queue->onRequestFailed(token);
+		socket->disconnect();
+		return;
+	}
+
+	QuickDC::PendingRequest* request = queue->lookupRequest(token);
+	if (!request)
+	{
+		QERR("ADCSND for a token we no longer know about ('%s')", token);
+		socket->disconnect();
+		return;
+	}
+
+	if (length <= 0)
+	{
+		QERR("The peer offered a nonsensical length (%d)", (int) length);
+		queue->onRequestFailed(token);
+		socket->disconnect();
+		return;
+	}
+
+	/* There should be nothing running, but make sure before replacing it. */
+	releaseTransfer();
+
+	if (type == FOURCC('l','i','s','t'))
+	{
+		QuickDC::FilelistRequest* list = request->getFilelist();
+		if (!list)
+		{
+			QERR("The peer sent a file list we did not ask for");
+			queue->onRequestFailed(token);
+			socket->disconnect();
+			return;
+		}
+
+		file = new Samurai::IO::File(list->getTempFilename());
+		ownsFile = true;
+
+		/* Start from scratch; a list is not resumable. */
+		Samurai::IO::File(list->getTempFilename()).remove();
+
+		chunk_offset = 0;
+		chunk_length = length;
+		request->setReservation(0, (uint64_t) length);
+
+		transfer = new QuickDC::Download(xfrmgr, this, proxy->socket, file, 0, length);
+		state = StateData;
+		return;
+	}
+
+	if (type == FOURCC('t','t','h','l'))
+	{
+		/*
+		 * Leaf hashes are not requested yet; with them a hash mismatch could be
+		 * pinned on a single chunk instead of costing the whole file.
+		 */
+		QDBG("Ignoring an unsolicited tthl response");
+		return;
+	}
+
+	/* type == file */
+	QuickDC::QueueFile* qfile = request->getFile();
+	if (!qfile)
+	{
+		QERR("The peer sent file data we did not ask for");
+		queue->onRequestFailed(token);
+		socket->disconnect();
+		return;
+	}
+
+	/*
+	 * A peer is allowed to answer with less than we asked for, but not with
+	 * something outside the chunk we reserved - that would corrupt ranges we
+	 * have already accounted for, or that someone else is fetching.
+	 */
+	if (!request->haveReservation()
+		|| offset != request->getReservedOffset()
+		|| (uint64_t) length > request->getReservedLength())
+	{
+		QERR("The peer answered with %d bytes at %d, which is not the chunk we reserved",
+			(int) length, (int) offset);
+		queue->onRequestFailed(token);
+		socket->disconnect();
+		return;
+	}
+
+	file = new Samurai::IO::File(qfile->getTempFilename());
+	ownsFile = true;
+
+	chunk_offset = offset;
+	chunk_length = length;
+
+	/*
+	 * Hold the request to what the peer actually promised, which may be less
+	 * than we reserved. The reservation in the chunk map still covers the
+	 * larger range; committing the shorter one hands the remainder back.
+	 */
+	request->setReservation(offset, (uint64_t) length);
+
+	transfer = new QuickDC::Download(xfrmgr, this, proxy->socket, file, offset, length);
+	state = StateData;
 }
 
 void ADC::ClientSession::EventHostLookup(const Samurai::IO::Net::Socket*) { }
@@ -387,15 +718,42 @@ void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
 	onStartClient();
 }
 
+/**
+ * The connection is going away. Anything we reserved but did not receive has
+ * to go back to the queue, or that range of the file would be blocked for the
+ * rest of the run.
+ */
+void ADC::ClientSession::abandonDownload()
+{
+	if (!download_approved || !token) return;
+
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+	if (!queue) return;
+
+	QuickDC::PendingRequest* request = queue->lookupRequest(token);
+	if (!request) return;
+
+	/*
+	 * A transfer that ran to completion has already been dealt with in
+	 * onTransferStopped(), which drops the request; getting here with one
+	 * still registered means it did not finish.
+	 */
+	QDBG("Abandoning the download for token '%s'", token);
+	queue->onRequestFailed(token);
+}
+
 void ADC::ClientSession::EventTimeout(const Samurai::IO::Net::Socket*)
 {
 	QDBG("Peer timeout");
+	abandonDownload();
 	manager->remove(this);
 }
 
 void ADC::ClientSession::EventDisconnected(const Samurai::IO::Net::Socket*)
 {
 	QDBG("Disconnected from peer");
+	abandonDownload();
 	manager->remove(this);
 }
 
@@ -431,6 +789,7 @@ void ADC::ClientSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO
 	if (hubsession)
 		hubsession->sendPeerError(remote_sid, "242", msg, token, ADC_COMPLIANCE);
 	QERR("Error: %s", msg);
+	abandonDownload();
 	manager->remove(this);
 }
 

@@ -241,7 +241,24 @@ class Hub
 		void sendPrivateChatMessage(const QuickDC::User* user, const char* message);
 		void sendKickUser(const char* user);
 		void sendRedirect(const char* user, const char* address, const char* reason);
-		void connectUser(const char* user);
+
+		/**
+		 * Ask a user to set up a peer connection.
+		 *
+		 * @param user  the user ID; a CID on ADC, a nickname on NMDC.
+		 * @param token identifies what the resulting connection is for, so
+		 *              that the client session can look the job up in the
+		 *              download queue. One is generated if this is 0.
+		 * @return false if there is no session, or no such user.
+		 */
+		bool connectUser(const char* user, const char* token = 0);
+
+		/**
+		 * The hub URL in canonical "{scheme}://{host}:{port}" form.
+		 * This is what a FileSource records, so the two have to agree.
+		 */
+		const char* getUrl() const;
+
 		const User* getLocalUser() const;
 		UserManager* getUserManager() const;
 
@@ -257,6 +274,7 @@ class Hub
 
 		bool requestedDisconnect;
 		Samurai::IO::Net::URL* url;
+		char* canonicalUrl;
 		Samurai::Timer* timer;
 		
 		void EventTimeout(Samurai::Timer*);

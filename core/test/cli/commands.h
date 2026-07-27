@@ -49,4 +49,14 @@ struct CommandData {
 
 extern void parseCommand(const char* line, size_t size);
 
+/**
+ * Record a search reply so that `/download <n>' can refer to it by number.
+ * Prints the hit with its index as a side effect.
+ *
+ * This is what makes a download possible from the shell at all: queueing a
+ * file needs its TTH and size, and a search reply is where those come from.
+ */
+extern void cmd_addSearchResult(const char* filename, uint64_t size,
+	const char* tth, const char* nick, const char* cid);
+
 #endif // HAVE_QUICKDC_CLI_COMMANDS_H

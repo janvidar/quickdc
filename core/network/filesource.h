@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2001-2007 Jan Vidar Krey, janvidar@extatic.org
+ * Copyright (C) 2001-2010 Jan Vidar Krey, janvidar@extatic.org
  * See the file "COPYING" for licensing details.
  */
 
@@ -12,13 +12,19 @@
 #include <samurai/timestamp.h>
 #include <vector>
 
+/** A source is forgotten after this many consecutive failures. */
+#define QUICKDC_SOURCE_MAX_RETRIES 50
+
+/** A source is forgotten when we have not seen it for this long (30 days). */
+#define QUICKDC_SOURCE_MAX_AGE (30*24*60*60)
+
 namespace QuickDC {
 
 /**
  * A file source is basically a source for downloading a specific file.
  * This does not contain any information about the file itself.
- * For obvious reasons this scheme works best with the ADC protocol, but 
- * the NMDC protocol with extensions support alot of the needed stuff here, 
+ * For obvious reasons this scheme works best with the ADC protocol, but
+ * the NMDC protocol with extensions support alot of the needed stuff here,
  * except the needed clientID and thus the base32 encoded nick is used instead.
  *
  * This is basically a URL notation.
@@ -37,24 +43,28 @@ namespace QuickDC {
  * {protocol}://host:port/{clientID} (3)
  *
  * 1) NOTE: clientID is basically a nick for 'dchub' protocol,
- *          This will have to be escaped so that it does not contain 
+ *          This will have to be escaped so that it does not contain
  *          any characters that will confuse decoding the URL.
  *          that means '/'.
  * 2) NOTE: Must have trailing slash. See 4.
  * 3) Without the trailing slash this means download the file listing,
  *    however with the trailing slash this means download the root
  *    directory.
+ *
+ * The distinction in 3) is carried by 'filename': a null filename means the
+ * file list, while an empty but non-null filename means the root directory.
  */
 class FileSource {
 	public:
 
 		/**
 		 * A filesource might be a on the form: adc://{server}:{port}/{cid}
+		 * Use isValid() to check whether the URL could be decoded at all.
 		 */
 		FileSource(const char* url);
-		
+
 		/**
-		 * Create a file source. This is usually created from a search reply, 
+		 * Create a file source. This is usually created from a search reply,
 		 * but might also be created from parsing a file list.
 		 *
 		 * @param hub      A hub URL, example: adc://host:port
@@ -66,32 +76,84 @@ class FileSource {
 		 * interpreted as downloading the file list.
 		 */
 		FileSource(const char* hub, const char* userID, const char* filename = 0);
-		
+
 		virtual ~FileSource();
-		
+
 	public:
-		
+
 		/**
 		 * @return the filename in utf-8, however might be 0 if no filename is known.
 		 */
 		inline const char* getName() const { return filename; }
-		
+
 		/**
 		 * @return the Client/User ID where the file source is detected.
 		 */
 		inline const char* getClientID() const { return cid; }
-		
+
 		/**
 		 * @return the URL to the hub where the user is connected to.
 		 */
 		inline const char* getHubUrl() const { return hub; }
 
+		/**
+		 * @return false if this source could not be decoded, and thus can
+		 *         neither be used nor stored.
+		 */
+		inline bool isValid() const { return (hub && cid); }
+
+		/**
+		 * @return true if this source refers to a file list rather than to
+		 *         a file or a directory.
+		 */
+		inline bool isFilelist() const { return (filename == 0); }
+
+		/**
+		 * Encode this source back into the URL notation described above.
+		 * This is what is written to the download queue on disk.
+		 *
+		 * @return a newly allocated string which the caller must free(),
+		 *         or 0 if this source is not valid.
+		 */
+		char* toURL() const;
+
+	public:
+
+		/**
+		 * The source was seen again; in a search reply, in a file list, or
+		 * because we transferred something from it. Clears the failure count.
+		 */
+		void touch();
+
+		/**
+		 * We failed to get anything useful out of this source.
+		 */
+		void onFailure();
+
+		inline size_t getRetryCount() const { return retryCount; }
+		inline const Samurai::TimeStamp& getLastSeen() const { return lastSeen; }
+
+		/**
+		 * @return true if this source has failed too many times, or has not
+		 *         been seen for too long, and should be forgotten.
+		 */
+		bool isExpired() const;
+
+		/**
+		 * @return true if this source refers to the given user on the given hub.
+		 */
+		bool matches(const char* hub, const char* cid) const;
+
+	public: /* used when loading the queue from disk */
+
+		void setRetryCount(size_t count);
+		void setLastSeen(const Samurai::TimeStamp& seen);
 
 	protected:
 		char* hub;            // (adcs?|dchub)://(host(:port)?)
 		char* cid;            // clientID (CID on ADC, nick on NMDC).
 		char* filename;       // filename, full path, or NULL (tth is used instead).
-		bool retryCount;      // expire this after ~50 tries
+		size_t retryCount;    // expire this after ~50 tries
 		Samurai::TimeStamp lastSeen; // expire this after ~30 days.
 };
 

@@ -29,7 +29,14 @@ class HubManager {
 		 * @param id is either nickname (NMDC) or sid (ADC).
 		 */
 		Hub* lookupUser(const char* id);
-		
+
+		/**
+		 * Returns the hub we are logged in to at the given URL, or 0.
+		 * The URL must be in the canonical form returned by Hub::getUrl(),
+		 * which is what a FileSource stores.
+		 */
+		Hub* getHubByUrl(const char* url);
+
 		/**
 		 * Returns the number of hubs where we are logged in
 		 * as normal users.
