@@ -76,6 +76,12 @@ class Transfer {
 		inline uint64_t getOffset() const { return offset; }
 		inline uint64_t getTotal() const { return total; }
 
+		/** How many bytes this transfer covers in total. */
+		inline uint64_t getLength() const { return length; }
+
+		/** How many of them have moved so far. */
+		inline uint64_t getTransferred() const { return offset - (total - length); }
+
 		/**
 		 * The ratio of data going through the networking.
 		 * Unless compression is involved, this is always 1.0

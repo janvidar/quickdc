@@ -12,36 +12,43 @@ namespace QuickDC {
 
 class Transfer;
 
+/**
+ * Implement this and register it with TransferManager::addListener() to be
+ * told about transfers as they come and go. Intended for user interfaces.
+ *
+ * The bodies are empty rather than pure so that a listener only has to
+ * override the events it cares about.
+ */
 class TransferListener {
 	public:
 		virtual ~TransferListener() { }
-		
+
 		/**
-		 * Transfer was started. 
+		 * Transfer was started.
 		 * Emitted once.
 		 */
-		virtual void EventTransferStarted(Transfer*);
-		
+		virtual void EventTransferStarted(Transfer*) { }
+
 		/**
 		 * Transfer was stopped. Because the connection
 		 * was closed, or this was requested via protocol.
 		 */
-		virtual void EventTransferStopped(Transfer*);
-		
+		virtual void EventTransferStopped(Transfer*) { }
+
 		/**
 		 * Transfer was stopped due to an unexpected error.
 		 */
-		virtual void EventTransferError(Transfer*);
-		
+		virtual void EventTransferError(Transfer*) { }
+
 		/**
 		 * Transfer completed.
 		 */
-		virtual void EventTransferFinished(Transfer*);
-		
+		virtual void EventTransferFinished(Transfer*) { }
+
 		/**
 		 * Transfer progress update.
 		 */
-		virtual void EventTransferProgress(Transfer*);
+		virtual void EventTransferProgress(Transfer*) { }
 };
 
 /**
@@ -58,7 +65,11 @@ class TransferManager
 	public:
 		void add(Transfer*);
 		void remove(Transfer*);
-		
+
+		/** Listeners are not owned; remove them before they are destroyed. */
+		void addListener(TransferListener*);
+		void removeListener(TransferListener*);
+
 		void onTransferStarted(Transfer*);
 		void onTransferStopped(Transfer*);
 		void onTransferError(Transfer*);
@@ -84,6 +95,7 @@ class TransferManager
 		std::vector<Transfer*> transfers;
 		std::vector<Transfer*> pendingRemove;
 		std::vector<Transfer*>::iterator transferIterator;
+		std::vector<TransferListener*> listeners;
 };
 
 }

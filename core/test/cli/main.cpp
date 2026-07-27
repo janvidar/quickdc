@@ -39,6 +39,94 @@ QuickDC::Core* core;
 HubConnection* hub;
 bool running;
 
+/**
+ * Reports transfers as they start and finish.
+ *
+ * Transfers are not tied to a particular hub, so this is its own listener
+ * rather than something bolted onto HubConnection.
+ */
+class TransferReporter : public QuickDC::TransferListener
+{
+	public:
+		void EventTransferStarted(QuickDC::Transfer* xfer)
+		{
+			if (!xfer) return;
+
+			console_printf("%s * %s started: %s (%s)\n",
+				getTimestamp(),
+				xfer->isDownload() ? "Download" : "Upload",
+				name(xfer),
+				getFormatSize(xfer->getLength()));
+		}
+
+		void EventTransferFinished(QuickDC::Transfer* xfer)
+		{
+			if (!xfer) return;
+
+			char moved[32];
+			char rate[32];
+			formatSize(moved, sizeof(moved), xfer->getTransferred());
+			formatSize(rate, sizeof(rate), xfer->getBps());
+
+			console_printf("%s * %s finished: %s (%s at %s/s)\n",
+				getTimestamp(),
+				xfer->isDownload() ? "Download" : "Upload",
+				name(xfer),
+				moved, rate);
+		}
+
+		void EventTransferStopped(QuickDC::Transfer* xfer)
+		{
+			report(xfer, "stopped");
+		}
+
+		void EventTransferError(QuickDC::Transfer* xfer)
+		{
+			report(xfer, "failed");
+		}
+
+	private:
+		/**
+		 * getFormatSize() formats into a single static buffer, so two calls in
+		 * one argument list would both render the last value. Take a copy.
+		 */
+		static void formatSize(char* out, size_t length, uint64_t bytes)
+		{
+			snprintf(out, length, "%s", getFormatSize(bytes));
+		}
+
+		/** The base name; a full path makes the line unreadable. */
+		static const char* name(QuickDC::Transfer* xfer)
+		{
+			if (!xfer->getFile()) return "";
+
+			const std::string& path = xfer->getFile()->getName();
+			size_t cut = path.find_last_of("/\\");
+
+			return (cut == std::string::npos) ? path.c_str() : path.c_str() + cut + 1;
+		}
+
+		/** Shared by the two ways a transfer can end short. */
+		void report(QuickDC::Transfer* xfer, const char* what)
+		{
+			if (!xfer) return;
+
+			char moved[32];
+			char expected[32];
+			formatSize(moved, sizeof(moved), xfer->getTransferred());
+			formatSize(expected, sizeof(expected), xfer->getLength());
+
+			console_printf("%s * %s %s: %s (%s of %s)\n",
+				getTimestamp(),
+				xfer->isDownload() ? "Download" : "Upload",
+				what,
+				name(xfer),
+				moved, expected);
+		}
+};
+
+static TransferReporter transferReporter;
+
 class CoreListener : public QuickDC::DCServerListener
 {
 	public:
@@ -111,6 +199,7 @@ int main(int argc, char** argv) {
 	snprintf(url_, url_size, "%s://%s:%d", protocol, host, port);
 	Samurai::IO::Net::URL* url = new Samurai::IO::Net::URL(url_);
 	core = new QuickDC::Core();
+	core->transfers->addListener(&transferReporter);
 	hub = new HubConnection(url);
 
 	if (console_initialize() == -1) return -1;
@@ -131,6 +220,7 @@ int main(int argc, char** argv) {
 
 	Console::shutdown();
 	delete hub;
+	core->transfers->removeListener(&transferReporter);
 	delete core;
 	free(url_);
 	delete url;
