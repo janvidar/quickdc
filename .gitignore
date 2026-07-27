@@ -1,2 +1,11 @@
 *.o
 *~
+
+# CMake build directories
+/build-cmake/
+/build/
+/out/
+CMakeUserPresets.json
+
+# Artifacts left behind by the old Makefile build
+/libquickdc.a
