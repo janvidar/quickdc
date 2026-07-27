@@ -547,6 +547,7 @@ void DC::HubSession::EventConnected(const Samurai::IO::Net::Socket*)
 
 void DC::HubSession::EventTimeout(const Samurai::IO::Net::Socket*)
 {
+	manager->remove(this);
 	listener->EventNetStatus(QuickDC::HubListener::NetErrorTimeout);
 	hub->onDisconnected();
 }

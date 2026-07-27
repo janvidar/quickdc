@@ -127,6 +127,7 @@ ADC::HubSession::~HubSession()
 	free(hubversion);
 	delete users;
 	delete infoTimer;
+	delete proxy;
 }
 
 
@@ -212,6 +213,7 @@ void ADC::HubSession::EventTLSDisconnected(const Samurai::IO::Net::Socket*)
 
 void ADC::HubSession::EventTimeout(const Samurai::IO::Net::Socket*)
 {
+	manager->remove(this);
 	userState = QuickDC::HubSession::StateNone;
 	listener->EventNetStatus(QuickDC::HubListener::NetErrorTimeout);
 	hub->onDisconnected();
