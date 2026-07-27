@@ -254,6 +254,17 @@ class Hub
 		bool connectUser(const char* user, const char* token = 0);
 
 		/**
+		 * The same, but identified the way the download queue stores a user:
+		 * by client ID on ADC, by nickname on NMDC.
+		 *
+		 * connectUser() takes a session ID, which is only valid while the user
+		 * stays on the hub and so is no use to a queue that outlives that.
+		 * Failures are logged rather than reported to the listener, because the
+		 * queue retries and would otherwise report the same problem repeatedly.
+		 */
+		bool connectUserByClientID(const char* cid, const char* token);
+
+		/**
 		 * The hub URL in canonical "{scheme}://{host}:{port}" form.
 		 * This is what a FileSource records, so the two have to agree.
 		 */

@@ -42,6 +42,17 @@ const User* UserManager::getUserByNick(const char* nick) {
 	return 0;
 }
 
+const User* UserManager::getUserByClientID(const char* cid) {
+	if (!cid || !*cid) return 0;
+	User* u = first();
+	while (u) {
+		const char* have = (const char*) u->getClientID();
+		if (have && strcmp(have, cid) == 0) return u;
+		u = next();
+	}
+	return 0;
+}
+
 void UserManager::join(const char* id) {
 	if (users.count((char*) id))
 		return;

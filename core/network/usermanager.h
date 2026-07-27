@@ -64,6 +64,16 @@ class UserManager {
 		const User* getUserByNick(const char* nick);
 
 		/**
+		 * Also slow, and for the same reason: the index is by session ID.
+		 *
+		 * On ADC the client ID is what identifies a user across sessions, so
+		 * it is what the download queue stores in a FileSource - the session ID
+		 * is only good for as long as the user stays on the hub. NMDC users
+		 * have no client ID, so this finds nothing there.
+		 */
+		const User* getUserByClientID(const char* cid);
+
+		/**
 		 * Add a user with a given ID.
 		 * Note the user does not have user data attached at this point.
 		 */

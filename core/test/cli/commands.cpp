@@ -314,7 +314,7 @@ static void cmd_version(const std::vector<std::string>&);
 static const struct CommandData commands[] =
 {
 	{ "allow_connections", "",                           "Toggle accepting incoming client connections",     1, cmd_allow_connections },
-	{ "browse",            "n:nick",                     "Browse a user's file list",                        0, cmd_browse            },
+	{ "browse",            "n:nick",                     "Queue a user's file list for download",            0, cmd_browse            },
 	{ "close",             "i:transfer",                 "Close a transfer",                                 1, 0                     },
 	{ "connect",           "",                           "Connect to the hub",                               0, cmd_connect           },
 	{ "connections",       "",                           "List all active p2p connections",                  0, cmd_connections       },
@@ -516,15 +516,16 @@ static void cmd_browse(const std::vector<std::string>& args)
 		return;
 	}
 
-	cmd_output("Browsing user '%s'", user->getNick());
-
 	/*
-	 * Queue the request and let the queue drive it. Note this never lands in
-	 * queue.xml - a file list has no TTH and nothing to resume.
+	 * Queue it, then run the queue so the request goes out now rather than on
+	 * the next tick of the message loop. Note this never lands in queue.xml -
+	 * a file list has no TTH and nothing to resume.
 	 */
 	core->queue->requestFilelist(hubUrl, cid);
-	hub->connectUser(user->getID(),
-		core->queue->createRequest(core->queue->getFilelistRequest(hubUrl, cid)));
+	core->queue->process();
+
+	cmd_output("Queued a file list request for '%s'. Use /queue to watch it.",
+		user->getNick());
 }
 
 static void cmd_download(const std::vector<std::string>& args)
@@ -572,7 +573,10 @@ static void cmd_download(const std::vector<std::string>& args)
 		qfile->addSource(new QuickDC::FileSource(hubUrl, hit.cid.c_str(), source.c_str()));
 	}
 
-	cmd_output("Queued `%s' (%s, %d source(s)). The queue will start it.",
+	/* Start it now rather than on the next tick of the message loop. */
+	core->queue->process();
+
+	cmd_output("Queued `%s' (%s, %d source(s)).",
 		target.c_str(), getFormatSize(hit.size), (int) qfile->countSources());
 }
 
@@ -600,8 +604,19 @@ static void cmd_queue(const std::vector<std::string>&)
 			item.filename);
 	}
 
-	if (core->queue->countFilelistRequests())
-		cmd_output("File list requests pending: %d", (int) core->queue->countFilelistRequests());
+	size_t lists = core->queue->countFilelistRequests();
+	if (!lists) return;
+
+	cmd_output("File lists: %d", (int) lists);
+	for (size_t n = 0; n < lists; n++)
+	{
+		QuickDC::FilelistRequest* list = core->queue->getFilelistRequest(n);
+		if (!list) continue;
+
+		printf("  %-9s  %s\n",
+			list->isActive() ? "receiving" : "waiting",
+			list->getClientID());
+	}
 }
 
 static void cmd_kick(const std::vector<std::string>& args)

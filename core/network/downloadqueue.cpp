@@ -226,6 +226,7 @@ QuickDC::FilelistRequest::FilelistRequest(const char* hub_, const char* cid_)
 	, cid(0)
 	, filename(0)
 	, tempname(0)
+	, retryCount(0)
 	, active(false)
 {
 	hub = strdup(hub_ ? hub_ : "");
@@ -253,6 +254,27 @@ bool QuickDC::FilelistRequest::matches(const char* hub_, const char* cid_) const
 {
 	if (!hub_ || !cid_) return false;
 	return (!strcmp(hub, hub_) && !strcmp(cid, cid_));
+}
+
+void QuickDC::FilelistRequest::onAttempt()
+{
+	lastAttempt.reset();
+}
+
+void QuickDC::FilelistRequest::onFailure()
+{
+	retryCount++;
+}
+
+bool QuickDC::FilelistRequest::isReadyToRetry() const
+{
+	/* The first attempt is made straight away. */
+	if (!retryCount) return true;
+
+	time_t now = Samurai::TimeStamp().getInternalData();
+	time_t last = lastAttempt.getInternalData();
+
+	return (now < last || (now - last) >= QUICKDC_FILELIST_RETRY_INTERVAL);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -852,6 +874,12 @@ QuickDC::FilelistRequest* QuickDC::QueueManager::getFilelistRequest(const char* 
 	return 0;
 }
 
+QuickDC::FilelistRequest* QuickDC::QueueManager::getFilelistRequest(size_t n) const
+{
+	if (n >= filelists.size()) return 0;
+	return filelists[n];
+}
+
 void QuickDC::QueueManager::removeFilelistRequest(FilelistRequest* request)
 {
 	if (!request) return;
@@ -969,7 +997,13 @@ void QuickDC::QueueManager::onRequestFailed(const char* token)
 	}
 	else if (request->getFilelist())
 	{
+		/*
+		 * Count it, the same way a file source is blamed above. Without this a
+		 * peer that always drops the connection would be retried on every tick
+		 * for the full lifetime of the request.
+		 */
 		request->getFilelist()->setActive(false);
+		request->getFilelist()->onFailure();
 	}
 
 	removeRequest(token);
@@ -1046,16 +1080,20 @@ void QuickDC::QueueManager::expire()
 		onRequestFailed(dead[n].c_str());
 	}
 
-	/* File list requests that went nowhere. */
+	/* File list requests that went nowhere, or that nobody will serve. */
 	std::vector<FilelistRequest*> deadLists;
 	for (size_t n = 0; n < filelists.size(); n++)
 	{
-		if (now - filelists[n]->getTimeAdded().getInternalData() > QUICKDC_FILELIST_TIMEOUT)
+		if (now - filelists[n]->getTimeAdded().getInternalData() > QUICKDC_FILELIST_TIMEOUT
+			|| filelists[n]->getRetryCount() > QUICKDC_FILELIST_MAX_RETRIES)
+		{
 			deadLists.push_back(filelists[n]);
+		}
 	}
 	for (size_t n = 0; n < deadLists.size(); n++)
 	{
-		QDBG("Giving up on the file list of '%s'", deadLists[n]->getClientID());
+		QDBG("Giving up on the file list of '%s' after %d attempt(s)",
+			deadLists[n]->getClientID(), (int) deadLists[n]->getRetryCount());
 		removeFilelistRequest(deadLists[n]);
 	}
 
@@ -1071,7 +1109,53 @@ void QuickDC::QueueManager::schedule()
 
 	size_t budget = getMaxDownloads();
 	size_t inFlight = countActiveTransfers();
+
+	/* A file list we have already asked someone for occupies a slot too. */
+	for (std::map<std::string, PendingRequest*>::const_iterator it = pending.begin(); it != pending.end(); it++)
+	{
+		if ((*it).second->getKind() == PendingRequest::KindFilelist) inFlight++;
+	}
+
 	if (inFlight >= budget) return;
+
+	/*
+	 * File lists first. They are small, someone is usually waiting to look at
+	 * one, and driving them from here rather than from whoever asked means a
+	 * connection that cannot be made now is retried instead of lost.
+	 */
+	for (size_t n = 0; n < filelists.size() && inFlight < budget; n++)
+	{
+		FilelistRequest* list = filelists[n];
+
+		/* Already being received. */
+		if (list->isActive()) continue;
+
+		/* Already asked; expire() frees it again if it comes to nothing. */
+		if (lookupRequestBySource(list->getHubUrl(), list->getClientID())) continue;
+
+		/* Back off between attempts; this runs several times a second. */
+		if (!list->isReadyToRetry()) continue;
+
+		QuickDC::Hub* hub = core->hubs->getHubByUrl(list->getHubUrl());
+		if (!hub) continue;   /* not logged in there at the moment */
+
+		const char* created = createRequest(list);
+		if (!created) continue;
+
+		std::string token(created);
+		list->onAttempt();
+
+		if (!hub->connectUserByClientID(list->getClientID(), token.c_str()))
+		{
+			/* Usually means they have left; expire() gives up after a few. */
+			removeRequest(token.c_str());
+			list->onFailure();
+			continue;
+		}
+
+		QDBG("Asked '%s' for their file list", list->getClientID());
+		inFlight++;
+	}
 
 	/* Highest priority first. PrioPaused is never scheduled. */
 	for (int prio = (int) QueueFile::PrioHigh; prio >= (int) QueueFile::PrioLow; prio--)
@@ -1096,7 +1180,7 @@ void QuickDC::QueueManager::schedule()
 				if (!created) continue;
 
 				std::string token(created);
-				if (!hub->connectUser(source->getClientID(), token.c_str()))
+				if (!hub->connectUserByClientID(source->getClientID(), token.c_str()))
 				{
 					removeRequest(token.c_str());
 					continue;

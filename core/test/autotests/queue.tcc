@@ -9,9 +9,15 @@
 #include "network/downloadqueue.h"
 #include "network/dc/commands.h"
 #include "network/dc/hubcommands.h"
+#include "network/user.h"
+#include "network/usermanager.h"
 
 #define QUEUE_TEST_TTH_A "MWXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A"
 #define QUEUE_TEST_TTH_B "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+/* A CID is the same shape as a TTH root: 39 base32 characters. */
+#define QUEUE_TEST_CID_A "ACSTOWQXZASAQ7EYRJ4KLMNPQ2345XYZABCDEFG"
+#define QUEUE_TEST_CID_B "Q2AH7321WAS1PQRSTUVWXYZ234567ABCDEFGHIJ"
 
 /*
  * These tables live out here on purpose: EXO_TEST() takes the test body as a
@@ -996,6 +1002,107 @@ EXO_TEST(nmdc_sr_result_becomes_a_source, {
 	bool ok = (url && !strcmp(url, "dchub://myhub:411/bob/dir\\big.iso"));
 	free(url);
 	return ok;
+});
+
+EXO_TEST(queue_filelist_is_schedulable_work, {
+	/*
+	 * /browse only queues; the queue is what connects. So a fresh request has
+	 * to look like work waiting to be started: enumerable, not yet active, and
+	 * with nothing in flight for it.
+	 */
+	if (!queue_test_setup()) return false;
+
+	QuickDC::QueueManager queue;
+
+	QuickDC::FilelistRequest* first = queue.requestFilelist("adc://h:1", "AAA");
+	QuickDC::FilelistRequest* second = queue.requestFilelist("adc://h:1", "BBB");
+	if (!first || !second) return false;
+	if (queue.countFilelistRequests() != 2) return false;
+
+	/* Enumerable in order, and out of range yields 0 rather than misbehaving. */
+	if (queue.getFilelistRequest(0) != first) return false;
+	if (queue.getFilelistRequest(1) != second) return false;
+	if (queue.getFilelistRequest(2) != 0) return false;
+
+	/* Waiting to be started: nothing has asked anyone yet. */
+	if (first->isActive()) return false;
+	if (queue.lookupRequestBySource("adc://h:1", "AAA") != 0) return false;
+
+	/* Once asked, it must not be picked up a second time. */
+	const char* created = queue.createRequest(first);
+	if (!created) return false;
+	std::string token(created);
+	if (queue.lookupRequestBySource("adc://h:1", "AAA") == 0) return false;
+
+	/* The other one is still untouched and schedulable. */
+	if (queue.lookupRequestBySource("adc://h:1", "BBB") != 0) return false;
+
+	/* A request that comes to nothing frees the list to be asked again. */
+	queue.onRequestFailed(token.c_str());
+	if (first->isActive()) return false;
+	return queue.lookupRequestBySource("adc://h:1", "AAA") == 0;
+});
+
+EXO_TEST(queue_filelist_retry_backs_off, {
+	if (!queue_test_setup()) return false;
+
+	QuickDC::QueueManager queue;
+	QuickDC::FilelistRequest* list = queue.requestFilelist("adc://h:1", "AAA");
+	if (!list) return false;
+
+	/* The first attempt happens immediately. */
+	if (!list->isReadyToRetry()) return false;
+	if (list->getRetryCount() != 0) return false;
+
+	/*
+	 * After a failure it must wait, or the scheduler - which runs several
+	 * times a second - would hammer a user who has left the hub and report an
+	 * error to the user interface every time.
+	 */
+	list->onAttempt();
+	list->onFailure();
+	if (list->getRetryCount() != 1) return false;
+	if (list->isReadyToRetry()) return false;
+
+	/* And enough failures take it past the cap, so expire() drops it. */
+	for (int n = 0; n < QUICKDC_FILELIST_MAX_RETRIES; n++) list->onFailure();
+	return list->getRetryCount() > QUICKDC_FILELIST_MAX_RETRIES;
+});
+
+EXO_TEST(usermanager_lookup_by_client_id, {
+	/*
+	 * The queue stores a client ID, because that is what identifies an ADC user
+	 * across sessions. getUser() indexes by session ID instead, so looking a
+	 * queued source up needs this - without it the scheduler could never
+	 * resolve anyone and no download ever started.
+	 */
+	QuickDC::UserManager users(0);
+
+	users.join("AAAA");
+	users.join("BBBB");
+
+	QuickDC::User* first = (QuickDC::User*) users.getUser("AAAA");
+	QuickDC::User* second = (QuickDC::User*) users.getUser("BBBB");
+	if (!first || !second) return false;
+
+	/* setClientID() copies a fixed 40 bytes, so these have to be real length
+	   CIDs - 39 base32 characters and a terminator. */
+	first->setClientID((uint8_t*) QUEUE_TEST_CID_A);
+	second->setClientID((uint8_t*) QUEUE_TEST_CID_B);
+	first->setNick("alice");
+
+	/* The session ID and the client ID are different keys. */
+	if (users.getUserByClientID(QUEUE_TEST_CID_A) != first) return false;
+	if (users.getUserByClientID(QUEUE_TEST_CID_B) != second) return false;
+	if (users.getUser(QUEUE_TEST_CID_A) != 0) return false;
+
+	/* And a client ID nobody has must not match anyone. */
+	if (users.getUserByClientID("NOSUCHCID") != 0) return false;
+	if (users.getUserByClientID("") != 0) return false;
+	if (users.getUserByClientID(0) != 0) return false;
+
+	/* The nick lookup still works, which is the NMDC path. */
+	return users.getUserByNick("alice") == first;
 });
 
 EXO_TEST(queue_empty_saves_and_reloads, {

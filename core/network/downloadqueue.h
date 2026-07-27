@@ -35,6 +35,12 @@
 /** A file list request is abandoned if it has not completed within this long. */
 #define QUICKDC_FILELIST_TIMEOUT 300
 
+/** How long to wait before asking again for a file list we failed to request. */
+#define QUICKDC_FILELIST_RETRY_INTERVAL 10
+
+/** A file list request is given up on after this many failed attempts. */
+#define QUICKDC_FILELIST_MAX_RETRIES 5
+
 /** A peer that never came back with our data is forgotten after this long. */
 #define QUICKDC_REQUEST_TIMEOUT 120
 
@@ -225,12 +231,32 @@ class FilelistRequest {
 
 		bool matches(const char* hub, const char* cid) const;
 
+	public:
+		/** We are about to ask someone for this list. */
+		void onAttempt();
+
+		/** Asking failed, so it will have to be tried again. */
+		void onFailure();
+
+		inline size_t getRetryCount() const { return retryCount; }
+
+		/**
+		 * Whether it is worth asking again yet.
+		 *
+		 * The queue is processed several times a second, so without this a
+		 * user who has left the hub would be retried hundreds of times, and
+		 * every attempt reports an error to the user interface.
+		 */
+		bool isReadyToRetry() const;
+
 	protected:
 		char* hub;
 		char* cid;
 		char* filename;
 		char* tempname;
 		Samurai::TimeStamp added;
+		Samurai::TimeStamp lastAttempt;
+		size_t retryCount;
 		bool active;
 };
 
@@ -386,8 +412,19 @@ class QueueManager {
 		 * Ask for a user's file list, or return the request already pending
 		 * for that user.
 		 */
+		/**
+		 * Ask for a user's file list, or return the request already pending
+		 * for that user.
+		 *
+		 * Only queues it; process() makes the connection, so a request that
+		 * cannot be served right now is retried rather than lost.
+		 */
 		FilelistRequest* requestFilelist(const char* hub, const char* cid);
 		FilelistRequest* getFilelistRequest(const char* hub, const char* cid) const;
+
+		/** Enumerate the pending requests, for a user interface. */
+		FilelistRequest* getFilelistRequest(size_t n) const;
+
 		void removeFilelistRequest(FilelistRequest*);
 		size_t countFilelistRequests() const;
 

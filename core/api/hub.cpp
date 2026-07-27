@@ -216,6 +216,37 @@ bool QuickDC::Hub::connectUser(const char* user, const char* token)
 	return true;
 }
 
+bool QuickDC::Hub::connectUserByClientID(const char* cid, const char* token)
+{
+	if (!session || !session->isLoggedIn())
+	{
+		QDBG("connectUserByClientID(): not logged in");
+		return false;
+	}
+
+	if (!cid || !*cid || !token) return false;
+
+	QuickDC::UserManager* users = session->getUserManager();
+	if (!users) return false;
+
+	const QuickDC::User* u = users->getUserByClientID(cid);
+
+	/*
+	 * NMDC users have no client ID, and there the nickname doubles as the
+	 * session ID, so fall back to the plain lookup.
+	 */
+	if (!u) u = session->getUser(cid);
+
+	if (!u)
+	{
+		QDBG("connectUserByClientID(): '%s' is not on this hub", cid);
+		return false;
+	}
+
+	session->sendConnectionRequest(u, token);
+	return true;
+}
+
 const char* QuickDC::Hub::getUrl() const
 {
 	return canonicalUrl;
