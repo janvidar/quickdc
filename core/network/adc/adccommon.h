@@ -12,6 +12,7 @@ typedef uint32_t sid_t;
 typedef uint32_t bbs_message_t;
 
 #define ADC_COMPLIANCE                  "ADC/1.0"
+#define ADC_TLS_PROTO                   "ADCS/0.10"
 #define ADC_BASE                        "BASE" /* the base set of commands */
 #define ADC_BASE_COMPAT                 "BAS0" /* deprectated: old ADC version */
 #define ADC_HASH_TIGER                  "TIGR" /* tiger hash support */
@@ -73,4 +74,3 @@ typedef uint32_t bbs_message_t;
 
 
 #endif // HAVE_QUICKDC_ADC_COMMON_H
-

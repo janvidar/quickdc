@@ -52,7 +52,7 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 {
 	access = QuickDC::HubSession::AccessNormal;
 	userState = QuickDC::HubSession::StateNone;
-	
+
 	cid = (char*) malloc(40);
 	pid = (char*) malloc(40);
 
@@ -61,11 +61,11 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	session = new QuickDC::Preferences("~/.quickdc/session.conf");
-	
+
 	address = strdup(url->toString().c_str());
 	config->setGroup("User");
 	session->setGroup(address);
-	
+
 	/*
 	 * Load settings from session file, or defaults if no session is found.
 	 * This will incidentally create such a session.
@@ -86,7 +86,7 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	}
 
 	session->setTime("Last Connect", time(0));
-	
+
 	session->write();
 }
 
@@ -98,9 +98,9 @@ ADC::HubSession::~HubSession()
 	session->setString("Password", password);
 	session->write();
 	delete session;
-	
+
 	QDBG("~HubSession()");
-	
+
 	while (extensions.size())
 	{
 		char* feature = *extensions.begin();
@@ -108,9 +108,9 @@ ADC::HubSession::~HubSession()
 		free(feature);
 	}
 
-	
+
 	free(hubname);
-	
+
 	free(nickname);
 	free(password);
 	free(email);
@@ -146,7 +146,7 @@ void ADC::HubSession::EventConnecting(const Samurai::IO::Net::Socket*)
 void ADC::HubSession::send(ADC::Command* cmd, bool more)
 {
 	proxy->send(cmd);
-	
+
 	if (!more)
 	{
 		proxy->write();
@@ -165,7 +165,7 @@ void ADC::HubSession::EventConnected(const Samurai::IO::Net::Socket*)
 		ADC::Command* cmd = new ADC::Command(FOURCC('H','S','U','P'));
 		ADC::addSupportFlags(*cmd, false);
 		send(cmd);
-		
+
 		listener->EventNetStatus(QuickDC::HubListener::NetConnected);
 	}
 	else
@@ -343,11 +343,11 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 	QuickDC::Share::SearchRequest* req = reply->getRequest();
 	const QuickDC::User* user = reply->getRequest()->getUser();
 	QuickDC::Share::File* file = reply->getFile();
-	
+
 	if (user->getAddressIPv4() && user->getPortIPv4() && QuickDC::Core::getInstance()->server)
 	{
 		/* Send UDP packet */
-		
+
 		ADC::Command cmd(FOURCC('U','R','E','S'), ADC::CID::getInstance()->getCID());
 		cmd.addArgument("FN", file->getPublicName());
 		cmd.addArgument("SI", quickdc_ulltoa(file->getSize()));
@@ -355,14 +355,14 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		cmd.addArgument("TD", "0");
 		cmd.addArgument("TO", req->getToken());
 		// cmd.addArgument("SL", "3"); // FIXME: implement me
-		
+
 		Samurai::IO::Buffer buffer;
 		cmd.write(&buffer);
 		Samurai::IO::Net::DatagramPacket packet(&buffer);
 		Samurai::IO::Net::InetSocketAddress peerAddr(user->getAddressIPv4(), user->getPortIPv4(), Samurai::IO::Net::InetAddress::IPv4);
 		packet.setAddress(&peerAddr);
 		QuickDC::Core::getInstance()->server->send(&packet);
-	
+
 	}
 	else
 	{
@@ -374,7 +374,7 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		cmd->addArgument("TD", "0");
 		cmd->addArgument("TO", req->getToken());
 		// cmd.addArgument("SL", "3"); // FIXME: implement me
-		
+
 		send(cmd);
 	}
 }
@@ -459,9 +459,9 @@ void ADC::HubSession::sendClientInfo()
 	cmd->addArgument("HN", quickdc_itoa(QuickDC::Core::getInstance()->hubs->countHubsNormal(), 10));
 	cmd->addArgument("HR", quickdc_itoa(QuickDC::Core::getInstance()->hubs->countHubsRegistered(), 10));
 	cmd->addArgument("HO", quickdc_itoa(QuickDC::Core::getInstance()->hubs->countHubsOperator(), 10));
-	
+
 	config->setGroup("Network");
-	QDBG("Active mode %d (server=%p)\n", config->getBool("Active mode") ? 1 : 0, QuickDC::Core::getInstance()->server); 
+	QDBG("Active mode %d (server=%p)\n", config->getBool("Active mode") ? 1 : 0, QuickDC::Core::getInstance()->server);
 
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
 	{
@@ -480,60 +480,60 @@ void ADC::HubSession::sendClientInfo()
 void ADC::HubSession::sendSearchRequest(QuickDC::Share::SearchRequest* request)
 {
 	if (!request) return;
-	
+
 	ADC::Command* cmd = new ADC::Command(FOURCC('B','S','C','H'), sid);
-	
+
 	if (request->isTTH())
 	{
 		cmd->addArgument("TR", request->getTTH());
 	}
 	else
 	{
-		
+
 		for (size_t n = 0; n < request->include.size(); n++)
 			cmd->addArgument("AN", request->include[n]);
-		
+
 		for (size_t n = 0; n < request->exclude.size(); n++)
 			cmd->addArgument("NO", request->exclude[n]);
-	
+
 		for (size_t n = 0; n < request->extension.size(); n++)
 			cmd->addArgument("EX", request->extension[n]);
-		
+
 		switch (request->getSizePolicy())
 		{
 			case QuickDC::Share::SearchRequest::SizeMin:
 				cmd->addArgument("GE");
 				break;
-			
+
 			case QuickDC::Share::SearchRequest::SizeMax:
 				cmd->addArgument("LE");
 				break;
-				
+
 			case QuickDC::Share::SearchRequest::SizeExact:
 				cmd->addArgument("EQ");
 				break;
-				
+
 			case QuickDC::Share::SearchRequest::SizeAny:
 				/* do nothing */
 				break;
 		}
-		
+
 		switch (request->getFileType())
 		{
 			case QuickDC::Share::SearchRequest::SearchFiles:
 				cmd->addArgument("TY", "1");
 				break;
-			
+
 			case QuickDC::Share::SearchRequest::SearchDirectories:
 				cmd->addArgument("TY", "2");
 				break;
-				
+
 			case QuickDC::Share::SearchRequest::SearchAll:
 				/* do nothing */
 				break;
 		}
 	}
-	
+
 	if (request->token) cmd->addArgument("TO", request->token);
 	send(cmd);
 }
@@ -542,17 +542,19 @@ void ADC::HubSession::sendSearchRequest(QuickDC::Share::SearchRequest* request)
 void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const char* token)
 {
 	if  (!user) return;
+	if (!token) return;
 
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	config->setGroup("Network");
-	const char* protocol = ADC_COMPLIANCE;
+
+	const char* protocol = secure ? ADC_TLS_PROTO : ADC_COMPLIANCE;
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
 	{
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), sid, user->getID());
 		cmd->addArgument(protocol);
 		cmd->addArgument(quickdc_itoa(config->getNumber("Port"), 10));
-		if (token) cmd->addArgument("TO", token);
+		cmd->addArgument("TO", token);
 		send(cmd);
 
 		/* Add to securitymanager */
@@ -570,7 +572,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 		QDBG("Requesting passive connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','R','C','M'), sid, user->getID());
 		cmd->addArgument(protocol);
-		if (token) cmd->addArgument("TO", token);
+		cmd->addArgument(token);
 
 		/* Add to securitymanager */
 		QuickDC::Clearance* clearance = new QuickDC::Clearance(
@@ -628,7 +630,7 @@ void ADC::HubSession::onRequestPasword(char* token)
 
 	userState = QuickDC::HubSession::StateVerify;
 	char password_encoded[40] = { 0, };
-	
+
 	if (!token) return;
 
 	size_t tok_size = (strlen(token) * 5) >> 3;
@@ -637,10 +639,10 @@ void ADC::HubSession::onRequestPasword(char* token)
 	uint8_t* str = new uint8_t[size];
 
 	base32_decode(token, tok_decoded, tok_size);
-	
+
 	memcpy(&str[0], password, strlen(password));
 	memcpy(&str[strlen(password)], tok_decoded, tok_size);
-	
+
 	Samurai::Crypto::Digest::Tiger tiger;
 	tiger.update(str, size);
 	Samurai::Crypto::Digest::HashValue* value = tiger.digest();
@@ -649,7 +651,7 @@ void ADC::HubSession::onRequestPasword(char* token)
 	ADC::Command* cmd = new ADC::Command(FOURCC('H','P','A','S'));
 	cmd->addArgument(password_encoded);
 	send(cmd);
-	
+
 	delete[] tok_decoded;
 	delete[] str;
 }
@@ -695,9 +697,9 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 {
 	char* code = cmd->getArgument(0);
 	char* mesg = cmd->getArgument(1);
-	
+
 	bool fatal = false;
-	
+
 	if (code && strlen(code) == 3)
 	{
 		// Determine severity.
@@ -715,12 +717,12 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 				QERR("Invalid status code: %s (unknown severity, expected 0-2)", code);
 				return;
 		}
-		
+
 		switch (quickdc_atoi(&code[1]))
 		{
 			case ADC_STATUS_DOMAIN_GENERIC: // Ignored
 				return;
-				
+
 			case ADC_CODE_HUB_ERROR:
 				QERR("Generic hub error: '%s'", mesg);
 				break;
@@ -730,66 +732,66 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 				listener->EventHubStatus(QuickDC::HubListener::HubErrorFull);
 				reconnect_time = 600; // try again in 10 minutes
 				break;
-				
+
 			case ADC_CODE_HUB_DISABLED:
 				QERR("Hub is disabled");
 				listener->EventHubStatus(QuickDC::HubListener::HubErrorDisabled);
 				reconnect_time = 7200; // try again in 2 hours
 				break;
-			
+
 			case ADC_CODE_ACCESS_ERROR:
 				QERR("Unable to log in. Unspecified reason. Message from server: '%s'", mesg);
 				listener->EventHubStatus(QuickDC::HubListener::HubErrorLoginRefused);
 				reconnect_time = 1800; // try again in 30 minutes
 				break;
-				
+
 			case ADC_CODE_ACCESS_NICK_ERROR:
 				QERR("Nick is invalid: '%s'", mesg);
 				listener->EventHubStatus(QuickDC::HubListener::HubErrorNickNotAccepted);
 				reconnect_time = -1; // don't try again
 				break;
-				
+
 			case ADC_CODE_ACCESS_NICK_USED:
 				QERR("Nickname is in use");
 				listener->EventHubStatus(QuickDC::HubListener::HubErrorNickTaken);
 				reconnect_time = 1800; // wait 30 minutes, and try again
 				break;
-			
+
 			case ADC_CODE_ACCESS_PASSWORD:
 				QERR("Password is invalid");
 				listener->EventHubStatus(QuickDC::HubListener::HubErrorWrongPassword);
 				reconnect_time = -1;
 				break;
-			
+
 			case ADC_CODE_ACCESS_CID_USED:
 				QERR("CID is in use");
 				listener->EventHubStatus(QuickDC::HubListener::HubErrorCIDTaken);
 				reconnect_time = 600; // wait 30 minutes, and try again
 				break;
-				
+
 			case ADC_CODE_ACCESS_DENIED: /* Specify: 'FC' */
 				QERR("Access denied for given command");
 				break;
-				
+
 			case ADC_CODE_ACCESS_REGISTERED:
 				QERR("Access restricted to registered users for given command.");
 				break;
-				
+
 			case ADC_CODE_ACCESS_PID_ERROR:
 				QERR("Invalid PID supplied");
 				reconnect_time = -1;
 				break;
-			
+
 			case ADC_CODE_SECURITY_GENERIC:
 				QERR("Disconnected from hub: '%s'", mesg);
 				break;
-				
+
 			case ADC_CODE_SECURITY_BAN_PERM:
 				QERR("Permanently banned");
 				reconnect_time = -1;
 				listener->EventHubStatus(QuickDC::HubListener::HubBannedPermanently);
 				break;
-				
+
 			case ADC_CODE_SECURITY_BAN_TEMP: /* Specify: 'TL' */
 			{
 				QERR("Temporary banned");
@@ -814,38 +816,38 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 			case ADC_CODE_PROTOCOL_ERROR:
 				QERR("Protocol error");
 				break;
-			
+
 			case ADC_CODE_PROTOCOL_UNSUPPORTED: /* Specify: 'TO' (token), 'PR' (protocol). Context CTM/RCM */
 				QERR("p2p connection protocol not supported");
 				break;
-			
+
 			case ADC_CODE_PROTOCOL_CONNECT_ERROR: /* Specify: 'TO' (token), 'PR' (protocol). Context CTM/RCM */
 				QERR("p2p connect error");
 				break;
-			
+
 			case ADC_CODE_PROTOCOL_FLAG_REQUIRED: /* Specify: 'FL' (flag). Context: INF */
 				/* Should not occur */
 				QERR("INF flag missing");
 				break;
-				
+
 			case ADC_CODE_PROTOCOL_STATE_INVALID: /* Specify: 'FC' (fourcc). */
 				/* Should not occur. */
 				QERR("State invalid");
 				break;
-				
+
 			case ADC_CODE_PROTOCOL_FEATURE_ERROR: /* Specify: 'FC' (fourcc). Context: All feature casts */
 				/* Should not occur. */
 				QERR("Feature invalid/missing");
 				reconnect_time = -1;
 				break;
-			
-			
+
+
 			case ADC_CODE_PROTOCOL_IP_INF_ERROR: /* Specify: 'IP' (ip address). Context: INF */
 				/* Should not occur. */
 				QERR("IP address is wrong");
 				break;
-			
-			
+
+
 			// These can safely be ignored here. Only used for Client-Client transfers
 			case ADC_CODE_TRANSFER_ERROR:
 			case ADC_CODE_TRANSFER_FILE_ERROR: /* File not available */
@@ -853,7 +855,7 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 			case ADC_CODE_TRANSFER_SLOT_ERROR: /* No more slots */
 				QERR("Weird p2p error from hub");
 				return;
-		
+
 			default:
 				QERR("Invalid error code from hub: '%s'. Message=%s", code, mesg);
 		}
@@ -897,7 +899,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	if (strcmp(from, sid) == 0) return;
 	const QuickDC::User* user = users->getUser(from);
 	if (!user) return;
-	
+
 	const char* ip = user->getAddressIPv4();
 	QDBG("Requested to connect to '%s' using '%s' on port %d (token=%s)", from, proto, port, token, ip);
 
@@ -919,7 +921,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 
 	uint16_t port2 = user->getPortIPv4();
 	if (port != port2) port = port2;
-	
+
 	Samurai::IO::Net::Socket* csock = new Samurai::IO::Net::Socket(0, ip, port);
 	ADC::ClientSession* connection = new ADC::ClientSession(csock, this, token, from);
 	csock->setEventHandler(connection);
@@ -934,13 +936,13 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	if (strcmp(from, sid) == 0) return;
 	const QuickDC::User* user = users->getUser(from);
 	if (!user) return;
-	
+
 	QDBG("Requested to setup connection to '%s' using '%s' (token=%s)", from, proto, token);
-	
+
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	config->setGroup("Network");
 	const char* protocol = ADC_COMPLIANCE;
-	
+
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server) {
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), sid, user->getID());
@@ -985,4 +987,3 @@ void ADC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 		QuickDC::Core::getInstance()->shares->search(request);
 	}
 }
-
