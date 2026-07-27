@@ -14,6 +14,7 @@ class UserManager;
 
 namespace Share {
 	class SearchRequest;
+	class SearchResult;
 }
 
 /**
@@ -109,6 +110,13 @@ class HubSession {
 		 *
 		 */
 		virtual UserManager* getUserManager() = 0;
+
+		/**
+		 * A search result came back for us. Takes ownership of 'result'.
+		 * Not always read by the session: an active client is answered by
+		 * UDP straight from the peer.
+		 */
+		virtual void onSearchResult(Share::SearchResult* result) = 0;
 
 		/**
 		 * Reconnect in this amount of seconds,

@@ -274,7 +274,13 @@ class Hub
 		UserManager* getUserManager() const;
 
 		void sendSearchRequest(Share::SearchRequest* request);
-		
+
+		/**
+		 * Hand a search result to this hub's session. Takes ownership of
+		 * 'result', and deletes it if there is no session to give it to.
+		 */
+		void onSearchResult(Share::SearchResult* result);
+
 		/* Internal */
 		void onDisconnected();
 

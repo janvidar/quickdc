@@ -27,6 +27,7 @@
 #include "api/hub.h"
 #include "api/core.h"
 #include "config/preferences.h"
+#include "share/searchresult.h"
 
 QuickDC::Hub::Hub(HubListener* listener_, Samurai::IO::Net::URL* url_)
 	: session(0)
@@ -276,6 +277,19 @@ void QuickDC::Hub::sendSearchRequest(Share::SearchRequest* request)
 		return;
 	}
 	session->sendSearchRequest(request);
+}
+
+void QuickDC::Hub::onSearchResult(Share::SearchResult* result)
+{
+	if (!result) return;
+
+	if (!session)
+	{
+		delete result;
+		return;
+	}
+
+	session->onSearchResult(result);
 }
 
 void QuickDC::Hub::EventTimeout(Samurai::Timer*)

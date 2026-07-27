@@ -5,9 +5,9 @@
 
 # Translated from build/Makefile.sources. Kept in the same order and grouping.
 #
-# NOTE: five .cpp files under core/ are deliberately absent, matching the
+# NOTE: four .cpp files under core/ are deliberately absent, matching the
 # Makefile build, which never listed them:
-#   api/cli.cpp, network/adc/adcudp.cpp, network/adc/server/adctun.cpp,
+#   api/cli.cpp, network/adc/server/adctun.cpp,
 #   xml/parser.cpp  - unreferenced/unfinished
 #   debug/dbg.cpp   - the QuickDC_Debug/QERR/QNET symbols it defines are also
 #                     built into samurai (src/debug/dbg.cpp), so linking this
@@ -43,6 +43,7 @@ set(QUICKDC_SOURCES
     network/adc/adccommandparser.cpp
     network/adc/adccommandproxy.cpp
     network/adc/adccommands.cpp
+    network/adc/adcudp.cpp
     network/adc/cid.cpp
     network/adc/client/adcclientsession.cpp
     network/adc/client/adchubsession.cpp

@@ -9,6 +9,7 @@
 #include "network/dc/dcconnection.h"
 #include "network/dc/clientsession.h"
 #include "network/adc/client/adcclientsession.h"
+#include "network/adc/adcudp.h"
 #include "network/adc/server/adchub.h"
 #include "network/http/httpconnection.h"
 #include <samurai/io/net/socket.h>
@@ -194,8 +195,8 @@ void QuickDC::ProtocolProbe::probeDatagram(Samurai::IO::Net::DatagramSocket* soc
 	uint32_t fourcc = ((buffer->at(0) << 24) | (buffer->at(1) << 16) | (buffer->at(2) << 8) | (buffer->at(3)));
 	
 	if (probe_udp_adc(fourcc)) {
-		/* handle ADC packet */
-		
+		ADC::DatagramHandler::onDatagram(socket, packet);
+
 	} else if (probe_udp_adchub(fourcc)) {
 		/* handle ADC hub packet */
 		

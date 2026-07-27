@@ -9,7 +9,8 @@
 #include <vector>
 
 #include "network/hubmanager.h"
-#include "network/dc/hubsession.h"	
+#include "network/dc/hubsession.h"
+#include "network/usermanager.h"
 #include "api/hub.h"
 
 QuickDC::HubManager::HubManager()
@@ -68,6 +69,21 @@ QuickDC::Hub* QuickDC::HubManager::lookupUser(const char* id) {
 	{
 		QuickDC::Hub* hub = hubs[i];
 		if (hub->session && hub->session->isLoggedIn() && hub->session->getUser(id)) return hub;
+	}
+	return 0;
+}
+
+
+QuickDC::Hub* QuickDC::HubManager::lookupUserByClientID(const char* cid) {
+	if (!cid) return 0;
+
+	for (size_t i = 0; i < hubs.size(); i++)
+	{
+		QuickDC::Hub* hub = hubs[i];
+		if (!hub->session || !hub->session->isLoggedIn()) continue;
+
+		QuickDC::UserManager* users = hub->session->getUserManager();
+		if (users && users->getUserByClientID(cid)) return hub;
 	}
 	return 0;
 }

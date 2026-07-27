@@ -31,6 +31,11 @@ class HubManager {
 		Hub* lookupUser(const char* id);
 
 		/**
+		 * Returns a hub where the given client ID is online, or 0.
+		 */
+		Hub* lookupUserByClientID(const char* cid);
+
+		/**
 		 * Returns the hub we are logged in to at the given URL, or 0.
 		 * The URL must be in the canonical form returned by Hub::getUrl(),
 		 * which is what a FileSource stores.
