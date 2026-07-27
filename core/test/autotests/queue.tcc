@@ -1213,6 +1213,69 @@ EXO_TEST(securitymanager_revoke_by_session, {
 	return security.isAuthorized(QuickDC::Clearance::ADC, keep, 0, QUEUE_TEST_CID_B, "keeptoken");
 });
 
+EXO_TEST(securitymanager_revoke_one_connection, {
+	/*
+	 * A clearance covers a single connection request. Once that connection has
+	 * turned up it must be removed, or the table grows by one entry for every
+	 * request the process ever makes.
+	 */
+	QuickDC::SecurityManager security;
+
+	QuickDC::HubSession* session = (QuickDC::HubSession*) 0x1;
+
+	security.grant(new QuickDC::Clearance(QuickDC::Clearance::AuthorizedUser,
+		QuickDC::Clearance::ADC, session, QUEUE_TEST_CID_A, "tokenA"));
+	security.grant(new QuickDC::Clearance(QuickDC::Clearance::AuthorizedUser,
+		QuickDC::Clearance::ADC, session, QUEUE_TEST_CID_B, "tokenB"));
+
+	if (!security.isAuthorized(QuickDC::Clearance::ADC, session, 0, QUEUE_TEST_CID_A, "tokenA"))
+		return false;
+
+	/* Consuming one leaves the other alone. */
+	if (!security.revoke(QuickDC::Clearance::ADC, session, QUEUE_TEST_CID_A, "tokenA"))
+		return false;
+	if (security.isAuthorized(QuickDC::Clearance::ADC, session, 0, QUEUE_TEST_CID_A, "tokenA"))
+		return false;
+	if (!security.isAuthorized(QuickDC::Clearance::ADC, session, 0, QUEUE_TEST_CID_B, "tokenB"))
+		return false;
+
+	/* Revoking the same thing twice finds nothing the second time. */
+	if (security.revoke(QuickDC::Clearance::ADC, session, QUEUE_TEST_CID_A, "tokenA"))
+		return false;
+
+	/* A wrong token or user must not revoke anything. */
+	if (security.revoke(QuickDC::Clearance::ADC, session, QUEUE_TEST_CID_B, "wrongtoken"))
+		return false;
+	if (security.revoke(QuickDC::Clearance::ADC, session, QUEUE_TEST_CID_A, "tokenB"))
+		return false;
+	if (security.revoke(QuickDC::Clearance::ADC, session, 0, 0))
+		return false;
+
+	/* A null session matches any, the way isAuthorized() treats it. */
+	if (!security.revoke(QuickDC::Clearance::ADC, 0, QUEUE_TEST_CID_B, "tokenB"))
+		return false;
+
+	return !security.isAuthorized(QuickDC::Clearance::ADC, session, 0, QUEUE_TEST_CID_B, "tokenB");
+});
+
+EXO_TEST(securitymanager_keeps_blanket_clearance, {
+	/*
+	 * An UnknownUser clearance is not tied to one connection, so consuming a
+	 * connection must not take it away.
+	 */
+	QuickDC::SecurityManager security;
+	QuickDC::HubSession* session = (QuickDC::HubSession*) 0x1;
+
+	security.grant(new QuickDC::Clearance(QuickDC::Clearance::UnknownUser,
+		QuickDC::Clearance::ADC, session, 0, 0));
+
+	if (security.revoke(QuickDC::Clearance::ADC, session, QUEUE_TEST_CID_A, "anytoken"))
+		return false;
+
+	/* Still open to everyone, as granted. */
+	return security.isAuthorized(QuickDC::Clearance::ADC, session, 0, QUEUE_TEST_CID_A, "anytoken");
+});
+
 EXO_TEST(queue_empty_saves_and_reloads, {
 	if (!queue_test_setup()) return false;
 

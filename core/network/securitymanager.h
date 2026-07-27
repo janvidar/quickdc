@@ -54,6 +54,20 @@ class SecurityManager
 		void grant(Clearance* authorization);
 		void revoke(Clearance* authorization);
 		void revoke(QuickDC::HubSession*);
+
+		/**
+		 * Revoke the clearance that was granted for a single connection
+		 * request, identified the same way isAuthorized() matches it.
+		 *
+		 * A clearance authorises one peer connection. Once that connection has
+		 * arrived and been checked it has served its purpose, and leaving it in
+		 * the table only makes the table grow for the lifetime of the process.
+		 *
+		 * @param session the hub session it was granted on, or 0 to match any.
+		 * @return true if a matching clearance was found and removed.
+		 */
+		bool revoke(enum QuickDC::Clearance::ClearanceProtocol protocol,
+			QuickDC::HubSession* session, const char* cid, const char* token);
 		
 		bool isAuthorized(enum QuickDC::Clearance::ClearanceProtocol protocol, QuickDC::HubSession* session, Samurai::IO::Net::Socket* socket, const char* cid, const char* token);
 

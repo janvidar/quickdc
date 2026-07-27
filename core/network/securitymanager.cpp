@@ -117,6 +117,35 @@ void QuickDC::SecurityManager::revoke(Clearance* authorization) {
 	}
 }
 
+bool QuickDC::SecurityManager::revoke(enum QuickDC::Clearance::ClearanceProtocol protocol,
+	QuickDC::HubSession* hubsession, const char* cid, const char* token) {
+
+	if (!cid || !token) return false;
+
+	std::vector<Clearance*>::iterator it = access_table.begin();
+	for (; it != access_table.end(); it++) {
+		QuickDC::Clearance* authorization = (*it);
+
+		if (authorization->protocol != protocol) continue;
+
+		/* A null session matches any, as in isAuthorized(). */
+		if (hubsession && authorization->hubsession != hubsession) continue;
+
+		/* Only a clearance naming this user and token; a blanket one is not
+		   tied to a single connection and must survive. */
+		if (!authorization->token || !authorization->userID) continue;
+
+		if (!strcmp(authorization->token, token) && !strcmp(authorization->userID, cid)) {
+			QDBG("Revoking clearance for '%s' (token=%s)", cid, token);
+			access_table.erase(it);
+			delete authorization;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void QuickDC::SecurityManager::revoke(QuickDC::HubSession* hubsession) {
 	/*
 	 * erase() invalidates the iterator, so it cannot simply be incremented
