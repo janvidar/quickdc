@@ -28,7 +28,13 @@ class Connection : public Samurai::IO::Net::SocketEventHandler
 		virtual ~Connection();
 		
 		void setManager(ConnectionManager* mgr) { manager = mgr; }
-		
+
+		/**
+		 * The manager responsible for deleting this connection, or 0 once it
+		 * has been handed over for deletion.
+		 */
+		ConnectionManager* getManager() const { return manager; }
+
 		Samurai::IO::Net::Socket* getSocket() { return socket; }
 
 		/**

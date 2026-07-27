@@ -48,16 +48,29 @@ void QuickDC::ConnectionManager::add(Connection* conn)
 	connections.push_back(conn);
 }
 
-void QuickDC::ConnectionManager::remove(Connection* conn) {
+void QuickDC::ConnectionManager::detach(Connection* conn) {
+	if (!conn) return;
+
 	for (std::vector<Connection*>::iterator it = connections.begin(); it != connections.end(); it++)
 	{
 		if (*it == conn) {
 			connections.erase(it);
-			conn->setManager(0);
-			Samurai::postMessage(QuickDC::MsgConnectionDropped, conn, 0, 0);
-			return;
+			break;
 		}
 	}
+
+	conn->setManager(0);
+}
+
+void QuickDC::ConnectionManager::remove(Connection* conn) {
+	if (!conn) return;
+
+	/* Already handed over; do not queue a second deletion. */
+	if (conn->getManager() != this) return;
+
+	detach(conn);
+
+	Samurai::postMessage(QuickDC::MsgConnectionDropped, conn, 0, 0);
 }
 
 void QuickDC::ConnectionManager::process() { }

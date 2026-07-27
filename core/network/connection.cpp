@@ -29,7 +29,7 @@ QuickDC::Connection::~Connection()
 {
 	if (manager)
 	{
-		manager->remove(this);
+		manager->detach(this);
 	}
 	delete socket;
 	socket = 0;

@@ -25,7 +25,20 @@ class ConnectionManager
 		virtual ~ConnectionManager();
 	
 		virtual void add(Connection* conn);
+
+		/**
+		 * Drop a connection and have it deleted. Safe for a connection that was
+		 * never added, and safe to call more than once. Deletion is deferred,
+		 * since this is normally called from the connection's own event handler.
+		 */
 		virtual void remove(Connection* conn);
+
+		/**
+		 * Forget a connection without deleting it, for a connection that is
+		 * already being destroyed.
+		 */
+		virtual void detach(Connection* conn);
+
 		virtual void process();
 
 		/**
