@@ -33,6 +33,14 @@
 #include <samurai/io/buffer.h>
 #include <string>
 
+/* One field: severity digit followed by a two digit code. */
+static std::string adc_status_code(int severity, int code)
+{
+	char buf[8];
+	snprintf(buf, sizeof(buf), "%d%02d", severity, code);
+	return std::string(buf);
+}
+
 ADC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* hubsession_) :
 	QuickDC::Connection(url, "ADC client"),
 	hubsession(hubsession_),
@@ -525,7 +533,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	{
 		QDBG("Upload slot not available\n");
 		ADC::Command* cmd = new ADC::Command(FOURCC('C','S','T','A'));
-		cmd->addArgument(quickdc_itoa(ADC_STATUS_SEVERITY_ERROR, 10), quickdc_itoa(ADC_CODE_TRANSFER_SLOT_ERROR, 10));
+		cmd->addArgument(adc_status_code(ADC_STATUS_SEVERITY_ERROR, ADC_CODE_TRANSFER_SLOT_ERROR).c_str());
 		cmd->addArgument(ADC_STR_TRANSFER_SLOT_ERROR);
 		send(cmd);
 		return;
@@ -578,7 +586,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	{
 		QDBG("File not found");
 		ADC::Command* cmd = new ADC::Command(FOURCC('C','S','T','A'));
-		cmd->addArgument(quickdc_itoa(ADC_STATUS_SEVERITY_ERROR, 10), quickdc_itoa(ADC_CODE_TRANSFER_FILE_ERROR, 10));
+		cmd->addArgument(adc_status_code(ADC_STATUS_SEVERITY_ERROR, ADC_CODE_TRANSFER_FILE_ERROR).c_str());
 		cmd->addArgument(ADC_STR_TRANSFER_FILE_ERROR);
 		send(cmd);
 	}
