@@ -40,7 +40,8 @@ void QuickDC::HubManager::add(QuickDC::Hub* hub) {
 
 void QuickDC::HubManager::remove(QuickDC::Hub* hub) {
 	QDBG("Removing hub");
-	for (std::vector<Hub*>::iterator it = hubs.begin(); *it; it++)
+	/* Compared against end(); dereferencing without that walked off the end. */
+	for (std::vector<Hub*>::iterator it = hubs.begin(); it != hubs.end(); it++)
 	{
 		if (*it == hub) {
 			hubs.erase(it);

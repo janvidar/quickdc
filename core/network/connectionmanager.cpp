@@ -26,20 +26,30 @@ QuickDC::ConnectionManager::~ConnectionManager()
 	}
 }
 
+/*
+ * NOTE: these two loops used to be written as
+ *
+ *     for (it = connections.begin(); *it; it++)
+ *
+ * which dereferences the iterator without ever comparing it against end().
+ * A connection that is not in the vector - a peer session that is dropped
+ * before it finished connecting, say - therefore ran off the end reading
+ * whatever followed, and erase() then memmoved an out of range interval,
+ * which is a bus error rather than anything recoverable.
+ */
+
 void QuickDC::ConnectionManager::add(Connection* conn)
 {
 	// Check if the connection is already added...
-	if (connections.size())
-		for (std::vector<Connection*>::iterator it = connections.begin(); *it; it++)
-			if (*it == conn)
-				return;
-	
+	for (std::vector<Connection*>::iterator it = connections.begin(); it != connections.end(); it++)
+		if (*it == conn)
+			return;
+
 	connections.push_back(conn);
 }
 
 void QuickDC::ConnectionManager::remove(Connection* conn) {
-	if (connections.size())
-	for (std::vector<Connection*>::iterator it = connections.begin(); *it; it++)
+	for (std::vector<Connection*>::iterator it = connections.begin(); it != connections.end(); it++)
 	{
 		if (*it == conn) {
 			connections.erase(it);

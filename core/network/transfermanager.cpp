@@ -25,7 +25,11 @@ void QuickDC::TransferManager::add(QuickDC::Transfer* transfer) {
 void QuickDC::TransferManager::remove(QuickDC::Transfer* transfer) {
 	// transfers.push_back(transfer);
 	QDBG("QuickDC::TransferManager::remove()");
-	for (std::vector<QuickDC::Transfer*>::iterator it = transfers.begin(); *it; it++) {
+	/*
+	 * Compared against end(). A transfer that is not in the vector used to run
+	 * off the end here, and erase() then memmoved an out of range interval.
+	 */
+	for (std::vector<QuickDC::Transfer*>::iterator it = transfers.begin(); it != transfers.end(); it++) {
 		if (*it == transfer) {
 			transfers.erase(it);
 			return;
@@ -76,7 +80,8 @@ QuickDC::Transfer* QuickDC::TransferManager::next() {
 
 size_t QuickDC::TransferManager::countUploads() {
 	size_t count = 0;
-	for (QuickDC::Transfer* xfer = first(); xfer; next()) {
+	/* 'xfer' was never reassigned, so this looped forever on the first entry. */
+	for (QuickDC::Transfer* xfer = first(); xfer; xfer = next()) {
 		if (xfer->isUpload()) count++;
 	}
 	return count;
