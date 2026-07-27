@@ -74,6 +74,17 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	description = strdup(session->getString("Description", config->getString("Description", PRODUCT " user")));
 	email = strdup(session->getString("E-mail", config->getString("E-mail", "")));
 	password = strdup(session->getString("Password", config->getString("Password", "")));
+
+	/* A hub will never accept an empty nick, and older versions could store one
+	 * in the session file. Fall back to the configured nick in that case. */
+	if (!*nickname)
+	{
+		free(nickname);
+		const char* fallback = config->getString("Nickname", PRODUCT);
+		nickname = strdup(*fallback ? fallback : PRODUCT);
+		session->setString("Nickname", nickname);
+	}
+
 	session->setTime("Last Connect", time(0));
 	
 	session->write();

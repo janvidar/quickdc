@@ -26,7 +26,7 @@ void Preferences::setGroup(const std::string& group) {
 }
 
 int Preferences::getNumber(const std::string& key, const int defval) {
-	group settings = groups[current];
+	group& settings = groups[current];
 	if (settings.find(key) != settings.end()) {
 		std::string val = settings[key];
 		return quickdc_atoi(val.c_str());
@@ -36,21 +36,24 @@ int Preferences::getNumber(const std::string& key, const int defval) {
 	}
 }
 
+/*
+ * NOTE: the returned pointer refers to the stored value, which lives as long
+ * as the setting is not overwritten or removed. Never return defval.c_str()
+ * here -- defval is typically bound to a temporary that dies at the end of the
+ * caller's full-expression.
+ */
 const char* Preferences::getString(const std::string& key, const std::string& defval) {
-	group settings = groups[current];
-	if (settings.find(key) != settings.end()) {
-		return settings[key].c_str();
-	} else {
+	group& settings = groups[current];
+	if (settings.find(key) == settings.end()) {
 		setString(key, defval);
-		return defval.c_str();
 	}
-
+	return settings[key].c_str();
 }
 
 
 
 bool Preferences::getBool(const std::string& key, const bool defval) {
-	group settings = groups[current];
+	group& settings = groups[current];
 	if (settings.find(key) != settings.end()) {
 		std::string val = settings[key];
 		return ((val == "true") || (val == "1"));
@@ -61,35 +64,27 @@ bool Preferences::getBool(const std::string& key, const bool defval) {
 }
 
 void Preferences::setNumber(const std::string& key, int val) {
-	group settings = groups[current];
-	settings[key] = std::string(quickdc_itoa(val, 10));
-	groups[current] = settings;
+	groups[current][key] = std::string(quickdc_itoa(val, 10));
 	dirty = true;
 }
 
 void Preferences::setString(const std::string& key, const std::string& val) {
-	group settings = groups[current];
-	settings[key] = val;
-	groups[current] = settings;
+	groups[current][key] = val;
 	dirty = true;
 }
 
 void Preferences::setBool(const std::string& key, bool val) {
-	group settings = groups[current];
-	settings[key] = std::string(val ? "true" : "false");
-	groups[current] = settings;
+	groups[current][key] = std::string(val ? "true" : "false");
 	dirty = true;
 }
 
 void Preferences::setTime(const std::string& key, const Samurai::TimeStamp& time) {
-	group settings = groups[current];
-	settings[key] = std::string(quickdc_itoa(time.getInternalData(), 10));
-	groups[current] = settings;
+	groups[current][key] = std::string(quickdc_itoa(time.getInternalData(), 10));
 	dirty = true;
 }
 
 Samurai::TimeStamp Preferences::getTime(const std::string& key) {
-	group settings = groups[current];
+	group& settings = groups[current];
 	if (settings.find(key) != settings.end()) {
 		std::string val = settings[key];
 		Samurai::TimeStamp now = Samurai::TimeStamp(quickdc_atoi(val.c_str()));
@@ -103,14 +98,13 @@ Samurai::TimeStamp Preferences::getTime(const std::string& key) {
 
 
 void Preferences::remove(const std::string& key) {
-	group settings = groups[current];
-	if (settings.find(key) != settings.end()) {
-		settings.erase(key);
-	}
+	group& settings = groups[current];
+	if (settings.erase(key))
+		dirty = true;
 }
 
 bool Preferences::haveSetting(const std::string& key) {
-	group settings = groups[current];
+	group& settings = groups[current];
 	return (settings.find(key) != settings.end());
 }
 
