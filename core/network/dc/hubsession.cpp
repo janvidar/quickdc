@@ -24,6 +24,16 @@
 #include "network/dc/hubsession.h"
 #include "network/dc/hubcommands.h"
 #include "network/dc/lock.h"
+#include "network/leafhashes.h"
+#include "network/downloadqueue.h"
+#include "network/adc/parser.h"
+#include "network/adc/cid.h"
+#include "share/searchrequest.h"
+#include "share/sharemanager.h"
+#include <samurai/io/buffer.h>
+#include <samurai/io/net/datagram.h>
+#include <samurai/io/net/inetaddress.h>
+#include <samurai/io/net/socketaddress.h>
 #include "share/sharemanager.h"
 #include "share/sharefile.h"
 #include "share/searchrequest.h"
@@ -409,10 +419,76 @@ void DC::HubSession::onOpList()
 
 void DC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 {
-	if (QuickDC::Core::getInstance()->shares)
+	QuickDC::Share::Manager* shares = QuickDC::Core::getInstance()->shares;
+	if (!shares) return;
+
+	shares->search(request);
+
+	/* A hash we do not share may still be one we are downloading. */
+	if (request->isTTH() && !shares->getFileByTTH(request->getTTH()))
+		sendPartialStatus(request);
+}
+
+void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+	if (!queue || !request || !request->getTTH() || !core->server) return;
+
+	/* A PSR is an ADC message, which a passive searcher's hub will not relay,
+	   so only an active one can be answered. */
+	const char* replyTo = request->getToken();
+	if (!replyTo || !strchr(replyTo, ':')) return;
+
+	QuickDC::QueueFile* file = queue->getFileByTTH(request->getTTH());
+	if (!file) return;
+
+	QuickDC::LeafHashes* leaves = file->getLeaves();
+	if (!leaves || !leaves->isLoaded()) return;
+
+	uint64_t block = leaves->getLeafSize();
+	size_t runs = file->getChunks().countBlockRuns(block);
+	if (!runs) return;
+
+	std::string indexes = file->getChunks().toIndexString(block);
+	if (indexes.empty()) return;
+
+	std::string host(replyTo);
+	std::string port;
+	size_t cut = host.find_last_of(':');
+	port = host.substr(cut + 1);
+	host = host.substr(0, cut);
+
+	std::string hubIpPort;
+	if (hub && hub->getUrl())
 	{
-		QuickDC::Core::getInstance()->shares->search(request);
+		hubIpPort = hub->getUrl();
+		size_t scheme = hubIpPort.find("://");
+		if (scheme != std::string::npos) hubIpPort = hubIpPort.substr(scheme + 3);
 	}
+
+	QuickDC::Preferences* config = core->config;
+	config->setGroup("Network");
+	int myPort = config->getBool("Active mode") ? config->getNumber("Port", 0) : 0;
+
+	/* NI is what identifies us on an NMDC hub, where we have no client ID. */
+	ADC::Command cmd(FOURCC('U','P','S','R'), ADC::CID::getInstance()->getCID());
+	cmd.addArgument("NI", nickname);
+	cmd.addArgument("HI", hubIpPort.c_str());
+	cmd.addArgument("U4", quickdc_itoa(myPort, 10));
+	cmd.addArgument("TR", request->getTTH());
+	cmd.addArgument("PC", quickdc_itoa((int) runs, 10));
+	cmd.addArgument("PI", indexes.c_str());
+
+	Samurai::IO::Buffer buffer;
+	cmd.write(&buffer);
+	Samurai::IO::Net::DatagramPacket packet(&buffer);
+	Samurai::IO::Net::InetSocketAddress peer(host.c_str(), quickdc_atoi(port.c_str()),
+		Samurai::IO::Net::InetAddress::IPv4);
+	packet.setAddress(&peer);
+	core->server->send(&packet);
+
+	QDBG("Offered %d run(s) of '%s' to %s", (int) runs, request->getTTH(), replyTo);
 }
 
 /**

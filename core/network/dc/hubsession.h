@@ -86,6 +86,9 @@ class HubSession
 		void onNickList();
 		void onOpList();
 		void onSearch(QuickDC::Share::SearchRequest* request);
+
+		/** Offer what we have of a queued file the searcher wanted (PFSR). */
+		void sendPartialStatus(QuickDC::Share::SearchRequest* request);
 		void onSearchResult(QuickDC::Share::SearchResult* result);
 		
 		void onActiveConnect(const char* address, uint16_t port, const char* user);
