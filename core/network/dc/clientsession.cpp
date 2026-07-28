@@ -17,6 +17,7 @@
 #include "api/hub.h"
 #include "api/core.h"
 #include "share/sharemanager.h"
+#include "hash/hashmanager.h"
 #include "network/connectionmanager.h"
 #include "network/hubmanager.h"
 #include "network/transfer.h"
@@ -765,6 +766,7 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= (size_t) slots);
 
 	uint64_t servable = 0;
+	uint64_t internal_offset = 0;
 	const char* kind = "file";
 
 	if (type == FOURCC('l','i','s','t'))
@@ -777,8 +779,20 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 	{
 		kind = "tthl";
 		if (strlen(fn) == 43 && FOURCC(fn[0],fn[1],fn[2],fn[3]) == FOURCC('T','T','H','/'))
-			file = core->queue->openLeafFile(&fn[4], servable);
-		if (file) ownsFile = true;
+		{
+			/* Leaves for a shared file live inside the hash cache, which the
+			   hash manager owns; ours are a file of their own. */
+			Samurai::IO::File* shared = sharemgr->getFileByTTH(&fn[4]);
+			if (shared)
+			{
+				file = core->hash->getLeafData(*shared, internal_offset, servable);
+			}
+			else
+			{
+				file = core->queue->openLeafFile(&fn[4], servable);
+				if (file) ownsFile = true;
+			}
+		}
 		slots_full = false;
 	}
 	else if (strlen(fn) == 43 && FOURCC(fn[0],fn[1],fn[2],fn[3]) == FOURCC('T','T','H','/'))
@@ -830,7 +844,8 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 	send(new DC::SendADCSnd(kind, (type == FOURCC('l','i','s','t')) ? "/" : fn,
 		chunk_offset, (uint64_t) chunk_length));
 
-	transfer = new QuickDC::Upload(xfrmgr, this, proxy->socket, file, chunk_offset, chunk_length);
+	transfer = new QuickDC::Upload(xfrmgr, this, proxy->socket, file,
+		internal_offset + chunk_offset, chunk_length);
 }
 
 

@@ -564,38 +564,23 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	}
 	else if (type == FOURCC('t','t','h','l'))
 	{
-		/* Transfer merkle tree */
-		QDBG("looking up merkle tree for file: %s", fn);
 		if (strlen(fn) == 43 && FOURCC(fn[0],fn[1],fn[2],fn[3]) == FOURCC('T','T','H','/'))
 		{
-			Samurai::IO::File* tthfile = sharemgr->getFileByTTH(&fn[4]);
-
-			QuickDC::Hash::CacheEntry* hashCache = 0;
-			if (!tthfile)
+			/* Leaves for a shared file live inside the hash cache, which the
+			   hash manager owns; ours are a file of their own. */
+			Samurai::IO::File* shared = sharemgr->getFileByTTH(&fn[4]);
+			if (shared)
 			{
-				file = openQueuedLeaves(&fn[4], internal_length);
-				if (file) { ownsFile = true; slots_full = false; }
-			}
-			else if (hashmgr->lookup(*tthfile, hashCache))
-			{
-				if (offset > (uint64_t) hashCache->getCacheFileOffset())
-				{
-					QDBG("Invalid file offset");
-				}
-				else
-				{
-					file = hashmgr->getCacheFile();
-					QDBG("Found file in hash cache. Offset=%d  filesize=%d:-)", (int) hashCache->getCacheFileOffset(), (int) hashCache->getSize() );
-					internal_length = hashCache->getLeafdataSize();
-					internal_offset = hashCache->getCacheFileOffset();
-				}
+				file = hashmgr->getLeafData(*shared, internal_offset, internal_length);
 			}
 			else
 			{
-				QDBG("Unable to lookup file");
+				file = openQueuedLeaves(&fn[4], internal_length);
+				if (file) ownsFile = true;
 			}
 		}
-		
+
+		slots_full = false;
 	}
 	else if (type == FOURCC('f','i','l','e'))
 	{

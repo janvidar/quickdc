@@ -110,6 +110,15 @@ class Manager
 		bool lookup(const Samurai::IO::File& file, QuickDC::Hash::CacheEntry*& cache);
 		
 		Samurai::IO::File* getCacheFile();
+
+		/**
+		 * Where a shared file's leaf hashes sit inside the cache file, for
+		 * serving them to a peer.
+		 *
+		 * @return the cache file, which the manager owns, or 0 if we have no
+		 *         leaves for it.
+		 */
+		Samurai::IO::File* getLeafData(const Samurai::IO::File& file, uint64_t& offset, uint64_t& length);
 		
 	protected:
 		void loadCache();

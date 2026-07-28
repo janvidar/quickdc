@@ -261,6 +261,17 @@ bool QuickDC::Hash::Manager::lookup(const Samurai::IO::File& file, QuickDC::Hash
 
 // FIXME: Make sure we don't return this pointer if the file is busy,
 //        or *maybe* when it is used by someone else.
+Samurai::IO::File* QuickDC::Hash::Manager::getLeafData(const Samurai::IO::File& file, uint64_t& offset, uint64_t& length)
+{
+	QuickDC::Hash::CacheEntry* entry = 0;
+	if (!lookup(file, entry) || !entry) return 0;
+	if (!entry->getLeafdataSize()) return 0;
+
+	offset = (uint64_t) entry->getCacheFileOffset();
+	length = (uint64_t) entry->getLeafdataSize();
+	return getCacheFile();
+}
+
 Samurai::IO::File* QuickDC::Hash::Manager::getCacheFile()
 {
 	Samurai::IO::File* cfile = new Samurai::IO::File(FILE_HASH_CACHE);
