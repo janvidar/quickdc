@@ -90,6 +90,10 @@ class ChunkMap {
 		 */
 		bool hasFreeRange() const;
 
+		/** As reserve(), but only from parts that 'allowed' also holds. */
+		bool reserveWithin(const ChunkMap& allowed, uint64_t preferred,
+			uint64_t& start, uint64_t& length);
+
 		/**
 		 * The reservation delivered; promote 'length' bytes of it to a
 		 * downloaded range and drop the reservation.

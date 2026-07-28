@@ -165,6 +165,98 @@ EXO_TEST(chunkmap_reserve_skips_other_reservations, {
 });
 
 /* ------------------------------------------------------------------------- *
+ * Reserving from a source that only has part of the file
+ * ------------------------------------------------------------------------- */
+
+EXO_TEST(chunkmap_reservewithin_takes_only_what_they_have, {
+	QuickDC::ChunkMap m(1000);
+	QuickDC::ChunkMap them(1000);
+	them.addRange(600, 900);
+
+	uint64_t start = 0;
+	uint64_t length = 0;
+	if (!m.reserveWithin(them, 1000, start, length)) return false;
+	return start == 600 && length == 300;
+});
+
+EXO_TEST(chunkmap_reservewithin_skips_what_we_have, {
+	QuickDC::ChunkMap m(1000);
+	m.addRange(600, 700);
+
+	QuickDC::ChunkMap them(1000);
+	them.addRange(600, 900);
+
+	uint64_t start = 0;
+	uint64_t length = 0;
+	if (!m.reserveWithin(them, 1000, start, length)) return false;
+	return start == 700 && length == 200;
+});
+
+EXO_TEST(chunkmap_reservewithin_skips_reservations, {
+	QuickDC::ChunkMap m(1000);
+	QuickDC::ChunkMap them(1000);
+	them.addRange(0, 1000);
+
+	uint64_t s1 = 0;
+	uint64_t l1 = 0;
+	if (!m.reserve(400, s1, l1)) return false;
+
+	uint64_t s2 = 0;
+	uint64_t l2 = 0;
+	if (!m.reserveWithin(them, 400, s2, l2)) return false;
+	return s1 == 0 && s2 == 400;
+});
+
+EXO_TEST(chunkmap_reservewithin_nothing_useful, {
+	/* They only hold what we already have, so there is nothing to ask for. */
+	QuickDC::ChunkMap m(1000);
+	m.addRange(0, 500);
+
+	QuickDC::ChunkMap them(1000);
+	them.addRange(100, 400);
+
+	uint64_t start = 0;
+	uint64_t length = 0;
+	return !m.reserveWithin(them, 1000, start, length)
+		&& m.getReservationCount() == 0;
+});
+
+EXO_TEST(chunkmap_reservewithin_empty_source, {
+	QuickDC::ChunkMap m(1000);
+	QuickDC::ChunkMap them(1000);
+
+	uint64_t start = 0;
+	uint64_t length = 0;
+	return !m.reserveWithin(them, 1000, start, length);
+});
+
+EXO_TEST(chunkmap_reservewithin_second_range, {
+	/* The first range they have is already ours; the second is not. */
+	QuickDC::ChunkMap m(1000);
+	m.addRange(0, 200);
+
+	QuickDC::ChunkMap them(1000);
+	them.addRange(0, 200);
+	them.addRange(700, 1000);
+
+	uint64_t start = 0;
+	uint64_t length = 0;
+	if (!m.reserveWithin(them, 1000, start, length)) return false;
+	return start == 700 && length == 300;
+});
+
+EXO_TEST(chunkmap_reservewithin_honours_preferred, {
+	QuickDC::ChunkMap m(1000);
+	QuickDC::ChunkMap them(1000);
+	them.addRange(0, 1000);
+
+	uint64_t start = 0;
+	uint64_t length = 0;
+	if (!m.reserveWithin(them, 256, start, length)) return false;
+	return start == 0 && length == 256;
+});
+
+/* ------------------------------------------------------------------------- *
  * PSR block index notation (ADC-EXT PFSR, the PI and PC fields)
  * ------------------------------------------------------------------------- */
 

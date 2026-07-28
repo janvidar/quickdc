@@ -168,6 +168,53 @@ bool QuickDC::ChunkMap::reserve(uint64_t preferred, uint64_t& start, uint64_t& l
 	return true;
 }
 
+bool QuickDC::ChunkMap::reserveWithin(const ChunkMap& allowed, uint64_t preferred,
+	uint64_t& start, uint64_t& length)
+{
+	if (!size || !preferred) return false;
+
+	for (size_t n = 0; n < allowed.done.size(); n++)
+	{
+		uint64_t from = allowed.done[n].start;
+		uint64_t to = allowed.done[n].end;
+		if (to > size) to = size;
+
+		while (from < to)
+		{
+			bool blocked = false;
+			for (size_t i = 0; i < done.size(); i++)
+			{
+				if (from >= done[i].start && from < done[i].end) { from = done[i].end; blocked = true; }
+			}
+			for (size_t i = 0; i < reserved.size(); i++)
+			{
+				if (from >= reserved[i].start && from < reserved[i].end) { from = reserved[i].end; blocked = true; }
+			}
+			if (blocked) continue;
+			if (from >= to) break;
+
+			uint64_t end = to;
+			for (size_t i = 0; i < done.size(); i++)
+				if (done[i].start > from && done[i].start < end) end = done[i].start;
+			for (size_t i = 0; i < reserved.size(); i++)
+				if (reserved[i].start > from && reserved[i].start < end) end = reserved[i].start;
+
+			if (end - from > preferred) end = from + preferred;
+			if (end <= from) break;
+
+			start = from;
+			length = end - from;
+
+			Range r;
+			r.start = start;
+			r.end = end;
+			reserved.push_back(r);
+			return true;
+		}
+	}
+	return false;
+}
+
 void QuickDC::ChunkMap::commit(uint64_t start, uint64_t length)
 {
 	release(start, length);
