@@ -71,8 +71,11 @@ DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Sa
 	users = new QuickDC::UserManager(this);
 
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
-	session = new QuickDC::Preferences("~/.quickdc/session.conf");
-	
+
+	/* Borrowed from the core, and shared with every other hub session; see
+	   Core::session. Not ours to delete, and its group is not ours to leave set. */
+	session = QuickDC::Core::getInstance()->session;
+
 	address = strdup(url->toString().c_str());
 	config->setGroup("User");
 	session->setGroup(address);
@@ -104,17 +107,23 @@ DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Sa
 
 DC::HubSession::~HubSession()
 {
-	for (std::set<char*>::iterator it = extensions.begin(); it != extensions.end(); it++)
+	/* erase() invalidates the iterator, so it cannot be the one the loop then
+	   increments - take the first element each time round instead. */
+	while (!extensions.empty())
 	{
-		free(*it);
+		std::set<char*>::iterator it = extensions.begin();
+		char* feature = *it;
 		extensions.erase(it);
+		free(feature);
 	}
 
 	// save session data.
+	/* The group is shared, and every other hub session moves it, so it is
+	   selected here rather than relied on from the constructor. */
+	session->setGroup(address);
 	session->setString("Nickname", nickname);
 	session->setString("Password", password);
 	session->write();
-	delete session;
 	
 	
 	
@@ -210,12 +219,30 @@ bool DC::HubSession::supports(const char* feature)
 }
 
 void DC::HubSession::onLock(const char* lock_, const char* /*pk_*/) {
+	/*
+	 * $Lock is the first thing a hub says, so this runs against an unverified
+	 * peer. calculateKey() answers 0 for anything under three characters, and
+	 * the key is handed to strlen() further down.
+	 */
+	if (!lock_ || strlen(lock_) < 3)
+	{
+		QERR("Hub sent a lock too short to answer; dropping the connection");
+		socket->disconnect();
+		return;
+	}
+
 	if (lock) free(lock);
 	lock = strdup(lock_);
 	extendedProtocol = (strncmp(lock, "EXTENDEDPROTOCOL", 16) == 0);
 
 	key = Lock::calculateKey(lock, strlen(lock));
-	
+	if (!key)
+	{
+		QERR("Unable to derive a key from the hub's lock; dropping the connection");
+		socket->disconnect();
+		return;
+	}
+
 	if (extendedProtocol)
 	{
 		DC::Command* cmd = new DC::SendSupports();

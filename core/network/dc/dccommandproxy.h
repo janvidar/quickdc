@@ -72,6 +72,14 @@ class CommandProxy : public QuickDC::CommandProxy {
 	protected:
 		std::map<const char*, CommandParser*, eqstr> mapper;
 		bool client;
+
+		/**
+		 * Set by close(), so read() stops dispatching. One packet can hold
+		 * several '|' separated commands, and a handler that drops the
+		 * connection must not have the rest of them delivered to it.
+		 */
+		bool closed;
+
 		void clearParsers();
 		
 		QuickDC::CommandFIFO queue;

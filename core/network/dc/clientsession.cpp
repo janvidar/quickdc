@@ -208,11 +208,25 @@ void DC::ClientSession::sendChallenge()
 {
 	if (challenged) return;
 
+	/*
+	 * An inbound peer connection is constructed without a hub session - the
+	 * protocol probe has only seen "$MyNick " at that point and has no hub to
+	 * attribute it to - so there is no local user to name here. The nick is the
+	 * whole point of the challenge, so there is nothing to send without one.
+	 */
+	const QuickDC::User* me = hubsession ? hubsession->getLocalUser() : 0;
+	if (!me || !me->getNick())
+	{
+		QERR("No local user to challenge with; dropping the connection");
+		proxy->close();
+		return;
+	}
+
 	char* my_lock = Lock::createLock();
 	char* my_pk = Lock::createPk();
 	my_key = DC::Lock::calculateKey(my_lock, strlen(my_lock));
-	
-	send(new DC::SendMyNick(hubsession->getLocalUser()->getNick()), true);
+
+	send(new DC::SendMyNick(me->getNick()), true);
 	send(new DC::SendLock(my_lock, my_pk));
 
 	free(my_lock);
@@ -287,12 +301,29 @@ void DC::ClientSession::onLock(const char* lock_, const char* pk_)
 {
 	if (remote_lock || remote_pk) return;
 
+	/*
+	 * calculateKey() has nothing to derive a key from below three characters and
+	 * answers 0, which sendKey() would then take the length of.
+	 */
+	if (!lock_ || strlen(lock_) < 3)
+	{
+		QERR("Peer sent a lock too short to answer; dropping the connection");
+		proxy->close();
+		return;
+	}
+
 	remote_lock = strdup(lock_);
-	remote_pk = strdup(pk_);
-	
+	remote_pk = strdup(pk_ ? pk_ : "");
+
 	extendedProtocol = (strncmp(remote_lock, "EXTENDEDPROTOCOL", 16) == 0);
 	remote_key = Lock::calculateKey(remote_lock, strlen(remote_lock));
-	
+	if (!remote_key)
+	{
+		QERR("Unable to derive a key from the peer's lock; dropping the connection");
+		proxy->close();
+		return;
+	}
+
 	if (!isClient)
 	{
 		sendChallenge();

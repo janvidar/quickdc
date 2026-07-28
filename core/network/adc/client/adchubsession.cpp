@@ -109,7 +109,10 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	users = new QuickDC::UserManager(this);
 
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
-	session = new QuickDC::Preferences("~/.quickdc/session.conf");
+
+	/* Borrowed from the core, and shared with every other hub session; see
+	   Core::session. Not ours to delete, and its group is not ours to leave set. */
+	session = QuickDC::Core::getInstance()->session;
 
 	address = strdup(url->toString().c_str());
 	config->setGroup("User");
@@ -143,10 +146,12 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 ADC::HubSession::~HubSession()
 {
 	// save session data.
+	/* The group is shared, and every other hub session moves it, so it is
+	   selected here rather than relied on from the constructor. */
+	session->setGroup(address);
 	session->setString("Nickname", nickname);
 	session->setString("Password", password);
 	session->write();
-	delete session;
 
 	QDBG("~HubSession()");
 
@@ -247,6 +252,13 @@ bool ADC::HubSession::verifyKeyprint()
 	std::string trusted;
 	const char* source = 0;
 
+	/*
+	 * A keyprint is filed under the canonical "{scheme}://{host}:{port}", while
+	 * everything else about this session lives under the address as it was typed.
+	 * Each access below selects the group it wants; nothing is restored, because
+	 * the store is shared with every other hub session and the group that was
+	 * current on entry is not necessarily ours to put back.
+	 */
 	if (expectedKeyprint)
 	{
 		trusted = expectedKeyprint;
@@ -277,7 +289,9 @@ bool ADC::HubSession::verifyKeyprint()
 		 * back at the user only invites them to trust it.
 		 */
 		QERR("The hub's certificate does not match the keyprint from %s", source);
-		reportKeyprintFailure("Detected attempted man-in-the-middle attack, aborting");
+		reportKeyprintFailure("The hub's certificate has changed since the last connection. "
+			"If the hub did not change its certificate, this is a "
+			"man-in-the-middle attack. Remove the stored keyprint to accept the new one.");
 		return false;
 	}
 
@@ -285,10 +299,6 @@ bool ADC::HubSession::verifyKeyprint()
 	{
 		QDBG("The hub's certificate matches the keyprint from %s", source);
 		keyprintVerified = true;
-	}
-	else
-	{
-		QDBG("Nothing to check the hub's certificate against; remembering it");
 	}
 
 	/*
@@ -301,6 +311,20 @@ bool ADC::HubSession::verifyKeyprint()
 		session->setGroup(keyprintGroup());
 		session->setString("Keyprint", actual);
 		session->write();
+	}
+
+
+	/*
+	 * Say so where the user can see it, not only in the log: this is the one
+	 * connection to this hub that nothing could vouch for, and every later one
+	 * is checked against what was just stored.
+	 */
+	if (!source)
+	{
+		if (presented)
+			listener->EventSystemError("Accepting and remembering this hub's certificate on first use");
+		else
+			listener->EventSystemError("This hub presented no certificate; the connection is unauthenticated");
 	}
 
 	return true;

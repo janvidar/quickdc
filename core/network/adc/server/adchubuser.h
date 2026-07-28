@@ -76,7 +76,19 @@ class HubUser : public HubConnection {
 		char* cid;
 		std::vector<char*> features;
 		bool locked;
-		
+
+		/** A deferred disconnect is already queued for this user. */
+		bool disconnecting;
+
+		/**
+		 * Quit bookkeeping, kept apart from 'state' because the quit may be
+		 * deferred: state moves to State_WaitDisconnect immediately, so by the
+		 * time the deferred pass runs it can no longer tell whether the user had
+		 * been visible to anyone and owes them an IQUI.
+		 */
+		bool quitting;
+		bool announce_quit;
+
 
 	friend class ADC::Hub;
 };

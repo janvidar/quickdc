@@ -160,3 +160,48 @@ EXO_TEST(adc_command_client, {
         return ok && cmd.isCommandClient();
 });
 
+
+/*
+ * A command carrying an embedded NUL used to desynchronise the cached copy from
+ * cachedSize: the allocation was sized with strlen() and stopped at the NUL,
+ * while cachedSize kept counting to buflen. The hub hands both to write(), so
+ * everything between the two was read off the heap and broadcast to every other
+ * user. Refuse the line instead - ADC has no use for a NUL in one.
+ */
+EXO_TEST(adc_command_embedded_nul, {
+        const char buf[] = "BMSG AAAB hi\0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        ADC::Command cmd;
+        return !ADC::Parser::parse(buf, sizeof(buf) - 1, cmd);
+});
+
+EXO_TEST(adc_command_embedded_nul_leading, {
+        const char buf[] = "HS\0P AAAAAAAAAAAAAAAAAAAAAAAA";
+        ADC::Command cmd;
+        return !ADC::Parser::parse(buf, sizeof(buf) - 1, cmd);
+});
+
+/* cachedSize must describe the cached buffer, whatever the caller passed. */
+EXO_TEST(adc_command_cached_size_matches, {
+        const char* buf = "BMSG AAAB hello";
+        ADC::Command cmd;
+        if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
+
+        const size_t size = cmd.getSize();
+        const char* raw = cmd.getRawCommand();
+        if (!raw || size != strlen(buf) + 1) return false;
+
+        /* The wire form is the line plus its terminator, and nothing past it. */
+        return raw[size - 1] == '\n' && strncmp(raw, buf, strlen(buf)) == 0;
+});
+
+/* An unterminated buffer must not be read beyond buflen. */
+EXO_TEST(adc_command_unterminated_buffer, {
+        char raw[16];
+        memset(raw, 'Z', sizeof(raw));
+        memcpy(raw, "BMSG AAAB hi", 12);
+
+        ADC::Command cmd;
+        if (!ADC::Parser::parse(raw, 12, cmd)) return false;
+
+        return cmd.getSize() == 13 && cmd.getRawCommand()[12] == '\n';
+});

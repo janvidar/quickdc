@@ -68,6 +68,34 @@ ADC::Hub::Hub() {
 	new ADC::AdcSrvMyIP(services);
 	
 	processing = false;
+	nextPendingTicket = 1;
+}
+
+uint64_t ADC::Hub::deferFor(ADC::HubUser* user)
+{
+	const uint64_t ticket = nextPendingTicket++;
+	pending.insert(std::pair<uint64_t, HubUser*>(ticket, user));
+	return ticket;
+}
+
+ADC::HubUser* ADC::Hub::takePending(uint64_t ticket)
+{
+	std::map<uint64_t, HubUser*>::iterator it = pending.find(ticket);
+	if (it == pending.end()) return 0;
+
+	HubUser* user = (*it).second;
+	pending.erase(it);
+	return user;
+}
+
+void ADC::Hub::forgetPending(const ADC::HubUser* user)
+{
+	std::map<uint64_t, HubUser*>::iterator it = pending.begin();
+	while (it != pending.end())
+	{
+		if ((*it).second == user) it = pending.erase(it);
+		else it++;
+	}
 }
 
 ADC::Hub::~Hub() {
@@ -305,30 +333,43 @@ void ADC::Hub::onWelcome(ADC::HubUser* user) {
 }
 
 void ADC::Hub::onQuit(ADC::HubUser* user, const char* msg) {
-	if (processing)
+	/*
+	 * Decide once, on the first pass, whether anyone was ever told about this
+	 * user. The state is about to become State_WaitDisconnect, and a deferred
+	 * pass reading it afterwards would conclude the user had never been visible
+	 * and skip the IQUI, leaving every remaining user a ghost entry for good.
+	 */
+	if (!user->quitting)
 	{
-		if (user->state == State_Normal) {
-			Samurai::postMessage(QuickDC::MsgHubUserDelayedQuit, user, (size_t) (char*) msg, 0);
-			user->state = State_WaitDisconnect;
-		}
+		user->quitting = true;
+		user->announce_quit = (user->state == State_Normal);
+	}
+
+	if (processing || user->locked)
+	{
+		/*
+		 * Every quit is deferred here, not only a State_Normal one: dropping the
+		 * others outright left the user in socket_map, sid_map and users with
+		 * nothing queued to ever take it out again.
+		 */
+		user->state = State_WaitDisconnect;
+		Samurai::postMessage(QuickDC::MsgHubUserDelayedQuit, 0, (size_t) deferFor(user), 0);
 		return;
 	}
-	
-	if (user->locked)
-	{
-			Samurai::postMessage(QuickDC::MsgHubUserDelayedQuit, user, (size_t) (char*) msg, 0);
-			user->state = State_WaitDisconnect;
-			return;
-	}
-	
-	QHUB("%s: User disconnected: '%s' (%s)", ADC::SID::toString(user->sid), user->nick, msg);
+
+	QHUB("%s: User disconnected: '%s' (%s)", ADC::SID::toString(user->sid),
+		user->nick ? user->nick : "(unidentified)", msg ? msg : "no reason given");
+
 	userRemove(user);
-	if (user->state == State_Normal) {
+	if (user->announce_quit) {
 		ADC::Command* quit = new ADC::Command(FOURCC('I','Q','U','I'));
 		quit->addArgument(ADC::SID::toString(user->sid));
 		if (msg) quit->addArgument("MS", msg);
 		send(quit);
 	}
+
+	/* Any ticket still naming this user must stop resolving to it. */
+	forgetPending(user);
 	delete user;
 }
 
@@ -409,9 +450,18 @@ void ADC::Hub::send(ADC::Command* cmd, HubUser* user, bool more) {
 
 void ADC::Hub::kick(ADC::HubUser* user) {
 	user->state = State_WaitDisconnect;
-	
-	if (user->getSendQueueSize() == 0) {
-		user->socket->disconnect();
+
+	if (user->getSendQueueSize() == 0 && !user->disconnecting) {
+		/*
+		 * Deferred rather than immediate: disconnect() reports EventDisconnected
+		 * synchronously, which lands in onQuit() and deletes the user - while
+		 * every caller here still holds it, and setINF() goes on to read the
+		 * kicked user's SID. Anything still queued is left to EventCanWrite,
+		 * which comes back here once it has drained, so the kick message itself
+		 * still reaches the user.
+		 */
+		user->disconnecting = true;
+		Samurai::postMessage(QuickDC::MsgHubUserDisconnect, 0, (size_t) deferFor(user), 0);
 	}
 }
 
@@ -437,11 +487,22 @@ void ADC::Hub::EventDataAvailable(const Samurai::IO::Net::Socket* socket) {
 
 void ADC::Hub::EventCanWrite(const Samurai::IO::Net::Socket* socket) {
 	ADC::HubUser* user = lookupUser(socket);
-	if (user) {
-		user->proxy->write();
-		if (user->state == State_WaitDisconnect && user->getSendQueueSize() == 0) {
-			user->socket->disconnect();
-		}
+	if (!user) return;
+
+	/*
+	 * write() can fail hard, and the socket reports that through EventError
+	 * before returning - which retires this very user. 'locked' makes onQuit()
+	 * defer instead of deleting underneath us, and the user is looked up again
+	 * afterwards rather than reused, since the deferred quit may already have
+	 * run by the time control comes back here.
+	 */
+	user->locked = true;
+	user->proxy->write();
+	user->locked = false;
+
+	user = lookupUser(socket);
+	if (user && user->state == State_WaitDisconnect && user->getSendQueueSize() == 0) {
+		kick(user);
 	}
 }
 
@@ -498,7 +559,7 @@ ADC::HubUser* ADC::Hub::lookupUserCID(const char* cid) {
 
 void ADC::Hub::userAdd(HubUser* user) {
 	if (processing) {
-		Samurai::postMessage(QuickDC::MsgHubUserAppendUser, user, 0, 0);
+		Samurai::postMessage(QuickDC::MsgHubUserAppendUser, 0, (size_t) deferFor(user), 0);
 		return;
 	}
 
@@ -509,7 +570,7 @@ void ADC::Hub::userAdd(HubUser* user) {
 
 void ADC::Hub::userRemove(HubUser* user) {
 	if (processing) {
-		Samurai::postMessage(QuickDC::MsgHubUserRemoveUser, user, 0, 0);
+		Samurai::postMessage(QuickDC::MsgHubUserRemoveUser, 0, (size_t) deferFor(user), 0);
 		return;
 	}
 
@@ -522,8 +583,19 @@ void ADC::Hub::userRemove(HubUser* user) {
 		if (sid_it != sid_map.end()) {
 			sid_map.erase(sid_it);
 		}
-		std::vector<HubUser*>::iterator user_it = users.begin();
-		for (; *user_it; user_it++) {
+		/*
+		 * NOTE: this loop used to be written as
+		 *
+		 *     for (user_it = users.begin(); *user_it; user_it++)
+		 *
+		 * dereferencing the iterator without ever comparing it against end().
+		 * A user that is not in the vector - one whose deferred userAdd() has
+		 * not been processed yet, say - therefore ran off the end reading
+		 * whatever followed until it happened to find a zero, and erase() then
+		 * memmoved an out of range interval. The same mistake is described at
+		 * length in network/connectionmanager.cpp.
+		 */
+		for (std::vector<HubUser*>::iterator user_it = users.begin(); user_it != users.end(); user_it++) {
 			if (*user_it == user) {
 				users.erase(user_it);
 				break;
@@ -542,28 +614,44 @@ void ADC::Hub::EventTimeout(Samurai::Timer*) { }
 
 bool ADC::Hub::EventMessage(const Samurai::Message* msg) {
 	if (!processing) {
+		/*
+		 * The user is named by a ticket rather than carried as a pointer, so a
+		 * user deleted between the post and here resolves to nothing instead of
+		 * to freed memory. takePending() consumes the ticket either way.
+		 */
 		if (msg->getID() == QuickDC::MsgHubUserRemoveUser)
 		{
-			ADC::HubUser* user = (ADC::HubUser*) msg->getData();
-			userRemove(user);
+			ADC::HubUser* user = takePending((uint64_t) msg->getArg1());
+			if (user) userRemove(user);
 			return true;
 		}
-		
+
 		if (msg->getID() == QuickDC::MsgHubUserAppendUser)
 		{
- 			ADC::HubUser* user = (ADC::HubUser*) msg->getData();
-			userAdd(user);
+			ADC::HubUser* user = takePending((uint64_t) msg->getArg1());
+			if (user) userAdd(user);
 			return true;
 		}
-		
+
 		if (msg->getID() == QuickDC::MsgHubUserDelayedQuit)
 		{
-			ADC::HubUser* user = (ADC::HubUser*) msg->getData();
-			const char* msg = "Delayed quit"; // FIXME: Retrieve this from msg.
-			onQuit(user, msg);
+			ADC::HubUser* user = takePending((uint64_t) msg->getArg1());
+			if (user) onQuit(user, "Delayed quit");
 			return true;
 		}
-	
+
+		if (msg->getID() == QuickDC::MsgHubUserDisconnect)
+		{
+			ADC::HubUser* user = takePending((uint64_t) msg->getArg1());
+			if (user)
+			{
+				user->disconnecting = false;
+				/* Safe here: nothing up the stack is holding the user. */
+				user->socket->disconnect();
+			}
+			return true;
+		}
+
 	} else {
 		QHUB("Parsing messages while processing...");
 	}

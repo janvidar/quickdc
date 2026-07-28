@@ -19,6 +19,7 @@ endif()
 set(QUICKDC_EXOTIC_INPUTS
     adc_parser.tcc
     keyprint.tcc
+    preferences.tcc
     queue.tcc
     stdc.tcc
     user.tcc)

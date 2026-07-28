@@ -83,6 +83,23 @@ class Core {
 		
 	public:
 		Preferences* config;
+
+		/**
+		 * Per-hub session data: nickname, password, last connect time, and the
+		 * keyprint remembered for a hub.
+		 *
+		 * One store for the whole process, shared by every hub session, because
+		 * they all persist to the same file. A Preferences holds the entire file
+		 * in memory and writes all of it back, so a store per session meant each
+		 * one wrote a snapshot taken before the others existed - and silently
+		 * dropped their settings, a remembered keyprint among them. Sessions
+		 * borrow this and must not delete it.
+		 *
+		 * The current group is shared state as a result: select a group
+		 * immediately before reading or writing, never rely on one set earlier.
+		 */
+		Preferences* session;
+
 		QuickDC::Share::Manager* shares;
 		DCServer* server;
 		ConnectionManager* connections;

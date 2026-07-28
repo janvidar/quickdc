@@ -160,7 +160,24 @@ namespace ADC {
 			* be performed later, when the message queue is processed.
 			*/
 			void userRemove(HubUser*);
-			
+
+			/**
+			* Register a user for deferred work and return the ticket naming it.
+			*
+			* Deferred work used to carry the HubUser pointer itself, which meant a
+			* user deleted before its message was processed left the handler holding
+			* freed memory - and nothing withdrew the message. A ticket is looked up
+			* instead, and forgetPending() invalidates every ticket a user holds when
+			* it goes away, so a stale message resolves to nothing.
+			*/
+			uint64_t deferFor(HubUser* user);
+
+			/** Resolve and consume a ticket. 0 if the user is already gone. */
+			HubUser* takePending(uint64_t ticket);
+
+			/** Drop every outstanding ticket naming this user. */
+			void forgetPending(const HubUser* user);
+
 			/**
 			* Generate a unique session ID for a new user. This is used for new connections only,
 			* and will guarantee no duplicates.
@@ -207,7 +224,11 @@ namespace ADC {
 			std::deque<char*> history;
 	
 			bool processing;
-			
+
+			/* Outstanding deferred work, keyed by ticket. See deferFor(). */
+			std::map<uint64_t, HubUser*> pending;
+			uint64_t nextPendingTicket;
+
 			/* ACL */
 			ACL::Table* acl;
 			

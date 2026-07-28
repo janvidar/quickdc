@@ -57,6 +57,7 @@ enum MessageID {
 	MsgHubUserRemoveUser      = 8003,   /**<< A user should be removed from the local hub. */
 	MsgHubUserAppendUser      = 8004,   /**<< A user should be added to the local hub. */
 	MsgHubUserDelayedQuit     = 8005,   /**<< A user quit (usually error), post a message and process it later */
+	MsgHubUserDisconnect      = 8006,   /**<< Drop a kicked user's socket, once out of its own event handler */
 	
 	/* Hub client related */
 	MsgHubCountChanged        = 9000,   /**<< Our hub count data has changed - Notify hubs */

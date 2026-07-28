@@ -31,12 +31,25 @@ static bool verifyFeatures(const char* str) {
 
 bool ADC::Parser::parse(const char* buffer, size_t buflen, ADC::Command& command) {
 	if (buflen < 4 || !buffer) return false;
-	command.fourcc = ((buffer[0] << 24) | (buffer[1] << 16) | (buffer[2] << 8) | (buffer[3]));
-	
-	char* buf = strndup(buffer, buflen);
 
-	// Always true!
-	if (buf[buflen] == '\n') buf[buflen] = 0;
+	/*
+	 * buflen is the authoritative length, and every offset below assumes buf is
+	 * exactly that long. A NUL inside the line breaks that: strndup would stop
+	 * at it and allocate less, leaving &buf[5] and the terminator check reading
+	 * past the end. ADC has no use for one, so refuse the line instead.
+	 */
+	if (memchr(buffer, '\0', buflen)) return false;
+
+	/* Unsigned, or a byte with the top bit set sign-extends into the fourcc. */
+	command.fourcc = (((uint32_t) (unsigned char) buffer[0] << 24)
+	                | ((uint32_t) (unsigned char) buffer[1] << 16)
+	                | ((uint32_t) (unsigned char) buffer[2] << 8)
+	                |  (uint32_t) (unsigned char) buffer[3]);
+
+	char* buf = (char*) malloc(buflen + 1);
+	if (!buf) return false;
+	memcpy(buf, buffer, buflen);
+	buf[buflen] = 0;
 
 	if (buflen > 5) {
 		char* last = &buf[5];
@@ -109,14 +122,25 @@ bool ADC::Parser::parse(const char* buffer, size_t buflen, ADC::Command& command
 	}
 
 	if (command.cached) free(command.cached);
-	
-	
-	command.cached = (char*) malloc(strlen(buffer) + 2);
-	command.cached[0] = 0;
-	strcat(command.cached, buffer);
-	strcat(command.cached, "\n");
-	command.cachedSize = buflen+1;
-	
+
+	/*
+	 * Sized from buflen, not from strlen(buffer). The two disagreed whenever the
+	 * caller's buffer was not terminated exactly where buflen said - a datagram
+	 * without a trailing newline reads past the end, and a line carrying a NUL
+	 * allocated less than cachedSize then claimed, which the hub went on to hand
+	 * to write() and broadcast whatever followed it on the heap.
+	 */
+	command.cachedSize = buflen + 1;
+	command.cached = (char*) malloc(command.cachedSize + 1);
+	if (!command.cached)
+	{
+		command.cachedSize = 0;
+		return false;
+	}
+	memcpy(command.cached, buffer, buflen);
+	command.cached[buflen]     = '\n';
+	command.cached[buflen + 1] = '\0';
+
 	return true;
 }
 

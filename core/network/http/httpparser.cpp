@@ -50,9 +50,16 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 	
 			case Detect:
 			{
-				if (!getLine())
-					return StatusMore;
-	
+				/*
+				 * The status has to be compared, not tested for truth: StatusError
+				 * is 0 and StatusMore is 1, so "!getLine()" only caught the error
+				 * and let a line that has not arrived in full fall through to be
+				 * parsed as a null pointer.
+				 */
+				enum Http::Parser::Status got = getLine();
+				if (got == StatusMore)  return StatusMore;
+				if (got == StatusError) return StatusError;
+
 				state = Header;
 				bool ok;
 				if (request)
@@ -100,8 +107,20 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 	
 				if (cl || te)
 				{
-					if (cl && cl->getValue())
-						entity->setBodySize(Samurai::Util::Convert::to_uint64(cl->getValue()));
+					/*
+					 * Only a counted body can be consumed below, and a chunked
+					 * one carries no count. Refusing it drops the connection,
+					 * which is the honest outcome while the chunk framing is
+					 * unimplemented - entering Body with a zero length would
+					 * instead declare the entity complete and leave the chunk
+					 * data to be read as whatever comes next on the stream.
+					 */
+					if (!cl || !cl->getValue())
+					{
+						QERR("Transfer-Encoding without a Content-Length is not supported");
+						return StatusError;
+					}
+					entity->setBodySize(Samurai::Util::Convert::to_uint64(cl->getValue()));
 					state = Body;
 				}
 				else
@@ -119,8 +138,38 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 			case Body:
 			{
 				QDBG("Body");
-				// FIXME: Calculate the size of the expected body size.
-				// and setup a transfer job for the actual body transfer.
+
+				/*
+				 * The body is still not handed anywhere, but it has to be taken
+				 * off the buffer: leaving it made the enclosing while(size())
+				 * spin on a state that could never consume anything, which hangs
+				 * the whole event loop rather than just this connection.
+				 *
+				 * A chunked body has no length to count down, and unpicking the
+				 * chunk framing is not something to bolt on here, so that case
+				 * ends the entity and lets the connection be dropped.
+				 */
+				const uint64_t want = entity->getBodySize();
+				if (!want)
+				{
+					pipeline->push(entity);
+					state = None;
+					entity = 0;
+					return StatusDone;
+				}
+
+				const size_t have = buffer->size();
+				const size_t take = (have > want) ? (size_t) want : have;
+				buffer->remove(take);
+				entity->setBodySize(want - take);
+
+				if (want - take)
+					return StatusMore;
+
+				pipeline->push(entity);
+				state = None;
+				entity = 0;
+				return StatusDone;
 			}
 		}
 	}

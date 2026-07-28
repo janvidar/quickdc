@@ -46,6 +46,7 @@ QuickDC::Core::Core()
 	Samurai::IO::File::mkdir(QUICKDC_DOWNLOAD_DIR, 0700);
 	
 	config = new Preferences("~/.quickdc/quickdc.conf");
+	session = new Preferences("~/.quickdc/session.conf");
 	quickdc_core = this;
 	
 	monitor = Samurai::IO::Net::SocketMonitor::getInstance();
@@ -81,6 +82,8 @@ QuickDC::Core::~Core()
 	delete hubs; hubs = 0;
 	delete securityManager; securityManager = 0;
 	delete shares; shares = 0;
+	/* After the hubs, which borrow it and write through it on the way out. */
+	delete session; session = 0;
 	delete config; config = 0;
 	delete hash; hash = 0;
 	delete localHub; localHub = 0;

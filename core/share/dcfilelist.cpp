@@ -24,9 +24,12 @@ Share::RemoteFile::~RemoteFile() {
 	free(tth);
 }
 
-Share::RemoteDir::RemoteDir(const char* name_, Share::RemoteDir* parent_) {
-	name = strdup(name_);
-	parent = parent_;
+Share::RemoteDir::RemoteDir(const char* name_, Share::RemoteDir* parent_)
+	: parent(parent_)
+	, name(strdup(name_))
+	, size(0)
+	, filecount(0)
+{
 	if (parent)
 		parent->subdirs.push_back(this);
 }
@@ -56,9 +59,18 @@ void Share::RemoteDir::addSize(uint64_t size_) {
 
 
 
-Share::XMLFileListHandler::XMLFileListHandler(RemoteDir* root_, Samurai::IO::Buffer* buffer) {
-	reader = new XML::SAX::XMLReader(buffer, this);
-	root = root_;
+/*
+ * currentDir doubles as the "are we inside a <FileListing>" flag, and every
+ * element handler below tests it before walking through it. Left indeterminate
+ * it is a pointer the file list's own bytes may well have supplied, so a list
+ * that opens with anything other than <FileListing> writes through it.
+ */
+Share::XMLFileListHandler::XMLFileListHandler(RemoteDir* root_, Samurai::IO::Buffer* buffer)
+	: reader(new XML::SAX::XMLReader(buffer, this))
+	, root(root_)
+	, currentDir(0)
+	, problem(false)
+{
 }
 
 Share::XMLFileListHandler::~XMLFileListHandler() {

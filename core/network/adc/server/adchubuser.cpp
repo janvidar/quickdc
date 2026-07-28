@@ -22,12 +22,18 @@
 #define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
 
 #define INF_STRIP_ARGUMENT(CMD, PREFIX) if (CMD->haveArgument(PREFIX, 2)) CMD->removeArgument(PREFIX, 2);
+/*
+ * NOTE: these commands are heap allocated, where they used to be locals. Hub::send()
+ * hands the command to the user's CommandFIFO, which keeps it queued whenever the
+ * socket only took part of it - so the queue outlived the block a local was declared
+ * in, and went on to read, and finally delete, a dead stack frame.
+ */
 #define INF_SEND_ERROR(USER, HUB, CODE, MSG, FLAG, DATA) { \
-	ADC::Command x_cmd(FOURCC('I','S','T','A')); \
-	x_cmd.addArgument(CODE); \
-	x_cmd.addArgument(MSG); \
-	if (FLAG) x_cmd.addArgument(FLAG, DATA); \
-	HUB->send(&x_cmd, USER); \
+	ADC::Command* x_cmd = new ADC::Command(FOURCC('I','S','T','A')); \
+	x_cmd->addArgument(CODE); \
+	x_cmd->addArgument(MSG); \
+	if (FLAG) x_cmd->addArgument(FLAG, DATA); \
+	HUB->send(x_cmd, USER); \
 }
 
 #define INF_CHECK_IP(CMD, SOCKET, HUB) { \
@@ -40,11 +46,11 @@
 			CMD->addArgument("I4", actualIP->toString()); \
 		} else if (ip != *actualIP) { \
 			CMD->removeArgument("I4", 2); \
-			ADC::Command x_cmd(FOURCC('I','S','T','A')); \
-			x_cmd.addArgument("145"); \
-			x_cmd.addArgument("Invalid IP"); \
-			x_cmd.addArgument("IP", actualIP->toString()); \
-			HUB->send(&x_cmd, this); \
+			ADC::Command* x_cmd = new ADC::Command(FOURCC('I','S','T','A')); \
+			x_cmd->addArgument("145"); \
+			x_cmd->addArgument("Invalid IP"); \
+			x_cmd->addArgument("IP", actualIP->toString()); \
+			HUB->send(x_cmd, this); \
 		} \
 	} \
 	if (CMD->haveArgument("U4", 2)) { \
@@ -52,11 +58,11 @@
 		int port = Samurai::Util::Convert::to_int32(str_port); \
 		if (port <= 0 || port > 65535) { \
 			CMD->removeArgument("U4", 2); \
-			ADC::Command x_cmd(FOURCC('I','S','T','A')); \
-			x_cmd.addArgument("143"); \
-			x_cmd.addArgument("Invalid port"); \
-			x_cmd.addArgument("FL", "U4"); \
-			HUB->send(&x_cmd, this); \
+			ADC::Command* x_cmd = new ADC::Command(FOURCC('I','S','T','A')); \
+			x_cmd->addArgument("143"); \
+			x_cmd->addArgument("Invalid port"); \
+			x_cmd->addArgument("FL", "U4"); \
+			HUB->send(x_cmd, this); \
 		} \
 	} \
 }
@@ -96,7 +102,10 @@ ADC::HubUser::HubUser(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC::Hu
 	command_inf(0),
 	nick(0),
 	cid(0),
-	locked(false)
+	locked(false),
+	disconnecting(false),
+	quitting(false),
+	announce_quit(false)
 {
 	proxy = new CommandProxy(socket, hub);
 	sid = hub->generateNextSid();
@@ -214,8 +223,17 @@ bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
 		
 		INF_CHECK_IP(cmd, socket, hub);
 		
-		/* Give local user operator access */
-		if (strcmp(pid, ADC::CID::getInstance()->getPID()) == 0) {
+		/*
+		 * Give the local user operator access.
+		 *
+		 * Recognised by the address it connects from, not by its PID as this
+		 * used to be. ADC requires a client to send its PID to every hub it
+		 * joins - it is how the hub checks the CID is the PID's hash - so every
+		 * hub the local client has ever visited holds the value that used to be
+		 * enough to become admin here. The comparison was not constant time
+		 * either, and the outcome is echoed straight back in the OP flag.
+		 */
+		if (socket->getAddress()->isLoopback()) {
 			credentials = Cred_Admin;
 			cmd->addArgument("OP", "1");
 		}

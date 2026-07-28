@@ -15,7 +15,7 @@
 
 #define READ_BUF_SIZE 65536
 
-DC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, DC::ClientSession* session) : QuickDC::CommandProxy(std::move(socket)), client(true)
+DC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, DC::ClientSession* session) : QuickDC::CommandProxy(std::move(socket)), client(true), closed(false)
 {
 	new DC::ClientKey(this, session);
 	new DC::ClientGet(this, session);
@@ -34,7 +34,7 @@ DC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket,
 	new DC::ClientExtGetZBlock(this, session);
 }
 
-DC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, DC::HubSession* session) : QuickDC::CommandProxy(std::move(socket)), client(false)
+DC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, DC::HubSession* session) : QuickDC::CommandProxy(std::move(socket)), client(false), closed(false)
 {
 	new DC::To(this, session);
 	new DC::Quit(this, session);
@@ -207,15 +207,22 @@ bool DC::CommandProxy::read()
 		command[split] = 0; // remove pipe
 		invoke(command, split);
 		free(command);
-		
+
+		/* A handler dropped the connection; the rest of the packet is not ours
+		   to act on any more. */
+		if (closed) break;
+
 		split = readbuffer->find('|');
 	}
-	return true;
+	return !closed;
 }
 
 
 void DC::CommandProxy::close() {
-	QDBG("DC::CommandProxy() - closing socket (remote=%s:%d)'", socket->getAddress(), socket->getPort());
+	/* getAddress() is an InetAddress, not a string; "%s" walked the object. */
+	QDBG("DC::CommandProxy() - closing socket (remote=%s:%d)",
+		socket->getAddress()->toString().c_str(), socket->getPort());
+	closed = true;
 	socket->disconnect();
 }
 
