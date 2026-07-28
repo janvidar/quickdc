@@ -62,10 +62,10 @@ class ClientSession :
 		/**
 		 * NOTE: hubsession may be 0. It always is if we don't know who we are talking to, yet.
 		 *
-		 * @param secure the peer asked for ADCS, so wrap the connection in TLS
-		 *               before speaking ADC. Only meaningful when we are the
-		 *               one dialling out: accepting an inbound TLS peer
-		 *               connection is not implemented, see probe.cpp.
+		 * @param secure this connection carries ADC inside TLS. When we are
+		 *               dialling out, the handshake is started from here;
+		 *               probe.cpp has already completed one by the time it
+		 *               hands an inbound connection over.
 		 * @param keyprint the certificate the peer is expected to present, from
 		 *               the KP field of their INF. Only pass one when the hub
 		 *               that relayed it was itself verified; the connection is

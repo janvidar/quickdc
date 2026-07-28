@@ -34,12 +34,47 @@
 #include <string>
 #include <samurai/crypto/digest/tigertree.h>
 #include <samurai/io/buffer.h>
+#include <samurai/io/file.h>
 #include <samurai/io/net/datagram.h>
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/socketaddress.h>
+#include <samurai/io/net/tlsfactory.h>
 #include <samurai/io/net/url.h>
 #include <samurai/util/base32.h>
+
+
+/*
+ * One field: severity digit followed by a two digit code. Sending the code on
+ * its own leaves a peer reading the severity off the first digit of the code.
+ */
+static std::string adc_status_code(int severity, int code)
+{
+	char buf[8];
+	snprintf(buf, sizeof(buf), "%d%02d", severity, code);
+	return std::string(buf);
+}
+
+
+/*
+ * Whether a peer dialling us can be answered with TLS. probe.cpp completes a
+ * server side handshake before fingerprinting the stream, so the same port
+ * serves both protocols and the only thing that can be missing is a
+ * certificate to present. Without one the handshake fails, which the peer can
+ * only read as a reset - so naming ADCS then would be worse than not offering
+ * it at all.
+ */
+static bool canAcceptTls()
+{
+#ifdef SSL_SUPPORT
+	Samurai::IO::File* cert = Samurai::IO::Net::TlsFactory::getCertificate();
+	Samurai::IO::File* pkey = Samurai::IO::Net::TlsFactory::getPrivateKey();
+
+	return cert && cert->exists() && pkey && pkey->exists();
+#else
+	return false;
+#endif
+}
 
 
 ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Samurai::IO::Net::URL* url, bool secure_)
@@ -759,23 +794,23 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	config->setGroup("Network");
 
 	/*
-	 * Which protocol to name depends on who is going to dial whom, not just on
-	 * whether the hub is secure:
+	 * Which protocol to name depends on who is going to dial whom:
 	 *
-	 *  - CTM tells the peer to connect to us, so we would have to accept TLS.
-	 *    That means completing a handshake before the incoming stream can be
-	 *    probed for which protocol it is, which probe.cpp does not do, so only
-	 *    plain ADC can be offered here. Claiming ADCS and then failing the
-	 *    handshake just looks like a reset to the peer.
+	 *  - CTM tells the peer to connect to us, so we have to be able to accept
+	 *    whatever we name - see canAcceptTls().
 	 *
 	 *  - RCM asks the peer to send us a CTM, so we dial out, and outbound TLS
 	 *    is handled by ADC::ClientSession.
+	 *
+	 * Either way encryption is only volunteered on a hub we reached over ADCS,
+	 * which is also the only case where the keyprint that protects the peer
+	 * connection could have come from anywhere trustworthy.
 	 */
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
 	{
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), sid, user->getID());
-		cmd->addArgument(ADC_COMPLIANCE);
+		cmd->addArgument((secure && canAcceptTls()) ? ADC_TLS_PROTO : ADC_COMPLIANCE);
 		cmd->addArgument(quickdc_itoa(config->getNumber("Port"), 10));
 		cmd->addArgument(token);
 		send(cmd);
@@ -1160,7 +1195,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	if (!port)
 	{
 		QERR("No port given in the connect request");
-		sendPeerError(from, quickdc_itoa(ADC_CODE_PROTOCOL_CONNECT_ERROR, 10),
+		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_CONNECT_ERROR).c_str(),
 			"No port given", token, proto);
 		return;
 	}
@@ -1175,7 +1210,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	if (!peerSecure && (!proto || strcmp(proto, ADC_COMPLIANCE)))
 	{
 		QERR("Peer asked for protocol '%s', which is not supported", proto ? proto : "");
-		sendPeerError(from, quickdc_itoa(ADC_CODE_PROTOCOL_UNSUPPORTED, 10),
+		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),
 			"Protocol not supported", token, proto);
 		return;
 	}
@@ -1184,7 +1219,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	if (peerSecure)
 	{
 		QERR("Peer asked for ADCS, but TLS support is not built in");
-		sendPeerError(from, quickdc_itoa(ADC_CODE_PROTOCOL_UNSUPPORTED, 10),
+		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),
 			"TLS not supported", token, proto);
 		return;
 	}
@@ -1228,20 +1263,32 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	config->setGroup("Network");
 
 	/*
-	 * Answering an RCM means telling the peer to connect to us, so the same
-	 * limit applies as in sendConnectionRequest(): we can only offer plain ADC,
-	 * because an inbound TLS connection cannot be probed. Say so rather than
-	 * accepting an ADCS request we would then fail to honour.
+	 * Answering an RCM means telling the peer to connect to us, so as in
+	 * sendConnectionRequest() we may only name a protocol we can accept. This
+	 * one was asked for rather than volunteered, though, so it is honoured
+	 * whenever we are able to - the hub's own protocol has no say in it.
 	 */
-	if (proto && !strcmp(proto, ADC_TLS_PROTO))
+	bool peerSecure = (proto && !strcmp(proto, ADC_TLS_PROTO));
+
+	/* A protocol left out means plain ADC, which is what it meant here before
+	   ADCS was an option at all. One we do not speak cannot be answered. */
+	if (proto && *proto && !peerSecure && strcmp(proto, ADC_COMPLIANCE))
 	{
-		QERR("Peer asked us to accept an ADCS connection, which is not supported");
-		sendPeerError(from, quickdc_itoa(ADC_CODE_PROTOCOL_UNSUPPORTED, 10),
-			"Cannot accept incoming TLS connections", token, proto);
+		QERR("Peer asked for protocol '%s', which is not supported", proto);
+		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),
+			"Protocol not supported", token, proto);
 		return;
 	}
 
-	const char* protocol = ADC_COMPLIANCE;
+	if (peerSecure && !canAcceptTls())
+	{
+		QERR("Peer asked us to accept an ADCS connection, but we have no certificate to present");
+		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),
+			"No certificate to accept TLS with", token, proto);
+		return;
+	}
+
+	const char* protocol = peerSecure ? ADC_TLS_PROTO : ADC_COMPLIANCE;
 
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server) {
 		QDBG("Requesting active connection to user: %s", user->getNick());
