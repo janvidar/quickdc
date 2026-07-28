@@ -129,6 +129,13 @@ class SendDirection : public Command
 		SendDirection(bool download, size_t priority);
 };
 
+/** Tell a peer we have no upload slot free. */
+class SendMaxedOut : public Command
+{
+	public:
+		SendMaxedOut();
+};
+
 class SendErrorFileNotAvailable : public Command
 {
 	public:
@@ -149,6 +156,17 @@ class SendADCGet : public Command
 {
 	public:
 		SendADCGet(const char* type, const char* name, uint64_t offset, int64_t length);
+};
+
+/**
+ * Answer a peer's request; the other half of the "ADCGet" extension.
+ *
+ * $ADCSND {type} {name} {offset} {length}|
+ */
+class SendADCSnd : public Command
+{
+	public:
+		SendADCSnd(const char* type, const char* name, uint64_t offset, uint64_t length);
 };
 
 class SendFileLength : public Command

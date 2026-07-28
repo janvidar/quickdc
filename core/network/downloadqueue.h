@@ -59,6 +59,7 @@
 namespace Samurai {
 	namespace IO {
 		class Buffer;
+		class File;
 	}
 }
 
@@ -425,6 +426,22 @@ class QueueManager {
 		 * @param id the CID on ADC, the nickname on NMDC.
 		 */
 		void onPartialSources(const char* hubUrl, const char* id, const char* tth, const char* indexes);
+
+		/**
+		 * Open a queued file's cached leaf hashes, for upload (PFSR).
+		 * @return 0 if we have none; the caller owns what is returned.
+		 */
+		Samurai::IO::File* openLeafFile(const char* tth, uint64_t& length);
+
+		/**
+		 * Open a partially downloaded file for upload, if the range asked for
+		 * is one the leaves have vouched for (PFSR).
+		 *
+		 * @param servable set to how far the verified run reaches.
+		 * @return 0 if we cannot serve it; the caller owns what is returned.
+		 */
+		Samurai::IO::File* openVerifiedRange(const char* tth, uint64_t offset, int64_t length, uint64_t& servable);
+
 
 
 		/** The chunk did not arrive; let someone else have another go. */

@@ -218,6 +218,25 @@ DC::SendADCGet::SendADCGet(const char* type, const char* name, uint64_t offset, 
 	buffer->append('|');
 }
 
+DC::SendADCSnd::SendADCSnd(const char* type, const char* name, uint64_t offset, uint64_t length) : DC::Command()
+{
+	char numbers[48];
+	snprintf(numbers, sizeof(numbers), " %llu %llu",
+		(unsigned long long) offset, (unsigned long long) length);
+
+	buffer->append("$ADCSND ");
+	buffer->append(type);
+	buffer->append(' ');
+	buffer->append(name);
+	buffer->append(numbers);
+	buffer->append('|');
+}
+
+DC::SendMaxedOut::SendMaxedOut() : DC::Command()
+{
+	buffer->append("$MaxedOut|");
+}
+
 DC::SendErrorFileNotAvailable::SendErrorFileNotAvailable() : DC::Command()
 {
 	buffer->append("$Error File Not Available|");

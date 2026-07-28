@@ -737,96 +737,100 @@ void DC::ClientSession::onGetZBlock(const char* file, uint64_t offset, int64_t l
 
 void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset, int64_t length, bool zlib)
 {
-	(void) type;
-	(void) zlib;
-	
-	QDBG("Requested file (ADCGET): '%s', offset=%u, length=%l", fn, offset, length);
-	
-	
-#if 0
-	if (!upload_approved || state != StateIdle)
+	QDBG("Requested file (ADCGET): '%s', offset=%d, length=%d", fn, (int) offset, (int) length);
+
+	if (!upload_approved)
 	{
 		QDBG("Client requested a file to be sent, however no upload is approved. Ignoring request...");
 		return;
 	}
-	file = 0;
-	bool tth_file = false;
-	
-	QuickDC::Share::Manager* sharemgr = QuickDC::Core::getInstance()->shares;
 
-	if (type == FOURCC('l','i','s','t')) {
+	if (zlib)
+	{
+		/* We never advertise ZLIG, so nothing should be asking. */
+		QDBG("A compressed transfer was asked for, which we do not offer");
+		sendErrorFileUnavailable();
+		return;
+	}
+
+	releaseTransfer();
+
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Share::Manager* sharemgr = core->shares;
+	QuickDC::TransferManager* xfrmgr = core->transfers;
+
+	QuickDC::Preferences* config = core->config;
+	config->setGroup("Network");
+	int slots = config->getNumber("Slots", 3);
+	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= (size_t) slots);
+
+	uint64_t servable = 0;
+	const char* kind = "file";
+
+	if (type == FOURCC('l','i','s','t'))
+	{
+		kind = "list";
 		file = sharemgr->getFile(supports("BZList") ? "files.xml.bz2" : "files.xml");
+		slots_full = false;
 	}
-	else if (type == FOURCC('t','t','h','1'))
+	else if (type == FOURCC('t','t','h','l') || type == FOURCC('t','t','h','1'))
 	{
-			/* Transfer merkle tree */
-	}
-	else
-	{ /* type == file */
+		kind = "tthl";
 		if (strlen(fn) == 43 && FOURCC(fn[0],fn[1],fn[2],fn[3]) == FOURCC('T','T','H','/'))
-		{
-			
-			file = sharemgr->getFileByTTH(&fn[4]);
-			tth_file = true;
-		}
-		else
-		{
-			file = sharemgr->getFile(fn);
-		}
+			file = core->queue->openLeafFile(&fn[4], servable);
+		if (file) ownsFile = true;
+		slots_full = false;
 	}
-	
-	if (file)
+	else if (strlen(fn) == 43 && FOURCC(fn[0],fn[1],fn[2],fn[3]) == FOURCC('T','T','H','/'))
 	{
-		QDBG("Found file");
-		
-		chunk_offset = offset;
-		chunk_length = length;
-		
-		proxy->write("$ADCSND ");
-		
-		if (type == FOURCC('l','i','s','t'))
-		{
-			proxy->write("list ");
-			proxy->write("/ ");
-		}
-		else if (type == FOURCC('t','t','h','1'))
-		{
-			proxy->write("tth1 ");
-			proxy->write(fn);
-			proxy->write(' ');
-		}
-		else
-		{
-			proxy->write("file ");
-			proxy->write(fn);
-			proxy->write(' ');
-		}
-		
-		proxy->write(chunk_offset);
-		proxy->write(' ');
-		if (chunk_length == -1)
-			proxy->write("-1");
-		else
-			proxy->write((uint64_t) chunk_length);
+		file = sharemgr->getFileByTTH(&fn[4]);
 
-#if 0 /* Only if we support it */
-		if (zlib) {
-			proxy->write(" ZL1");
+		if (!file)
+		{
+			file = core->queue->openVerifiedRange(&fn[4], offset, length, servable);
+			if (file) ownsFile = true;
 		}
-#endif
-		proxy->write('|');
-		proxy->write();
 
-		transfer = new QuickDC::Upload(QuickDC::Core::getInstance()->transfers, this, proxy->socket, file, chunk_offset, chunk_length);
-		
-		sendFileSize();
-			
+		if (slots_full && file && file->size() < 65536)
+			slots_full = false;
 	}
 	else
+	{
+		file = sharemgr->getFile(fn);
+	}
+
+	if (slots_full)
+	{
+		QDBG("Upload slot not available");
+		send(new DC::SendMaxedOut());
+		return;
+	}
+
+	if (!file)
 	{
 		sendErrorFileUnavailable();
+		return;
 	}
-#endif
+
+	if (!servable) servable = (uint64_t) file->size();
+
+	chunk_offset = offset;
+	if (length < 0 || offset + (uint64_t) length > servable)
+		chunk_length = (int64_t) (servable - offset);
+	else
+		chunk_length = length;
+
+	if (offset > servable || chunk_length <= 0)
+	{
+		QDBG("Asked for %d of '%s', which is not ours to send", (int) offset, fn);
+		sendErrorFileUnavailable();
+		return;
+	}
+
+	send(new DC::SendADCSnd(kind, (type == FOURCC('l','i','s','t')) ? "/" : fn,
+		chunk_offset, (uint64_t) chunk_length));
+
+	transfer = new QuickDC::Upload(xfrmgr, this, proxy->socket, file, chunk_offset, chunk_length);
 }
 
 

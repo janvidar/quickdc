@@ -212,7 +212,7 @@ bool DC::ClientExtGetZBlock::ClientExtGetZBlock::invoke(const char* data, size_t
  * type must be one of:
  * - file
  * - list
- * - tth1
+ * - tthl
  *
  * Notes:
  * - The ZL1 is optional and might not be set at all.
@@ -222,7 +222,7 @@ bool DC::ClientExtGetZBlock::ClientExtGetZBlock::invoke(const char* data, size_t
  * - "$ADCGET list / 0 -1 ZL1"
  * - "$ADCGET list / 0 -1"
  * - "$ADCGET file /files.xml 0 -1"
- * - "$ADCGET tth1 TTH/PPUROLR2WSYTGPLCM3KV4V6LJC36SCTFQJFDJKA 0 -1"
+ * - "$ADCGET tthl TTH/PPUROLR2WSYTGPLCM3KV4V6LJC36SCTFQJFDJKA 0 -1"
  */
 bool DC::ClientExtADCGET::ClientExtADCGET::invoke(const char* data_, size_t length) {
 	if (length < 18) return false;
@@ -232,7 +232,8 @@ bool DC::ClientExtADCGET::ClientExtADCGET::invoke(const char* data_, size_t leng
 	switch (type) {
 		case FOURCC('f','i','l','e'):
 		case FOURCC('l','i','s','t'):
-		case FOURCC('t','t','h','1'):
+		case FOURCC('t','t','h','l'):
+		case FOURCC('t','t','h','1'):   /* what older QuickDC documented */
 			break;
 		default:
 			return false;
@@ -286,7 +287,8 @@ bool DC::ClientExtADCSND::ClientExtADCSND::invoke(const char* data_, size_t leng
 	switch (type) {
 		case FOURCC('f','i','l','e'):
 		case FOURCC('l','i','s','t'):
-		case FOURCC('t','t','h','1'):
+		case FOURCC('t','t','h','l'):
+		case FOURCC('t','t','h','1'):   /* what older QuickDC documented */
 			break;
 		default:
 			return false;

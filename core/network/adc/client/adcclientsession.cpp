@@ -523,64 +523,14 @@ Samurai::IO::File* ADC::ClientSession::openQueuedLeaves(const char* tth, uint64_
 {
 	QuickDC::Core* core = QuickDC::Core::getInstance();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
-	if (!queue) return 0;
-
-	QuickDC::QueueFile* qfile = queue->getFileByTTH(tth);
-	if (!qfile) return 0;
-
-	char* name = qfile->makeLeafFilename();
-	if (!name) return 0;
-
-	Samurai::IO::File* leaves = new Samurai::IO::File(name);
-	free(name);
-
-	if (!leaves->exists() || !leaves->size())
-	{
-		delete leaves;
-		return 0;
-	}
-
-	length = (uint64_t) leaves->size();
-	QDBG("Serving the leaf hashes of a file we are downloading");
-	return leaves;
+	return (queue) ? queue->openLeafFile(tth, length) : 0;
 }
 
 Samurai::IO::File* ADC::ClientSession::openQueuedFile(const char* tth, uint64_t offset, int64_t length, uint64_t& servable)
 {
 	QuickDC::Core* core = QuickDC::Core::getInstance();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
-	if (!queue) return 0;
-
-	QuickDC::QueueFile* qfile = queue->getFileByTTH(tth);
-	if (!qfile) return 0;
-
-	/* Only what the leaves have vouched for may go out. */
-	QuickDC::LeafHashes* leaves = qfile->getLeaves();
-	if (!leaves || !leaves->isLoaded()) return 0;
-
-	uint64_t runEnd = qfile->getChunks().getRunEnd(offset);
-	if (runEnd <= offset)
-	{
-		QDBG("Asked for %d of '%s', which we do not have", (int) offset, tth);
-		return 0;
-	}
-
-	if (length >= 0 && offset + (uint64_t) length > runEnd)
-	{
-		QDBG("Asked for more of '%s' than we have verified", tth);
-		return 0;
-	}
-
-	Samurai::IO::File* part = new Samurai::IO::File(qfile->getTempFilename());
-	if (!part->exists())
-	{
-		delete part;
-		return 0;
-	}
-
-	servable = runEnd;
-	QDBG("Serving %d-%d of a file we are downloading", (int) offset, (int) runEnd);
-	return part;
+	return (queue) ? queue->openVerifiedRange(tth, offset, length, servable) : 0;
 }
 
 void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, int64_t length, bool compress)
