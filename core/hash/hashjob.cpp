@@ -31,7 +31,7 @@ QuickDC::Hash::Job::Job(QuickDC::Hash::Manager* mgr_, enum QuickDC::Hash::HashTy
 		case HashTigerTree:
 		{
 			algo = new Samurai::Crypto::Digest::Tiger();
-			hasher = new Samurai::Crypto::Digest::MerkleTree(algo);
+			hasher = new Samurai::Crypto::Digest::MerkleTree(algo, 1024, QUICKDC_TTH_TREE_LEVELS);
 			break;
 		}
 		case HashMD5:

@@ -24,6 +24,13 @@ namespace IO {
 }
 }
 
+/**
+ * Levels of the tiger tree to keep, so 2^(n-1) leaves at most. This is how
+ * finely a download can be verified and re-shared: at 7 a 1GB file has 16MB
+ * leaves, at 13 it has 256KB ones and the tree stays under 100KB.
+ */
+#define QUICKDC_TTH_TREE_LEVELS 13
+
 namespace QuickDC {
 namespace Hash {
 

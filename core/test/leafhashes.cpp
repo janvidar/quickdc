@@ -6,6 +6,7 @@
 
 #include "quickdc.h"
 #include "network/leafhashes.h"
+#include "hash/hashjob.h"
 
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
@@ -41,10 +42,10 @@ static void write_file(size_t size, unsigned int seed)
 }
 
 /* Produce root and leaves exactly as the hash manager would. */
-static void hash_file(std::string& tth, Samurai::IO::Buffer& leafdata, size_t& leaves)
+static void hash_file(std::string& tth, Samurai::IO::Buffer& leafdata, size_t& leaves, size_t depth)
 {
 	Samurai::Crypto::Digest::Tiger* algo = new Samurai::Crypto::Digest::Tiger();
-	Samurai::Crypto::Digest::MerkleTree tree(algo);
+	Samurai::Crypto::Digest::MerkleTree tree(algo, 1024, depth);
 
 	Samurai::IO::File file(path);
 	file.open(Samurai::IO::File::Read);
@@ -64,14 +65,14 @@ static void hash_file(std::string& tth, Samurai::IO::Buffer& leafdata, size_t& l
 	delete algo;
 }
 
-static void run(const char* label, size_t size)
+static void run(const char* label, size_t size, size_t depth = 7)
 {
 	write_file(size, 4711);
 
 	std::string tth;
 	Samurai::IO::Buffer leafdata;
 	size_t leaves = 0;
-	hash_file(tth, leafdata, leaves);
+	hash_file(tth, leafdata, leaves, depth);
 
 	size_t length = leafdata.size();
 	char* data = leafdata.memdup(0, length);
@@ -192,6 +193,14 @@ int main(int argc, char** argv)
 	run("odd tail", 5000);
 	run("many leaves", 300000);
 	run("larger", 2 * 1024 * 1024);
+
+	/* Big enough that one leaf spans many blocks, so verifying a leaf has to
+	   rebuild a subtree rather than hash a single block. */
+	run("multi block leaves", 40 * 1024 * 1024);
+
+	/* The depth we hash our own shares at, so peers get these from us. */
+	run("deep tree", 8 * 1024 * 1024, QUICKDC_TTH_TREE_LEVELS);
+	run("deep tree, odd size", 5 * 1024 * 1024 + 777, QUICKDC_TTH_TREE_LEVELS);
 
 	Samurai::IO::File(path).remove();
 
