@@ -59,9 +59,16 @@ class ProtocolProbe : public Connection, public Samurai::TimerListener {
 		void EventDataAvailable(const Samurai::IO::Net::Socket*);
 		void EventCanWrite(const Samurai::IO::Net::Socket*);
 		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char*);
+		void EventTLSConnected(const Samurai::IO::Net::Socket*);
 
 	protected:
 		Samurai::Timer* timer;
+
+		/**
+		 * Set once a TLS handshake has completed, so the second pass of probe()
+		 * fingerprints the decrypted stream rather than the ClientHello.
+		 */
+		bool secure;
 };
 
 }

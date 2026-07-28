@@ -160,7 +160,7 @@ static bool probe_tcp_http(const char* buffer, size_t length) {
 }
 
 
-QuickDC::ProtocolProbe::ProtocolProbe(Samurai::IO::Net::Socket* sock) : QuickDC::Connection(sock, "Probing") {
+QuickDC::ProtocolProbe::ProtocolProbe(Samurai::IO::Net::Socket* sock) : QuickDC::Connection(sock, "Probing"), secure(false) {
 	timer = new Samurai::Timer(this, 30, true); /* if nothing happens in 30 seconds, close the connection */
 	manager->add(this);
 }
@@ -218,6 +218,12 @@ void QuickDC::ProtocolProbe::probeDatagram(Samurai::IO::Net::DatagramSocket* soc
 	}
 }
 
+void QuickDC::ProtocolProbe::EventTLSConnected(const Samurai::IO::Net::Socket*) {
+	QDBG("TLS handshake complete; fingerprinting the decrypted stream");
+	secure = true;
+	probe();
+}
+
 void QuickDC::ProtocolProbe::probe() {
 	static char buf[16] = {0,};
 	int len = socket->peek(buf, 16);
@@ -246,7 +252,7 @@ void QuickDC::ProtocolProbe::probe() {
 #ifdef DATADUMP
 			QDBG("ADC connection");
 #endif // DATADUMP
-			ADC::ClientSession* connection = new ADC::ClientSession(socket);
+			ADC::ClientSession* connection = new ADC::ClientSession(socket, 0, 0, 0, secure);
 			socket->setEventHandler(connection);
 			socket = 0;
 
@@ -266,21 +272,20 @@ void QuickDC::ProtocolProbe::probe() {
 			}
 
 #ifdef SSL_SUPPORT
-		} else if (probe_tcp_tls(buf, (size_t) len)) {
-			QDBG("Fixme: accept SSL connection");
-			
-#if 0
-			ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
-			if (hub) {
-				socket->TLSInitialize(true);
-				socket->TLSsendHandshake();
-
-				hub->onConnected(socket);
-				socket->setEventHandler(hub);
-				socket = 0;
+		} else if (!secure && probe_tcp_tls(buf, (size_t) len)) {
+			/*
+			 * Nothing can be fingerprinted through TLS, so finish the
+			 * handshake and probe again once the stream is readable.
+			 */
+			QDBG("TLS connection; deferring the probe until the handshake is done");
+			if (!socket->TLSInitialize(true))
+			{
+				QERR("Unable to accept a TLS connection");
+				close();
+				return;
 			}
-#endif // 0
-			
+			socket->TLSsendHandshake();
+
 #endif // SSL_SUPPORT
 		} else {
 			QDBG("Unknown connection handshake -- closing connection");
