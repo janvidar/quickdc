@@ -70,6 +70,14 @@ class User {
 		bool           setAddressIPv6(const char*);
 		const char*    getAddressIPv6() const;
 
+		/**
+		 * The keyprint of the certificate this user presents on ADCS peer
+		 * connections, as announced in the KP field of their INF. Empty if
+		 * they published none.
+		 */
+		bool           setKeyprint(const char*);
+		const char*    getKeyprint() const;
+
 		
 		bool           isOp() const;
 		bool           setOp();
@@ -105,6 +113,7 @@ class User {
 		
 		char            address_ipv4[16];
 		char            address_ipv6[40];
+		char            keyprint[64];
 		uint16_t        port_ipv4;
 		uint16_t        port_ipv6;
 		

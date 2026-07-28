@@ -507,6 +507,7 @@ static void cmd_info(const std::vector<std::string>& args)
 	printf("    E-mail:          %s\n", user->getEmail());
 	printf("    Shared size:     %s\n", getFormatSize(user->getSharedBytes()));
 	printf("    User-agent:      %s\n", user->getUserAgent());
+	printf("    Keyprint:        %s\n", *user->getKeyprint() ? user->getKeyprint() : "(none published)");
 	printf("    Stats:           %d slots, %d/%d/%d (op/reg/norm)\n",
 			user->getNumSlots(),
 			user->getHubsOperator(),

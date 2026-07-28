@@ -45,6 +45,7 @@ void QuickDC::User::clean() {
 	memset(privateID,   0,  64);
 	memset(address_ipv4,0,  16);
 	memset(address_ipv6,0,  40);
+	memset(keyprint,    0,  64);
 	
 	sessionID = 0;
 	shared = 0;
@@ -93,6 +94,7 @@ uint32_t    QuickDC::User::getAutoSlotSpeed() const    { return autoSlotSpeed; }
 uint32_t    QuickDC::User::getAutoSlotLimit() const    { return autoSlotLimit; }
 const char* QuickDC::User::getAddressIPv4() const      { return address_ipv4; }
 const char* QuickDC::User::getAddressIPv6() const      { return address_ipv6; }
+const char* QuickDC::User::getKeyprint() const         { return keyprint; }
 uint16_t    QuickDC::User::getPortIPv4() const         { return port_ipv4; }
 uint16_t    QuickDC::User::getPortIPv6() const         { return port_ipv6; }
 
@@ -168,4 +170,5 @@ bool        QuickDC::User::setAddressIPv4(const char* str) COPY_STR_IF_CHANGED(s
 bool        QuickDC::User::setAddressIPv6(const char* str) COPY_STR_IF_CHANGED(str, address_ipv6, 40);
 bool        QuickDC::User::setPortIPv4(uint16_t n)         COPY_NUM_IF_CHANGED(n, port_ipv4);
 bool        QuickDC::User::setPortIPv6(uint16_t n)         COPY_NUM_IF_CHANGED(n, port_ipv6);
+bool        QuickDC::User::setKeyprint(const char* str)    COPY_STR_IF_CHANGED(str, keyprint, 64);
 

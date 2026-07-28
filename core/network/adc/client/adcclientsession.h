@@ -66,8 +66,12 @@ class ClientSession :
 		 *               before speaking ADC. Only meaningful when we are the
 		 *               one dialling out: accepting an inbound TLS peer
 		 *               connection is not implemented, see probe.cpp.
+		 * @param keyprint the certificate the peer is expected to present, from
+		 *               the KP field of their INF. Only pass one when the hub
+		 *               that relayed it was itself verified; the connection is
+		 *               dropped if it does not match.
 		 */
-		ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession = 0, const char* token = 0, const char* sid = 0, bool secure = false);
+		ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession = 0, const char* token = 0, const char* sid = 0, bool secure = false, const char* keyprint = 0);
 		ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* hubsession = 0);
 		virtual ~ClientSession();
 		
@@ -146,7 +150,13 @@ class ClientSession :
 		char* remote_cid;
 
 		char* token;
-		
+
+		/**
+		 * The keyprint the peer's certificate has to match, or 0 if there is
+		 * nothing trustworthy to check it against.
+		 */
+		char* expected_keyprint;
+
 	protected: /* transfer related */
 
 		/** Tear down the current transfer, and the file if we own it. */

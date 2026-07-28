@@ -7,6 +7,7 @@
 #include "share/searchresult.h"
 #include "network/adc/adccommands.h"
 #include "network/adc/cid.h"
+#include "network/keyprint.h"
 
 /*****************************************************************************/
 /*****************************************************************************/
@@ -224,7 +225,30 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 		if (u->setAddressIPv6(cmd->getArgument("I6", 2))) changed = true;
 		if (u->setPortIPv4(port_ipv4)) changed = true;
 		if (u->setPortIPv6(port_ipv6)) changed = true;
-		
+
+		/*
+		 * KEYP: the keyprint the user says their certificate has. Unlike the
+		 * fields above this one is only touched when the field is actually
+		 * present - an INF update carries only what changed, and quietly
+		 * forgetting a keyprint would turn a later peer connection back into
+		 * an unverified one without anyone noticing.
+		 *
+		 * A keyprint we cannot read replaces the one we had, rather than
+		 * leaving a stale value behind to raise a false alarm against.
+		 */
+		if (cmd->haveArgument("KP", 2))
+		{
+			char* kp = cmd->getArgument("KP", 2);
+
+			if (kp && !QuickDC::Keyprint::isValid(kp))
+			{
+				QDBG("Ignoring the unusable keyprint '%s'", kp);
+				kp = 0;
+			}
+
+			if (u->setKeyprint(kp)) changed = true;
+		}
+
 		// TODO: Add active/passive mode.
 		session->onUserInfo(id, u, oldSize, changed);
 	}

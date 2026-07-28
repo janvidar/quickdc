@@ -121,7 +121,23 @@ class HubSession :
 		 * Check if the server supports a given feature.
 		 */
 		bool supports(const char* feature);
-		
+
+	protected:
+		/**
+		 * KEYP: compare the hub's certificate against the keyprint we expect,
+		 * before a single byte of the session is sent.
+		 *
+		 * @return false if the connection was dropped, and the caller must
+		 *         stop what it was doing.
+		 */
+		bool verifyKeyprint();
+
+		/** Report a keyprint failure and drop the connection for good. */
+		void reportKeyprintFailure(const char* msg);
+
+		/** The session group a remembered keyprint is filed under. */
+		const char* keyprintGroup() const;
+
 	private:
 		void EventUserJoin(const char* nick);
 		void EventUserQuit(const QuickDC::User* nick, const char* msg);
@@ -150,6 +166,20 @@ class HubSession :
 		char* hubdesc;
 		char* hubversion;
 		bool secure;
+
+		/** The keyprint from the 'kp' parameter of the hub address, if any. */
+		char* expectedKeyprint;
+
+		/**
+		 * Set once the hub has presented a certificate matching a keyprint we
+		 * already had - either one that came with the hub address, or the one
+		 * this hub used the last time we were here.
+		 *
+		 * This is what decides whether the KP fields the hub relays for other
+		 * users can be believed: a hub connection nobody has vouched for could
+		 * have had those fields rewritten en route.
+		 */
+		bool keyprintVerified;
 
 	public:
 		QuickDC::UserManager* users;

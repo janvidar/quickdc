@@ -175,17 +175,23 @@ int main(int argc, char** argv) {
 	// test hubs:
 	// - adc://dcdev.no-ip.org:16591
 	// - dcdev://dev.myhub.org:666
-	int port = 411;
-	char* host = 0;
-	const char* protocol = "dchub";
-	if (argc > 1)
-	{
-		host = argv[1];
-		if (strlen(host) > 8 && strncasecmp(host, "dchub://", 8) == 0)       host = &host[8]; /* default = dc, not adc */
-		else if (strlen(host) > 6 && strncasecmp(host, "adc://", 6) == 0)  { host = &host[6]; protocol = "adc"; }
-		else if (strlen(host) > 6 && strncasecmp(host, "adcs://", 7) == 0) { host = &host[7]; protocol = "adcs"; }
+	char* url_ = 0;
 
-		char* sport = strrchr(argv[1], ':');
+	/*
+	 * An address that already names a protocol is used exactly as given. The
+	 * query is part of it - an ADCS keyprint lives there - and rebuilding the
+	 * address from a host and a port would throw that away.
+	 */
+	if (argc > 1 && strstr(argv[1], "://"))
+	{
+		url_ = strdup(argv[1]);
+	}
+	else if (argc > 1)
+	{
+		int port = 411;
+		char* host = argv[1];
+
+		char* sport = strrchr(host, ':');
 		if (sport)
 		{
 			size_t n = 1;
@@ -194,20 +200,46 @@ int main(int argc, char** argv) {
 			sport[n] = '\0';
 			port = quickdc_atoi(&sport[1]);
 		}
+
+		if (*host && port > 0 && port <= 65535)
+		{
+			size_t url_size = strlen(host) + 24; /* "dchub://" + ":" + port + \0 */
+			url_ = (char*) malloc(url_size);
+			snprintf(url_, url_size, "dchub://%s:%d", host, port); /* default = dc, not adc */
+		}
 	}
 
 	Console::getInstance();
 
-	if (port <= 0 || port > 65535 || !host)
+	if (!url_)
 	{
-		console_printf("Usage: %s host[:port]\n", argv[0]);
+		console_printf("Usage: %s {url|host[:port]}\n", argv[0]);
 		exit(-1);
 	}
 
-	size_t url_size = strlen(host) + strlen(protocol) + 10; /* 10 = "://" + ":" + "12345" + \0 */
-	char* url_ = (char*) malloc(url_size);
-	snprintf(url_, url_size, "%s://%s:%d", protocol, host, port);
 	Samurai::IO::Net::URL* url = new Samurai::IO::Net::URL(url_);
+
+	/* A URL with no port of its own still gets the one the shorthand assumes. */
+	if (url->isValid() && !url->getPort())
+	{
+		std::string rebuilt = url->getScheme();
+		rebuilt += "://";
+		rebuilt += url->getHost().toString();
+		rebuilt += ":411";
+		rebuilt += url->getFile();
+
+		delete url;
+		free(url_);
+		url_ = strdup(rebuilt.c_str());
+		url = new Samurai::IO::Net::URL(url_);
+	}
+
+	if (!url->isValid())
+	{
+		console_printf("'%s' is not an address I can use.\n", url_);
+		exit(-1);
+	}
+
 	core = new QuickDC::Core();
 	core->transfers->addListener(&transferReporter);
 	hub = new HubConnection(url);
@@ -215,7 +247,7 @@ int main(int argc, char** argv) {
 	if (console_initialize() == -1) return -1;
 
 	console_printf("Welcome to " PRODUCT " " VERSION " test command shell\n");
-	console_printf("Type `/connect' to connect to `%s:%d', or `/help' to see available commands.\n\n", host, port);
+	console_printf("Type `/connect' to connect to `%s', or `/help' to see available commands.\n\n", url_);
 
 	signal(SIGINT, onTerminate);
 	signal(SIGTERM, onTerminate);

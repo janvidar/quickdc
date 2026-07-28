@@ -85,9 +85,9 @@ void HubConnection::EventHubStatus(enum StatusHub) {
 	// FIXME: Add this!
 }
 
-void HubConnection::EventSystemError(const char*)
+void HubConnection::EventSystemError(const char* msg)
 {
-	// FIXME: Add this!
+	console_printf("%s * ERROR: %s\n", getTimestamp(), msg ? msg : "");
 }
 
 void HubConnection::EventChat(const QuickDC::User* user, const char* message, bool action)

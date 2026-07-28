@@ -13,6 +13,7 @@
 #include "network/connectionmanager.h"
 #include "network/hubmanager.h"
 #include "network/hubsession.h"
+#include "network/keyprint.h"
 #include "network/securitymanager.h"
 #include "network/usermanager.h"
 #include "network/adc/adccommon.h"
@@ -55,9 +56,20 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	, hubdesc(0)
 	, hubversion(0)
 	, secure(secure_)
+	, expectedKeyprint(0)
+	, keyprintVerified(false)
 {
 	access = QuickDC::HubSession::AccessNormal;
 	userState = QuickDC::HubSession::StateNone;
+
+	/*
+	 * KEYP: a keyprint in the hub address is the one that means something. It
+	 * reached us with the address rather than over the connection it protects,
+	 * so it is not something an attacker in the middle can have written.
+	 */
+	std::string keyprint;
+	if (QuickDC::Keyprint::fromQuery(url->getQuery(), keyprint))
+		expectedKeyprint = strdup(keyprint.c_str());
 
 	cid = (char*) malloc(40);
 	pid = (char*) malloc(40);
@@ -126,6 +138,7 @@ ADC::HubSession::~HubSession()
 	free(sid);
 	free(address);
 	free(hubversion);
+	free(expectedKeyprint);
 	delete users;
 	delete infoTimer;
 	delete proxy;
@@ -189,8 +202,120 @@ void ADC::HubSession::EventConnected(const Samurai::IO::Net::Socket*)
 }
 
 
+/**
+ * KEYP: compare the certificate the hub just presented against the keyprint we
+ * expect it to have. The handshake is finished but nothing has been written
+ * yet, which is the one point where dropping the connection costs nothing.
+ *
+ * A keyprint that came with the hub address arrived out of band, so matching it
+ * really does authenticate the hub. A stored one only says the hub is showing
+ * the same certificate as last time; that catches a substitution, but says
+ * nothing at all about the first time we came here.
+ */
+bool ADC::HubSession::verifyKeyprint()
+{
+	std::string actual;
+	bool presented = QuickDC::Keyprint::ofPeer(socket, actual);
+
+	std::string trusted;
+	const char* source = 0;
+
+	if (expectedKeyprint)
+	{
+		trusted = expectedKeyprint;
+		source = "the hub address";
+	}
+	else
+	{
+		session->setGroup(keyprintGroup());
+		if (session->haveSetting("Keyprint"))
+		{
+			trusted = session->getString("Keyprint");
+			if (!trusted.empty()) source = "the last session with this hub";
+		}
+	}
+
+	if (source && !presented)
+	{
+		QERR("The hub presented no certificate to check against the keyprint from %s", source);
+		reportKeyprintFailure("The hub presented no certificate to check");
+		return false;
+	}
+
+	if (source && !QuickDC::Keyprint::equals(trusted.c_str(), actual.c_str()))
+	{
+		/*
+		 * The certificate we were actually given is deliberately not reported:
+		 * it is the mismatch that matters, and repeating an attacker's keyprint
+		 * back at the user only invites them to trust it.
+		 */
+		QERR("The hub's certificate does not match the keyprint from %s", source);
+		reportKeyprintFailure("Detected attempted man-in-the-middle attack, aborting");
+		return false;
+	}
+
+	if (source)
+	{
+		QDBG("The hub's certificate matches the keyprint from %s", source);
+		keyprintVerified = true;
+	}
+	else
+	{
+		QDBG("Nothing to check the hub's certificate against; remembering it");
+	}
+
+	/*
+	 * Either it matched or there was nothing to match it against. Keep it
+	 * whichever it was, so that a substitution shows up next time even if the
+	 * address is given without a keyprint then.
+	 */
+	if (presented)
+	{
+		session->setGroup(keyprintGroup());
+		session->setString("Keyprint", actual);
+		session->write();
+	}
+
+	return true;
+}
+
+
+/**
+ * Where a remembered keyprint lives. The session group is named after the
+ * address as it was typed, which for these purposes is too specific: the same
+ * hub with and without a 'kp' parameter is still the same certificate, so the
+ * canonical "{scheme}://{host}:{port}" is what it is filed under.
+ */
+const char* ADC::HubSession::keyprintGroup() const
+{
+	if (hub && hub->getUrl()) return hub->getUrl();
+	return address;
+}
+
+
+void ADC::HubSession::reportKeyprintFailure(const char* msg)
+{
+	std::string text("Crypto error: ");
+	text += msg;
+
+	listener->EventSystemError(text.c_str());
+	listener->EventNetStatus(QuickDC::HubListener::NetTlsError);
+
+	/*
+	 * Never come back on our own. This may well be a real attack that has just
+	 * been foiled, and reconnecting in a loop is how such an attack eventually
+	 * gets through.
+	 */
+	reconnect_time = -1;
+	userState = QuickDC::HubSession::StateNone;
+	socket->disconnect();
+}
+
+
 void ADC::HubSession::EventTLSConnected(const Samurai::IO::Net::Socket*)
 {
+	if (!verifyKeyprint()) return;
+
 	listener->EventNetStatus(QuickDC::HubListener::NetTlsConnected);
 	if (secure)
 	{
@@ -273,6 +398,26 @@ void ADC::HubSession::EventError(const Samurai::IO::Net::Socket*, enum Samurai::
 void ADC::HubSession::connect()
 {
 	reconnect_time = 60;
+
+	/*
+	 * A keyprint we cannot use must not be quietly treated as no keyprint at
+	 * all. That is precisely the case where the user believes the connection is
+	 * authenticated when nothing is checking it.
+	 */
+	if (expectedKeyprint && !QuickDC::Keyprint::isValid(expectedKeyprint))
+	{
+		QERR("The hub address carries a keyprint we cannot use: '%s'", expectedKeyprint);
+		listener->EventSystemError("The 'kp' in the hub address is not a SHA256 keyprint; not connecting");
+		return;
+	}
+
+	if (expectedKeyprint && !secure)
+	{
+		QERR("The hub address carries a keyprint, but names no encrypted protocol");
+		listener->EventSystemError("A keyprint can only be checked over ADCS; use an adcs:// address");
+		return;
+	}
+
 	proxy->connect();
 }
 
@@ -517,6 +662,14 @@ void ADC::HubSession::sendClientInfo()
 	cmd->addArgument("HN", quickdc_itoa(QuickDC::Core::getInstance()->hubs->countHubsNormal(), 10));
 	cmd->addArgument("HR", quickdc_itoa(QuickDC::Core::getInstance()->hubs->countHubsRegistered(), 10));
 	cmd->addArgument("HO", quickdc_itoa(QuickDC::Core::getInstance()->hubs->countHubsOperator(), 10));
+
+	/*
+	 * KEYP: publish what our own certificate hashes to, so a peer dialling us
+	 * over ADCS can tell that it reached us and not someone in between.
+	 */
+	std::string keyprint;
+	if (QuickDC::Keyprint::ofOwnCertificate(keyprint))
+		cmd->addArgument("KP", keyprint.c_str());
 
 	config->setGroup("Network");
 	QDBG("Active mode %d (server=%p)\n", config->getBool("Active mode") ? 1 : 0, QuickDC::Core::getInstance()->server);
@@ -1037,8 +1190,25 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	}
 #endif
 
+	/*
+	 * KEYP: the keyprint the hub relayed for this user is only worth checking if
+	 * the hub could not have rewritten it. That means our own connection to it
+	 * has to be ADCS and matched against a keyprint we already trusted -
+	 * otherwise whoever forged this CTM could just as easily forge the KP.
+	 */
+	const char* peerKeyprint = 0;
+
+	if (peerSecure && *user->getKeyprint())
+	{
+		if (keyprintVerified)
+			peerKeyprint = user->getKeyprint();
+		else
+			QDBG("Not checking the keyprint of '%s': this hub connection is not itself verified",
+				user->getNick());
+	}
+
 	Samurai::IO::Net::Socket* csock = new Samurai::IO::Net::Socket(0, ip, port);
-	ADC::ClientSession* connection = new ADC::ClientSession(csock, this, token, from, peerSecure);
+	ADC::ClientSession* connection = new ADC::ClientSession(csock, this, token, from, peerSecure, peerKeyprint);
 	csock->setEventHandler(connection);
 	csock->connect();
 }

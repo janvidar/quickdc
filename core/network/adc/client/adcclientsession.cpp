@@ -25,6 +25,7 @@
 #include "network/transfermanager.h"
 #include "network/downloadqueue.h"
 #include "network/filesource.h"
+#include "network/keyprint.h"
 #include "network/leafhashes.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/adccommands.h"
@@ -52,13 +53,14 @@ ADC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* h
 	token = 0;
 	remote_sid = 0;
 	remote_cid = 0;
+	expected_keyprint = 0;
 
 	initialize();
 	proxy = new ADC::CommandProxy(socket, this);
 	QDBG("ADC::ClientSession()");
 }
 
-ADC::ClientSession::ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession_, const char* token_, const char* sid_, bool secure_) :
+ADC::ClientSession::ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession_, const char* token_, const char* sid_, bool secure_, const char* keyprint_) :
 	QuickDC::Connection(sock, secure_ ? "ADCS client" : "ADC client"),
 	hubsession(hubsession_),
 	isClient(false),
@@ -66,9 +68,12 @@ ADC::ClientSession::ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSessio
 {
 	if (token_) token = strdup(token_);
 	else token = 0;
-	
+
 	if (sid_) remote_sid = strdup(sid_);
 	else remote_sid = 0;
+
+	if (keyprint_) expected_keyprint = strdup(keyprint_);
+	else expected_keyprint = 0;
 
 	remote_cid = 0;
 
@@ -96,6 +101,7 @@ ADC::ClientSession::~ClientSession()
 	free(token);
 	free(remote_sid);
 	free(remote_cid);
+	free(expected_keyprint);
 }
 
 void ADC::ClientSession::initialize()
@@ -875,6 +881,28 @@ void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
 void ADC::ClientSession::EventTLSConnected(const Samurai::IO::Net::Socket*)
 {
 	QDBG("TLS established with the peer");
+
+	/*
+	 * KEYP: the hub told us which certificate this peer holds, and it did so
+	 * over a connection we had already verified. Anything else answering here
+	 * is not the peer we asked for, so nothing may be said to it.
+	 */
+	if (expected_keyprint)
+	{
+		std::string actual;
+
+		if (!QuickDC::Keyprint::ofPeer(socket, actual)
+			|| !QuickDC::Keyprint::equals(expected_keyprint, actual.c_str()))
+		{
+			QERR("Crypto error: the peer's certificate does not match the keyprint "
+			     "the hub published for them; aborting");
+			socket->disconnect();
+			return;
+		}
+
+		QDBG("The peer's certificate matches the keyprint the hub published");
+	}
+
 	if (secure) onStartClient();
 }
 
