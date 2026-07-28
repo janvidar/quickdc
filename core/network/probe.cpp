@@ -6,7 +6,6 @@
 #include "api/core.h"
 #include "network/probe.h"
 #include "network/connectionmanager.h"
-#include "network/socketreaper.h"
 #include "network/dc/dcconnection.h"
 #include "network/dc/clientsession.h"
 #include "network/adc/client/adcclientsession.h"
@@ -181,14 +180,8 @@ void QuickDC::ProtocolProbe::close() {
 	delete timer;
 	timer = 0;
 
-	/*
-	 * Probing runs from inside the socket's own event handler, so the socket
-	 * outlives this object: the monitor is still holding it. The reaper
-	 * releases it once the dispatch is over.
-	 */
 	if (socket && socket->getEventHandler() == this) {
-		socket->setEventHandler(0);
-		QuickDC::retireSocket(std::move(socket));
+		socket.reset();
 	}
 	if (manager) manager->remove(this);
 }

@@ -15,7 +15,6 @@
 #include "network/adc/parser.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/cid.h"
-#include "network/socketreaper.h"
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/timestamp.h>
@@ -79,12 +78,12 @@ ADC::HubConnection::HubConnection(std::shared_ptr<Samurai::IO::Net::Socket> sock
 ADC::HubConnection::~HubConnection()
 {
 	/*
-	 * A user is normally dropped from inside a socket event handler, so the
-	 * socket cannot be destroyed here - the monitor goes on using it once the
-	 * handler returns. Clear the handler and let the reaper release it.
+	 * A user is normally dropped from inside one of its socket's own event
+	 * handlers. The monitor holds the socket for the duration of that callback,
+	 * so letting go of the last reference here is safe.
 	 */
 	socket->setEventHandler(0);
-	QuickDC::retireSocket(std::move(socket));
+	socket.reset();
 }
 
 void ADC::HubConnection::resetTimer() {

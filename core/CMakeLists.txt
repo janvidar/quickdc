@@ -25,7 +25,6 @@ set(QUICKDC_SOURCES
     network/leafhashes.cpp
     network/probe.cpp
     network/securitymanager.cpp
-    network/socketreaper.cpp
     network/transfer.cpp
     network/transfermanager.cpp
     network/user.cpp

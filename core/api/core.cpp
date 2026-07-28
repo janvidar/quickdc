@@ -23,7 +23,6 @@
 #include "network/downloadqueue.h"
 #include "network/hubmanager.h"
 #include "network/securitymanager.h"
-#include "network/socketreaper.h"
 #include "network/transfermanager.h"
 #include "network/adc/server/adchub.h"
 
@@ -87,11 +86,6 @@ QuickDC::Core::~Core()
 	delete config; config = 0;
 	delete hash; hash = 0;
 	delete localHub; localHub = 0;
-
-	/* Whatever the teardown above retired has to go now, while the socket
-	   monitor is still around to deregister it. */
-	reapSockets();
-
 	delete bandwidthManager;
 	delete messageHandler; messageHandler = 0;
 	QDBG_FINI;
@@ -133,10 +127,6 @@ void QuickDC::Core::run()
 	// FIXME: it should be sorted so we don't have to iterate ALL timers to before exit.
 	timers->process();
 	messageHandler->process();
-
-	// Release sockets that were dropped while their own event handler was
-	// running. No dispatch is in progress here, which is the whole point.
-	reapSockets();
 }
 
 
