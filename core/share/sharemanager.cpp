@@ -339,7 +339,7 @@ void QuickDC::Share::Manager::addLookupFile(const char* name, const char* tth, Q
 }
 
 #ifdef WIN32
-extern char* quickdc_strcasestr(char* haystack, char* needle);
+extern char* samurai_strcasestr(char* haystack, char* needle);
 #endif
 
 void QuickDC::Share::Manager::search(SearchRequest* req) {
@@ -379,7 +379,7 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 			/* inclusive search */
 			for (size_t i = 0; i < req->include.size() && line; i++) {
 #ifdef WIN32
-				line = quickdc_strcasestr((char*) line, (char*) req->include[i]);
+				line = samurai_strcasestr((char*) line, (char*) req->include[i]);
 #else
 				line = strcasestr(line, req->include[i]);
 #endif
@@ -390,7 +390,7 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 			/* exclude search */
 			for (size_t i = 0; i < req->exclude.size() && line; i++) {
 #ifdef WIN32
-				line = quickdc_strcasestr((char*) line, (char*) req->exclude[i]);
+				line = samurai_strcasestr((char*) line, (char*) req->exclude[i]);
 #else
 				line = strcasestr(line, req->exclude[i]);
 #endif

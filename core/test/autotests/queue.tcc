@@ -1206,7 +1206,7 @@ EXO_TEST(nmdc_sr_short_tth_is_ignored, {
 
 EXO_TEST(nmdc_sr_slot_counts, {
 	/*
-	 * Worth its own case: "{free}/{total}" cannot go through quickdc_atoi(),
+	 * Worth its own case: "{free}/{total}" cannot go through samurai_atoi(),
 	 * which reads "2/4" as -6 because it skips the slash as if it were leading
 	 * padding and then keeps going.
 	 */

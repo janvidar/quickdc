@@ -55,8 +55,8 @@ bool ADC::CCmdGET::invoke(ADC::Command* cmd) {
 	/* getArgument() strips the name, so the flag is at [0]. */
 	char* t_zl = cmd->getArgument("ZL", 2, 4);
 	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
-	uint64_t offset = quickdc_atoull(toff);
-	int64_t len = quickdc_atoll(tlen);
+	uint64_t offset = samurai_atoull(toff);
+	int64_t len = samurai_atoll(tlen);
 	bool zl = (t_zl && t_zl[0] == '1');
 
 	session->onGET(file, type, offset, len, zl);
@@ -73,8 +73,8 @@ bool ADC::CCmdSND::invoke(ADC::Command* cmd) {
 	/* getArgument() strips the name, so the flag is at [0]. */
 	char* t_zl = cmd->getArgument("ZL", 2, 4);
 	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
-	uint64_t offset = quickdc_atoull(toff);
-	int64_t len = quickdc_atoll(tlen);
+	uint64_t offset = samurai_atoull(toff);
+	int64_t len = samurai_atoll(tlen);
 	bool zl = (t_zl && t_zl[0] == '1');
 
 	session->onSND(file, type, offset, len, zl);
@@ -142,7 +142,7 @@ bool ADC::CmdGetPass::invoke(ADC::Command* cmd) {
 	if (cmd->haveArgument(prefix, 2)) { \
 		var = 0; \
 		char* extract_int_tmp__ = cmd->getArgument(prefix, 2); \
-		if (extract_int_tmp__) var = quickdc_atoi(extract_int_tmp__); \
+		if (extract_int_tmp__) var = samurai_atoi(extract_int_tmp__); \
 	}
 
 bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
@@ -188,7 +188,7 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 		uint64_t oldSize = u->getSharedBytes();
 		uint64_t shared = 0;
 		tmp = cmd->getArgument("SS", 2);
-		if (tmp) shared = quickdc_atoll(tmp);
+		if (tmp) shared = samurai_atoll(tmp);
 			
 		uint32_t numslots = 0;
 		EXTRACT_INT(numslots, "SL");
@@ -327,13 +327,13 @@ bool ADC::CmdSearch::invoke(ADC::Command* cmd) {
 	uint64_t size = 0;
 	if (szeq) {
 		size_type = QuickDC::Share::SearchRequest::SizeExact;
-		size = quickdc_atoull(szeq);
+		size = samurai_atoull(szeq);
 	} else if (szge) {
 		size_type = QuickDC::Share::SearchRequest::SizeMin;
-		size = quickdc_atoull(szge);
+		size = samurai_atoull(szge);
 	} else if (szle) {
 		size_type = QuickDC::Share::SearchRequest::SizeMax;
-		size = quickdc_atoull(szle);
+		size = samurai_atoull(szle);
 	}
 	
 	char* token = cmd->getArgument("TO", 2);
@@ -384,9 +384,9 @@ bool ADC::CmdResult::invoke(ADC::Command* cmd) {
 		return false;
 	}
 
-	uint64_t size = (s_size) ? quickdc_atoull(s_size) : 0;
-	size_t depth  = (s_depth) ? (size_t) quickdc_atoi(s_depth) : 0;
-	size_t slots  = (s_slots) ? (size_t) quickdc_atoi(s_slots) : 0;
+	uint64_t size = (s_size) ? samurai_atoull(s_size) : 0;
+	size_t depth  = (s_depth) ? (size_t) samurai_atoi(s_depth) : 0;
+	size_t slots  = (s_slots) ? (size_t) samurai_atoi(s_slots) : 0;
 
 	QuickDC::Share::SearchResult* result =
 		new QuickDC::Share::SearchResult(filename, size, slots, tth, depth, token);
@@ -432,7 +432,7 @@ bool ADC::CmdPartialStatus::invoke(ADC::Command* cmd) {
 bool ADC::CmdCTM::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::Normal);
 	char* proto = cmd->getArgument(0);
-	int port    = quickdc_atoi(cmd->getArgument(1));
+	int port    = samurai_atoi(cmd->getArgument(1));
 
 	char* token = adc_connect_token(cmd, 2);
 

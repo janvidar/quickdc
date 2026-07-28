@@ -276,7 +276,7 @@ bool DC::MyINFO::invoke(const char* data_, size_t) {
 	if (!split) { free(data); return false; }
 	sharesize = start;
 	split[0] = '\0';
-	shared = quickdc_atoll(sharesize);
+	shared = samurai_atoll(sharesize);
 	
 	// extract flags from speed field.
 	if (strlen(speed) > 1) {
@@ -499,7 +499,7 @@ bool DC::Search::invoke(const char* data, size_t length) {
 	}
 	
 	char* size_str = strndup(&req[5], &typeoffset[0] - &req[5]);
-	uint64_t size = quickdc_atoull(size_str);
+	uint64_t size = samurai_atoull(size_str);
 	request->setSize(size);
 	
 	if (size == 0) s_policy = QuickDC::Share::SearchRequest::SizeAny; // any size
@@ -551,7 +551,7 @@ bool DC::Search::invoke(const char* data, size_t length) {
 /**
  * Strict unsigned decode: every character has to be a digit.
  *
- * quickdc_atoi()/quickdc_atoull() are no use for a field that might contain
+ * samurai_atoi()/samurai_atoull() are no use for a field that might contain
  * anything else. They count every non-digit anywhere in the string as leading
  * padding to be skipped, then read from there to the end without validating,
  * so "2/4" comes back as -6 rather than 2.

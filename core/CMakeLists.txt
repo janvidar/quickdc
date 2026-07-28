@@ -5,13 +5,16 @@
 
 # Translated from build/Makefile.sources. Kept in the same order and grouping.
 #
-# NOTE: four .cpp files under core/ are deliberately absent, matching the
+# NOTE: three .cpp files under core/ are deliberately absent, matching the
 # Makefile build, which never listed them:
 #   api/cli.cpp, network/adc/server/adctun.cpp,
 #   xml/parser.cpp  - unreferenced/unfinished
-#   debug/dbg.cpp   - the QuickDC_Debug/QERR/QNET symbols it defines are also
-#                     built into samurai (src/debug/dbg.cpp), so linking this
-#                     one too would be a duplicate definition.
+#
+# debug/dbg.cpp used to be absent as well, because the QuickDC_Debug/QERR/QNET
+# symbols it defines were also built into samurai and linking both would have
+# been a duplicate definition. Samurai has since renamed its copies to
+# samurai_debug() and friends, so the two no longer collide - and QuickDC has to
+# build its own, since nothing provides QuickDC_Debug otherwise.
 set(QUICKDC_SOURCES
     network/chunkmap.cpp
     network/commandparser.cpp
@@ -73,6 +76,7 @@ set(QUICKDC_SOURCES
     config/backend.cpp
     config/iniparser.cpp
     config/preferences.cpp
+    debug/dbg.cpp
     api/core.cpp
     api/hub.cpp
     api/server.cpp

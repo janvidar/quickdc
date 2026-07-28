@@ -104,7 +104,7 @@ const char* DC::Tag::getUserAgent() {
 
 uint32_t DC::Tag::getSlots() {
 	if (!slotcount) return 0;
-	int nslots = quickdc_atoi(slotcount);
+	int nslots = samurai_atoi(slotcount);
 	if (nslots < 0) return 0;
 	return (uint32_t) nslots;
 }
@@ -124,9 +124,9 @@ bool DC::Tag::getHubCount(int& op, int& registered, int& regular) {
 	if (!split1 || !split2 || split1 == split2) return false;
 	split1[0] = '\0';
 	split2[0] = '\0';
-	op = quickdc_atoi(tmp);
-	registered =  quickdc_atoi(&split1[1]);
-	regular = quickdc_atoi(&split2[1]);
+	op = samurai_atoi(tmp);
+	registered =  samurai_atoi(&split1[1]);
+	regular = samurai_atoi(&split2[1]);
 	free(tmp);
 	return true;
 }

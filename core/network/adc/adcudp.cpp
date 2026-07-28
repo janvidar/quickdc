@@ -137,9 +137,9 @@ void ADC::DatagramHandler::onSearchResult(ADC::Command* cmd)
 	QuickDC::UserManager* users = hub->getUserManager();
 	if (!users) return;
 
-	uint64_t size = (s_size) ? quickdc_atoull(s_size) : 0;
-	size_t depth  = (s_depth) ? (size_t) quickdc_atoi(s_depth) : 0;
-	size_t slots  = (s_slots) ? (size_t) quickdc_atoi(s_slots) : 0;
+	uint64_t size = (s_size) ? samurai_atoull(s_size) : 0;
+	size_t depth  = (s_depth) ? (size_t) samurai_atoi(s_depth) : 0;
+	size_t slots  = (s_slots) ? (size_t) samurai_atoi(s_slots) : 0;
 
 	QuickDC::Share::SearchResult* result =
 		new QuickDC::Share::SearchResult(filename, size, slots, tth, depth, token);

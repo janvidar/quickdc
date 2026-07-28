@@ -6,9 +6,9 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "debug/dbg.h"
-
-#include "sys/io/file.h"
+#include <samurai/io/file.h>
 
 #define DUMP_FILE_NETWORK "~/.quickdc/debug/network.log"
 #define DUMP_FILE_SEARCH  "~/.quickdc/debug/search.log"
@@ -18,7 +18,7 @@
 
 #define PREFIX "../"
 
-#ifdef WIN32
+#ifdef SAMURAI_OS_WINDOWS
 #define ENDLINE "\r\n"
 #else
 #define ENDLINE "\n"
@@ -27,34 +27,41 @@
 #define DUPLICATE_TO_DEBUG
 
 
-static System::IO::File* quickdc_dump_net;
-static System::IO::File* quickdc_dump_sch;
-static System::IO::File* quickdc_dump_dbg;
-static System::IO::File* quickdc_dump_hub;
+static Samurai::IO::File* quickdc_dump_net;
+static Samurai::IO::File* quickdc_dump_sch;
+static Samurai::IO::File* quickdc_dump_dbg;
+static Samurai::IO::File* quickdc_dump_hub;
 #ifdef QUICKDC_MEMDBG
-static System::IO::File* quickdc_dump_mem;
+static Samurai::IO::File* quickdc_dump_mem;
 #endif
 
+static bool g_debug_stderr = false;
 
 void QuickDC_Debug_Init() {
 	fprintf(stderr, "%s starting up...\n", PRODUCT " " VERSION " (build " BUILD ") - debug code enabled");
 	
-	System::IO::File::mkdir("~/.quickdc",       0700);
-	System::IO::File::mkdir("~/.quickdc/debug",   0700);
+	Samurai::IO::File::mkdir("~/.quickdc",       0700);
+	Samurai::IO::File::mkdir("~/.quickdc/debug",   0700);
+	
+	if (getenv("QUICKDC_DEBUG"))
+	{
+		g_debug_stderr = true;
+		fprintf(stderr, "    (dumping debug messages to stderr)\n");
+	}
 	
 #ifdef QUICKDC_MEMDBG
-	quickdc_dump_mem = new System::IO::File(DUMP_FILE_MEM);
-	quickdc_dump_mem->open(System::IO::File::MODEWO, true);
+	quickdc_dump_mem = new Samurai::IO::File(DUMP_FILE_MEM);
+	quickdc_dump_mem->open(Samurai::IO::File::Write | Samurai::IO::File::Truncate);
 #endif
 	
-	quickdc_dump_net = new System::IO::File(DUMP_FILE_NETWORK);
-	quickdc_dump_sch = new System::IO::File(DUMP_FILE_SEARCH);
-	quickdc_dump_dbg = new System::IO::File(DUMP_FILE_DEBUG);
-	quickdc_dump_hub = new System::IO::File(DUMP_FILE_HUB);
-	quickdc_dump_net->open(System::IO::File::MODEWO, true);
-	quickdc_dump_sch->open(System::IO::File::MODEAPPEND);
-	quickdc_dump_dbg->open(System::IO::File::MODEWO, true);
-	quickdc_dump_hub->open(System::IO::File::MODEAPPEND);
+	quickdc_dump_net = new Samurai::IO::File(DUMP_FILE_NETWORK);
+	quickdc_dump_sch = new Samurai::IO::File(DUMP_FILE_SEARCH);
+	quickdc_dump_dbg = new Samurai::IO::File(DUMP_FILE_DEBUG);
+	quickdc_dump_hub = new Samurai::IO::File(DUMP_FILE_HUB);
+	quickdc_dump_net->open(Samurai::IO::File::Write | Samurai::IO::File::Truncate);
+	quickdc_dump_sch->open(Samurai::IO::File::Write | Samurai::IO::File::Append);
+	quickdc_dump_dbg->open(Samurai::IO::File::Write | Samurai::IO::File::Truncate);
+	quickdc_dump_hub->open(Samurai::IO::File::Write | Samurai::IO::File::Append);
 	
 }
 
@@ -83,7 +90,7 @@ void QuickDC_Debug(const char* /*func*/, const char* file, int line, const char 
 	shortfile = (shortfile ? shortfile + strlen(separator) + 1 : file);
 	snprintf(location, 1024, "%32s:%u\t ", shortfile, line);
 	
-	if (!quickdc_dump_dbg)
+	if (!quickdc_dump_dbg || g_debug_stderr)
 	{
 		fprintf(stderr, "DEBUG: %s: %s\n", location, logmsg);
 		return;

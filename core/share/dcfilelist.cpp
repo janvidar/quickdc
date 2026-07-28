@@ -107,7 +107,7 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 			else if (strcasecmp(list[n].first, "TTH") == 0)
 				tth = list[n].second;
 			else if (strcasecmp(list[n].first, "Size") == 0)
-				size = quickdc_atoull(list[n].second);
+				size = samurai_atoull(list[n].second);
 		}
 		if (name && tth)
 			new Share::RemoteFile(name, size, tth, currentDir);

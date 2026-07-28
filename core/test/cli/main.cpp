@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
 			for (; sport[n] && isdigit(sport[n]); n++) {} /* ignore trailing data */
 			sport[0] = '\0';
 			sport[n] = '\0';
-			port = quickdc_atoi(&sport[1]);
+			port = samurai_atoi(&sport[1]);
 		}
 
 		if (*host && port > 0 && port <= 65535)
