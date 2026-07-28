@@ -113,9 +113,10 @@ set_target_properties(quickdc PROPERTIES
 # The -D block from Makefile.common. PUBLIC because these appear in code
 # reachable from the headers the test programs compile against.
 #
-# Not carried over: SSL_OPENSSL, _FILE_OFFSET_BITS=64 and DEBUG, which samurai
-# already exports as PUBLIC definitions - defining them here as well would risk
-# disagreeing with the library about struct layout.
+# Not carried over: _FILE_OFFSET_BITS=64 and DEBUG, which samurai already
+# exports as PUBLIC definitions - defining them here as well would risk
+# disagreeing with the library about struct layout. There is no TLS switch to
+# carry over any more: samurai has one mandatory backend and no macro naming it.
 target_compile_definitions(quickdc
     PUBLIC
         PRODUCT="${QUICKDC_PRODUCT}"
@@ -136,8 +137,10 @@ target_compile_definitions(quickdc PRIVATE ZLIB BZIP2)
 
 # samurai::samurai_static carries its own include directories, the OpenSSL,
 # zlib, bzip2 and pthread link dependencies, the C++20 usage requirement, and
-# the SSL_OPENSSL / _FILE_OFFSET_BITS / DEBUG definitions. PUBLIC: QuickDC's
-# headers include samurai headers, so consumers need all of it as well.
+# the _FILE_OFFSET_BITS / DEBUG definitions. OpenSSL comes through as PUBLIC
+# because samurai's tlsfactory-openssl.h is a public header that includes
+# <openssl/ssl.h>. PUBLIC here too: QuickDC's headers include samurai headers,
+# so consumers need all of it as well.
 target_link_libraries(quickdc PUBLIC samurai::samurai_static)
 
 # Dropped from Makefile.system: the Perl-based endianness probe that set

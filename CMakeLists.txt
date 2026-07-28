@@ -36,6 +36,23 @@ option(QUICKDC_BUILD_TESTS "Build the test programs and the autotest suite" ON)
 option(QUICKDC_MEMDBG "Build the debug allocator (dlmalloc + allocation tracing)" OFF)
 
 # ---------------------------------------------------------------------------
+# TLS
+#
+# There is no such thing as a QuickDC without TLS. ADCS, the TLS fingerprinting
+# the protocol probe does on an inbound connection, and KEYP certificate
+# pinning are all unconditional - the SSL_SUPPORT switch that used to guard
+# them is gone, and so is every #ifdef that went with it.
+#
+# Samurai requires the same library and owns the version floors: OpenSSL 3.0 or
+# newer, or LibreSSL 3.5 or newer, which FindOpenSSL reports under the same
+# name and imported targets. GnuTLS is no longer a backend. Asking here as well
+# means a missing library is a configure error against QuickDC rather than a
+# link failure at the end of a build.
+# ---------------------------------------------------------------------------
+
+find_package(OpenSSL REQUIRED)
+
+# ---------------------------------------------------------------------------
 # Samurai submodule
 # ---------------------------------------------------------------------------
 
@@ -108,6 +125,7 @@ message(STATUS "  Build type      : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build id        : ${QUICKDC_BUILD_ID}")
 message(STATUS "  Target          : ${QUICKDC_SYSTEM}/${QUICKDC_CPU}")
 message(STATUS "  Samurai         : static (in-tree submodule)")
+message(STATUS "  TLS             : mandatory (backend reported above)")
 message(STATUS "  Debug allocator : ${QUICKDC_MEMDBG}")
 message(STATUS "  Build tests     : ${QUICKDC_BUILD_TESTS}")
 message(STATUS "")

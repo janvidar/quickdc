@@ -239,31 +239,23 @@ void QuickDC::ProtocolProbe::EventTLSConnected(const Samurai::IO::Net::Socket*) 
 
 void QuickDC::ProtocolProbe::probe() {
 	static char buf[16] = {0,};
-	size_t len = 0;
-	std::error_code ec;
 
-	switch (socket->peek(buf, 16, len, ec)) {
-		case Samurai::IO::ReadOk:
-			break;
+	/*
+	 * Not the result returning peek(): that one reads the descriptor directly
+	 * and never consults the TLS layer, so on an ADCS connection it hands back
+	 * the encrypted record rather than the handshake we are here to fingerprint,
+	 * and every probe below fails on it. This overload does go through TLS, at
+	 * the cost of answering 0 for would-block, end of stream and error alike.
+	 *
+	 * Nothing to look at yet is the normal state right after a TLS handshake
+	 * completes - the peer's first application data has not arrived - so wait
+	 * for more instead of dropping the connection. Nothing is leaked by
+	 * waiting: the 30 second timer closes a connection that stays silent.
+	 */
+	ssize_t len = socket->peek(buf, 16);
+	if (len <= 0) return;
 
-		/*
-		 * Nothing to look at yet. This is the normal state right after a TLS
-		 * handshake completes - the peer's first application data has not
-		 * arrived - so wait for more instead of dropping the connection.
-		 * Nothing is leaked by waiting: the 30 second timer closes a
-		 * connection that stays silent.
-		 */
-		case Samurai::IO::ReadWouldBlock:
-			return;
-
-		/* A peer that left, or broke, is never going to be fingerprinted. */
-		case Samurai::IO::ReadEndOfFile:
-		case Samurai::IO::ReadError:
-			close();
-			return;
-	}
-
-	if (probe_tcp_adchub(buf, len)) {
+	if (probe_tcp_adchub(buf, (size_t) len)) {
 		ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
 		if (hub) {
 #ifdef DATADUMP
@@ -274,7 +266,7 @@ void QuickDC::ProtocolProbe::probe() {
 			socket.reset();
 		}
 
-	} else if (probe_tcp_dc(buf, len)) {
+	} else if (probe_tcp_dc(buf, (size_t) len)) {
 #ifdef DATADUMP
 		QDBG("DC connection");
 #endif // DATADUMP
@@ -282,7 +274,7 @@ void QuickDC::ProtocolProbe::probe() {
 		socket->setEventHandler(connection);
 		socket.reset();
 
-	} else if (probe_tcp_adc(buf, len)) {
+	} else if (probe_tcp_adc(buf, (size_t) len)) {
 #ifdef DATADUMP
 		QDBG("ADC connection");
 #endif // DATADUMP
@@ -290,7 +282,7 @@ void QuickDC::ProtocolProbe::probe() {
 		socket->setEventHandler(connection);
 		socket.reset();
 
-	} else if (probe_tcp_http(buf, len)) {
+	} else if (probe_tcp_http(buf, (size_t) len)) {
 #ifdef DATADUMP
 		QDBG("HTTP connection");
 #endif // DATADUMP
@@ -305,7 +297,7 @@ void QuickDC::ProtocolProbe::probe() {
 			QERR("HTTP server is disabled -- closing connection");
 		}
 
-	} else if (!secure && probe_tcp_tls(buf, len)) {
+	} else if (!secure && probe_tcp_tls(buf, (size_t) len)) {
 		/* Nothing can be fingerprinted through TLS, so finish the handshake
 		   and probe again once the decrypted stream is readable. */
 		QDBG("TLS connection; deferring the probe until the handshake is done");
