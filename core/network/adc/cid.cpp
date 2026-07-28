@@ -7,7 +7,7 @@
 #include <string.h>
 #include "quickdc.h"
 #include "network/adc/cid.h"
-#include <samurai/crypto/digest/tigertree.h>
+#include <samurai/crypto/digest/tiger.h>
 #include "config/preferences.h"
 #include "api/core.h"
 #include <samurai/timestamp.h>
@@ -71,14 +71,14 @@ bool ADC::CID::verifyCIDandPID(const char* cid, const char* pid) {
 	if (!verify(cid) || !verify(pid)) return false;
 	
 	char x_cid[HASH];
-	uint8_t raw_pid[TIGERSIZE];
+	uint8_t raw_pid[TIGER_HASH_SIZE];
 	
-	base32_decode(pid, (unsigned char*) raw_pid, TIGERSIZE);
+	base32_decode(pid, (unsigned char*) raw_pid, TIGER_HASH_SIZE);
 	
 	Samurai::Crypto::Digest::Tiger tiger;
 	Samurai::Crypto::Digest::HashValue* value;
 	
-	tiger.update(raw_pid, TIGERSIZE);
+	tiger.update(raw_pid, TIGER_HASH_SIZE);
 	value = tiger.digest();
 	value->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, x_cid, HASH);
 	
@@ -156,12 +156,12 @@ bool ADC::CID::load() {
 
 	
 
-	uint8_t pid_decoded[TIGERSIZE] = { 0, };
-	base32_decode(pid, (unsigned char*) pid_decoded, TIGERSIZE);
+	uint8_t pid_decoded[TIGER_HASH_SIZE] = { 0, };
+	base32_decode(pid, (unsigned char*) pid_decoded, TIGER_HASH_SIZE);
 	
 	Samurai::Crypto::Digest::Tiger tiger;
 	Samurai::Crypto::Digest::HashValue* value;
-	tiger.update(pid_decoded, TIGERSIZE);
+	tiger.update(pid_decoded, TIGER_HASH_SIZE);
 	value = tiger.digest();
 	value->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, cid, HASH);
 	

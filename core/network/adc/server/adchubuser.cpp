@@ -49,7 +49,7 @@
 	} \
 	if (CMD->haveArgument("U4", 2)) { \
 		char* str_port = CMD->getArgument("U4", 2); \
-		int port = samurai_atoi(str_port); \
+		int port = Samurai::Util::Convert::to_int32(str_port); \
 		if (port <= 0 || port > 65535) { \
 			CMD->removeArgument("U4", 2); \
 			ADC::Command x_cmd(FOURCC('I','S','T','A')); \

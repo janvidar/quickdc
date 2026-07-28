@@ -519,7 +519,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 				return;
 			}
 
-			uint64_t size = samurai_atoull(s_size);
+			uint64_t size = Samurai::Util::Convert::to_uint64(s_size);
 			if (!size)
 			{
 				error("<File> has a zero or unreadable size");
@@ -531,7 +531,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 			current->setPriority(QueueFile::convertPriority(prio));
 
 			if (s_added)
-				current->added = Samurai::TimeStamp((time_t) samurai_atoll(s_added));
+				current->added = Samurai::TimeStamp((time_t) Samurai::Util::Convert::to_int64(s_added));
 		}
 
 		void startSource(AttributeList& list)
@@ -557,9 +557,9 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 			const char* s_lastseen = getAttribute(list, "lastseen");
 
 			if (s_retries)
-				source->setRetryCount((size_t) samurai_atoi(s_retries));
+				source->setRetryCount((size_t) Samurai::Util::Convert::to_int32(s_retries));
 			if (s_lastseen)
-				source->setLastSeen(Samurai::TimeStamp((time_t) samurai_atoll(s_lastseen)));
+				source->setLastSeen(Samurai::TimeStamp((time_t) Samurai::Util::Convert::to_int64(s_lastseen)));
 
 			if (source->isExpired())
 			{
@@ -584,8 +584,8 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 				return;
 			}
 
-			uint64_t start = samurai_atoull(s_start);
-			uint64_t end = samurai_atoull(s_end);
+			uint64_t start = Samurai::Util::Convert::to_uint64(s_start);
+			uint64_t end = Samurai::Util::Convert::to_uint64(s_end);
 
 			if (end <= start || end > current->getSize())
 			{

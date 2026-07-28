@@ -29,7 +29,7 @@ int Preferences::getNumber(const std::string& key, const int defval) {
 	group& settings = groups[current];
 	if (settings.find(key) != settings.end()) {
 		std::string val = settings[key];
-		return samurai_atoi(val.c_str());
+		return Samurai::Util::Convert::to_int32(val.c_str());
 	} else {
 		setNumber(key, defval);
 		return defval;
@@ -87,7 +87,7 @@ Samurai::TimeStamp Preferences::getTime(const std::string& key) {
 	group& settings = groups[current];
 	if (settings.find(key) != settings.end()) {
 		std::string val = settings[key];
-		Samurai::TimeStamp now = Samurai::TimeStamp(samurai_atoi(val.c_str()));
+		Samurai::TimeStamp now = Samurai::TimeStamp(Samurai::Util::Convert::to_int32(val.c_str()));
 		return now;
 	} else {
 		Samurai::TimeStamp now;

@@ -969,7 +969,7 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 				return;
 		}
 
-		switch (samurai_atoi(&code[1]))
+		switch (Samurai::Util::Convert::to_int32(&code[1]))
 		{
 			case ADC_STATUS_DOMAIN_GENERIC: // Ignored
 				return;
@@ -1050,7 +1050,7 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 				{
 					char* arg = cmd->getArgument("TL", 2, 1);
 					if (arg && strlen(arg)) {
-						reconnect_time = samurai_atoi(arg);
+						reconnect_time = Samurai::Util::Convert::to_int32(arg);
 						if (reconnect_time == 0)
 							reconnect_time = -1;
 						else

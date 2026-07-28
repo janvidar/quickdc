@@ -29,8 +29,6 @@
 #include "share/sharemanager.h"
 #include "hash/hashmanager.h"
 
-extern "C" QuickDC::Core* quickdc_core;
-
 QuickDC::Core::Core()
 {
 	QDBG_INIT;

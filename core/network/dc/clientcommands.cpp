@@ -61,7 +61,7 @@ bool DC::ClientDirection::ClientDirection::invoke(const char* data, size_t lengt
 	else if (strncmp(&data[11], "Download", 8) == 0) upload = false;
 	else return false;
 	
-	priority = samurai_atoi(&split[1]);
+	priority = Samurai::Util::Convert::to_int32(&split[1]);
 	if (priority == 0) return false;
 	
 	session->onDirection( (upload) ? DC::ClientSession::DirUpload : DC::ClientSession::DirDownload, priority);
@@ -83,7 +83,7 @@ bool DC::ClientError::ClientError::invoke(const char* data, size_t length) {
  */
 bool DC::ClientFileLength::ClientFileLength::invoke(const char* data, size_t length) {
 	if (length < 12) return false;
-	uint64_t size = samurai_atoll(&data[12]);
+	uint64_t size = Samurai::Util::Convert::to_int64(&data[12]);
 	session->onFileSize(size);
 	return true;
 }
@@ -124,8 +124,8 @@ bool DC::ClientGet::ClientGet::invoke(const char* data, size_t length) {
 		char* filename = strndup(&data[5], &split2[0]-&data[5]);
 		char* off = strndup(&split2[1], &split[0]-&split2[1]);
 	
-		uint64_t offset = samurai_atoll(off) - 1;
-		uint64_t length = samurai_atoll(&split[1]);
+		uint64_t offset = Samurai::Util::Convert::to_int64(off) - 1;
+		uint64_t length = Samurai::Util::Convert::to_int64(&split[1]);
 		
 		session->onGet(filename, offset, length);
 		
@@ -133,7 +133,7 @@ bool DC::ClientGet::ClientGet::invoke(const char* data, size_t length) {
 		free(off);
 	} else {
 		char* filename = strndup(&data[5], &split[0]-&data[5]);
-		uint64_t offset = samurai_atoll(&split[1]) - 1;
+		uint64_t offset = Samurai::Util::Convert::to_int64(&split[1]) - 1;
 		session->onGet(filename, offset, -1);
 		free(filename);
 	}
@@ -256,13 +256,13 @@ bool DC::ClientExtADCGET::ClientExtADCGET::invoke(const char* data_, size_t leng
 
 	// Extract chunk length
 	if (!split)split = strrchr(data, ' ');
-	len = samurai_atoll(&split[1]);
+	len = Samurai::Util::Convert::to_int64(&split[1]);
 	split[0] = '\0';
 	split = strrchr(data, ' ');
 
 	// Extract the offset
 	if (!split) { free(data); return false; }
-	offset = samurai_atoull(&split[1]);
+	offset = Samurai::Util::Convert::to_uint64(&split[1]);
 	split[0] = '\0';
 
 	// Extract the filename;	
@@ -311,13 +311,13 @@ bool DC::ClientExtADCSND::ClientExtADCSND::invoke(const char* data_, size_t leng
 
 	// Extract chunk length
 	if (!split)split = strrchr(data, ' ');
-	len = samurai_atoll(&split[1]);
+	len = Samurai::Util::Convert::to_int64(&split[1]);
 	split[0] = '\0';
 	split = strrchr(data, ' ');
 
 	// Extract the offset
 	if (!split) { free(data); return false; }
-	offset = samurai_atoull(&split[1]);
+	offset = Samurai::Util::Convert::to_uint64(&split[1]);
 	split[0] = '\0';
 
 	// Extract the filename;	

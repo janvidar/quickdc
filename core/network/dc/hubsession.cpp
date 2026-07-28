@@ -483,7 +483,7 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	Samurai::IO::Buffer buffer;
 	cmd.write(&buffer);
 	Samurai::IO::Net::DatagramPacket packet(&buffer);
-	Samurai::IO::Net::InetSocketAddress peer(host.c_str(), samurai_atoi(port.c_str()),
+	Samurai::IO::Net::InetSocketAddress peer(host.c_str(), Samurai::Util::Convert::to_int32(port.c_str()),
 		Samurai::IO::Net::InetAddress::IPv4);
 	packet.setAddress(&peer);
 	core->server->send(&packet);
@@ -744,7 +744,7 @@ void DC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		if (pos && QuickDC::Core::getInstance()->server) {
 			pos[0] = '\0';
 			Samurai::IO::Net::DatagramPacket packet(&buffer);
-			Samurai::IO::Net::InetSocketAddress peerAddr(addr, samurai_atoi(&pos[1]), Samurai::IO::Net::InetAddress::IPv4);
+			Samurai::IO::Net::InetSocketAddress peerAddr(addr, Samurai::Util::Convert::to_int32(&pos[1]), Samurai::IO::Net::InetAddress::IPv4);
 			packet.setAddress(&peerAddr);
 			QuickDC::Core::getInstance()->server->send(&packet);
 		}

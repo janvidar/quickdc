@@ -1206,9 +1206,9 @@ EXO_TEST(nmdc_sr_short_tth_is_ignored, {
 
 EXO_TEST(nmdc_sr_slot_counts, {
 	/*
-	 * Worth its own case: "{free}/{total}" cannot go through samurai_atoi(),
-	 * which reads "2/4" as -6 because it skips the slash as if it were leading
-	 * padding and then keeps going.
+	 * Worth its own case: "{free}/{total}" cannot go through
+	 * Convert::to_int32(), which reads "2/4" as -6 because it skips the slash
+	 * as if it were leading padding and then keeps going.
 	 */
 	if (sr_parse("$SR a f" SR_SEP "1 0/3" SR_SEP "h (1.2.3.4:411)").freeslots != 0) return false;
 	if (sr_parse("$SR a f" SR_SEP "1 2/4" SR_SEP "h (1.2.3.4:411)").freeslots != 2) return false;

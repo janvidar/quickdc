@@ -101,7 +101,7 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 				if (cl || te)
 				{
 					if (cl && cl->getValue())
-						entity->setBodySize(samurai_atoull(cl->getValue()));
+						entity->setBodySize(Samurai::Util::Convert::to_uint64(cl->getValue()));
 					state = Body;
 				}
 				else
@@ -232,7 +232,7 @@ bool Http::Parser::parseStatusLine(const char* line_) {
 		split[0] = '\0';
 		char* message = &split[1];
 		
-		uint16_t ncode = (uint16_t) samurai_atoi(code);
+		uint16_t ncode = (uint16_t) Samurai::Util::Convert::to_int32(code);
 		if (ncode == 0) return false;
 
 		entity->setCode(ncode);

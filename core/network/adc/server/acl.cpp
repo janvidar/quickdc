@@ -402,7 +402,7 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 			error("Invalid credentials for user");
 		}
 		
-		Samurai::TimeStamp expire = Samurai::TimeStamp(samurai_atoi(s_expire));
+		Samurai::TimeStamp expire = Samurai::TimeStamp(Samurai::Util::Convert::to_int32(s_expire));
 		if (expire < Samurai::TimeStamp())
 		{
 			warning("Authorization has expired");

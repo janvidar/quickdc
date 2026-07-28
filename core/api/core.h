@@ -112,6 +112,12 @@ class Core {
 
 }
 
-extern "C" QuickDC::Core* quickdc_core;
+/*
+ * NOTE: this was declared extern "C", while the definition in api/server.cpp
+ * is not, so the two disagreed about language linkage. gcc and clang do not
+ * diagnose that for a variable and mangle a global-namespace name to itself
+ * anyway, but MSVC does mangle it, and would not have found the definition.
+ */
+extern QuickDC::Core* quickdc_core;
 
 #endif // HAVE_QUICKDC_CORE_API_H
