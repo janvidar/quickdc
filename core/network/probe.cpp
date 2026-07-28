@@ -32,16 +32,25 @@ static bool probe_tcp_tls(const char* buffer, size_t length) {
 	bool is_ssl = false;
 
 	if (buffer[0] == 22) {
-		/* SSLv3+/TLS handshake check */
+		/*
+		 * SSLv3+/TLS handshake check: record type 22, the record version, and
+		 * at offset 5 the handshake message type - 1 for a ClientHello, whose
+		 * own version follows at offset 9. Everything from SSL 3.0 onwards has
+		 * a version major of 3.
+		 *
+		 * The two versions are deliberately not required to agree with each
+		 * other. A TLS 1.3 client sends a 1.0 record version carrying a 1.2
+		 * client version for middlebox compatibility, and OpenSSL does the same
+		 * for 1.2, so insisting on a match rejected every current client.
+		 */
 		protocol_version_maj = buffer[1];
 		protocol_version_min = buffer[2];
 		msg_type = buffer[5];
 		if (msg_type == 1 &&
-		    protocol_version_maj == 3 && 
-		    protocol_version_maj == buffer[ 9] &&
-		    protocol_version_min == buffer[10])
+		    protocol_version_maj == 3 &&
+		    buffer[9] == 3)
 		{
-			is_ssl = true;	
+			is_ssl = true;
 		}
 	} else if (buffer[0] & 0x80) {
 		/* SSLv2 handshake check */
@@ -228,69 +237,83 @@ void QuickDC::ProtocolProbe::probe() {
 	static char buf[16] = {0,};
 	int len = socket->peek(buf, 16);
 
-	if (len > 0) {
-		if (probe_tcp_adchub(buf, (size_t) len)) {
-			ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
-			if (hub) {
+	/*
+	 * Nothing to look at yet. This is the normal state right after a TLS
+	 * handshake completes - the peer's first application data has not arrived -
+	 * so wait for more instead of dropping the connection. Nothing is leaked by
+	 * waiting: the 30 second timer closes a connection that stays silent.
+	 */
+	if (len <= 0) return;
+
+	if (probe_tcp_adchub(buf, (size_t) len)) {
+		ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
+		if (hub) {
 #ifdef DATADUMP
-				QDBG("ADC hub connection");
+			QDBG("ADC hub connection");
 #endif
-				hub->onConnected(socket);
-				socket->setEventHandler(hub);
-				socket = 0;
-			}
-	
-		} else if (probe_tcp_dc(buf, (size_t) len)) {
+			hub->onConnected(socket);
+			socket->setEventHandler(hub);
+			socket = 0;
+		}
+
+	} else if (probe_tcp_dc(buf, (size_t) len)) {
 #ifdef DATADUMP
-			QDBG("DC connection");
+		QDBG("DC connection");
 #endif // DATADUMP
-			DC::ClientSession* connection = new DC::ClientSession(socket);
+		DC::ClientSession* connection = new DC::ClientSession(socket);
+		socket->setEventHandler(connection);
+		socket = 0;
+
+	} else if (probe_tcp_adc(buf, (size_t) len)) {
+#ifdef DATADUMP
+		QDBG("ADC connection");
+#endif // DATADUMP
+		ADC::ClientSession* connection = new ADC::ClientSession(socket, 0, 0, 0, secure);
+		socket->setEventHandler(connection);
+		socket = 0;
+
+	} else if (probe_tcp_http(buf, (size_t) len)) {
+#ifdef DATADUMP
+		QDBG("HTTP connection");
+#endif // DATADUMP
+		QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+		config->setGroup("HTTP server");
+		bool enabled = config->getBool("Enabled", false);
+		if (enabled) {
+			Http::Connection* connection = new Http::Connection(socket, false);
 			socket->setEventHandler(connection);
 			socket = 0;
-
-		} else if (probe_tcp_adc(buf, (size_t) len)) {
-#ifdef DATADUMP
-			QDBG("ADC connection");
-#endif // DATADUMP
-			ADC::ClientSession* connection = new ADC::ClientSession(socket, 0, 0, 0, secure);
-			socket->setEventHandler(connection);
-			socket = 0;
-
-		} else if (probe_tcp_http(buf, (size_t) len)) {
-#ifdef DATADUMP
-			QDBG("HTTP connection");
-#endif // DATADUMP
-			QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
-			config->setGroup("HTTP server");
-			bool enabled = config->getBool("Enabled", false);
-			if (enabled) {
-				Http::Connection* connection = new Http::Connection(socket, false);
-				socket->setEventHandler(connection);
-				socket = 0;
-			} else {
-				QERR("HTTP server is disabled -- closing connection");
-			}
+		} else {
+			QERR("HTTP server is disabled -- closing connection");
+		}
 
 #ifdef SSL_SUPPORT
-		} else if (!secure && probe_tcp_tls(buf, (size_t) len)) {
-			/*
-			 * Nothing can be fingerprinted through TLS, so finish the
-			 * handshake and probe again once the stream is readable.
-			 */
-			QDBG("TLS connection; deferring the probe until the handshake is done");
-			if (!socket->TLSInitialize(true))
-			{
-				QERR("Unable to accept a TLS connection");
-				close();
-				return;
-			}
-			socket->TLSsendHandshake();
+	} else if (!secure && probe_tcp_tls(buf, (size_t) len)) {
+		/* Nothing can be fingerprinted through TLS, so finish the handshake
+		   and probe again once the decrypted stream is readable. */
+		QDBG("TLS connection; deferring the probe until the handshake is done");
+		if (!socket->TLSInitialize(true))
+		{
+			QERR("Unable to accept a TLS connection");
+			close();
+			return;
+		}
+
+		/*
+		 * One pass rarely completes a handshake. The socket resumes it as the
+		 * connection becomes readable or writable again and reports the result
+		 * through EventTLSConnected(), so it has to be left alone until then -
+		 * closing it here is what made an inbound ADCS connection look like a
+		 * reset to the peer.
+		 */
+		socket->TLSsendHandshake();
+		return;
 
 #endif // SSL_SUPPORT
-		} else {
-			QDBG("Unknown connection handshake -- closing connection");
-		}
+	} else {
+		QDBG("Unknown connection handshake -- closing connection");
 	}
+
 	close();
 }
 
