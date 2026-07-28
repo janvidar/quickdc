@@ -7,10 +7,10 @@
 #define HAVE_QUICKDC_COMMANDPROXY_H
 
 #include "quickdc.h"
+#include <memory>
 #include <string>
 #include <list>
 #include <samurai/io/buffer.h>
-#include <samurai/util/refcount.h>
 
 #define LOG_NET(prefix, fd, cmd, len) Log_Network_Traffic(prefix, fd, cmd, len);
 extern void Log_Network_Traffic(const char* event, int socketFD, const char* command, size_t length);
@@ -30,7 +30,7 @@ class CommandBase;
 
 class CommandProxy {
 	public:
-		CommandProxy(Samurai::IO::Net::Socket* socket);
+		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket);
 		virtual ~CommandProxy();
 
 		/**
@@ -59,14 +59,26 @@ class CommandProxy {
 		virtual size_t getReadBufferSize() const { return sendbuffer->size(); }
 
 	public:
-		Samurai::IO::Net::Socket* socket;
+		std::shared_ptr<Samurai::IO::Net::Socket> socket;
 		Samurai::IO::Buffer* sendbuffer;
 		Samurai::IO::Buffer* readbuffer;
 };
 
-class CommandBase : public Samurai::Util::RefCounter
+/**
+ * Commands are handed around between the proxy that parsed them, the send
+ * queue and whatever holds on to them afterwards, so each holder counts its
+ * own reference and the last one out deletes. Samurai used to supply the
+ * counter; it does not any longer, and CommandBase was its only user.
+ */
+class CommandBase
 {
 	public:
+		virtual ~CommandBase() = default;
+
+		void incRef() { references++; }
+		void decRef() { references--; }
+		bool canDelete() const { return !references; }
+		size_t getRef() const { return references; }
 
 		/**
 		 * @return the lenght of the command as it would be presented in the final stream.
@@ -83,6 +95,9 @@ class CommandBase : public Samurai::Util::RefCounter
 		 * FIXME: API should change.
 		 */
 		virtual char* getRawCommand() = 0;
+
+	private:
+		size_t references = 0;
 };
 
 class QueuedCommand

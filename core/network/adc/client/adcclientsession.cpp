@@ -60,8 +60,8 @@ ADC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* h
 	QDBG("ADC::ClientSession()");
 }
 
-ADC::ClientSession::ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession_, const char* token_, const char* sid_, bool secure_, const char* keyprint_) :
-	QuickDC::Connection(sock, secure_ ? "ADCS client" : "ADC client"),
+ADC::ClientSession::ClientSession(std::shared_ptr<Samurai::IO::Net::Socket> sock, ADC::HubSession* hubsession_, const char* token_, const char* sid_, bool secure_, const char* keyprint_) :
+	QuickDC::Connection(std::move(sock), secure_ ? "ADCS client" : "ADC client"),
 	hubsession(hubsession_),
 	isClient(false),
 	secure(secure_)
@@ -95,8 +95,6 @@ ADC::ClientSession::~ClientSession()
 	releaseTransfer();
 	delete proxy;
 	QDBG("~ADC::ClientSession()");
-	
-	delete socket; socket = 0;
 	
 	free(token);
 	free(remote_sid);
@@ -194,7 +192,7 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 	const char* job = (token) ? token : remote_token;
 
 	if (job) {
-		upload_approved = security->isAuthorized(QuickDC::Clearance::ADC, hubsession, socket, cid, job);
+		upload_approved = security->isAuthorized(QuickDC::Clearance::ADC, hubsession, socket.get(), cid, job);
 		QDBG("Authorized for upload: %s", upload_approved ? "yes" : "no");
 	} else {
 		QDBG("Neither side named a token; nothing to do on this connection");
@@ -661,8 +659,8 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 		}
 		
 		cmd->addArgument(fn);
-		cmd->addArgument(quickdc_ulltoa(offset));
-		cmd->addArgument(quickdc_ulltoa((uint64_t) chunk_length));
+		cmd->addArgument(std::to_string(offset).c_str());
+		cmd->addArgument(std::to_string((uint64_t) chunk_length).c_str());
 		if (compress)
 		{
 			cmd->addArgument("ZL", "1");
@@ -842,7 +840,7 @@ void ADC::ClientSession::EventHostFound(const Samurai::IO::Net::Socket*) { }
 
 void ADC::ClientSession::EventConnecting(const Samurai::IO::Net::Socket* sock)
 {
-	QDBG("Connecting to %s", sock->getAddress()->toString());
+	QDBG("Connecting to %s", sock->getAddress()->toString().c_str());
 }
 
 void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
@@ -861,7 +859,6 @@ void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
 	 * up first and the protocol starts from EventTLSConnected(). Same shape as
 	 * ADC::HubSession::EventConnected().
 	 */
-#ifdef SSL_SUPPORT
 	QDBG("Peer wants ADCS; starting the TLS handshake");
 	if (!socket->TLSInitialize(false))
 	{
@@ -871,11 +868,6 @@ void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
 		return;
 	}
 	socket->TLSsendHandshake();
-#else
-	QERR("The peer asked for ADCS, but TLS support is not built in");
-	abandonDownload();
-	manager->remove(this);
-#endif
 }
 
 void ADC::ClientSession::EventTLSConnected(const Samurai::IO::Net::Socket*)
@@ -891,7 +883,7 @@ void ADC::ClientSession::EventTLSConnected(const Samurai::IO::Net::Socket*)
 	{
 		std::string actual;
 
-		if (!QuickDC::Keyprint::ofPeer(socket, actual)
+		if (!QuickDC::Keyprint::ofPeer(socket.get(), actual)
 			|| !QuickDC::Keyprint::equals(expected_keyprint, actual.c_str()))
 		{
 			QERR("Crypto error: the peer's certificate does not match the keyprint "

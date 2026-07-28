@@ -6,6 +6,7 @@
 #ifndef HAVE_QUICKDC_CONNECTION_H
 #define HAVE_QUICKDC_CONNECTION_H
 
+#include <memory>
 #include <samurai/io/net/socketevent.h>
 
 namespace Samurai {
@@ -23,7 +24,7 @@ class ConnectionManager;
 class Connection : public Samurai::IO::Net::SocketEventHandler
 {
 	public:
-		Connection(Samurai::IO::Net::Socket* sock, const char* protocol);
+		Connection(std::shared_ptr<Samurai::IO::Net::Socket> sock, const char* protocol);
 		Connection(Samurai::IO::Net::URL* url, const char* protocol);
 		virtual ~Connection();
 		
@@ -35,7 +36,7 @@ class Connection : public Samurai::IO::Net::SocketEventHandler
 		 */
 		ConnectionManager* getManager() const { return manager; }
 
-		Samurai::IO::Net::Socket* getSocket() { return socket; }
+		Samurai::IO::Net::Socket* getSocket() { return socket.get(); }
 
 		/**
 		 * @return the name of the current protocol.
@@ -54,7 +55,7 @@ class Connection : public Samurai::IO::Net::SocketEventHandler
 		virtual void EventError(const Samurai::IO::Net::Socket*, enum Samurai::IO::Net::SocketError error, const char*) = 0;
 	
 	protected:
-		Samurai::IO::Net::Socket* socket;
+		std::shared_ptr<Samurai::IO::Net::Socket> socket;
 		ConnectionManager* manager;
 		const char* protocol;
 };

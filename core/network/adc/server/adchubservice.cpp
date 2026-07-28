@@ -243,7 +243,7 @@ bool ADC::AdcSrvHistory::invoke(Command* cmd) {
 bool ADC::AdcSrvMyIP::invoke(Command* cmd) {
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 	static char buf[100];
-	snprintf(buf, 100, "*** Your IP address is: %s.", cmd->getSocket()->getAddress()->toString());
+	snprintf(buf, 100, "*** Your IP address is: %s.", cmd->getSocket()->getAddress()->toString().c_str());
 	msg->addArgument(buf);
 	ADC::HubUser* user  = hub->lookupUser(cmd->getSocket());
 	hub->send(msg, user);

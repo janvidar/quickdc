@@ -305,7 +305,7 @@ void DC::HubSession::onActiveConnect(const char* address, uint16_t port, const c
 	if (listener->EventClientConnect(address, port, u))
 	{
 		QDBG("Connecting to %s:%d...", address, port);
-		Samurai::IO::Net::Socket* socket = new Samurai::IO::Net::Socket(0, address, port);
+		auto socket = Samurai::IO::Net::Socket::create(nullptr, address, port);
 		DC::ClientSession* connection = new DC::ClientSession(socket, this);
 		socket->setEventHandler(connection);
 		socket->connect();
@@ -475,9 +475,9 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	ADC::Command cmd(FOURCC('U','P','S','R'), ADC::CID::getInstance()->getCID());
 	cmd.addArgument("NI", nickname);
 	cmd.addArgument("HI", hubIpPort.c_str());
-	cmd.addArgument("U4", quickdc_itoa(myPort, 10));
+	cmd.addArgument("U4", std::to_string(myPort));
 	cmd.addArgument("TR", request->getTTH());
-	cmd.addArgument("PC", quickdc_itoa((int) runs, 10));
+	cmd.addArgument("PC", std::to_string((int) runs));
 	cmd.addArgument("PI", indexes.c_str());
 
 	Samurai::IO::Buffer buffer;

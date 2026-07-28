@@ -200,7 +200,6 @@ Console::Console()
 	, wake_write(-1)
 	, quit_read(-1)
 	, quit_write(-1)
-	, wakeSocket(0)
 	, wakeHandler(0)
 {
 #ifdef SAMURAI_UNIX
@@ -216,9 +215,8 @@ Console::~Console()
 
 	if (wakeSocket)
 	{
-		Samurai::IO::Net::SocketMonitor::getInstance()->remove(wakeSocket);
-		delete wakeSocket;              /* closes wake_read */
-		wakeSocket = 0;
+		Samurai::IO::Net::SocketMonitor::getInstance()->remove(wakeSocket.get());
+		wakeSocket.reset();             /* closes wake_read */
 		wake_read = -1;
 	}
 	delete wakeHandler; wakeHandler = 0;
@@ -273,10 +271,10 @@ void Console::startReader()
 
 	/* This constructor adopts an existing descriptor and marks it Connected,
 	   which is exactly the state the monitor expects to deliver reads for. */
-	wakeSocket  = new Samurai::IO::Net::Socket(wake_read, sockaddr);
+	wakeSocket  = Samurai::IO::Net::Socket::create(wake_read, sockaddr);
 	wakeHandler = new ConsoleWakeHandler(this);
 	wakeSocket->setEventHandler(wakeHandler);
-	Samurai::IO::Net::SocketMonitor::getInstance()->add(wakeSocket);
+	Samurai::IO::Net::SocketMonitor::getInstance()->add(wakeSocket.get());
 
 	reader_running = true;
 	reader = std::thread(&Console::readerLoop, this);

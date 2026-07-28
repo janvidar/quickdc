@@ -723,7 +723,7 @@ static void cmd_transfers(const std::vector<std::string>&)
 	while (t)
 	{
 		printf("  %15s:%d\t%8d bps (%s) '%s'\n",
-			t->getSocket()->getAddress()->toString(),
+			t->getSocket()->getAddress()->toString().c_str(),
 			t->getSocket()->getPort(),
 			(int) t->getBps(),
 			t->isDownload() ? "DN" : "UP",
@@ -739,7 +739,7 @@ static void cmd_connections(const std::vector<std::string>&)
 	while (c)
 	{
 		printf("  %s:%5d    %s\n",
-			c->getSocket()->getAddress()->toString(),
+			c->getSocket()->getAddress()->toString().c_str(),
 			c->getSocket()->getPort(),
 			c->getProtocol());
 		c = core->connections->next();

@@ -37,7 +37,7 @@ foreach(app IN LISTS QUICKDC_TEST_APPS)
     target_link_libraries(${app} PRIVATE quickdc::quickdc)
 
     set_target_properties(${app} PROPERTIES
-        CXX_STANDARD 11
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF)
 

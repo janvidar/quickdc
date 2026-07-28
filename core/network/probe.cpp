@@ -6,6 +6,7 @@
 #include "api/core.h"
 #include "network/probe.h"
 #include "network/connectionmanager.h"
+#include "network/socketreaper.h"
 #include "network/dc/dcconnection.h"
 #include "network/dc/clientsession.h"
 #include "network/adc/client/adcclientsession.h"
@@ -21,7 +22,6 @@
 
 #define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
 
-#ifdef SSL_SUPPORT
 static bool probe_tcp_tls(const char* buffer, size_t length) {
 	if (length < 16) return false;
 
@@ -69,7 +69,6 @@ static bool probe_tcp_tls(const char* buffer, size_t length) {
 
 	return false;
 }
-#endif // SSL_SUPPORT
 
 /*
  * Probe for ADC connection
@@ -169,7 +168,7 @@ static bool probe_tcp_http(const char* buffer, size_t length) {
 }
 
 
-QuickDC::ProtocolProbe::ProtocolProbe(Samurai::IO::Net::Socket* sock) : QuickDC::Connection(sock, "Probing"), secure(false) {
+QuickDC::ProtocolProbe::ProtocolProbe(std::shared_ptr<Samurai::IO::Net::Socket> sock) : QuickDC::Connection(std::move(sock), "Probing"), secure(false) {
 	timer = new Samurai::Timer(this, 30, true); /* if nothing happens in 30 seconds, close the connection */
 	manager->add(this);
 }
@@ -182,9 +181,14 @@ void QuickDC::ProtocolProbe::close() {
 	delete timer;
 	timer = 0;
 
+	/*
+	 * Probing runs from inside the socket's own event handler, so the socket
+	 * outlives this object: the monitor is still holding it. The reaper
+	 * releases it once the dispatch is over.
+	 */
 	if (socket && socket->getEventHandler() == this) {
-		delete socket;
-		socket = 0;
+		socket->setEventHandler(0);
+		QuickDC::retireSocket(std::move(socket));
 	}
 	if (manager) manager->remove(this);
 }
@@ -235,17 +239,31 @@ void QuickDC::ProtocolProbe::EventTLSConnected(const Samurai::IO::Net::Socket*) 
 
 void QuickDC::ProtocolProbe::probe() {
 	static char buf[16] = {0,};
-	int len = socket->peek(buf, 16);
+	size_t len = 0;
+	std::error_code ec;
 
-	/*
-	 * Nothing to look at yet. This is the normal state right after a TLS
-	 * handshake completes - the peer's first application data has not arrived -
-	 * so wait for more instead of dropping the connection. Nothing is leaked by
-	 * waiting: the 30 second timer closes a connection that stays silent.
-	 */
-	if (len <= 0) return;
+	switch (socket->peek(buf, 16, len, ec)) {
+		case Samurai::IO::ReadOk:
+			break;
 
-	if (probe_tcp_adchub(buf, (size_t) len)) {
+		/*
+		 * Nothing to look at yet. This is the normal state right after a TLS
+		 * handshake completes - the peer's first application data has not
+		 * arrived - so wait for more instead of dropping the connection.
+		 * Nothing is leaked by waiting: the 30 second timer closes a
+		 * connection that stays silent.
+		 */
+		case Samurai::IO::ReadWouldBlock:
+			return;
+
+		/* A peer that left, or broke, is never going to be fingerprinted. */
+		case Samurai::IO::ReadEndOfFile:
+		case Samurai::IO::ReadError:
+			close();
+			return;
+	}
+
+	if (probe_tcp_adchub(buf, len)) {
 		ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
 		if (hub) {
 #ifdef DATADUMP
@@ -253,26 +271,26 @@ void QuickDC::ProtocolProbe::probe() {
 #endif
 			hub->onConnected(socket);
 			socket->setEventHandler(hub);
-			socket = 0;
+			socket.reset();
 		}
 
-	} else if (probe_tcp_dc(buf, (size_t) len)) {
+	} else if (probe_tcp_dc(buf, len)) {
 #ifdef DATADUMP
 		QDBG("DC connection");
 #endif // DATADUMP
 		DC::ClientSession* connection = new DC::ClientSession(socket);
 		socket->setEventHandler(connection);
-		socket = 0;
+		socket.reset();
 
-	} else if (probe_tcp_adc(buf, (size_t) len)) {
+	} else if (probe_tcp_adc(buf, len)) {
 #ifdef DATADUMP
 		QDBG("ADC connection");
 #endif // DATADUMP
 		ADC::ClientSession* connection = new ADC::ClientSession(socket, 0, 0, 0, secure);
 		socket->setEventHandler(connection);
-		socket = 0;
+		socket.reset();
 
-	} else if (probe_tcp_http(buf, (size_t) len)) {
+	} else if (probe_tcp_http(buf, len)) {
 #ifdef DATADUMP
 		QDBG("HTTP connection");
 #endif // DATADUMP
@@ -282,13 +300,12 @@ void QuickDC::ProtocolProbe::probe() {
 		if (enabled) {
 			Http::Connection* connection = new Http::Connection(socket, false);
 			socket->setEventHandler(connection);
-			socket = 0;
+			socket.reset();
 		} else {
 			QERR("HTTP server is disabled -- closing connection");
 		}
 
-#ifdef SSL_SUPPORT
-	} else if (!secure && probe_tcp_tls(buf, (size_t) len)) {
+	} else if (!secure && probe_tcp_tls(buf, len)) {
 		/* Nothing can be fingerprinted through TLS, so finish the handshake
 		   and probe again once the decrypted stream is readable. */
 		QDBG("TLS connection; deferring the probe until the handshake is done");
@@ -309,7 +326,6 @@ void QuickDC::ProtocolProbe::probe() {
 		socket->TLSsendHandshake();
 		return;
 
-#endif // SSL_SUPPORT
 	} else {
 		QDBG("Unknown connection handshake -- closing connection");
 	}

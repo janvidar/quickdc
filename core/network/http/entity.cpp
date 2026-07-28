@@ -113,7 +113,7 @@ void Http::Entity::compose(Samurai::IO::Buffer* out) {
 		
 	} else {
 		out->append((protocol == HTTP_1_1) ? "HTTP/1.1 " : "HTTP/1.0 ");
-		out->append(quickdc_itoa(code, 10));
+		out->append(std::to_string(code));
 		out->append(' ');
 		if (msg)
 		{

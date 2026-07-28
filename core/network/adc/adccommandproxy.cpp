@@ -21,7 +21,7 @@
 	mapper.insert(std::pair<uint32_t, ADC::CommandParser*>( \
 	((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d)), cls));
 
-ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::ClientSession* session) : QuickDC::CommandProxy(socket), handover(0)
+ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::ClientSession* session) : QuickDC::CommandProxy(std::move(socket)), handover(0)
 {
 	FOURCC_REG('C','S','U','P', new ADC::CCmdSUP(this, session))
 	FOURCC_REG('C','I','N','F', new ADC::CCmdINF(this, session))
@@ -32,7 +32,7 @@ ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::ClientSes
 	FOURCC_REG('C','R','E','S', new ADC::CCmdRES(this, session))
 }
 
-ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::HubSession* session) : QuickDC::CommandProxy(socket), handover(0)
+ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::HubSession* session) : QuickDC::CommandProxy(std::move(socket)), handover(0)
 {
 	FOURCC_REG('I','S','I','D', new ADC::CmdSID(this, session));
 	FOURCC_REG('I','I','N','F', new ADC::CmdInfo(this, session));
@@ -55,7 +55,7 @@ ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::HubSessio
 	FOURCC_REG('D','R','C','M', new ADC::CmdRCTM(this, session));
 }
 
-ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::Hub* hub) : QuickDC::CommandProxy(socket), handover(0)
+ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::Hub* hub) : QuickDC::CommandProxy(std::move(socket)), handover(0)
 {
 	// hub messages
 	FOURCC_REG('H','S','U','P', new ADC::HubCmdSUP(this, hub));
@@ -100,7 +100,7 @@ void ADC::CommandProxy::invoke(const char* command, size_t length)
 	ADC::Command* cmd = new ADC::Command();
 	bool ok = ADC::Parser::parse(command, length, *cmd);
 	cmd->incRef();
-	cmd->setSocket(socket);
+	cmd->setSocket(socket.get());
 	
 	if (!ok || mapper.count(cmd->getFourcc()) == 0 || !mapper[cmd->getFourcc()]->invoke(cmd))
 	{
@@ -170,14 +170,24 @@ bool ADC::CommandProxy::write()
 bool ADC::CommandProxy::read()
 {
 	static char buf[READ_BUF_SIZE+1] = {0,};
-	int n = socket->read(buf, READ_BUF_SIZE);
-	if (n == -1)
+	size_t n = 0;
+	std::error_code ec;
+	switch (socket->read(buf, READ_BUF_SIZE, n, ec))
 	{
-		return false;
+		case Samurai::IO::ReadOk:
+			break;
+
+		/* Nothing to parse; the socket reports again when there is. */
+		case Samurai::IO::ReadWouldBlock:
+		case Samurai::IO::ReadEndOfFile:
+			return true;
+
+		case Samurai::IO::ReadError:
+			return false;
 	}
 	readbuffer->append(buf, n);
-	int split = readbuffer->find('\n');
-	while (split >= 0)
+	size_t split = readbuffer->find('\n');
+	while (split != Samurai::IO::Buffer::npos)
 	{
 		if (!split)
 		{

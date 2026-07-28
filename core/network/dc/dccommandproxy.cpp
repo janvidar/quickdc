@@ -15,7 +15,7 @@
 
 #define READ_BUF_SIZE 65536
 
-DC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, DC::ClientSession* session) : QuickDC::CommandProxy(socket), client(true)
+DC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, DC::ClientSession* session) : QuickDC::CommandProxy(std::move(socket)), client(true)
 {
 	new DC::ClientKey(this, session);
 	new DC::ClientGet(this, session);
@@ -34,7 +34,7 @@ DC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, DC::ClientSessi
 	new DC::ClientExtGetZBlock(this, session);
 }
 
-DC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, DC::HubSession* session) : QuickDC::CommandProxy(socket), client(false)
+DC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, DC::HubSession* session) : QuickDC::CommandProxy(std::move(socket)), client(false)
 {
 	new DC::To(this, session);
 	new DC::Quit(this, session);
@@ -176,14 +176,24 @@ bool DC::CommandProxy::write()
 bool DC::CommandProxy::read()
 {
 	static char buf[READ_BUF_SIZE+1] = {0,};
-	int n = socket->read(buf, READ_BUF_SIZE);
-	if (n == -1)
+	size_t n = 0;
+	std::error_code ec;
+	switch (socket->read(buf, READ_BUF_SIZE, n, ec))
 	{
-		return false;
+		case Samurai::IO::ReadOk:
+			break;
+
+		/* Nothing to parse; the socket reports again when there is. */
+		case Samurai::IO::ReadWouldBlock:
+		case Samurai::IO::ReadEndOfFile:
+			return true;
+
+		case Samurai::IO::ReadError:
+			return false;
 	}
 	readbuffer->append(buf, n);
-	int split = readbuffer->find('|');
-	while (split >= 0)
+	size_t split = readbuffer->find('|');
+	while (split != Samurai::IO::Buffer::npos)
 	{
 		if (!split)
 		{

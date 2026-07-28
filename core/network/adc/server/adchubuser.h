@@ -6,6 +6,7 @@
 #ifndef HAVE_QUICKDC_ADCHUBUSER_H
 #define HAVE_QUICKDC_ADCHUBUSER_H
 
+#include <memory>
 #include <vector>
 #include <list>
 
@@ -31,20 +32,20 @@ enum Credentials { Cred_User, Cred_Operator, Cred_Admin };
 
 class HubConnection {
 	public:
-		HubConnection(Samurai::IO::Net::Socket*);
+		HubConnection(std::shared_ptr<Samurai::IO::Net::Socket>);
 		virtual ~HubConnection();
 		
 		virtual void resetTimer();
 		
 	protected:
-		Samurai::IO::Net::Socket* socket;
+		std::shared_ptr<Samurai::IO::Net::Socket> socket;
 		Samurai::TimeStamp* last_act;
 };
 
 
 class HubUser : public HubConnection {
 	public:
-		HubUser(Samurai::IO::Net::Socket*, Hub*);
+		HubUser(std::shared_ptr<Samurai::IO::Net::Socket>, Hub*);
 		virtual ~HubUser();
 		
 		bool setINF(ADC::Command* cmd, Hub* hub);

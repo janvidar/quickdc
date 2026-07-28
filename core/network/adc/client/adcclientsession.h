@@ -71,7 +71,7 @@ class ClientSession :
 		 *               that relayed it was itself verified; the connection is
 		 *               dropped if it does not match.
 		 */
-		ClientSession(Samurai::IO::Net::Socket* sock, ADC::HubSession* hubsession = 0, const char* token = 0, const char* sid = 0, bool secure = false, const char* keyprint = 0);
+		ClientSession(std::shared_ptr<Samurai::IO::Net::Socket> sock, ADC::HubSession* hubsession = 0, const char* token = 0, const char* sid = 0, bool secure = false, const char* keyprint = 0);
 		ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* hubsession = 0);
 		virtual ~ClientSession();
 		

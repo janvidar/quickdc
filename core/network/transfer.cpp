@@ -11,8 +11,8 @@
 #include "network/transfermanager.h"
 #include "network/dc/dcconnection.h"
 
-QuickDC::Transfer::Transfer(TransferManager* mgr, PrivateTransferListener* listener_, Samurai::IO::Net::Socket* sock, Samurai::IO::File* file_, Direction dir_, off_t offset_, off_t length_)
-	: manager(mgr), listener(listener_), socket(sock), file(file_), direction(dir_), ratio(1.0)
+QuickDC::Transfer::Transfer(TransferManager* mgr, PrivateTransferListener* listener_, std::shared_ptr<Samurai::IO::Net::Socket> sock, Samurai::IO::File* file_, Direction dir_, off_t offset_, off_t length_)
+	: manager(mgr), listener(listener_), socket(std::move(sock)), file(file_), direction(dir_), ratio(1.0)
 	, status(OK), closed(false), offset(offset_), length(length_)
 {
 	manager->add(this);
@@ -58,8 +58,8 @@ bool QuickDC::Transfer::exec()
 
 #define MAXSENDBUF 1024*1024*4
 
-QuickDC::Upload::Upload(TransferManager* mgr, PrivateTransferListener* listener, Samurai::IO::Net::Socket* conn, Samurai::IO::File* file_, off_t offset, off_t length)
-	: QuickDC::Transfer(mgr, listener, conn, file_, QuickDC::Transfer::Upload, offset, length), uploadBuffer(0)
+QuickDC::Upload::Upload(TransferManager* mgr, PrivateTransferListener* listener, std::shared_ptr<Samurai::IO::Net::Socket> conn, Samurai::IO::File* file_, off_t offset, off_t length)
+	: QuickDC::Transfer(mgr, listener, std::move(conn), file_, QuickDC::Transfer::Upload, offset, length), uploadBuffer(0)
 {
 	QDBG("QuickDC::Upload::Upload()");
 	
@@ -115,8 +115,8 @@ void QuickDC::Upload::transfer()
 }
 
 
-QuickDC::ZUpload::ZUpload(TransferManager* mgr, PrivateTransferListener* listener, Samurai::IO::Net::Socket* conn, Samurai::IO::File* file_, off_t offset, off_t length)
-	: QuickDC::Upload(mgr, listener, conn, file_, offset, length)
+QuickDC::ZUpload::ZUpload(TransferManager* mgr, PrivateTransferListener* listener, std::shared_ptr<Samurai::IO::Net::Socket> conn, Samurai::IO::File* file_, off_t offset, off_t length)
+	: QuickDC::Upload(mgr, listener, std::move(conn), file_, offset, length)
 	, compressor(0)
 	, compressBuffer(0), compressBufferSize(0)
 	, pendingBuffer(0), pendingCapacity(0), pendingSize(0), pendingOffset(0)
@@ -245,8 +245,8 @@ void QuickDC::ZUpload::transfer()
 
 
 
-QuickDC::Download::Download(TransferManager* mgr, PrivateTransferListener* listener, Samurai::IO::Net::Socket* conn, Samurai::IO::File* file_, off_t offset, off_t length)
-	: QuickDC::Transfer(mgr, listener, conn, file_, QuickDC::Transfer::Download, offset, length)
+QuickDC::Download::Download(TransferManager* mgr, PrivateTransferListener* listener, std::shared_ptr<Samurai::IO::Net::Socket> conn, Samurai::IO::File* file_, off_t offset, off_t length)
+	: QuickDC::Transfer(mgr, listener, std::move(conn), file_, QuickDC::Transfer::Download, offset, length)
 	, downloadBuffer(0), downloadBufferSize(0)
 	, pending(0), pendingSize(0), pendingOffset(0)
 {
@@ -359,29 +359,35 @@ void QuickDC::Download::transfer()
 		return;
 	}
 
-	ssize_t in = socket->read(downloadBuffer, want);
-	if (in <= 0)
+	/*
+	 * The three ways a read can come back empty have to be told apart: a
+	 * socket that merely has nothing right now must be waited for, while a
+	 * closed or broken one is never going to produce the rest of this chunk
+	 * and has to fail out instead of being polled forever.
+	 */
+	size_t in = 0;
+	std::error_code ec;
+	switch (socket->read(downloadBuffer, want, in, ec))
 	{
-		/*
-		 * 0 is the peer closing, negative is an error. Either way the rest of
-		 * this chunk is never arriving, so fail out instead of being polled
-		 * about a socket that will not produce it.
-		 */
-		if (in < 0)
-		{
-			QERR("Download: unable to read from the peer");
-		}
-		else
-		{
-			QDBG("Download: the peer closed after %d of %d bytes", (int) offset, (int) total);
-		}
+		case Samurai::IO::ReadOk:
+			break;
 
-		status = IOFail;
-		return;
+		case Samurai::IO::ReadWouldBlock:
+			return;
+
+		case Samurai::IO::ReadEndOfFile:
+			QDBG("Download: the peer closed after %d of %d bytes", (int) offset, (int) total);
+			status = IOFail;
+			return;
+
+		case Samurai::IO::ReadError:
+			QERR("Download: unable to read from the peer: %s", ec.message().c_str());
+			status = IOFail;
+			return;
 	}
 
-	ssize_t out = file->write(downloadBuffer, (size_t) in);
-	if (out != in)
+	ssize_t out = file->write(downloadBuffer, in);
+	if (out != (ssize_t) in)
 	{
 		QERR("Download: wrote %d of %d bytes to '%s'",
 			(int) out, (int) in, file->getName().c_str());

@@ -136,8 +136,8 @@ enum Http::Parser::Status  Http::Parser::getLine()
 {
 	delete[] line; line = 0;
 
-	int n = buffer->find('\n');
-	if (n == -1) {
+	size_t n = buffer->find('\n');
+	if (n == Samurai::IO::Buffer::npos) {
 		if (buffer->size() > MAX_HEADER_LINE_SIZE)
 			return StatusError;
 		return StatusMore;

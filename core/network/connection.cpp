@@ -12,16 +12,17 @@
 #include "network/dc/dcconnection.h"
 #include "network/http/httpconnection.h"
 
-QuickDC::Connection::Connection(Samurai::IO::Net::Socket* sock, const char* proto) : socket(sock), protocol(proto)
+QuickDC::Connection::Connection(std::shared_ptr<Samurai::IO::Net::Socket> sock, const char* proto)
+	: socket(std::move(sock)), protocol(proto)
 {
 	socket->setEventHandler(this);
 	manager = QuickDC::Core::getInstance()->connections;
 }
 
 
-QuickDC::Connection::Connection(Samurai::IO::Net::URL* url, const char* proto) : socket(0), protocol(proto)
+QuickDC::Connection::Connection(Samurai::IO::Net::URL* url, const char* proto) : protocol(proto)
 {
-	socket = new Samurai::IO::Net::Socket(this, url->getHost(), url->getPort());
+	socket = Samurai::IO::Net::Socket::create(this, url->getHost(), url->getPort());
 	manager = QuickDC::Core::getInstance()->connections;
 }
 
@@ -31,8 +32,7 @@ QuickDC::Connection::~Connection()
 	{
 		manager->detach(this);
 	}
-	delete socket;
-	socket = 0;
+	socket.reset();
 }
 
 

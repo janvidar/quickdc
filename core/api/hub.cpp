@@ -45,7 +45,7 @@ QuickDC::Hub::Hub(HubListener* listener_, Samurai::IO::Net::URL* url_)
 	canonical += "://";
 	canonical += url->getHost().toString();
 	canonical += ":";
-	canonical += quickdc_itoa(url->getPort(), 10);
+	canonical += std::to_string(url->getPort());
 	canonicalUrl = strdup(canonical.c_str());
 
 	QuickDC::Core::getInstance()->hubs->add(this);

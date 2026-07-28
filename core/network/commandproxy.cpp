@@ -17,7 +17,7 @@ void Log_Network_Traffic(const char* event, int socketFD, const char* command, s
 }
 
 
-QuickDC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket_) : socket(socket_)
+QuickDC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket_) : socket(std::move(socket_))
 {
 	sendbuffer = new Samurai::IO::Buffer();
 	readbuffer = new Samurai::IO::Buffer();

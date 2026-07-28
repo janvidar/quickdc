@@ -535,9 +535,7 @@ void ADC::addSupportFlags(ADC::Command& command, bool clientMode)
 	command.addArgument("AD", ADC_HASH_TIGER);
 	command.addArgument("AD", ADC_EXT_PFSR);
 
-#ifdef SSL_SUPPORT
 	command.addArgument("AD", ADC_EXT_ADCS);
-#endif
 	
 	if (clientMode)
 	{

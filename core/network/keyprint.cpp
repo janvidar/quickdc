@@ -69,7 +69,7 @@ bool QuickDC::Keyprint::fromQuery(const std::string& query, std::string& keyprin
 void QuickDC::Keyprint::format(const uint8_t* digest, std::string& keyprint)
 {
 	char encoded[KEYPRINT_DIGITS + 1];
-	base32_encode(digest, Samurai::IO::Net::TlsFactory::SHA256_LENGTH, encoded);
+	base32_encode(digest, Samurai::IO::Net::TlsFactory::SHA256_LENGTH, encoded, sizeof(encoded));
 
 	keyprint = KEYPRINT_HASH;
 	keyprint += encoded;
@@ -88,15 +88,10 @@ bool QuickDC::Keyprint::ofPeer(Samurai::IO::Net::Socket* socket, std::string& ke
 
 bool QuickDC::Keyprint::ofOwnCertificate(std::string& keyprint)
 {
-#ifdef SSL_SUPPORT
 	uint8_t digest[Samurai::IO::Net::TlsFactory::SHA256_LENGTH];
 	if (!Samurai::IO::Net::TlsFactory::getOwnCertificateSHA256(digest, sizeof(digest)))
 		return false;
 
 	format(digest, keyprint);
 	return true;
-#else
-	(void) keyprint;
-	return false;
-#endif
 }

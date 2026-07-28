@@ -8,6 +8,7 @@
 
 #include "quickdc.h"
 
+#include <memory>
 #include <string>
 #include <deque>
 #include <mutex>
@@ -152,7 +153,7 @@ class Console
 		int quit_read;
 		int quit_write;
 
-		Samurai::IO::Net::Socket* wakeSocket;
+		std::shared_ptr<Samurai::IO::Net::Socket> wakeSocket;
 		ConsoleWakeHandler* wakeHandler;
 };
 

@@ -15,9 +15,9 @@
 #include "network/adc/parser.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/cid.h"
+#include "network/socketreaper.h"
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/inetaddress.h>
-#include <samurai/util/refcount.h>
 #include <samurai/timestamp.h>
 
 #define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
@@ -71,23 +71,28 @@
 }
 
 
-ADC::HubConnection::HubConnection(Samurai::IO::Net::Socket* socket_) {
-	socket = socket_;
+ADC::HubConnection::HubConnection(std::shared_ptr<Samurai::IO::Net::Socket> socket_) {
+	socket = std::move(socket_);
 	last_act = new Samurai::TimeStamp();
 }
 
 ADC::HubConnection::~HubConnection()
 {
-	Samurai::postMessage(QuickDC::MsgSocketMonitorDelete, socket, 0, 0);
+	/*
+	 * A user is normally dropped from inside a socket event handler, so the
+	 * socket cannot be destroyed here - the monitor goes on using it once the
+	 * handler returns. Clear the handler and let the reaper release it.
+	 */
 	socket->setEventHandler(0);
+	QuickDC::retireSocket(std::move(socket));
 }
 
 void ADC::HubConnection::resetTimer() {
 	last_act->reset();
 }
 
-ADC::HubUser::HubUser(Samurai::IO::Net::Socket* socket_, ADC::Hub* hub) :
-	HubConnection(socket_),
+ADC::HubUser::HubUser(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC::Hub* hub) :
+	HubConnection(std::move(socket_)),
 	command_sup(0),
 	command_inf(0),
 	nick(0),
@@ -98,7 +103,7 @@ ADC::HubUser::HubUser(Samurai::IO::Net::Socket* socket_, ADC::Hub* hub) :
 	sid = hub->generateNextSid();
 	state = ADC::State_Protocol;
 	credentials = Cred_User;
-	QHUB("%s: Connection from %s:%d", ADC::SID::toString(sid), socket->getAddress()->toString(), socket->getPort());
+	QHUB("%s: Connection from %s:%d", ADC::SID::toString(sid), socket->getAddress()->toString().c_str(), socket->getPort());
 }
 
 ADC::HubUser::~HubUser() {
@@ -189,7 +194,7 @@ bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
 		}
 	
 		if (HubUser* hu = hub->lookupUser(nick)) {
-			if (strcmp(hu->cid, cid) || strcmp(hu->socket->getAddress()->toString(), socket->getAddress()->toString())) {
+			if (strcmp(hu->cid, cid) || hu->socket->getAddress()->toString() != socket->getAddress()->toString()) {
 				INF_SEND_ERROR(this, hub, "222", "User already logged in.", 0, 0);
 				return false;
 			} else {

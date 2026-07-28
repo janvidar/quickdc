@@ -299,7 +299,7 @@ void ADC::Hub::onWelcome(ADC::HubUser* user) {
 	
 	/* Send the message of the day (hacked to use the services API) */
 	ADC::Command* fake = new ADC::Command(FOURCC('B','M','S','G'), ADC::SID::toString(user->sid), 0);
-	fake->setSocket(user->socket);
+	fake->setSocket(user->socket.get());
 	fake->addArgument("+motd");
 	services->invoke(fake);
 }
@@ -416,8 +416,8 @@ void ADC::Hub::kick(ADC::HubUser* user) {
 }
 
 
-void ADC::Hub::onConnected(Samurai::IO::Net::Socket* socket) {
-	ADC::HubUser* user = new ADC::HubUser(socket, this);
+void ADC::Hub::onConnected(std::shared_ptr<Samurai::IO::Net::Socket> socket) {
+	ADC::HubUser* user = new ADC::HubUser(std::move(socket), this);
 	userAdd(user);
 }
 
@@ -502,7 +502,7 @@ void ADC::Hub::userAdd(HubUser* user) {
 		return;
 	}
 
-	socket_map.insert(std::pair<Samurai::IO::Net::Socket*, HubUser*>(user->socket, user));
+	socket_map.insert(std::pair<const Samurai::IO::Net::Socket*, HubUser*>(user->socket.get(), user));
 	sid_map.insert(std::pair<sid_t, HubUser*>(user->sid, user));
 	users.push_back(user);
 }
@@ -514,7 +514,7 @@ void ADC::Hub::userRemove(HubUser* user) {
 	}
 
 	if (user) {
-		std::map<const Samurai::IO::Net::Socket*, HubUser*>::iterator socket_it = socket_map.find(user->socket);
+		std::map<const Samurai::IO::Net::Socket*, HubUser*>::iterator socket_it = socket_map.find(user->socket.get());
 		if (socket_it != socket_map.end()) {
 			socket_map.erase(socket_it);
 		}

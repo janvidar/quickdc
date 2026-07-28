@@ -42,9 +42,7 @@ DC::SendSupports::SendSupports() : DC::Command()
 	buffer->append("UserIP2 ");
 	buffer->append("TTHSearch ");
 	buffer->append("GetZBlock ");
-#ifdef SSL_SUPPORT
 	buffer->append("SSL ");
-#endif
 	buffer->append('|');
 }
 
@@ -199,7 +197,7 @@ DC::SendDirection::SendDirection(bool download, size_t priority) : DC::Command()
 {
 	buffer->append("$Direction ");
 	buffer->append( download ? "Download " : "Upload " );
-	buffer->append(quickdc_itoa(priority, 10));
+	buffer->append(std::to_string(priority));
 	buffer->append('|');
 }
 

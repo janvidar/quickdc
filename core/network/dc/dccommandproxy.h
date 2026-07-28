@@ -38,8 +38,8 @@ class HubSession;
 
 class CommandProxy : public QuickDC::CommandProxy {
 	public:
-		CommandProxy(Samurai::IO::Net::Socket* socket, DC::ClientSession* session);
-		CommandProxy(Samurai::IO::Net::Socket* socket, DC::HubSession* session);
+		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, DC::ClientSession* session);
+		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, DC::HubSession* session);
 		virtual ~CommandProxy();
 		
 		/**

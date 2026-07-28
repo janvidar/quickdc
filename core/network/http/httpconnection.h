@@ -36,7 +36,7 @@ class Connection :
 	public QuickDC::CommandProxy
 {
 	public:
-		Connection(Samurai::IO::Net::Socket* sock, bool client);
+		Connection(std::shared_ptr<Samurai::IO::Net::Socket> sock, bool client);
 		virtual ~Connection();
 		
 		enum ParseMode { None, Header, Body };

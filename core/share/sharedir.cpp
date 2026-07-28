@@ -110,24 +110,22 @@ void QuickDC::Share::Dir::scan() {
 		return;
 	}
 
-	Samurai::IO::File* file = dir.first();
-	while (file) {
-		if (!file->isReadable()) {
-			file = dir.next();
+	Samurai::IO::File file;
+	for (bool more = dir.first(file); more; more = dir.next(file)) {
+		if (!file.isReadable()) {
 			continue;
 		}
 
-		if (file->isDirectory()) {
-			QDBG("- Dir %s", file->getName().c_str());
-			subdirs.push_back(new QuickDC::Share::Dir(file->getName(), this));
-		} else if (file->isRegular()) {
-			QDBG("- File %s", file->getName().c_str())
-			files.push_back(new QuickDC::Share::File(file->getName(), this));
+		if (file.isDirectory()) {
+			QDBG("- Dir %s", file.getName().c_str());
+			subdirs.push_back(new QuickDC::Share::Dir(file.getName(), this));
+		} else if (file.isRegular()) {
+			QDBG("- File %s", file.getName().c_str())
+			files.push_back(new QuickDC::Share::File(file.getName(), this));
 
-		} else if (file->isSymlink()) {
-			QDBG("Ignoring symlink: %s", file->getName().c_str());
+		} else if (file.isSymlink()) {
+			QDBG("Ignoring symlink: %s", file.getName().c_str());
 		}
-		file = dir.next();
 	}
 }
 

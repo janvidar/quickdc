@@ -39,16 +39,16 @@ static bool running = true;
 
 class Telnet : public SocketEventHandler {
 	protected:
-			Socket* socket;
+			std::shared_ptr<Socket> socket;
 			
 	public:
 		Telnet(const char* host, int port) {
-			socket = new Socket(this, host, port);
+			socket = Socket::create(this, host, port);
 			
 		}
 		
 		virtual ~Telnet() {
-			delete socket;
+			socket.reset();
 		}
 		
 		void connect() {
@@ -56,8 +56,7 @@ class Telnet : public SocketEventHandler {
 		}
 		
 		void disconnect() {
-			delete socket;
-			socket = 0;
+			socket.reset();
 		}
 
 		void write(char* buffer, size_t size) {

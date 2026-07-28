@@ -89,8 +89,8 @@ bool IniParser::read() {
 
 	std::string section = "";
 
-	int pos = -1;
-	while ((pos = buffer->find('\n')) != -1) {
+	size_t pos = Samurai::IO::Buffer::npos;
+	while ((pos = buffer->find('\n')) != Samurai::IO::Buffer::npos) {
 		if (pos == 0) {
 			buffer->remove(1); 
 			continue;

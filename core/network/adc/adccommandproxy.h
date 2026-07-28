@@ -36,9 +36,9 @@ class CommandProxy : public QuickDC::CommandProxy
 {
 	public:
 	
-		CommandProxy(Samurai::IO::Net::Socket* socket, ADC::ClientSession* session);
-		CommandProxy(Samurai::IO::Net::Socket* socket, ADC::HubSession* session);
-		CommandProxy(Samurai::IO::Net::Socket* socket, ADC::Hub* hub);
+		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::ClientSession* session);
+		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::HubSession* session);
+		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::Hub* hub);
 		virtual ~CommandProxy();
 		
 		/**

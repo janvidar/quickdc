@@ -36,26 +36,26 @@ QuickDC::DCServer::DCServer()
 	Samurai::IO::Net::InetAddress localAddr(bindaddr.c_str());
 	Samurai::IO::Net::InetSocketAddress bindAddr(localAddr, port);
 
-	socket = new Samurai::IO::Net::ServerSocket(this, bindAddr);
-	dgram  = new Samurai::IO::Net::DatagramSocket(this, bindAddr);
+	socket = Samurai::IO::Net::ServerSocket::create(this, bindAddr);
+	dgram  = Samurai::IO::Net::DatagramSocket::create(this, bindAddr);
 	
 	if (!socket->listen())
 	{
 		QDBG("Error: could not bind to port for TCP service. Disabling service");
-		delete socket; socket = 0;
+		socket.reset();
 	}
 	       
 	if (!dgram->listen())
 	{
 		QDBG("Error: could not bind to port for UDP service. Disabling service");
-		delete dgram; dgram = 0;
+		dgram.reset();
 	}
 }
 
 QuickDC::DCServer::~DCServer()
 {
-	delete dgram; dgram = 0;
-	delete socket; socket = 0;
+	dgram.reset();
+	socket.reset();
 }
 
 void QuickDC::DCServer::EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char* msg)
@@ -63,10 +63,10 @@ void QuickDC::DCServer::EventAcceptError(const Samurai::IO::Net::ServerSocket*, 
 	QERR("Socket accept error: %s", msg);
 }
 
-void QuickDC::DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, Samurai::IO::Net::Socket* socket)
+void QuickDC::DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, std::shared_ptr<Samurai::IO::Net::Socket> socket)
 {
 #ifdef DATADUMP
-	QDBG("Socket accepted: %s", socket->getAddress());
+	QDBG("Socket accepted: %s", socket->getAddress()->toString().c_str());
 #endif
 	Connection* connection = new ProtocolProbe(socket);
 	socket->setEventHandler(connection);

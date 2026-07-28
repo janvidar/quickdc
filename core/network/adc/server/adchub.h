@@ -8,6 +8,7 @@
 
 #include "quickdc.h"
 #include <string.h>
+#include <memory>
 #include <map>
 #include <vector>
 #include <deque>
@@ -84,7 +85,7 @@ namespace ADC {
 			* This method is called when a user has connected to the
 			* hub but not yet logged in properly.
 			*/
-			void onConnected(Samurai::IO::Net::Socket* socket);
+			void onConnected(std::shared_ptr<Samurai::IO::Net::Socket> socket);
 			
 			/**
 			* This method is called when a user is logged in, and will

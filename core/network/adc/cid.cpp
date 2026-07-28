@@ -121,7 +121,7 @@ void ADC::CID::generate() {
 	gethostname(seed, 16);
 	strcat(seed, now.getTime());
 	strcat(seed, BUILD);
-	strcat(seed, quickdc_itoa((int) getpid(), 10));
+	strcat(seed, std::to_string((int) getpid()).c_str());
 
 	tiger1.update((uint8_t*) seed, strlen(seed));
 	value = tiger1.digest();

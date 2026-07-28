@@ -11,7 +11,7 @@
 #include <samurai/io/net/socket.h>
 #include <samurai/io/buffer.h>
 
-Http::Connection::Connection(Samurai::IO::Net::Socket* sock, bool client_) : QuickDC::Connection(sock, "HTTP"),  QuickDC::CommandProxy(sock), client(client_)
+Http::Connection::Connection(std::shared_ptr<Samurai::IO::Net::Socket> sock, bool client_) : QuickDC::Connection(sock, "HTTP"),  QuickDC::CommandProxy(sock), client(client_)
 {
 	QDBG("Http::Connection: - constructed.");
 	
@@ -36,9 +36,23 @@ Http::Connection::~Connection()
 
 void Http::Connection::close()
 {
-	QDBG("Http::Connection::close(): socket=%p, mgr=%p", QuickDC::Connection::socket, manager);
+	QDBG("Http::Connection::close(): socket=%p, mgr=%p", (void*) QuickDC::Connection::socket.get(), manager);
+
+	/*
+	 * The destructor closes as well, and it runs from the deferred deletion
+	 * that this very call arranges, so the second pass has nothing left to do.
+	 */
+	if (!QuickDC::Connection::socket) return;
+
 	QuickDC::Connection::socket->setEventHandler(0);
-	delete QuickDC::Connection::socket; QuickDC::Connection::socket = 0;
+
+	/*
+	 * The CommandProxy half of this object shares the socket, so dropping this
+	 * reference alone would leave the descriptor open until the connection is
+	 * destroyed. Closing it here keeps close() meaning what it says.
+	 */
+	QuickDC::Connection::socket->disconnect();
+	QuickDC::Connection::socket.reset();
 	if (manager) manager->remove(this);
 }
 
@@ -62,9 +76,13 @@ bool Http::Connection::read()
 	QDBG(__PRETTY_FUNCTION__);
 	size_t bufsize = QuickDC::Connection::socket->getReceiveBufferSize();
 	char* buffer = new char[bufsize];
-	int n = QuickDC::Connection::socket->read(buffer, bufsize);
 
-	if (n == -1)
+	size_t n = 0;
+	std::error_code ec;
+	Samurai::IO::ReadResult result =
+		QuickDC::Connection::socket->read(buffer, bufsize, n, ec);
+
+	if (result == Samurai::IO::ReadError)
 	{
 		delete[] buffer;
 		return false;

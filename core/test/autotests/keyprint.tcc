@@ -128,7 +128,7 @@ EXO_TEST(keyprint_url_with_path, {
 	Samurai::IO::Net::URL url("adcs://adcs.uhub.org:1511/?kp=" KEYPRINT_A);
 	return url.isValid() &&
 	       url.getScheme() == "adcs" &&
-	       strcmp(url.getHost().toString(), "adcs.uhub.org") == 0 &&
+	       url.getHost().toString() == "adcs.uhub.org" &&
 	       url.getPort() == 1511 &&
 	       url.getQuery() == "kp=" KEYPRINT_A;
 });

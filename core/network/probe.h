@@ -41,7 +41,7 @@ class ConnectionManager;
  */
 class ProtocolProbe : public Connection, public Samurai::TimerListener {
 	public:
-		ProtocolProbe(Samurai::IO::Net::Socket* sock);
+		ProtocolProbe(std::shared_ptr<Samurai::IO::Net::Socket> sock);
 		virtual ~ProtocolProbe();
 
 		static void probeDatagram(Samurai::IO::Net::DatagramSocket* socket, Samurai::IO::Net::DatagramPacket* packet);

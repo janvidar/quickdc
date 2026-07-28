@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_SERVER_API_H
 
 #include "quickdc.h"
+#include <memory>
 #include <samurai/io/net/socketevent.h>
 
 namespace {
@@ -31,13 +32,13 @@ class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samur
 		
 	protected:
 		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char* msg);
-		void EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, Samurai::IO::Net::Socket* socket);
+		void EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, std::shared_ptr<Samurai::IO::Net::Socket> socket);
 		void EventGotDatagram(Samurai::IO::Net::DatagramSocket*, Samurai::IO::Net::DatagramPacket*);
 		void EventDatagramError(const Samurai::IO::Net::DatagramSocket*, const char* msg);
 
 	protected:
-		Samurai::IO::Net::ServerSocket* socket;
-		Samurai::IO::Net::DatagramSocket* dgram;
+		std::shared_ptr<Samurai::IO::Net::ServerSocket> socket;
+		std::shared_ptr<Samurai::IO::Net::DatagramSocket> dgram;
 };
 
 }

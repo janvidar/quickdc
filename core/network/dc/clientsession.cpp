@@ -48,8 +48,8 @@ DC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, DC::HubSession* hub
 }
 
 
-DC::ClientSession::ClientSession(Samurai::IO::Net::Socket* sock, DC::HubSession* hubsession_) :
-	QuickDC::Connection(sock, "NMDC client"),
+DC::ClientSession::ClientSession(std::shared_ptr<Samurai::IO::Net::Socket> sock, DC::HubSession* hubsession_) :
+	QuickDC::Connection(std::move(sock), "NMDC client"),
 	hubsession(hubsession_),
 	isClient(false)
 {
@@ -1007,8 +1007,11 @@ void DC::ClientSession::EventDisconnected(const Samurai::IO::Net::Socket*)
 {
 	QDBG("Disconnected from peer");
 	abandonDownload();
-	delete socket;
-	socket = 0;
+
+	/* The command proxy shares the socket, so close the descriptor rather than
+	   just letting go of one of the two references to it. */
+	socket->disconnect();
+	socket.reset();
 	manager->remove(this);
 }
 
@@ -1045,8 +1048,11 @@ void DC::ClientSession::EventCanWrite(const Samurai::IO::Net::Socket*)
 void DC::ClientSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char*)
 {
 	abandonDownload();
-	delete socket;
-	socket = 0;
+
+	/* The command proxy shares the socket, so close the descriptor rather than
+	   just letting go of one of the two references to it. */
+	socket->disconnect();
+	socket.reset();
 	manager->remove(this);
 }
 

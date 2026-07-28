@@ -10,6 +10,7 @@
 #include <samurai/util/bwestimation.h>
 #include <samurai/io/compression.h>
 #include <time.h>
+#include <memory>
 #include <string>
 
 namespace Samurai {
@@ -50,7 +51,7 @@ class Transfer {
 		/**
 		 *
 		 */
-		Transfer(TransferManager*, PrivateTransferListener*, Samurai::IO::Net::Socket*, Samurai::IO::File*, Direction, off_t offset, off_t length);
+		Transfer(TransferManager*, PrivateTransferListener*, std::shared_ptr<Samurai::IO::Net::Socket>, Samurai::IO::File*, Direction, off_t offset, off_t length);
 		virtual ~Transfer();
 		
 		/**
@@ -102,7 +103,7 @@ class Transfer {
 		
 		
 		Samurai::IO::File* getFile() { return file; }
-		Samurai::IO::Net::Socket* getSocket() { return socket; }
+		Samurai::IO::Net::Socket* getSocket() { return socket.get(); }
 	
 	protected:
 		virtual void transfer() = 0;
@@ -120,7 +121,7 @@ class Transfer {
 	protected:
 		TransferManager* manager;
 		PrivateTransferListener* listener;
-		Samurai::IO::Net::Socket* socket;
+		std::shared_ptr<Samurai::IO::Net::Socket> socket;
 		Samurai::IO::File* file;
 		enum Direction direction;
 		Samurai::Util::RateEstimator rate;
@@ -141,7 +142,7 @@ class Transfer {
 class Upload : public Transfer
 {
 	public:
-		Upload(TransferManager*, PrivateTransferListener*, Samurai::IO::Net::Socket*, Samurai::IO::File*, off_t offset, off_t length);
+		Upload(TransferManager*, PrivateTransferListener*, std::shared_ptr<Samurai::IO::Net::Socket>, Samurai::IO::File*, off_t offset, off_t length);
 		virtual ~Upload();
 
 	protected:
@@ -170,7 +171,7 @@ class Upload : public Transfer
 class ZUpload : public Upload
 {
 	public:
-		ZUpload(TransferManager*, PrivateTransferListener*, Samurai::IO::Net::Socket*, Samurai::IO::File*, off_t offset, off_t length);
+		ZUpload(TransferManager*, PrivateTransferListener*, std::shared_ptr<Samurai::IO::Net::Socket>, Samurai::IO::File*, off_t offset, off_t length);
 		virtual ~ZUpload();
 
 	protected:
@@ -209,7 +210,7 @@ class ZUpload : public Upload
 
 class Download : public Transfer {
 	public:
-		Download(TransferManager*, PrivateTransferListener*, Samurai::IO::Net::Socket*, Samurai::IO::File*, off_t offset, off_t length);
+		Download(TransferManager*, PrivateTransferListener*, std::shared_ptr<Samurai::IO::Net::Socket>, Samurai::IO::File*, off_t offset, off_t length);
 		virtual ~Download();
 
 		/**

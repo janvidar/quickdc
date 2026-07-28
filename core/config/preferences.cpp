@@ -64,7 +64,7 @@ bool Preferences::getBool(const std::string& key, const bool defval) {
 }
 
 void Preferences::setNumber(const std::string& key, int val) {
-	groups[current][key] = std::string(quickdc_itoa(val, 10));
+	groups[current][key] = std::to_string(val);
 	dirty = true;
 }
 
@@ -79,7 +79,7 @@ void Preferences::setBool(const std::string& key, bool val) {
 }
 
 void Preferences::setTime(const std::string& key, const Samurai::TimeStamp& time) {
-	groups[current][key] = std::string(quickdc_itoa(time.getInternalData(), 10));
+	groups[current][key] = std::to_string(time.getInternalData());
 	dirty = true;
 }
 

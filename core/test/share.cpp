@@ -32,7 +32,7 @@ void calculateLocalShares()
 	
 	shares.createFileLists(false);
 	
-	printf("Shared: %s bytes, %d files\n", quickdc_ulltoa(shares.getSharedSize()), shares.getFiles());
+	printf("Shared: %s bytes, %d files\n", std::to_string(shares.getSharedSize()).c_str(), shares.getFiles());
 }
 
 
@@ -51,7 +51,7 @@ void parseShareFile(const char* file_) {
 	{
 		size_t n = list->root->getSize();
 		printf("File list successfully decoded...\n");
-		printf("Shared: %s bytes, %d files\n", quickdc_ulltoa(n), (int) list->root->getFiles());
+		printf("Shared: %s bytes, %d files\n", std::to_string(n).c_str(), (int) list->root->getFiles());
 	}
 	delete list;
 }

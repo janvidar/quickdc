@@ -1772,7 +1772,7 @@ bool QuickDC::QueueManager::save()
 		xmlout->append(XML_INDENT "<File name=\"");
 		XML::escape(xmlout, file->getLocalFilename());
 		xmlout->append("\" size=\"");
-		xmlout->append(quickdc_ulltoa(file->getSize()));
+		xmlout->append(std::to_string(file->getSize()));
 		xmlout->append("\" tth=\"");
 		XML::escape(xmlout, file->getTTH());
 		xmlout->append("\" added=\"");
@@ -1790,9 +1790,9 @@ bool QuickDC::QueueManager::save()
 			xmlout->append(XML_INDENT XML_INDENT "<Source url=\"");
 			XML::escape(xmlout, url);
 			xmlout->append("\" lastseen=\"");
-			xmlout->append(quickdc_ulltoa((uint64_t) source->getLastSeen().getInternalData()));
+			xmlout->append(std::to_string((uint64_t) source->getLastSeen().getInternalData()));
 			xmlout->append("\" retries=\"");
-			xmlout->append(quickdc_ulltoa((uint64_t) source->getRetryCount()));
+			xmlout->append(std::to_string((uint64_t) source->getRetryCount()));
 			xmlout->append("\" />" XML_NEWLINE);
 
 			free(url);
@@ -1803,9 +1803,9 @@ bool QuickDC::QueueManager::save()
 		for (size_t c = 0; file->getChunks().getRange(c, start, end); c++)
 		{
 			xmlout->append(XML_INDENT XML_INDENT "<Chunk start=\"");
-			xmlout->append(quickdc_ulltoa(start));
+			xmlout->append(std::to_string(start));
 			xmlout->append("\" end=\"");
-			xmlout->append(quickdc_ulltoa(end));
+			xmlout->append(std::to_string(end));
 			xmlout->append("\" />" XML_NEWLINE);
 		}
 

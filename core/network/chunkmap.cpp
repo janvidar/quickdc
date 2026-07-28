@@ -270,9 +270,9 @@ std::string QuickDC::ChunkMap::toString() const
 	for (size_t n = 0; n < done.size(); n++)
 	{
 		if (n) out += ",";
-		out += quickdc_ulltoa(done[n].start);
+		out += std::to_string(done[n].start);
 		out += "-";
-		out += quickdc_ulltoa(done[n].end);
+		out += std::to_string(done[n].end);
 	}
 	return out;
 }
@@ -337,9 +337,9 @@ std::string QuickDC::ChunkMap::toIndexString(uint64_t blockSize) const
 		while (n < blocks && hasBlock(blockSize, n)) n++;
 
 		if (out.size()) out += ",";
-		out += quickdc_ulltoa((uint64_t) first);
+		out += std::to_string((uint64_t) first);
 		out += ",";
-		out += quickdc_ulltoa((uint64_t) n);
+		out += std::to_string((uint64_t) n);
 	}
 	return out;
 }

@@ -24,15 +24,15 @@ static bool running = true;
 
 class Connection : public Samurai::IO::Net::SocketEventHandler {
 	protected:
-		Samurai::IO::Net::Socket* socket;
+		std::shared_ptr<Samurai::IO::Net::Socket> socket;
 			
 	public:
 		Connection(const char* host, int port) {
-			socket = new Samurai::IO::Net::Socket(this, host, port);
+			socket = Samurai::IO::Net::Socket::create(this, host, port);
 		}
 		
 		virtual ~Connection() {
-			delete socket;
+			socket.reset();
 		}
 		
 		void connect() {
@@ -40,8 +40,7 @@ class Connection : public Samurai::IO::Net::SocketEventHandler {
 		}
 		
 		void disconnect() {
-			delete socket;
-			socket = 0;
+			socket.reset();
 		}
 
 		void write(char* buffer, size_t size) {

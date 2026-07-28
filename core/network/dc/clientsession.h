@@ -65,7 +65,7 @@ class ClientSession :
 		/**
 		 * NOTE: hubsession may be 0. It always is if we don't know who we are talking to, yet.
 		 */
-		ClientSession(Samurai::IO::Net::Socket* sock, DC::HubSession* hubsession = 0);
+		ClientSession(std::shared_ptr<Samurai::IO::Net::Socket> sock, DC::HubSession* hubsession = 0);
 		ClientSession(Samurai::IO::Net::URL* url, DC::HubSession* hubsession = 0);
 		virtual ~ClientSession();
 		

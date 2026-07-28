@@ -92,7 +92,7 @@ static bool run_transfer(bool compress, const std::string& data, std::vector<cha
 	setsockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
 	Samurai::IO::Net::InetSocketAddress addr("127.0.0.1", 0, Samurai::IO::Net::InetAddress::IPv4);
-	Samurai::IO::Net::Socket* sock = new Samurai::IO::Net::Socket(fds[0], addr);
+	auto sock = Samurai::IO::Net::Socket::create(fds[0], addr);
 
 	QuickDC::TransferManager manager;
 	Listener listener;
@@ -130,7 +130,7 @@ static bool run_transfer(bool compress, const std::string& data, std::vector<cha
 	manager.process();
 
 	delete transfer;
-	delete sock;
+	sock.reset();
 	::close(fds[1]);
 
 	return complete && listener.stopped;

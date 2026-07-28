@@ -66,14 +66,10 @@ static std::string adc_status_code(int severity, int code)
  */
 static bool canAcceptTls()
 {
-#ifdef SSL_SUPPORT
 	Samurai::IO::File* cert = Samurai::IO::Net::TlsFactory::getCertificate();
 	Samurai::IO::File* pkey = Samurai::IO::Net::TlsFactory::getPrivateKey();
 
 	return cert && cert->exists() && pkey && pkey->exists();
-#else
-	return false;
-#endif
 }
 
 
@@ -225,14 +221,10 @@ void ADC::HubSession::EventConnected(const Samurai::IO::Net::Socket*)
 	}
 	else
 	{
-#ifdef SSL_SUPPORT
 		listener->EventNetStatus(QuickDC::HubListener::NetConnected);
 		resetIdleTimer();
 		socket->TLSInitialize(false);
 		socket->TLSsendHandshake();
-#else
-		QERR("TLS not supported.");
-#endif
 	}
 }
 
@@ -250,7 +242,7 @@ void ADC::HubSession::EventConnected(const Samurai::IO::Net::Socket*)
 bool ADC::HubSession::verifyKeyprint()
 {
 	std::string actual;
-	bool presented = QuickDC::Keyprint::ofPeer(socket, actual);
+	bool presented = QuickDC::Keyprint::ofPeer(socket.get(), actual);
 
 	std::string trusted;
 	const char* source = 0;
@@ -538,7 +530,7 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 
 		ADC::Command cmd(FOURCC('U','R','E','S'), ADC::CID::getInstance()->getCID());
 		cmd.addArgument("FN", file->getPublicName());
-		cmd.addArgument("SI", quickdc_ulltoa(file->getSize()));
+		cmd.addArgument("SI", std::to_string(file->getSize()));
 		cmd.addArgument("TR", file->getTTH());
 		cmd.addArgument("TD", "0");
 		cmd.addArgument("TO", req->getToken());
@@ -557,7 +549,7 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		/* Send result via server */
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','R','E','S'), sid, user->getID());
 		cmd->addArgument("FN", file->getPublicName());
-		cmd->addArgument("SI", quickdc_ulltoa(file->getSize()));
+		cmd->addArgument("SI", std::to_string(file->getSize()));
 		cmd->addArgument("TR", file->getTTH());
 		cmd->addArgument("TD", "0");
 		cmd->addArgument("TO", req->getToken());
@@ -686,17 +678,17 @@ void ADC::HubSession::sendClientInfo()
 
 	ADC::Command* cmd = new ADC::Command(FOURCC('B','I','N','F'), sid);
 	cmd->addArgument("NI", nickname);
-	cmd->addArgument("SL", quickdc_itoa(config->getNumber("Slots", 3), 10));
-	cmd->addArgument("SS", quickdc_ulltoa(QuickDC::Core::getInstance()->shares->getSharedSize()));
-	cmd->addArgument("SF", quickdc_itoa(QuickDC::Core::getInstance()->shares->getFiles(), 10));
+	cmd->addArgument("SL", std::to_string(config->getNumber("Slots", 3)));
+	cmd->addArgument("SS", std::to_string(QuickDC::Core::getInstance()->shares->getSharedSize()));
+	cmd->addArgument("SF", std::to_string(QuickDC::Core::getInstance()->shares->getFiles()));
 	cmd->addArgument("DE", description);
 	cmd->addArgument("EM", email);
 	cmd->addArgument("VE", PRODUCT " " VERSION);
 	cmd->addArgument("ID", ADC::CID::getInstance()->getCID());
 	cmd->addArgument("PD", ADC::CID::getInstance()->getPID());
-	cmd->addArgument("HN", quickdc_itoa(QuickDC::Core::getInstance()->hubs->countHubsNormal(), 10));
-	cmd->addArgument("HR", quickdc_itoa(QuickDC::Core::getInstance()->hubs->countHubsRegistered(), 10));
-	cmd->addArgument("HO", quickdc_itoa(QuickDC::Core::getInstance()->hubs->countHubsOperator(), 10));
+	cmd->addArgument("HN", std::to_string(QuickDC::Core::getInstance()->hubs->countHubsNormal()));
+	cmd->addArgument("HR", std::to_string(QuickDC::Core::getInstance()->hubs->countHubsRegistered()));
+	cmd->addArgument("HO", std::to_string(QuickDC::Core::getInstance()->hubs->countHubsOperator()));
 
 	/*
 	 * KEYP: publish what our own certificate hashes to, so a peer dialling us
@@ -712,7 +704,7 @@ void ADC::HubSession::sendClientInfo()
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
 	{
 		cmd->addArgument("I4", config->getString("Address", "0.0.0.0"));
-		cmd->addArgument("U4", quickdc_itoa(config->getNumber("Port"), 10));
+		cmd->addArgument("U4", std::to_string(config->getNumber("Port")));
 		cmd->addArgument("SU", "ADC0,TCP4,UDP4");
 	}
 	else
@@ -811,7 +803,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), sid, user->getID());
 		cmd->addArgument((secure && canAcceptTls()) ? ADC_TLS_PROTO : ADC_COMPLIANCE);
-		cmd->addArgument(quickdc_itoa(config->getNumber("Port"), 10));
+		cmd->addArgument(std::to_string(config->getNumber("Port")).c_str());
 		cmd->addArgument(token);
 		send(cmd);
 
@@ -830,11 +822,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 		QDBG("Requesting passive connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','R','C','M'), sid, user->getID());
 
-#ifdef SSL_SUPPORT
 		cmd->addArgument(secure ? ADC_TLS_PROTO : ADC_COMPLIANCE);
-#else
-		cmd->addArgument(ADC_COMPLIANCE);
-#endif
 		cmd->addArgument(token);
 
 		/* Add to securitymanager */
@@ -1215,16 +1203,6 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 		return;
 	}
 
-#ifndef SSL_SUPPORT
-	if (peerSecure)
-	{
-		QERR("Peer asked for ADCS, but TLS support is not built in");
-		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),
-			"TLS not supported", token, proto);
-		return;
-	}
-#endif
-
 	/*
 	 * KEYP: the keyprint the hub relayed for this user is only worth checking if
 	 * the hub could not have rewritten it. That means our own connection to it
@@ -1242,7 +1220,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 				user->getNick());
 	}
 
-	Samurai::IO::Net::Socket* csock = new Samurai::IO::Net::Socket(0, ip, port);
+	auto csock = Samurai::IO::Net::Socket::create(nullptr, ip, port);
 	ADC::ClientSession* connection = new ADC::ClientSession(csock, this, token, from, peerSecure, peerKeyprint);
 	csock->setEventHandler(connection);
 	csock->connect();
@@ -1294,7 +1272,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), sid, user->getID());
 		cmd->addArgument(protocol);
-		cmd->addArgument(quickdc_itoa(config->getNumber("Port"), 10));
+		cmd->addArgument(std::to_string(config->getNumber("Port")).c_str());
 		if (token) cmd->addArgument(token);
 
 		/* Add to securitymanager */
@@ -1382,9 +1360,9 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	{
 		ADC::Command cmd(FOURCC('U','P','S','R'), ADC::CID::getInstance()->getCID());
 		cmd.addArgument("HI", hubIpPort.c_str());
-		cmd.addArgument("U4", quickdc_itoa(port, 10));
+		cmd.addArgument("U4", std::to_string(port));
 		cmd.addArgument("TR", request->getTTH());
-		cmd.addArgument("PC", quickdc_itoa((int) runs, 10));
+		cmd.addArgument("PC", std::to_string((int) runs));
 		cmd.addArgument("PI", indexes.c_str());
 
 		Samurai::IO::Buffer buffer;
@@ -1399,9 +1377,9 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	{
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','P','S','R'), sid, user->getID());
 		cmd->addArgument("HI", hubIpPort.c_str());
-		cmd->addArgument("U4", quickdc_itoa(port, 10));
+		cmd->addArgument("U4", std::to_string(port));
 		cmd->addArgument("TR", request->getTTH());
-		cmd->addArgument("PC", quickdc_itoa((int) runs, 10));
+		cmd->addArgument("PC", std::to_string((int) runs));
 		cmd->addArgument("PI", indexes.c_str());
 		send(cmd);
 	}

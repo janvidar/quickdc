@@ -25,6 +25,7 @@ set(QUICKDC_SOURCES
     network/leafhashes.cpp
     network/probe.cpp
     network/securitymanager.cpp
+    network/socketreaper.cpp
     network/transfer.cpp
     network/transfermanager.cpp
     network/user.cpp
@@ -100,11 +101,11 @@ set_target_properties(quickdc PROPERTIES OUTPUT_NAME quickdc)
 # "debug/dbg.h" and "quickdc.h". PUBLIC so the test programs get it too.
 target_include_directories(quickdc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# C++11 to match samurai. Not a free choice: samurai's io/device.h declares
-# dynamic exception specifications - throw(Exception) - which C++17 rejects,
-# and QuickDC includes those headers.
+# C++20 to match samurai, which exports cxx_std_20 as a usage requirement and
+# whose headers now use std::span, std::optional and class template argument
+# deduction.
 set_target_properties(quickdc PROPERTIES
-    CXX_STANDARD 11
+    CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
     POSITION_INDEPENDENT_CODE ON)
@@ -112,7 +113,7 @@ set_target_properties(quickdc PROPERTIES
 # The -D block from Makefile.common. PUBLIC because these appear in code
 # reachable from the headers the test programs compile against.
 #
-# Not carried over: SSL_SUPPORT, _FILE_OFFSET_BITS=64 and DEBUG, which samurai
+# Not carried over: SSL_OPENSSL, _FILE_OFFSET_BITS=64 and DEBUG, which samurai
 # already exports as PUBLIC definitions - defining them here as well would risk
 # disagreeing with the library about struct layout.
 target_compile_definitions(quickdc
@@ -134,9 +135,9 @@ endif()
 target_compile_definitions(quickdc PRIVATE ZLIB BZIP2)
 
 # samurai::samurai_static carries its own include directories, the OpenSSL,
-# zlib, bzip2 and pthread link dependencies, and the SSL_SUPPORT /
-# _FILE_OFFSET_BITS / DEBUG definitions. PUBLIC: QuickDC's headers include
-# samurai headers, so consumers need all of it as well.
+# zlib, bzip2 and pthread link dependencies, the C++20 usage requirement, and
+# the SSL_OPENSSL / _FILE_OFFSET_BITS / DEBUG definitions. PUBLIC: QuickDC's
+# headers include samurai headers, so consumers need all of it as well.
 target_link_libraries(quickdc PUBLIC samurai::samurai_static)
 
 # Dropped from Makefile.system: the Perl-based endianness probe that set
