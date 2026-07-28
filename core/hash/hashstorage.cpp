@@ -171,8 +171,10 @@ bool QuickDC::Hash::CacheStorage::write(QuickDC::Hash::CacheEntry* entry)
 	buffer.clear();
 	entry->write(&buffer);
 	entry->setCacheFileOffset(position + (sizeof(CacheRecordHeader) << 1) + sizeof(CacheEntryHeader));
-	file.write(&buffer, buffer.size(), true);
-	position += buffer.size();
+
+	size_t length = buffer.size();
+	file.write(&buffer, length, true);
+	position += length;
 	return true;
 }
 
@@ -196,8 +198,11 @@ bool QuickDC::Hash::CacheStorage::openForWriting()
 	
 	buffer.append((const char*) &header, sizeof(header));
 	buffer.append((const char*) &record, sizeof(record));
-	file.write(&buffer, buffer.size());
-	position = buffer.size();
+
+	/* write() consumes the buffer, so the length has to be taken first. */
+	size_t length = buffer.size();
+	file.write(&buffer, length);
+	position = length;
 	
 	opened = true;
 	return true;
