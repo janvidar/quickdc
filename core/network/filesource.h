@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <samurai/timestamp.h>
+#include "network/chunkmap.h"
 #include <vector>
 
 /** A source is forgotten after this many consecutive failures. */
@@ -137,6 +138,16 @@ class FileSource {
 		void onAttempt();
 
 		/**
+		 * Which parts of the file this source has, as a PSR "PI" field. Kept
+		 * as it arrived, since decoding needs a block size we may not know yet.
+		 */
+		void setAvailability(const char* indexes);
+
+		inline bool isPartial() const { return (availability != 0); }
+
+		bool getAvailability(uint64_t blockSize, uint64_t fileSize, ChunkMap& out) const;
+
+		/**
 		 * @return false if this source failed recently and should be left
 		 *         alone for now. A busy peer must not be hammered.
 		 */
@@ -168,6 +179,7 @@ class FileSource {
 		size_t retryCount;    // expire this after ~50 tries
 		Samurai::TimeStamp lastSeen; // expire this after ~30 days.
 		Samurai::TimeStamp lastAttempt; // not persisted; a restart may retry at once.
+		char* availability;   // PSR "PI" notation, or 0 if they have it all
 };
 
 }

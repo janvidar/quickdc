@@ -52,6 +52,7 @@ void addSupportFlags(ADC::Command& command, bool client);
 	ADC_HUB_CMD_CLASS(CmdMessage);
 	ADC_HUB_CMD_CLASS(CmdSearch);
 	ADC_HUB_CMD_CLASS(CmdResult);
+	ADC_HUB_CMD_CLASS(CmdPartialStatus);
 	ADC_HUB_CMD_CLASS(CmdCTM);
 	ADC_HUB_CMD_CLASS(CmdRCTM);
 

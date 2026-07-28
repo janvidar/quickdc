@@ -47,6 +47,10 @@ void ADC::DatagramHandler::onDatagram(Samurai::IO::Net::DatagramSocket*, Samurai
 				onSearchResult(&cmd);
 				break;
 
+			case FOURCC('U','P','S','R'):
+				onPartialStatus(&cmd);
+				break;
+
 			default:
 				QDBG("Ignoring an ADC datagram we have no use for");
 				break;
@@ -58,6 +62,27 @@ void ADC::DatagramHandler::onDatagram(Samurai::IO::Net::DatagramSocket*, Samurai
 	}
 
 	free(raw);
+}
+
+void ADC::DatagramHandler::onPartialStatus(ADC::Command* cmd)
+{
+	char* tth = cmd->getArgument("TR", 2, 0);
+	char* pi  = cmd->getArgument("PI", 2, 0);
+	const char* cid = cmd->getSourceID();
+
+	if (!tth || !pi || !cid) return;
+
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	if (!core || !core->hubs) return;
+
+	QuickDC::Hub* hub = core->hubs->lookupUserByClientID(cid);
+	if (!hub)
+	{
+		QDBG("Ignoring partial file status from '%s', who is not on any hub we are on", cid);
+		return;
+	}
+
+	hub->onPartialStatus(cid, tth, pi);
 }
 
 void ADC::DatagramHandler::onSearchResult(ADC::Command* cmd)

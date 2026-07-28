@@ -27,6 +27,7 @@
 #include "share/searchrequest.h"
 #include "share/searchresult.h"
 #include "network/downloadqueue.h"
+#include "network/leafhashes.h"
 #include "network/filesource.h"
 #include "network/user.h"
 #include <string>
@@ -1111,8 +1112,96 @@ void ADC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 {
 	if (userState != QuickDC::HubSession::StateNormal) return;
 
-	if (QuickDC::Core::getInstance()->shares)
+	QuickDC::Share::Manager* shares = QuickDC::Core::getInstance()->shares;
+	if (!shares) return;
+
+	shares->search(request);
+
+	/* A hash we do not share may still be one we are downloading. */
+	if (request->isTTH() && !shares->getFileByTTH(request->getTTH()))
+		sendPartialStatus(request);
+}
+
+void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+	if (!queue || !request || !request->getTTH()) return;
+
+	QuickDC::QueueFile* file = queue->getFileByTTH(request->getTTH());
+	if (!file) return;
+
+	/* Only verified blocks may be offered, so the leaves have to be in. */
+	QuickDC::LeafHashes* leaves = file->getLeaves();
+	if (!leaves || !leaves->isLoaded()) return;
+
+	uint64_t block = leaves->getLeafSize();
+	size_t blocks = file->getChunks().countBlocks(block);
+	if (!blocks) return;
+
+	std::string indexes = file->getChunks().toIndexString(block);
+	if (indexes.empty()) return;
+
+	QuickDC::Preferences* config = core->config;
+	config->setGroup("Network");
+	int port = config->getBool("Active mode") ? config->getNumber("Port", 0) : 0;
+
+	const QuickDC::User* user = request->getUser();
+
+	if (user && user->getAddressIPv4() && user->getPortIPv4() && core->server)
 	{
-		QuickDC::Core::getInstance()->shares->search(request);
+		ADC::Command cmd(FOURCC('U','P','S','R'), ADC::CID::getInstance()->getCID());
+		cmd.addArgument("U4", quickdc_itoa(port, 10));
+		cmd.addArgument("TR", request->getTTH());
+		cmd.addArgument("PC", quickdc_itoa((int) blocks, 10));
+		cmd.addArgument("PI", indexes.c_str());
+
+		Samurai::IO::Buffer buffer;
+		cmd.write(&buffer);
+		Samurai::IO::Net::DatagramPacket packet(&buffer);
+		Samurai::IO::Net::InetSocketAddress peer(user->getAddressIPv4(), user->getPortIPv4(),
+			Samurai::IO::Net::InetAddress::IPv4);
+		packet.setAddress(&peer);
+		core->server->send(&packet);
+	}
+	else if (user)
+	{
+		ADC::Command* cmd = new ADC::Command(FOURCC('D','P','S','R'), sid, user->getID());
+		cmd->addArgument("U4", quickdc_itoa(port, 10));
+		cmd->addArgument("TR", request->getTTH());
+		cmd->addArgument("PC", quickdc_itoa((int) blocks, 10));
+		cmd->addArgument("PI", indexes.c_str());
+		send(cmd);
+	}
+
+	QDBG("Offered %d of %d block(s) of '%s'", (int) blocks,
+		(int) ((file->getSize() + block - 1) / block), request->getTTH());
+}
+
+void ADC::HubSession::onPartialStatus(const char* cid, const char* tth, const char* indexes)
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+	const char* url = (hub) ? hub->getUrl() : 0;
+
+	if (!queue || !url || !cid || !tth || !indexes) return;
+
+	QuickDC::QueueFile* file = queue->getFileByTTH(tth);
+	if (!file) return;
+
+	QuickDC::FileSource* source = file->findSource(url, cid);
+	if (!source)
+	{
+		std::string name("TTH:");
+		name += tth;
+		source = new QuickDC::FileSource(url, cid, name.c_str());
+		file->addSource(source);
+		source = file->findSource(url, cid);
+	}
+
+	if (source)
+	{
+		source->setAvailability(indexes);
+		QDBG("'%s' has part of '%s': %s", cid, file->getLocalFilename(), indexes);
 	}
 }

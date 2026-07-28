@@ -36,6 +36,9 @@ namespace ADC {
 		protected:
 			/** URES: a peer answering one of our searches. */
 			static void onSearchResult(ADC::Command* cmd);
+
+			/** UPSR: what a peer holds of a file we are downloading. */
+			static void onPartialStatus(ADC::Command* cmd);
 	};
 }
 

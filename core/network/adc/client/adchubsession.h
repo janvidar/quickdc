@@ -29,6 +29,7 @@ class UserEventHandler;
 class HubListener;
 namespace Share {
 class SearchResult;
+class SearchRequest;
 }
 }
 
@@ -85,6 +86,12 @@ class HubSession :
 		void onPassiveConnect(const char* from, const char* protocol, const char* token);
 		void onSearch(QuickDC::Share::SearchRequest* request);
 		void onSearchResult(QuickDC::Share::SearchResult* result);
+
+		/** A peer told us which parts of a queued file it holds (PFSR). */
+		void onPartialStatus(const char* cid, const char* tth, const char* indexes);
+
+		/** Offer what we have of a queued file the searcher wanted. */
+		void sendPartialStatus(QuickDC::Share::SearchRequest* request);
 		
 		void sendPeerError(const char* sid, const char* code, const char* msg, const char* token, const char* protocol);
 

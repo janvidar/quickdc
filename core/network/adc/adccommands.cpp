@@ -390,6 +390,21 @@ static char* adc_connect_token(ADC::Command* cmd, size_t position) {
 	return cmd->getArgument("TO", 2, position);
 }
 
+bool ADC::CmdPartialStatus::invoke(ADC::Command* cmd) {
+	cmd->setPriority(ADC::Command::Low);
+
+	char* tth = cmd->getArgument("TR", 2, 0);
+	char* pi  = cmd->getArgument("PI", 2, 0);
+	if (!tth || !pi) return false;
+
+	/* Hub routed, so the sender is named by SID; sources are keyed on CID. */
+	const QuickDC::User* user = session->getUser(cmd->getSourceID());
+	if (!user) return false;
+
+	session->onPartialStatus((const char*) user->getClientID(), tth, pi);
+	return true;
+}
+
 bool ADC::CmdCTM::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::Normal);
 	char* proto = cmd->getArgument(0);
@@ -494,6 +509,7 @@ void ADC::addSupportFlags(ADC::Command& command, bool clientMode)
 	command.addArgument("AD", ADC_BASE);
 	command.addArgument("AD", ADC_BASE_COMPAT); // TODO: Remove when ldcpp does not require it.
 	command.addArgument("AD", ADC_HASH_TIGER);
+	command.addArgument("AD", ADC_EXT_PFSR);
 
 #ifdef SSL_SUPPORT
 	command.addArgument("AD", ADC_EXT_ADCS);

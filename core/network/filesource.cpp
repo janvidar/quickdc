@@ -20,7 +20,7 @@
  * which is the root directory.
  */
 QuickDC::FileSource::FileSource(const char* url_)
-	: hub(0), cid(0), filename(0), retryCount(0)
+	: hub(0), cid(0), filename(0), retryCount(0), availability(0)
 {
 	if (!url_) return;
 
@@ -50,7 +50,7 @@ QuickDC::FileSource::FileSource(const char* url_)
 }
 
 QuickDC::FileSource::FileSource(const char* hub_, const char* cid_, const char* filename_)
-	: hub(0), cid(0), filename(0), retryCount(0)
+	: hub(0), cid(0), filename(0), retryCount(0), availability(0)
 {
 	hub = (hub_) ? strdup(hub_) : 0;
 	cid = (cid_) ? strdup(cid_) : 0;
@@ -61,6 +61,7 @@ QuickDC::FileSource::~FileSource() {
 	free(hub);
 	free(cid);
 	free(filename);
+	free(availability);
 }
 
 char* QuickDC::FileSource::toURL() const
@@ -96,6 +97,23 @@ void QuickDC::FileSource::onFailure()
 void QuickDC::FileSource::onAttempt()
 {
 	lastAttempt.reset();
+}
+
+void QuickDC::FileSource::setAvailability(const char* indexes)
+{
+	free(availability);
+	availability = (indexes && *indexes) ? strdup(indexes) : 0;
+}
+
+bool QuickDC::FileSource::getAvailability(uint64_t blockSize, uint64_t fileSize, ChunkMap& out) const
+{
+	if (!availability || !blockSize || !fileSize) return false;
+
+	ChunkMap decoded(fileSize);
+	if (!decoded.fromIndexString(availability, blockSize)) return false;
+
+	out = decoded;
+	return true;
 }
 
 bool QuickDC::FileSource::isReadyToRetry() const

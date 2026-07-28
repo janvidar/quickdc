@@ -736,6 +736,9 @@ void QuickDC::QueueManager::add(QueueFile* file)
 	files.push_back(file);
 	fileIterator = files.end();
 
+	/* Needed to answer a PSR for a file we are not downloading right now. */
+	file->loadLeavesFromDisk();
+
 	if (file->isPersistent()) dirty = true;
 }
 
@@ -885,7 +888,17 @@ bool QuickDC::QueueManager::reserveChunk(QueueFile* file, FileSource* source, ui
 		}
 	}
 
-	if (!file->getChunks().reserve(want, offset, length)) return false;
+	/* A source that only has part of the file can only be asked for that. */
+	ChunkMap theirs;
+	if (source && source->isPartial() && leaves && leaves->isLoaded()
+		&& source->getAvailability(leaves->getLeafSize(), file->getSize(), theirs))
+	{
+		if (!file->getChunks().reserveWithin(theirs, want, offset, length)) return false;
+	}
+	else if (!file->getChunks().reserve(want, offset, length))
+	{
+		return false;
+	}
 
 	if (source) file->setSourceActive(source, true);
 	return true;

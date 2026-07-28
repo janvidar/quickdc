@@ -50,6 +50,7 @@ ADC::CommandProxy::CommandProxy(Samurai::IO::Net::Socket* socket, ADC::HubSessio
 	FOURCC_REG('D','S','C','H', new ADC::CmdSearch(this, session));
 	FOURCC_REG('F','S','C','H', new ADC::CmdSearch(this, session));
 	FOURCC_REG('D','R','E','S', new ADC::CmdResult(this, session));
+	FOURCC_REG('D','P','S','R', new ADC::CmdPartialStatus(this, session));
 	FOURCC_REG('D','C','T','M', new ADC::CmdCTM(this, session));
 	FOURCC_REG('D','R','C','M', new ADC::CmdRCTM(this, session));
 }
