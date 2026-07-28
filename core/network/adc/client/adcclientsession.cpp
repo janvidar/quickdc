@@ -25,6 +25,7 @@
 #include "network/transfermanager.h"
 #include "network/downloadqueue.h"
 #include "network/filesource.h"
+#include "network/leafhashes.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/adccommands.h"
 #include "network/adc/parser.h"
@@ -518,6 +519,70 @@ void ADC::ClientSession::onTransferStopped()
 
 #define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
 
+Samurai::IO::File* ADC::ClientSession::openQueuedLeaves(const char* tth, uint64_t& length)
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+	if (!queue) return 0;
+
+	QuickDC::QueueFile* qfile = queue->getFileByTTH(tth);
+	if (!qfile) return 0;
+
+	char* name = qfile->makeLeafFilename();
+	if (!name) return 0;
+
+	Samurai::IO::File* leaves = new Samurai::IO::File(name);
+	free(name);
+
+	if (!leaves->exists() || !leaves->size())
+	{
+		delete leaves;
+		return 0;
+	}
+
+	length = (uint64_t) leaves->size();
+	QDBG("Serving the leaf hashes of a file we are downloading");
+	return leaves;
+}
+
+Samurai::IO::File* ADC::ClientSession::openQueuedFile(const char* tth, uint64_t offset, int64_t length, uint64_t& servable)
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
+	if (!queue) return 0;
+
+	QuickDC::QueueFile* qfile = queue->getFileByTTH(tth);
+	if (!qfile) return 0;
+
+	/* Only what the leaves have vouched for may go out. */
+	QuickDC::LeafHashes* leaves = qfile->getLeaves();
+	if (!leaves || !leaves->isLoaded()) return 0;
+
+	uint64_t runEnd = qfile->getChunks().getRunEnd(offset);
+	if (runEnd <= offset)
+	{
+		QDBG("Asked for %d of '%s', which we do not have", (int) offset, tth);
+		return 0;
+	}
+
+	if (length >= 0 && offset + (uint64_t) length > runEnd)
+	{
+		QDBG("Asked for more of '%s' than we have verified", tth);
+		return 0;
+	}
+
+	Samurai::IO::File* part = new Samurai::IO::File(qfile->getTempFilename());
+	if (!part->exists())
+	{
+		delete part;
+		return 0;
+	}
+
+	servable = runEnd;
+	QDBG("Serving %d-%d of a file we are downloading", (int) offset, (int) runEnd);
+	return part;
+}
+
 void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, int64_t length, bool compress)
 {
 	QDBG("Requested file: '%s' (type=%d), offset=%d, length=%d", fn, (int) type, (int) offset, (int) length);
@@ -554,9 +619,14 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 		if (strlen(fn) == 43 && FOURCC(fn[0],fn[1],fn[2],fn[3]) == FOURCC('T','T','H','/'))
 		{
 			Samurai::IO::File* tthfile = sharemgr->getFileByTTH(&fn[4]);
-			
+
 			QuickDC::Hash::CacheEntry* hashCache = 0;
-			if (hashmgr->lookup(*tthfile, hashCache))
+			if (!tthfile)
+			{
+				file = openQueuedLeaves(&fn[4], internal_length);
+				if (file) { ownsFile = true; slots_full = false; }
+			}
+			else if (hashmgr->lookup(*tthfile, hashCache))
 			{
 				if (offset > (uint64_t) hashCache->getCacheFileOffset())
 				{
@@ -583,7 +653,13 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 		if (strlen(fn) == 43 && FOURCC(fn[0],fn[1],fn[2],fn[3]) == FOURCC('T','T','H','/'))
 		{
 			file = sharemgr->getFileByTTH(&fn[4]);
-			
+
+			if (!file)
+			{
+				file = openQueuedFile(&fn[4], offset, length, internal_length);
+				if (file) ownsFile = true;
+			}
+
 			// Disable slots check if file is small enough
 			if (slots_full && file && file->size() < 65536)
 				slots_full = false;
@@ -599,8 +675,8 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 			}
 		}
 	
-		if (file) internal_length = file->size();
-		
+		if (file && !internal_length) internal_length = file->size();
+
 	} else {
 		QDBG("Unexpected GET type: %x type, expected %x or %x.", type,  FOURCC('l','i','s','t'),  FOURCC('f','i','l','e'));
 	}

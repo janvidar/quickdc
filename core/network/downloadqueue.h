@@ -528,6 +528,9 @@ class QueueManager {
 		/** Search for more sources for one file that is short of them. */
 		void searchForSources();
 
+		/** @return false if this source holds nothing we still need. */
+		bool sourceIsUseful(QueueFile* file, FileSource* source) const;
+
 		void clearRequestsFor(QueueFile*);
 		void removeRequest(const char* token);
 

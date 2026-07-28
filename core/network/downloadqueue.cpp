@@ -867,6 +867,20 @@ bool QuickDC::QueueManager::getNextTransfer(QueueFile*& file, FileSource*& sourc
 	return true;
 }
 
+bool QuickDC::QueueManager::sourceIsUseful(QueueFile* file, FileSource* source) const
+{
+	if (!file || !source) return false;
+	if (!source->isPartial()) return true;
+
+	LeafHashes* leaves = file->getLeaves();
+	if (!leaves || !leaves->isLoaded()) return true;
+
+	ChunkMap theirs;
+	if (!source->getAvailability(leaves->getLeafSize(), file->getSize(), theirs)) return true;
+
+	return file->getChunks().hasFreeRangeWithin(theirs);
+}
+
 bool QuickDC::QueueManager::reserveChunk(QueueFile* file, FileSource* source, uint64_t& offset, uint64_t& length)
 {
 	if (!file) return false;
@@ -1325,6 +1339,7 @@ void QuickDC::QueueManager::schedule()
 				if (!source || source->isExpired()) continue;
 				if (file->isSourceActive(source)) continue;
 				if (!source->isReadyToRetry()) continue;
+				if (!sourceIsUseful(file, source)) continue;
 
 				QuickDC::Hub* hub = core->hubs->getHubByUrl(source->getHubUrl());
 				if (!hub) continue;   /* not logged in there at the moment */

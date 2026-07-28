@@ -85,6 +85,15 @@ class ClientSession :
 		void onSND(const char* file, uint32_t type, uint64_t offset, int64_t length, bool);
 		void onGFI(const char* file, uint32_t type);
 
+		/** A queued file's cached leaf hashes, for upload. Caller owns it. */
+		Samurai::IO::File* openQueuedLeaves(const char* tth, uint64_t& length);
+
+		/**
+		 * A partially downloaded file, if the range asked for is one we have
+		 * verified. Caller owns what is returned.
+		 */
+		Samurai::IO::File* openQueuedFile(const char* tth, uint64_t offset, int64_t length, uint64_t& servable);
+
 		/** The peer refused, or reported a problem with, what we asked for. */
 		void onSTA(const char* code, const char* message);
 
