@@ -88,12 +88,6 @@ set(QUICKDC_SOURCES
     xml/reader.cpp
     xml/writer.cpp)
 
-if(QUICKDC_MEMDBG)
-    list(APPEND QUICKDC_SOURCES
-        debug/malloc.cpp
-        debug/memdbg.cpp)
-endif()
-
 add_library(quickdc STATIC ${QUICKDC_SOURCES})
 add_library(quickdc::quickdc ALIAS quickdc)
 
@@ -127,10 +121,6 @@ target_compile_definitions(quickdc
         SYSTEM="${QUICKDC_SYSTEM}"
         CPU="${QUICKDC_CPU}"
         BUILD="${QUICKDC_BUILD_ID}")
-
-if(QUICKDC_MEMDBG)
-    target_compile_definitions(quickdc PUBLIC QUICKDC_MEMDBG)
-endif()
 
 # ZLIB/BZIP2 gate the file list compression in share/sharemanager.cpp, which
 # calls samurai's Samurai::IO::BZip2Compressor. Samurai compiles its codecs

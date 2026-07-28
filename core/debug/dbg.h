@@ -52,10 +52,6 @@ void QuickDC_Net(const char* func, const char* file, int line, const char *forma
 void QuickDC_Search(const char* func, const char* file, int line, const char *format, ...);
 void QuickDC_Hub(const char* func, const char* file, int line, const char *format, ...);
 
-#ifdef QUICKDC_MEMDBG
-void QuickDC_Memory(const char* func, void* addr, size_t size, void* code_addr, void* code_addr_up);
-#endif
-
 
 #else /* ! DEBUG */
 

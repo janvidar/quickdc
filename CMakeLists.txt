@@ -28,12 +28,8 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
 
 option(QUICKDC_BUILD_TESTS "Build the test programs and the autotest suite" ON)
 
-# NOTE: core/debug/malloc.cpp (dlmalloc) and core/debug/memdbg.cpp are both
-# wrapped entirely in #ifdef QUICKDC_MEMDBG, and nothing in the Makefile build
-# ever defined it - the two objects it compiled were empty. This option makes
-# the switch actually work; it is off because the tracing allocator overrides
-# malloc/free process-wide.
-option(QUICKDC_MEMDBG "Build the debug allocator (dlmalloc + allocation tracing)" OFF)
+option(QUICKDC_SANITIZE
+    "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
 # ---------------------------------------------------------------------------
 # TLS
@@ -70,6 +66,13 @@ set(SAMURAI_BUILD_SHARED OFF CACHE BOOL "Build the samurai shared library" FORCE
 # Samurai's own test and example programs are not part of a QuickDC build.
 # Configure samurai standalone if you want them.
 set(SAMURAI_BUILD_TESTS OFF CACHE BOOL "Build the samurai test programs" FORCE)
+
+# Samurai owns the sanitizer flags and applies them PUBLIC to both the compile
+# and the link line, so forwarding the request is all QuickDC has to do - its
+# own targets inherit them by linking samurai. Has to be set before samurai is
+# configured, since it is that project's cache variable. Unconditional, so that
+# turning QUICKDC_SANITIZE back off also turns samurai's off.
+set(SAMURAI_SANITIZE ${QUICKDC_SANITIZE} CACHE BOOL "Build samurai with sanitizers" FORCE)
 
 add_subdirectory(samurai)
 
@@ -126,6 +129,14 @@ message(STATUS "  Build id        : ${QUICKDC_BUILD_ID}")
 message(STATUS "  Target          : ${QUICKDC_SYSTEM}/${QUICKDC_CPU}")
 message(STATUS "  Samurai         : static (in-tree submodule)")
 message(STATUS "  TLS             : mandatory (backend reported above)")
-message(STATUS "  Debug allocator : ${QUICKDC_MEMDBG}")
+if(QUICKDC_SANITIZE)
+    # Samurai reports SAMURAI_SANITIZE_LEAKS just above, but that only reaches
+    # its own ctest environment and a QuickDC build does not configure samurai's
+    # tests, so leak checking here is whatever AddressSanitizer defaults to.
+    message(STATUS "  Sanitizers      : address, undefined")
+    message(STATUS "                    (ASAN_OPTIONS=detect_leaks=0 disables leak checks)")
+else()
+    message(STATUS "  Sanitizers      : OFF")
+endif()
 message(STATUS "  Build tests     : ${QUICKDC_BUILD_TESTS}")
 message(STATUS "")

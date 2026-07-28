@@ -14,7 +14,6 @@
 #define DUMP_FILE_SEARCH  "~/.quickdc/debug/search.log"
 #define DUMP_FILE_DEBUG   "~/.quickdc/debug/debug.log"
 #define DUMP_FILE_HUB     "~/.quickdc/debug/hub.log"
-#define DUMP_FILE_MEM     "~/.quickdc/debug/memory.log"
 
 #define PREFIX "../"
 
@@ -31,9 +30,6 @@ static Samurai::IO::File* quickdc_dump_net;
 static Samurai::IO::File* quickdc_dump_sch;
 static Samurai::IO::File* quickdc_dump_dbg;
 static Samurai::IO::File* quickdc_dump_hub;
-#ifdef QUICKDC_MEMDBG
-static Samurai::IO::File* quickdc_dump_mem;
-#endif
 
 static bool g_debug_stderr = false;
 
@@ -48,11 +44,6 @@ void QuickDC_Debug_Init() {
 		g_debug_stderr = true;
 		fprintf(stderr, "    (dumping debug messages to stderr)\n");
 	}
-	
-#ifdef QUICKDC_MEMDBG
-	quickdc_dump_mem = new Samurai::IO::File(DUMP_FILE_MEM);
-	quickdc_dump_mem->open(Samurai::IO::File::Write | Samurai::IO::File::Truncate);
-#endif
 	
 	quickdc_dump_net = new Samurai::IO::File(DUMP_FILE_NETWORK);
 	quickdc_dump_sch = new Samurai::IO::File(DUMP_FILE_SEARCH);
@@ -70,10 +61,6 @@ void QuickDC_Debug_Fini() {
 	delete quickdc_dump_hub; quickdc_dump_hub = 0;
 	delete quickdc_dump_dbg; quickdc_dump_dbg = 0;
 	delete quickdc_dump_net; quickdc_dump_net = 0;
-#ifdef QUICKDC_MEMDBG
-	delete quickdc_dump_mem; quickdc_dump_mem = 0;
-#endif
-
 }
 
 void QuickDC_Debug(const char* /*func*/, const char* file, int line, const char *format, ...) {
@@ -207,29 +194,6 @@ void QuickDC_Hub(const char*, const char* , int, const char *format, ...) {
 
 }
 
-#ifdef QUICKDC_MEMDBG
-void QuickDC_Memory(const char* func, void* addr, size_t size, void* code_addr, void* code_addr_up) {
-	if (!quickdc_dump_mem) return;
-	
-	char logmsg[1024] = {0, };
-	sprintf(logmsg, "%s: addr=%p, size=%u, stack=%p, stack=%p", func, addr, size, code_addr, code_addr_up);
-	quickdc_dump_mem->write(logmsg, strlen(logmsg));
-	quickdc_dump_mem->write(ENDLINE, strlen(ENDLINE));
-#ifdef FLUSH_DEBUG
-	quickdc_dump_mem->flush();
-#endif
-
-#ifdef DUPLICATE_TO_DEBUG
-        if (!quickdc_dump_dbg) return;
-        quickdc_dump_dbg->write(logmsg, strlen(logmsg));
-        quickdc_dump_dbg->write(ENDLINE, strlen(ENDLINE));
-#ifdef FLUSH_DEBUG
-        quickdc_dump_dbg->flush();
-#endif
-#endif
-
-}
-#endif
 
 
 
