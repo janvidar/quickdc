@@ -164,6 +164,99 @@ EXO_TEST(chunkmap_reserve_skips_other_reservations, {
 	return s1 == 0 && s2 == 100 && m.getReservationCount() == 2;
 });
 
+/* ------------------------------------------------------------------------- *
+ * PSR block index notation (ADC-EXT PFSR, the PI and PC fields)
+ * ------------------------------------------------------------------------- */
+
+EXO_TEST(chunkmap_index_spec_example_first, {
+	/* From the spec: chunk 0 and 4 of 5 total gives "0,1,4,5". */
+	QuickDC::ChunkMap m(5000);
+	m.addRange(0, 1000);
+	m.addRange(4000, 5000);
+	return m.toIndexString(1000) == "0,1,4,5" && m.countBlocks(1000) == 2;
+});
+
+EXO_TEST(chunkmap_index_spec_example_run, {
+	/* Chunks 0, 1 and 4 may be written "0,2,4,5". */
+	QuickDC::ChunkMap m(5000);
+	m.addRange(0, 2000);
+	m.addRange(4000, 5000);
+	return m.toIndexString(1000) == "0,2,4,5" && m.countBlocks(1000) == 3;
+});
+
+EXO_TEST(chunkmap_index_accepts_split_runs, {
+	/* The spec allows "0,1,1,2,4,5" for the same thing; it must decode the
+	   same as the coalesced form. */
+	QuickDC::ChunkMap a(5000);
+	QuickDC::ChunkMap b(5000);
+	if (!a.fromIndexString("0,2,4,5", 1000)) return false;
+	if (!b.fromIndexString("0,1,1,2,4,5", 1000)) return false;
+	return a.toIndexString(1000) == b.toIndexString(1000)
+		&& a.getDoneBytes() == b.getDoneBytes();
+});
+
+EXO_TEST(chunkmap_index_roundtrip, {
+	QuickDC::ChunkMap m(1048576);
+	m.addRange(0, 65536);
+	m.addRange(262144, 393216);
+
+	std::string encoded = m.toIndexString(65536);
+
+	QuickDC::ChunkMap other(1048576);
+	if (!other.fromIndexString(encoded.c_str(), 65536)) return false;
+	return other.toIndexString(65536) == encoded
+		&& other.getDoneBytes() == m.getDoneBytes();
+});
+
+EXO_TEST(chunkmap_index_partial_block_is_not_counted, {
+	/* Half of a block is not a block we can offer anyone. */
+	QuickDC::ChunkMap m(4096);
+	m.addRange(0, 512);
+	return m.countBlocks(1024) == 0 && m.toIndexString(1024).empty();
+});
+
+EXO_TEST(chunkmap_index_short_tail_counts_when_whole, {
+	/* The last block is short; having all of it still counts. */
+	QuickDC::ChunkMap m(2500);
+	m.addRange(2048, 2500);
+	return m.countBlocks(1024) == 1 && m.toIndexString(1024) == "2,3";
+});
+
+EXO_TEST(chunkmap_index_complete_file, {
+	QuickDC::ChunkMap m(5000);
+	m.addRange(0, 5000);
+	return m.countBlocks(1000) == 5 && m.toIndexString(1000) == "0,5";
+});
+
+EXO_TEST(chunkmap_index_empty, {
+	QuickDC::ChunkMap m(5000);
+	if (!m.toIndexString(1000).empty()) return false;
+	if (m.countBlocks(1000)) return false;
+	return m.fromIndexString("", 1000) && m.getDoneBytes() == 0;
+});
+
+EXO_TEST(chunkmap_index_rejects_malformed, {
+	QuickDC::ChunkMap m(5000);
+	if (m.fromIndexString("0", 1000)) return false;
+	if (m.fromIndexString("0,", 1000)) return false;
+	if (m.fromIndexString("1,0", 1000)) return false;
+	if (m.fromIndexString("0,0", 1000)) return false;
+	if (m.fromIndexString("a,b", 1000)) return false;
+	if (m.fromIndexString("0,1,", 1000)) return false;
+	/* Past the end of the file. */
+	if (m.fromIndexString("9,10", 1000)) return false;
+	/* Nothing may be kept from a bad decode. */
+	return m.getDoneBytes() == 0;
+});
+
+EXO_TEST(chunkmap_index_needs_a_block_size, {
+	QuickDC::ChunkMap m(5000);
+	m.addRange(0, 5000);
+	return m.toIndexString(0).empty()
+		&& m.countBlocks(0) == 0
+		&& !m.fromIndexString("0,5", 0);
+});
+
 EXO_TEST(chunkmap_hasfreerange_tracks_reserve, {
 	QuickDC::ChunkMap m(1000);
 	if (!m.hasFreeRange()) return false;

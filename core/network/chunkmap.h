@@ -131,6 +131,24 @@ class ChunkMap {
 		 */
 		bool fromString(const char* str);
 
+		/**
+		 * Encode the completed ranges as block index pairs, "0,1,4,5" for
+		 * blocks 0 and 4. This is the PI field of an ADC PSR message.
+		 */
+		std::string toIndexString(uint64_t blockSize) const;
+
+		/**
+		 * Decode the notation written by toIndexString(). The existing
+		 * contents are replaced.
+		 *
+		 * @return false if the input is malformed, in which case the map
+		 *         is left empty rather than half parsed.
+		 */
+		bool fromIndexString(const char* str, uint64_t blockSize);
+
+		/** How many whole blocks are complete; the PC field of a PSR. */
+		size_t countBlocks(uint64_t blockSize) const;
+
 	protected:
 		struct Range {
 			uint64_t start;
@@ -141,6 +159,9 @@ class ChunkMap {
 		 * @return true if [start, end) overlaps any reservation.
 		 */
 		bool isReserved(uint64_t start, uint64_t end) const;
+
+		/** @return true if all of block 'index' is downloaded. */
+		bool hasBlock(uint64_t blockSize, uint64_t index) const;
 
 	protected:
 		std::vector<Range> done;      // sorted, non-overlapping, coalesced

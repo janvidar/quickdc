@@ -213,6 +213,93 @@ std::string QuickDC::ChunkMap::toString() const
 	return out;
 }
 
+/*
+ * A block is only ours if all of it is; the last one is short when the file
+ * size is not a whole number of blocks.
+ */
+bool QuickDC::ChunkMap::hasBlock(uint64_t blockSize, uint64_t index) const
+{
+	uint64_t start = index * blockSize;
+	uint64_t end = start + blockSize;
+	if (size && end > size) end = size;
+	if (end <= start) return false;
+
+	for (size_t n = 0; n < done.size(); n++)
+		if (done[n].start <= start && done[n].end >= end) return true;
+
+	return false;
+}
+
+size_t QuickDC::ChunkMap::countBlocks(uint64_t blockSize) const
+{
+	if (!blockSize || !size) return 0;
+
+	size_t blocks = (size_t) ((size + blockSize - 1) / blockSize);
+	size_t have = 0;
+	for (size_t n = 0; n < blocks; n++)
+		if (hasBlock(blockSize, n)) have++;
+
+	return have;
+}
+
+std::string QuickDC::ChunkMap::toIndexString(uint64_t blockSize) const
+{
+	std::string out;
+	if (!blockSize || !size) return out;
+
+	size_t blocks = (size_t) ((size + blockSize - 1) / blockSize);
+
+	for (size_t n = 0; n < blocks; )
+	{
+		if (!hasBlock(blockSize, n)) { n++; continue; }
+
+		size_t first = n;
+		while (n < blocks && hasBlock(blockSize, n)) n++;
+
+		if (out.size()) out += ",";
+		out += quickdc_ulltoa((uint64_t) first);
+		out += ",";
+		out += quickdc_ulltoa((uint64_t) n);
+	}
+	return out;
+}
+
+bool QuickDC::ChunkMap::fromIndexString(const char* str, uint64_t blockSize)
+{
+	done.clear();
+	if (!blockSize) return false;
+	if (!str || !*str) return true;
+
+	const char* p = str;
+	while (*p)
+	{
+		char* endp = 0;
+
+		uint64_t first = (uint64_t) strtoull(p, &endp, 10);
+		if (endp == p || *endp != ',') { done.clear(); return false; }
+
+		p = endp + 1;
+		uint64_t last = (uint64_t) strtoull(p, &endp, 10);
+		if (endp == p || last <= first) { done.clear(); return false; }
+
+		uint64_t start = first * blockSize;
+		uint64_t end = last * blockSize;
+		if (size && end > size) end = size;
+		if (size && start >= size) { done.clear(); return false; }
+
+		addRange(start, end);
+
+		p = endp;
+		if (*p == ',')
+		{
+			p++;
+			if (!*p) { done.clear(); return false; }
+		}
+		else if (*p) { done.clear(); return false; }
+	}
+	return true;
+}
+
 bool QuickDC::ChunkMap::fromString(const char* str)
 {
 	done.clear();
