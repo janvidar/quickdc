@@ -91,6 +91,7 @@ static bool probe_udp_adc(uint32_t fourcc) {
 		case FOURCC('U','S','C','H'):
 		case FOURCC('U','R','E','S'):
 		case FOURCC('U','S','T','A'):
+		case FOURCC('U','P','S','R'):
 #ifdef NAT_TRAVERSAL_SUPPORT
 		case FOURCC('U','T','U','N'):
 		case FOURCC('U','E','C','O'):
