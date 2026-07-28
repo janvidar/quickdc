@@ -62,6 +62,12 @@ class ChunkMap {
 		size_t getRangeCount() const { return done.size(); }
 
 		/**
+		 * How far the downloaded run holding 'start' reaches, or 'start'
+		 * itself if that offset is not downloaded at all.
+		 */
+		uint64_t getRunEnd(uint64_t start) const;
+
+		/**
 		 * Read out completed range number 'idx'.
 		 * @return false if idx is out of range.
 		 */
@@ -89,6 +95,9 @@ class ChunkMap {
 		 * @return true if reserve() would hand something out.
 		 */
 		bool hasFreeRange() const;
+
+		/** @return true if reserveWithin() would hand something out. */
+		bool hasFreeRangeWithin(const ChunkMap& allowed) const;
 
 		/** As reserve(), but only from parts that 'allowed' also holds. */
 		bool reserveWithin(const ChunkMap& allowed, uint64_t preferred,

@@ -164,9 +164,38 @@ EXO_TEST(chunkmap_reserve_skips_other_reservations, {
 	return s1 == 0 && s2 == 100 && m.getReservationCount() == 2;
 });
 
+EXO_TEST(chunkmap_runend, {
+	QuickDC::ChunkMap m(1000);
+	m.addRange(100, 400);
+	m.addRange(600, 700);
+
+	/* Inside a run reports where that run ends. */
+	if (m.getRunEnd(100) != 400) return false;
+	if (m.getRunEnd(399) != 400) return false;
+	if (m.getRunEnd(600) != 700) return false;
+
+	/* Outside any run reports the offset itself, so nothing can be served. */
+	if (m.getRunEnd(0) != 0) return false;
+	if (m.getRunEnd(400) != 400) return false;
+	return m.getRunEnd(999) == 999;
+});
+
 /* ------------------------------------------------------------------------- *
  * Reserving from a source that only has part of the file
  * ------------------------------------------------------------------------- */
+
+EXO_TEST(chunkmap_hasfreerangewithin, {
+	QuickDC::ChunkMap m(1000);
+	QuickDC::ChunkMap them(1000);
+	them.addRange(0, 400);
+
+	if (!m.hasFreeRangeWithin(them)) return false;
+	if (m.getReservationCount()) return false;
+
+	/* Once we hold everything they have, they are of no further use. */
+	m.addRange(0, 400);
+	return !m.hasFreeRangeWithin(them);
+});
 
 EXO_TEST(chunkmap_reservewithin_takes_only_what_they_have, {
 	QuickDC::ChunkMap m(1000);

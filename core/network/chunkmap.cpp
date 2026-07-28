@@ -88,6 +88,14 @@ bool QuickDC::ChunkMap::getRange(size_t idx, uint64_t& start, uint64_t& end) con
 	return true;
 }
 
+uint64_t QuickDC::ChunkMap::getRunEnd(uint64_t start) const
+{
+	for (size_t n = 0; n < done.size(); n++)
+		if (start >= done[n].start && start < done[n].end) return done[n].end;
+
+	return start;
+}
+
 void QuickDC::ChunkMap::clear()
 {
 	done.clear();
@@ -166,6 +174,15 @@ bool QuickDC::ChunkMap::reserve(uint64_t preferred, uint64_t& start, uint64_t& l
 	reserved.push_back(r);
 
 	return true;
+}
+
+bool QuickDC::ChunkMap::hasFreeRangeWithin(const ChunkMap& allowed) const
+{
+	uint64_t start = 0;
+	uint64_t length = 0;
+
+	ChunkMap copy(*this);
+	return copy.reserveWithin(allowed, 1, start, length);
 }
 
 bool QuickDC::ChunkMap::reserveWithin(const ChunkMap& allowed, uint64_t preferred,
