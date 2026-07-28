@@ -502,7 +502,12 @@ void DC::ClientSession::onNick(const char* nick)
 	
 	if (!hubsession)
 	{
-		QuickDC::Hub* hub = QuickDC::Core::getInstance()->hubs->lookupUser(nick);
+		/*
+		 * By nickname, which is what an NMDC peer is named by. lookupUser()
+		 * would match a session ID instead on an ADC hub, so any four
+		 * characters that happened to be someone's SID got in.
+		 */
+		QuickDC::Hub* hub = QuickDC::Core::getInstance()->hubs->lookupUserByNick(nick);
 		if (hub)
 		{
 			hubsession = hub->session;
