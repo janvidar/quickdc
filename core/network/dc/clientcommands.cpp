@@ -261,7 +261,7 @@ bool DC::ClientExtADCGET::ClientExtADCGET::invoke(const char* data_, size_t leng
 
 	// Extract the offset
 	if (!split) { free(data); return false; }
-	length = quickdc_atoull(&split[1]);
+	offset = quickdc_atoull(&split[1]);
 	split[0] = '\0';
 
 	// Extract the filename;	
@@ -315,7 +315,7 @@ bool DC::ClientExtADCSND::ClientExtADCSND::invoke(const char* data_, size_t leng
 
 	// Extract the offset
 	if (!split) { free(data); return false; }
-	length = quickdc_atoull(&split[1]);
+	offset = quickdc_atoull(&split[1]);
 	split[0] = '\0';
 
 	// Extract the filename;	
