@@ -420,6 +420,13 @@ class QueueManager {
 		 */
 		bool verifyChunk(QueueFile* file, uint64_t offset, uint64_t length);
 
+		/**
+		 * A peer told us which parts of a queued file it holds (PSR).
+		 * @param id the CID on ADC, the nickname on NMDC.
+		 */
+		void onPartialSources(const char* hubUrl, const char* id, const char* tth, const char* indexes);
+
+
 		/** The chunk did not arrive; let someone else have another go. */
 		void releaseChunk(QueueFile* file, uint64_t offset, uint64_t length);
 

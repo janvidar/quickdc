@@ -281,8 +281,6 @@ class Hub
 		 */
 		void onSearchResult(Share::SearchResult* result);
 
-		/** Record what a peer holds of a file we are downloading (PFSR). */
-		void onPartialStatus(const char* cid, const char* tth, const char* indexes);
 
 		/* Internal */
 		void onDisconnected();

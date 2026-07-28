@@ -306,6 +306,22 @@ size_t QuickDC::ChunkMap::countBlocks(uint64_t blockSize) const
 	return have;
 }
 
+size_t QuickDC::ChunkMap::countBlockRuns(uint64_t blockSize) const
+{
+	if (!blockSize || !size) return 0;
+
+	size_t blocks = (size_t) ((size + blockSize - 1) / blockSize);
+	size_t runs = 0;
+
+	for (size_t n = 0; n < blocks; )
+	{
+		if (!hasBlock(blockSize, n)) { n++; continue; }
+		runs++;
+		while (n < blocks && hasBlock(blockSize, n)) n++;
+	}
+	return runs;
+}
+
 std::string QuickDC::ChunkMap::toIndexString(uint64_t blockSize) const
 {
 	std::string out;

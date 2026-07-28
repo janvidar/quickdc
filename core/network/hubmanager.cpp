@@ -89,6 +89,21 @@ QuickDC::Hub* QuickDC::HubManager::lookupUserByClientID(const char* cid) {
 }
 
 
+QuickDC::Hub* QuickDC::HubManager::lookupUserByNick(const char* nick) {
+	if (!nick || !*nick) return 0;
+
+	for (size_t i = 0; i < hubs.size(); i++)
+	{
+		QuickDC::Hub* hub = hubs[i];
+		if (!hub->session || !hub->session->isLoggedIn()) continue;
+
+		QuickDC::UserManager* users = hub->session->getUserManager();
+		if (users && users->getUserByNick(nick)) return hub;
+	}
+	return 0;
+}
+
+
 size_t QuickDC::HubManager::searchAllHubs(QuickDC::Share::SearchRequest* request) {
 	if (!request) return 0;
 

@@ -867,6 +867,28 @@ bool QuickDC::QueueManager::getNextTransfer(QueueFile*& file, FileSource*& sourc
 	return true;
 }
 
+void QuickDC::QueueManager::onPartialSources(const char* hubUrl, const char* id, const char* tth, const char* indexes)
+{
+	if (!hubUrl || !id || !tth || !indexes) return;
+
+	QueueFile* file = getFileByTTH(tth);
+	if (!file) return;
+
+	FileSource* source = file->findSource(hubUrl, id);
+	if (!source)
+	{
+		std::string name("TTH:");
+		name += tth;
+		file->addSource(new FileSource(hubUrl, id, name.c_str()));
+		source = file->findSource(hubUrl, id);
+	}
+
+	if (!source) return;
+
+	source->setAvailability(indexes);
+	QDBG("'%s' has part of '%s': %s", id, file->getLocalFilename(), indexes);
+}
+
 bool QuickDC::QueueManager::sourceIsUseful(QueueFile* file, FileSource* source) const
 {
 	if (!file || !source) return false;

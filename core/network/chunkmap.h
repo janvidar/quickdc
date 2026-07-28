@@ -159,8 +159,11 @@ class ChunkMap {
 		 */
 		bool fromIndexString(const char* str, uint64_t blockSize);
 
-		/** How many whole blocks are complete; the PC field of a PSR. */
+		/** How many whole blocks are complete. */
 		size_t countBlocks(uint64_t blockSize) const;
+
+		/** Runs of blocks, which is what a PSR counts in PC: one per pair. */
+		size_t countBlockRuns(uint64_t blockSize) const;
 
 	protected:
 		struct Range {

@@ -279,12 +279,6 @@ void QuickDC::Hub::sendSearchRequest(Share::SearchRequest* request)
 	session->sendSearchRequest(request);
 }
 
-void QuickDC::Hub::onPartialStatus(const char* cid, const char* tth, const char* indexes)
-{
-	ADC::HubSession* adc = dynamic_cast<ADC::HubSession*>(session);
-	if (adc) adc->onPartialStatus(cid, tth, indexes);
-}
-
 void QuickDC::Hub::onSearchResult(Share::SearchResult* result)
 {
 	if (!result) return;

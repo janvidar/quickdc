@@ -46,6 +46,9 @@ class HubManager {
 		 */
 		Hub* getHubByUrl(const char* url);
 
+		/** Returns a hub where the given nickname is online, or 0. */
+		Hub* lookupUserByNick(const char* nick);
+
 		/** Send a search to every hub we are logged in to. */
 		size_t searchAllHubs(Share::SearchRequest* request);
 

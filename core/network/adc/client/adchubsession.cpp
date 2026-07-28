@@ -1139,6 +1139,10 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	size_t blocks = file->getChunks().countBlocks(block);
 	if (!blocks) return;
 
+	/* PC counts the start/end pairs in PI, not the blocks; a peer that reads it
+	   the other way discards the message as malformed. */
+	size_t runs = file->getChunks().countBlockRuns(block);
+
 	std::string indexes = file->getChunks().toIndexString(block);
 	if (indexes.empty()) return;
 
@@ -1146,14 +1150,24 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	config->setGroup("Network");
 	int port = config->getBool("Active mode") ? config->getNumber("Port", 0) : 0;
 
+	/* HI names the hub without the scheme, which is how DC++ reports it. */
+	std::string hubIpPort;
+	if (hub && hub->getUrl())
+	{
+		hubIpPort = hub->getUrl();
+		size_t cut = hubIpPort.find("://");
+		if (cut != std::string::npos) hubIpPort = hubIpPort.substr(cut + 3);
+	}
+
 	const QuickDC::User* user = request->getUser();
 
 	if (user && user->getAddressIPv4() && user->getPortIPv4() && core->server)
 	{
 		ADC::Command cmd(FOURCC('U','P','S','R'), ADC::CID::getInstance()->getCID());
+		cmd.addArgument("HI", hubIpPort.c_str());
 		cmd.addArgument("U4", quickdc_itoa(port, 10));
 		cmd.addArgument("TR", request->getTTH());
-		cmd.addArgument("PC", quickdc_itoa((int) blocks, 10));
+		cmd.addArgument("PC", quickdc_itoa((int) runs, 10));
 		cmd.addArgument("PI", indexes.c_str());
 
 		Samurai::IO::Buffer buffer;
@@ -1167,9 +1181,10 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	else if (user)
 	{
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','P','S','R'), sid, user->getID());
+		cmd->addArgument("HI", hubIpPort.c_str());
 		cmd->addArgument("U4", quickdc_itoa(port, 10));
 		cmd->addArgument("TR", request->getTTH());
-		cmd->addArgument("PC", quickdc_itoa((int) blocks, 10));
+		cmd->addArgument("PC", quickdc_itoa((int) runs, 10));
 		cmd->addArgument("PI", indexes.c_str());
 		send(cmd);
 	}
@@ -1184,24 +1199,5 @@ void ADC::HubSession::onPartialStatus(const char* cid, const char* tth, const ch
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	const char* url = (hub) ? hub->getUrl() : 0;
 
-	if (!queue || !url || !cid || !tth || !indexes) return;
-
-	QuickDC::QueueFile* file = queue->getFileByTTH(tth);
-	if (!file) return;
-
-	QuickDC::FileSource* source = file->findSource(url, cid);
-	if (!source)
-	{
-		std::string name("TTH:");
-		name += tth;
-		source = new QuickDC::FileSource(url, cid, name.c_str());
-		file->addSource(source);
-		source = file->findSource(url, cid);
-	}
-
-	if (source)
-	{
-		source->setAvailability(indexes);
-		QDBG("'%s' has part of '%s': %s", cid, file->getLocalFilename(), indexes);
-	}
+	if (queue && url) queue->onPartialSources(url, cid, tth, indexes);
 }

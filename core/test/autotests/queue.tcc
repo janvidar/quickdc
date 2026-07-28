@@ -316,6 +316,27 @@ EXO_TEST(chunkmap_index_accepts_split_runs, {
 		&& a.getDoneBytes() == b.getDoneBytes();
 });
 
+EXO_TEST(chunkmap_index_runs_match_pairs, {
+	/* PC counts the pairs in PI, so the two must always agree. */
+	QuickDC::ChunkMap m(5000);
+	m.addRange(0, 1000);
+	m.addRange(4000, 5000);
+	if (m.countBlockRuns(1000) != 2) return false;
+	if (m.toIndexString(1000) != "0,1,4,5") return false;
+
+	m.addRange(1000, 2000);
+	if (m.countBlockRuns(1000) != 2) return false;
+
+	/* One run once it is all contiguous. */
+	m.addRange(2000, 4000);
+	return m.countBlockRuns(1000) == 1 && m.toIndexString(1000) == "0,5";
+});
+
+EXO_TEST(chunkmap_index_runs_when_empty, {
+	QuickDC::ChunkMap m(5000);
+	return m.countBlockRuns(1000) == 0 && m.countBlockRuns(0) == 0;
+});
+
 EXO_TEST(chunkmap_index_roundtrip, {
 	QuickDC::ChunkMap m(1048576);
 	m.addRange(0, 65536);

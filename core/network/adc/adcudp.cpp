@@ -13,6 +13,7 @@
 #include "network/adc/adcudp.h"
 #include "network/adc/parser.h"
 #include "network/hubmanager.h"
+#include "network/downloadqueue.h"
 #include "network/hubsession.h"
 #include "network/usermanager.h"
 #include "share/searchresult.h"
@@ -66,23 +67,34 @@ void ADC::DatagramHandler::onDatagram(Samurai::IO::Net::DatagramSocket*, Samurai
 
 void ADC::DatagramHandler::onPartialStatus(ADC::Command* cmd)
 {
-	char* tth = cmd->getArgument("TR", 2, 0);
-	char* pi  = cmd->getArgument("PI", 2, 0);
+	char* tth  = cmd->getArgument("TR", 2, 0);
+	char* pi   = cmd->getArgument("PI", 2, 0);
+	char* nick = cmd->getArgument("NI", 2, 0);
 	const char* cid = cmd->getSourceID();
 
-	if (!tth || !pi || !cid) return;
+	if (!tth || !pi) return;
 
 	QuickDC::Core* core = QuickDC::Core::getInstance();
-	if (!core || !core->hubs) return;
+	if (!core || !core->hubs || !core->queue) return;
 
-	QuickDC::Hub* hub = core->hubs->lookupUserByClientID(cid);
-	if (!hub)
+	/* On an NMDC hub we will not know the sender's client ID; NI is what
+	   identifies them, and is how a FileSource records an NMDC user. */
+	QuickDC::Hub* hub = (cid) ? core->hubs->lookupUserByClientID(cid) : 0;
+	const char* id = cid;
+
+	if (!hub && nick)
 	{
-		QDBG("Ignoring partial file status from '%s', who is not on any hub we are on", cid);
+		hub = core->hubs->lookupUserByNick(nick);
+		id = nick;
+	}
+
+	if (!hub || !id)
+	{
+		QDBG("Ignoring partial file status from a peer we share no hub with");
 		return;
 	}
 
-	hub->onPartialStatus(cid, tth, pi);
+	core->queue->onPartialSources(hub->getUrl(), id, tth, pi);
 }
 
 void ADC::DatagramHandler::onSearchResult(ADC::Command* cmd)
