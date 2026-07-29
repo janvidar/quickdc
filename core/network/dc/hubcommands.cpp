@@ -484,8 +484,7 @@ bool DC::Search::invoke(const char* data, size_t length) {
 	}
 	
 	QuickDC::Share::SearchRequest* request = new QuickDC::Share::SearchRequest(session);
-	request->setSizePolicy(s_policy);
-	
+
 	if (type > 0 && type < 8) {
 		request->setType(QuickDC::Share::SearchRequest::SearchFiles);
 		for (int n = 0; n < KNOWN_EXTENSIONS; n++)
@@ -500,6 +499,11 @@ bool DC::Search::invoke(const char* data, size_t length) {
 	request->setSize(size);
 	
 	if (size == 0) s_policy = QuickDC::Share::SearchRequest::SizeAny; // any size
+
+	/* After the adjustment above, or a search naming no size would still be
+	   asked for with whatever policy the line happened to carry. */
+	request->setSizePolicy(s_policy);
+
 	char* replyaddr = strndup(&data[8], &req[0] - &data[8]);
 	char* query = strdup(&typeoffset[3]);
 	

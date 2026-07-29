@@ -22,6 +22,12 @@ QuickDC::Share::SearchManager::~SearchManager()
 {
 	save();
 
+	while (active_searches.size())
+	{
+		delete active_searches.back();
+		active_searches.pop_back();
+	}
+
 	delete file;
 }
 
@@ -54,6 +60,7 @@ void QuickDC::Share::SearchManager::remove(QuickDC::Share::SearchRequest* reques
 		if (container->request == request)
 		{
 			active_searches.erase(it);
+			delete container;
 			break;
 		}
 	}

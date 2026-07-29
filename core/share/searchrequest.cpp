@@ -12,13 +12,13 @@
 #define FREE_VECTOR(V) while (V.size()) { char* arg = V.back(); V.pop_back(); free(arg); }
 
 
-QuickDC::Share::SearchRequest::SearchRequest(QuickDC::Share::SearchReplyHandler* eh) : tth(0), token(0), size(0), size_type(SizeAny), event_handler(eh), user(0)
+QuickDC::Share::SearchRequest::SearchRequest(QuickDC::Share::SearchReplyHandler* eh) : tth(0), token(0), size(0), size_type(SizeAny), file_type(SearchAll), event_handler(eh), user(0)
 {
 	
 }
 
 QuickDC::Share::SearchRequest::SearchRequest(enum SizePolicy sp, uint64_t size_, const char* tth_, const char* token_, QuickDC::Share::SearchReplyHandler* eh) :
-	tth(0), token(0), size(size_), size_type(sp), event_handler(eh), user(0)
+	tth(0), token(0), size(size_), size_type(sp), file_type(SearchAll), event_handler(eh), user(0)
 {
 	/* A TTH root is always 39 base32 characters; anything else is not one and
 	   leaves tth null. The uppercasing has to stay inside that check - it used
@@ -48,18 +48,20 @@ void QuickDC::Share::SearchRequest::setToken(const char* token_) {
 }
 
 void QuickDC::Share::SearchRequest::setTTH(const char* tth_) {
-	if (tth_) {
-		if (tth) free(tth);
-		if (strlen(tth_) == 39) {
-			tth = strdup(tth_);
-			for (size_t n = 0; n < 39; n++)
-				tth[n] = toupper(tth[n]);
-		}
+	/* Cleared first: what is not a TTH leaves us with none, and leaving the
+	   freed pointer behind means the destructor frees it a second time. */
+	free(tth);
+	tth = 0;
+
+	if (tth_ && strlen(tth_) == 39) {
+		tth = strdup(tth_);
+		for (size_t n = 0; n < 39; n++)
+			tth[n] = toupper(tth[n]);
 	}
 }
 
-void QuickDC::Share::SearchRequest::setSizePolicy(enum SizePolicy) { }
-void QuickDC::Share::SearchRequest::setType(enum FilePolicy) { }
+void QuickDC::Share::SearchRequest::setSizePolicy(enum SizePolicy sp) { size_type = sp; }
+void QuickDC::Share::SearchRequest::setType(enum FilePolicy fp) { file_type = fp; }
 
 
 void QuickDC::Share::SearchRequest::addInclusion(const char* term) {

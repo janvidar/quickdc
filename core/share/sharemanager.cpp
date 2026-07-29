@@ -377,23 +377,28 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 		for (size_t n = 0; n < searchTable.size(); n++) {
 			std::pair<std::string, QuickDC::Share::File*>& current = searchTable[n];
 			const char* line = current.first.c_str();
-	
-			/* inclusive search */
-			for (size_t i = 0; i < req->include.size() && line; i++) {
-				line = strcasestr(line, req->include[i]);
-			}
-			if (!line) continue;
 
-			/* exclude search */
-			for (size_t i = 0; i < req->exclude.size() && line; i++) {
-				line = strcasestr(line, req->exclude[i]);
+			/* Every term has to be there, in whatever order they were given.
+			   Searching on from where the last one matched made the order part
+			   of the question, which it is not. */
+			bool matches = true;
+			for (size_t i = 0; i < req->include.size(); i++) {
+				if (!strcasestr(line, req->include[i])) { matches = false; break; }
 			}
-			if (!line) continue;
-			
+			if (!matches) continue;
+
+			/* And none of the excluded ones. Keeping the file when the term was
+			   found is backwards: it answered with the one thing the asker had
+			   said they did not want, and hid everything else. */
+			for (size_t i = 0; i < req->exclude.size(); i++) {
+				if (strcasestr(line, req->exclude[i])) { matches = false; break; }
+			}
+			if (!matches) continue;
+
 			/* match extension */
 			if (req->extension.size()) {
 				bool extensionOK = false;
-				for (size_t i = 0; i < req->extension.size() && line; i++) {
+				for (size_t i = 0; i < req->extension.size(); i++) {
 					if (current.second->getFile().matchExtension(req->extension[i])) {
 						extensionOK = true;
 						break;
