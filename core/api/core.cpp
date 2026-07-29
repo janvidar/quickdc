@@ -143,8 +143,13 @@ void QuickDC::Core::run()
 	static const int POLL_INTERVAL_MS = 250;
 	monitor->wait(POLL_INTERVAL_MS);
 
+	// Guarded from here on, because the second constructor builds a core that
+	// only runs a hub session and leaves everything a session does not need
+	// null. Without these it can be constructed but not run, which makes the
+	// loop unusable for exactly the case that constructor exists for.
+
 	// Collect whatever the hash worker thread has finished.
-	hash->process();
+	if (hash) hash->process();
 
 	// Announce transfers that have finished.
 	//
@@ -152,16 +157,16 @@ void QuickDC::Core::run()
 	// that owns it responds by deleting it, so the notification has to be
 	// deferred to here rather than made on the spot. TransferManager parks them
 	// on a list for exactly that reason, and this drains it.
-	transfers->process();
+	if (transfers) transfers->process();
 
 	// Expire dead sources, start queued transfers, and flush the queue now
 	// and then. Cheap enough to run on every iteration.
-	queue->process();
+	if (queue) queue->process();
 
 	// Process timers.
 	// FIXME: it should be sorted so we don't have to iterate ALL timers to before exit.
-	timers->process();
-	messageHandler->process();
+	if (timers) timers->process();
+	if (messageHandler) messageHandler->process();
 }
 
 
