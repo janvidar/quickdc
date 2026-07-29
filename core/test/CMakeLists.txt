@@ -39,6 +39,7 @@ add_executable(testhashcache hashcache.cpp)
 add_executable(testhttpparser httpparser.cpp)
 add_executable(testsearch search.cpp)
 add_executable(testdctext dctext.cpp)
+add_executable(testconfig config.cpp)
 
 # testdebug needs console.cpp for its output helpers.
 add_executable(testdebug debug.cpp cli/console.cpp)
@@ -49,7 +50,7 @@ set(QUICKDC_TEST_APPS
     testsources testusers testhubsession testdchubsession testsecurity
     testclientsession testdcclientsession testfilelistgen testtransfer
     testchunkmap testadcparser testhashcache testhttpparser
-    testsearch testdctext)
+    testsearch testdctext testconfig)
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
     # quickdc pulls in samurai (and thus OpenSSL, zlib, bzip2 and pthread)
@@ -89,5 +90,6 @@ add_test(NAME hashcache COMMAND testhashcache)
 add_test(NAME httpparser COMMAND testhttpparser)
 add_test(NAME search COMMAND testsearch)
 add_test(NAME dctext COMMAND testdctext)
+add_test(NAME config COMMAND testconfig)
 
 add_subdirectory(autotests)

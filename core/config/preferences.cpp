@@ -12,8 +12,11 @@
 namespace QuickDC {
 
 Preferences::Preferences(const std::string& file) : IniParser(file) {
-	read();
+	/* Named before the read, or a setting appearing before the first section
+	   header lands in a group with no name - which is written back out as "[]"
+	   and refused the next time the file is read. */
 	current = "Default";
+	read();
 	dirty = false;
 }
 

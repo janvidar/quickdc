@@ -61,6 +61,7 @@ bool Backend::write() {
 #ifdef DEBUG
 			QDBG("Backend::write(): Write error: %i: '%s'", errno, strerror(errno));
 #endif
+			delete[] data;
 			return false;
 		} 
 		buffer->remove(written);
