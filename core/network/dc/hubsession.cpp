@@ -421,11 +421,25 @@ void DC::HubSession::onRequestPasword()
 	state = Password;
 
 	/*
-	 * An empty password is not an answer, and the hub will refuse it. Say so
-	 * rather than let the login fail with nothing reported.
+	 * An empty password is not an answer. Ask for one and wait: sending it
+	 * anyway would have the hub refuse the login before anyone could supply
+	 * the real one.
 	 */
 	if (!password || !*password)
+	{
 		listener->EventHubAutenticate();
+		return;
+	}
+
+	send(new DC::SendMyPass(getPassword()));
+}
+
+void DC::HubSession::sendPassword(const char* password_)
+{
+	if (state != Password || !password_) return;
+
+	free(password);
+	password = strdup(password_);
 
 	send(new DC::SendMyPass(getPassword()));
 }

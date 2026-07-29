@@ -481,6 +481,10 @@ static void run()
 			 * GPA belongs to the identify phase: after the SID and the client's
 			 * own INF, before the hub accepts it. A completed login is too late
 			 * and the session says so rather than answering.
+			 *
+			 * Nothing here configures a password, so the request is put to the
+			 * interface and nothing is sent until it answers - the token hashed
+			 * with an empty password is an answer the hub would refuse.
 			 */
 			std::string line;
 			CHECK(s.hub.nextLine(line));
@@ -490,11 +494,79 @@ static void run()
 			CHECK(line.compare(0, 4, "BINF") == 0);
 
 			s.say("IGPA SOMETOKEN");
+			CHECK(s.listener.authRequested);
+
+			s.hub.drain();
+			CHECK(s.hub.received.find("HPAS") == std::string::npos);
+			printf("  ok a password request with none configured is put to the interface\n");
+		}
+		else failures++;
+	}
+
+	/* And answering it sends the token hashed with the password. */
+	{
+		Session s;
+		if (s.ready)
+		{
+			std::string line;
+			CHECK(s.hub.nextLine(line));
+			s.say("ISUP ADBASE");
+			s.say("ISID AAAA");
+			CHECK(s.hub.nextLine(line));
+
+			s.say("IGPA ABCDEFGHIJKLMNOP");
+			CHECK(s.listener.authRequested);
+
+			s.session->sendPassword("hunter2");
 
 			CHECK(s.hub.nextLine(line));
 			CHECK(line.compare(0, 4, "HPAS") == 0);
-			CHECK(s.listener.authRequested);
-			printf("  ok a password request with none configured is reported\n");
+			/* A base32 tiger digest, not the password itself. */
+			CHECK(line.size() > 5);
+			CHECK(line.find("hunter2") == std::string::npos);
+			printf("  ok answering the request sends a digest: %s\n", line.c_str());
+		}
+		else failures++;
+	}
+
+	/* The same password and token produce the same answer. */
+	{
+		std::string first;
+		std::string second;
+
+		for (int n = 0; n < 2; n++)
+		{
+			Session s;
+			if (!s.ready) { failures++; break; }
+
+			std::string line;
+			s.hub.nextLine(line);
+			s.say("ISUP ADBASE");
+			s.say("ISID AAAA");
+			s.hub.nextLine(line);
+
+			s.say("IGPA ABCDEFGHIJKLMNOP");
+			s.session->sendPassword("hunter2");
+
+			if (!s.hub.nextLine(line)) { failures++; break; }
+			(n == 0 ? first : second) = line;
+		}
+
+		CHECK(!first.empty() && first == second);
+		printf("  ok the answer is derived from the password and the token\n");
+	}
+
+	/* A password nobody asked for is not sent. */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			s.session->sendPassword("unsolicited");
+			pump([] { return false; }, 100);
+
+			s.hub.drain();
+			CHECK(s.hub.received.find("HPAS") == std::string::npos);
+			printf("  ok an unsolicited password is not sent\n");
 		}
 		else failures++;
 	}

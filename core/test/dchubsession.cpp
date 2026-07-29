@@ -539,39 +539,77 @@ static void run()
 	}
 
 	/*
-	 * A password request is answered from what was configured. Nothing here
-	 * configures one, so the interface is told the hub wants authentication
-	 * rather than the login failing with nothing reported.
+	 * Nothing here configures a password, so a request is put to the interface
+	 * and nothing is sent until it answers - an empty $MyPass would have the
+	 * hub refuse the login before anyone could supply the real one.
 	 */
 	{
 		Session s;
 		if (s.ready && s.login())
 		{
 			s.say("$GetPass");
-
-			std::string line;
-			CHECK(s.hub.expect("$MyPass", line));
 			CHECK(s.listener.authRequested);
-			printf("  ok a password request with none configured is reported\n");
+
+			s.hub.drain();
+			CHECK(s.hub.received.find("$MyPass") == std::string::npos);
+			printf("  ok a password request with none configured is put to the interface\n");
 		}
 		else failures++;
 	}
 
-	/* A password the hub refused is forgotten, and reported. */
+	/* And answering it sends the password. */
 	{
 		Session s;
 		if (s.ready && s.login())
 		{
 			s.say("$GetPass");
+			CHECK(s.listener.authRequested);
+
+			s.session->sendPassword("hunter2");
 
 			std::string line;
-			CHECK(s.hub.expect("$MyPass", line));
+			CHECK(s.hub.expect("$MyPass ", line));
+			CHECK(line == "$MyPass hunter2");
+			printf("  ok answering the request sends the password\n");
+		}
+		else failures++;
+	}
+
+	/* A password nobody asked for is not sent. */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			s.session->sendPassword("unsolicited");
+			pump([] { return false; }, 100);
+
+			s.hub.drain();
+			CHECK(s.hub.received.find("$MyPass") == std::string::npos);
+			printf("  ok an unsolicited password is not sent\n");
+		}
+		else failures++;
+	}
+
+	/* A password the hub refused is forgotten, reported, and can be replaced. */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			s.say("$GetPass");
+			s.session->sendPassword("wrong");
+
+			std::string line;
+			CHECK(s.hub.expect("$MyPass ", line));
 
 			s.listener.authRequested = false;
 			s.say("$BadPass");
-
 			CHECK(s.listener.authRequested);
-			printf("  ok a refused password is reported\n");
+
+			/* Still in the password state, so a second attempt goes through. */
+			s.session->sendPassword("right");
+			CHECK(s.hub.expect("$MyPass ", line));
+			CHECK(line == "$MyPass right");
+			printf("  ok a refused password is reported and can be replaced\n");
 		}
 		else failures++;
 	}

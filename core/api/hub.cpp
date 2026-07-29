@@ -112,6 +112,16 @@ void QuickDC::Hub::disconnect()
 	}
 }
 
+void QuickDC::Hub::sendPassword(const char* password)
+{
+	/* Deliberately not guarded on isLoggedIn(): being asked for a password is
+	   precisely the state of not being logged in yet. */
+	if (session)
+		session->sendPassword(password);
+	else
+		listener->EventSystemError("sendPassword(): No session");
+}
+
 void QuickDC::Hub::sendChatMessage(const char *message)
 {
 	if (session && session->isLoggedIn())

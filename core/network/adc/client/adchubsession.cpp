@@ -84,6 +84,7 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	, sid(0)
 	, cid(0)
 	, pid(0)
+	, passwordToken(0)
 	, hubname(0)
 	, hubdesc(0)
 	, hubversion(0)
@@ -165,6 +166,7 @@ ADC::HubSession::~HubSession()
 
 
 	free(hubname);
+	free(passwordToken);
 
 	free(nickname);
 	free(password);
@@ -905,21 +907,51 @@ void ADC::HubSession::onRequestPasword(char* token)
 	}
 
 	userState = QuickDC::HubSession::StateVerify;
-	char password_encoded[40] = { 0, };
-
-	/* Hashing the token with an empty password produces an answer the hub will
-	   refuse. Say so rather than let the login fail with nothing reported. */
-	if (!password || !*password)
-		listener->EventHubAutenticate();
 
 	if (!token) return;
 
-	size_t tok_size = (strlen(token) * 5) >> 3;
-	size_t size = strlen(password) + tok_size;
-	uint8_t* tok_decoded = new uint8_t[tok_size];
-	uint8_t* str = new uint8_t[size];
+	free(passwordToken);
+	passwordToken = strdup(token);
 
-	Samurai::Util::base32_decode(token, std::span<unsigned char>(tok_decoded, tok_size));
+	/*
+	 * Hashing the token with an empty password produces an answer the hub will
+	 * refuse. Ask for one and wait, rather than spend the request on nothing.
+	 */
+	if (!password || !*password)
+	{
+		listener->EventHubAutenticate();
+		return;
+	}
+
+	sendPasswordResponse();
+}
+
+void ADC::HubSession::sendPassword(const char* password_)
+{
+	/* Only meaningful in answer to a request, and only derivable while the
+	   token that came with it is still around. */
+	if (userState != QuickDC::HubSession::StateVerify || !passwordToken) return;
+	if (!password_) return;
+
+	free(password);
+	password = strdup(password_);
+
+	sendPasswordResponse();
+}
+
+/* HPAS carries the tiger digest of the password followed by the hub's token. */
+void ADC::HubSession::sendPasswordResponse()
+{
+	if (!passwordToken || !password) return;
+
+	char password_encoded[40] = { 0, };
+
+	size_t tok_size = (strlen(passwordToken) * 5) >> 3;
+	size_t size = strlen(password) + tok_size;
+	uint8_t* tok_decoded = new uint8_t[tok_size ? tok_size : 1];
+	uint8_t* str = new uint8_t[size ? size : 1];
+
+	Samurai::Util::base32_decode(passwordToken, std::span<unsigned char>(tok_decoded, tok_size));
 
 	memcpy(&str[0], password, strlen(password));
 	memcpy(&str[strlen(password)], tok_decoded, tok_size);

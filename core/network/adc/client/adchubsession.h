@@ -81,6 +81,8 @@ class HubSession :
 		void onPublicChat(const char* from, const char* message, bool action);
 		void onPrivateChat(const char* to, const char* from, const char* message, const char* contextID, bool action);
 		void onRequestPasword(char* token);
+		void sendPassword(const char* password) override;
+		void sendPasswordResponse();
 
 		void onActiveConnect(const char* from, const char* protocol, uint16_t port, const char* token);
 		void onPassiveConnect(const char* from, const char* protocol, const char* token);
@@ -159,6 +161,10 @@ class HubSession :
 		char* description;
 		char* email;
 		char* password;
+
+		/* The token the hub sent with its request. The answer is derived from
+		   it, so it has to outlive the request while a password is found. */
+		char* passwordToken;
 		char* sid;
 		char* cid;
 		char* pid;

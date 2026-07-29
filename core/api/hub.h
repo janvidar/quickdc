@@ -238,6 +238,12 @@ class Hub
 		void disconnect();
 
 		void sendChatMessage(const char* message);
+
+		/**
+		 * Answer a hub that asked for a password, after the listener was told
+		 * through EventHubAutenticate().
+		 */
+		void sendPassword(const char* password);
 		void sendPrivateChatMessage(const QuickDC::User* user, const char* message);
 		void sendKickUser(const char* user);
 		void sendRedirect(const char* user, const char* address, const char* reason);

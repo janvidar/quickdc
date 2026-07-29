@@ -132,6 +132,19 @@ class HubSession {
 		 virtual bool isLoggedIn() const = 0;
 
 		/**
+		 * Supply a password after EventHubAutenticate() asked for one.
+		 *
+		 * Ignored unless the hub actually asked. A password is only meaningful
+		 * as an answer to a request - on ADC because the answer is derived
+		 * from a token the hub sent with it, and on both because a hub that
+		 * did not ask has nothing to do with one.
+		 *
+		 * It is used for this login only and is not written to the session
+		 * file; putting it there is the user's decision, not ours.
+		 */
+		virtual void sendPassword(const char* password) = 0;
+
+		/**
 		 * The hub this session belongs to, which is where its canonical URL
 		 * comes from. A FileSource records that URL, so anything creating
 		 * sources needs it.

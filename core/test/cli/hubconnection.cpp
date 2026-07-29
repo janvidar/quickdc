@@ -166,7 +166,8 @@ bool HubConnection::EventHubRedirect(const char*, uint16_t)
 
 void HubConnection::EventHubAutenticate()
 {
-
+	console_printf("%s * HUB: this hub wants a password; send one with /password <password>\n",
+		getTimestamp());
 }
 
 bool HubConnection::EventClientConnect(const char* addr, uint16_t port, const QuickDC::User* u)

@@ -332,6 +332,7 @@ static void cmd_joins(const std::vector<std::string>&);
 static void cmd_kick(const std::vector<std::string>&);
 static void cmd_list(const std::vector<std::string>&);
 static void cmd_msg(const std::vector<std::string>&);
+static void cmd_password(const std::vector<std::string>&);
 static void cmd_queue(const std::vector<std::string>&);
 static void cmd_quit(const std::vector<std::string>&);
 static void cmd_redirect(const std::vector<std::string>&);
@@ -362,6 +363,7 @@ static const struct CommandData commands[] =
 	{ "kick",              "n:nick",                     "Kick a user from the hub (operators only)",        0, cmd_kick              },
 	{ "list",              "",                           "Show users on the hub",                            0, cmd_list              },
 	{ "msg",               "n:nick s:message",           "Send a private message to a user",                 0, cmd_msg               },
+	{ "password",          "s:password",                 "Send a password to a hub that asked for one",      0, cmd_password          },
 	{ "queue",             "",                           "Show the download queue",                          0, cmd_queue             },
 	{ "quit",              "",                           "Quit the program",                                 0, cmd_quit              },
 	{ "redirect",          "n:nick w:address ?s:reason", "Redirect a user to another hub (operators only)",  1, cmd_redirect          },
@@ -454,6 +456,11 @@ static void cmd_connect(const std::vector<std::string>&)
 static void cmd_disconnect(const std::vector<std::string>&)
 {
 	hub->disconnect();
+}
+
+static void cmd_password(const std::vector<std::string>& args)
+{
+	hub->sendPassword(args[0].c_str());
 }
 
 static void cmd_allow_connections(const std::vector<std::string>&)

@@ -105,6 +105,7 @@ class HubSession
 		
 		const char* getNick() const     { return nickname;    }
 		const char* getPassword() const { return password;    }
+		void sendPassword(const char* password) override;
 		const char* getDescription()    { return description; }
 		const char* getEmail() const    { return email;       }
 		char getFlags() const            { return flags;       }
