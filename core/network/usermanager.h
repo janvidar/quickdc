@@ -116,7 +116,6 @@ class UserManager {
 		std::map<std::string, User*> users;
 		std::map<std::string, User*>::iterator userIterator;
 		uint64_t shared;
-		size_t ops;
 
 		UserEventHandler* event;
 };

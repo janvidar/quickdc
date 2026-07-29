@@ -200,7 +200,7 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 		EXTRACT_INT(hub_cnt_reg, "HR");
 		
 		int hub_cnt_user = 0;
-		EXTRACT_INT(hub_cnt_reg, "HN");
+		EXTRACT_INT(hub_cnt_user, "HN");
 		
 		int op = 0;
 		EXTRACT_INT(op, "OP"); // Operator -- FIXME - Use CT instead!

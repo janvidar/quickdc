@@ -10,8 +10,8 @@ namespace QuickDC {
 
 
 UserManager::UserManager(UserEventHandler* eventhandler) : event(eventhandler) {
-	ops = 0;
 	shared = 0;
+	userIterator = users.end();
 }
 
 UserManager::~UserManager() {
@@ -32,29 +32,35 @@ const User* UserManager::getUser(const char* id) {
 	return 0;
 }
 
+/*
+ * Walked directly rather than through first()/next(): those share one iterator
+ * with the caller, so looking a user up from inside a walk used to move the
+ * walk along with it.
+ */
 const User* UserManager::getUserByNick(const char* nick) {
 	if (!nick) return 0;
-	User* u = first();
-	while (u) {
+	for (const auto& entry : users) {
+		const User* u = entry.second;
 		if (u->getNick() && strcmp(u->getNick(), nick) == 0) return u;
-		u = next();
 	}
 	return 0;
 }
 
 const User* UserManager::getUserByClientID(const char* cid) {
 	if (!cid || !*cid) return 0;
-	User* u = first();
-	while (u) {
+	for (const auto& entry : users) {
+		const User* u = entry.second;
 		const char* have = (const char*) u->getClientID();
 		if (have && strcmp(have, cid) == 0) return u;
-		u = next();
 	}
 	return 0;
 }
 
 void UserManager::join(const char* id) {
-	if (users.count((char*) id))
+	/* Every lookup below builds a std::string from this. */
+	if (!id) return;
+
+	if (users.count(id))
 		return;
 
 	User* u = new User(id);
@@ -63,9 +69,11 @@ void UserManager::join(const char* id) {
 }
 
 void UserManager::quit(const char* id, const char* msg) {
-	if (users.count((char*) id)) {
-		User* u = users[(char*) id];
-		users.erase((char*) id);
+	if (!id) return;
+
+	if (users.count(id)) {
+		User* u = users[id];
+		users.erase(id);
 		shared -= u->getSharedBytes();
 		if (event) event->EventUserQuit(u, msg);
 		delete u;
@@ -73,7 +81,9 @@ void UserManager::quit(const char* id, const char* msg) {
 }
 
 void UserManager::info(const char* id, User* data, uint64_t oldShare, bool changed) {
-	if (!users.count((char*) id)) {
+	if (!id || !data) return;
+
+	if (!users.count(id)) {
 		users.insert(std::pair<std::string, User*>(std::string(id), data));
 		if (!data->getNick()) QERR("---------------- PANIC -----------------");
 		if (event) event->EventUserJoin(data->getNick());
@@ -86,7 +96,9 @@ void UserManager::info(const char* id, User* data, uint64_t oldShare, bool chang
 }
 
 void UserManager::op(const char* id) {
-	if (users.count((char*) id)) {
+	if (!id) return;
+
+	if (users.count(id)) {
 		User* u = users[std::string(id)];
 		// FIXME: u->setOp(true);
 		if (event) event->EventUserInfo(u);
@@ -94,7 +106,9 @@ void UserManager::op(const char* id) {
 }
 
 void UserManager::ip(const char* id, const char* /*ip*/) {
-	if (users.count((char*) id)) {
+	if (!id) return;
+
+	if (users.count(id)) {
 		User* u = users[std::string(id)];
 		// FIXME: u->setIP(ip);
 		if (event) event->EventUserInfo(u);
@@ -105,8 +119,15 @@ size_t UserManager::countUsers() const {
 	return users.size();
 }
 
+/*
+ * Counted on demand. The member this used to return was set to zero and never
+ * touched again, so every hub reported no operators at all.
+ */
 size_t UserManager::countOperators() const {
-	return ops;
+	size_t count = 0;
+	for (const auto& entry : users)
+		if (entry.second->isOp()) count++;
+	return count;
 }
 
 uint64_t UserManager::countShared() const {
@@ -123,6 +144,8 @@ User* UserManager::first() {
 
 /* Built-in iterators */
 User* UserManager::next() {
+	if (userIterator == users.end()) return 0;
+
 	userIterator++;
 	if (userIterator != users.end())
 		return (*userIterator).second;
