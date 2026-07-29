@@ -19,7 +19,7 @@
 #include <samurai/crypto/digest/merkletree.h>
 
 
-QuickDC::Hash::Job::Job(QuickDC::Hash::Manager* mgr_, enum QuickDC::Hash::HashType type, QuickDC::Hash::JobListener* listener_, const Samurai::IO::File& file_) : buffer(0), file(file_), listener(listener_), mgr(mgr_), offset(0), hasher(0), algo(0), hashValue(0), algorithm(type), error(0)
+QuickDC::Hash::Job::Job(QuickDC::Hash::Manager* mgr_, enum QuickDC::Hash::HashType type, QuickDC::Hash::JobListener* listener_, const Samurai::IO::File& file_) : buffer(0), file(file_), listener(listener_), mgr(mgr_), offset(0), hasher(0), algo(0), algorithm(type), error(0)
 {
 	switch (algorithm)
 	{
@@ -138,6 +138,8 @@ bool QuickDC::Hash::Job::runToCompletion(std::atomic<uint64_t>& done, std::atomi
 const char* QuickDC::Hash::Job::getHashSum() const
 {
 	static char buf[100];
+	if (!hashValue) return "";
+
 	if (hashValue->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, buf, 100))
 		return buf;
 	return "";

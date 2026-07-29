@@ -36,8 +36,8 @@ QuickDC::Hash::CacheEntry* QuickDC::Hash::CacheEntry::create(const Samurai::IO::
 	else
 	{
 		depth = 0;
-		Samurai::Crypto::Digest::HashValue* value = job->getHasher()->digest();
-		leafdata.append((const char*) value->getData(), hash_size);
+		const Samurai::Crypto::Digest::HashValue& value = job->getHasher()->digest();
+		leafdata.append((const char*) value.getData(), hash_size);
 	}
 	
 	
@@ -78,14 +78,13 @@ QuickDC::Hash::CacheEntry* QuickDC::Hash::CacheEntry::create(CacheEntryHeader& d
 }
 
 QuickDC::Hash::CacheEntry::CacheEntry(const Samurai::IO::File& file_, enum QuickDC::Hash::HashType type, const Samurai::IO::Buffer leafdata_, size_t leaves_, size_t depth_)
-	: file(file_), size(file_.size()), mtime(file_.getTimeModified()), algorithm(type), leafdata(leafdata_), leaves(leaves_), depth(depth_), digest(0), cacheFileOffset(0)
+	: file(file_), size(file_.size()), mtime(file_.getTimeModified()), algorithm(type), leafdata(leafdata_), leaves(leaves_), depth(depth_), cacheFileOffset(0)
 {
 	QDBG("QuickDC::Hash::CacheEntry::CacheEntry(): file=%s (%zu leaves at %zu bytes)", file.getName().c_str(), leaves, leafdata.size());
 }
 
 QuickDC::Hash::CacheEntry::~CacheEntry()
 {
-	delete digest;
 }
 
 void QuickDC::Hash::CacheEntry::setCacheFileOffset(off_t pos)

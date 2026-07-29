@@ -921,8 +921,7 @@ void ADC::HubSession::onRequestPasword(char* token)
 
 	Samurai::Crypto::Digest::Tiger tiger;
 	tiger.update(str, size);
-	Samurai::Crypto::Digest::HashValue* value = tiger.digest();
-	value->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, password_encoded, 40);
+	tiger.digest().getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, password_encoded, 40);
 
 	ADC::Command* cmd = new ADC::Command(FOURCC('H','P','A','S'));
 	cmd->addArgument(password_encoded);

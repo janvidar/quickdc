@@ -73,9 +73,8 @@ bool QuickDC::LeafHashes::load(const char* tth, uint64_t fileSize_, const char* 
 	tree.setLeavesLTR(buffer, count, fileSize_);
 
 	char root[100];
-	Samurai::Crypto::Digest::HashValue* digest = tree.digest();
-	bool ok = digest
-		&& digest->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, root, sizeof(root))
+	const Samurai::Crypto::Digest::HashValue& digest = tree.digest();
+	bool ok = digest.getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, root, sizeof(root))
 		&& !strcmp(root, tth);
 
 	delete hasher;
@@ -150,11 +149,11 @@ bool QuickDC::LeafHashes::verify(Samurai::IO::File& file, uint64_t offset, uint6
 
 		if (ok)
 		{
-			Samurai::Crypto::Digest::HashValue* value = leaf.digest();
+			const Samurai::Crypto::Digest::HashValue& value = leaf.digest();
 			size_t index = first + (size_t) ((at - offset) / leafSize);
 
-			if (!value || index >= leafCount
-				|| memcmp(value->getData(), &leaves[index * hashSize], hashSize))
+			if (index >= leafCount
+				|| memcmp(value.getData(), &leaves[index * hashSize], hashSize))
 			{
 				QDBG("Leaf %d of '%s' does not match", (int) index, file.getName().c_str());
 				ok = false;

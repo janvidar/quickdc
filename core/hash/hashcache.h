@@ -55,9 +55,6 @@ class CacheEntry
 		size_t leaves;
 		size_t depth;
 
-		// optional, only when requested
-		Samurai::Crypto::Digest::HashValue* digest;
-		
 		// may not be ready
 		off_t cacheFileOffset;
 

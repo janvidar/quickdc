@@ -12,6 +12,7 @@
 #include <vector>
 #include <map>
 #include <atomic>
+#include <optional>
 
 #include <samurai/io/file.h>
 #include <samurai/crypto/digest/hash.h>
@@ -101,7 +102,15 @@ class Job
 		QuickDC::Hash::JobListener* getListener() const { return listener; }
 
 		virtual const char* getHashSum() const;
-		virtual Samurai::Crypto::Digest::HashValue* getHash() const { return hashValue; }
+
+		/**
+		 * The digest, once the job has produced one, or null before that.
+		 *
+		 * Held by value: digest() hands out a reference into the hasher, and
+		 * this outlives neither a reset() nor the hasher itself.
+		 */
+		virtual const Samurai::Crypto::Digest::HashValue* getHash() const
+		{ return hashValue ? &*hashValue : nullptr; }
 		virtual Samurai::Crypto::Digest::Hash* getHasher() { return hasher; }
 		
 	protected:
@@ -113,7 +122,7 @@ class Job
 		off_t offset;
 		Samurai::Crypto::Digest::Hash* hasher;
 		Samurai::Crypto::Digest::Hash* algo;
-		Samurai::Crypto::Digest::HashValue* hashValue;
+		std::optional<Samurai::Crypto::Digest::HashValue> hashValue;
 		enum QuickDC::Hash::HashType algorithm;
 		int error;
 

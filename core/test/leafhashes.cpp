@@ -57,7 +57,7 @@ static void hash_file(std::string& tth, Samurai::IO::Buffer& leafdata, size_t& l
 	file.close();
 
 	char root[100];
-	tree.digest()->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, root, sizeof(root));
+	tree.digest().getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, root, sizeof(root));
 	tth = root;
 
 	leaves = tree.countLeaves();
