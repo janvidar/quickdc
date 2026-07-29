@@ -197,6 +197,58 @@ int main()
 		"<a \"foo\" x=\"1\"></a>",
 		"[doc]<a x=1></a>[/doc]");
 
+	/* XML allows white space on either side of the '='. */
+	check("space before the equals",
+		"<a x =\"1\"></a>",
+		"[doc]<a x=1></a>[/doc]");
+
+	check("space after the equals",
+		"<a x= \"1\"></a>",
+		"[doc]<a x=1></a>[/doc]");
+
+	check("space on both sides of the equals",
+		"<a x = \"1\"></a>",
+		"[doc]<a x=1></a>[/doc]");
+
+	check("spaced equals among ordinary attributes",
+		"<a w=\"0\" x = \"1\" y=\"2\"></a>",
+		"[doc]<a w=0 x=1 y=2></a>[/doc]");
+
+	check("spaced equals before a self-closing slash",
+		"<a x = \"1\"/>",
+		"[doc]<a x=1></a>[/doc]");
+
+	check("newline around the equals",
+		"<a x\n=\n\"1\"></a>",
+		"[doc]<a x=1></a>[/doc]");
+
+	/* A valueless attribute still ends at the space, not at the next name. */
+	check("valueless attribute followed by another",
+		"<a x y=\"1\"></a>",
+		"[doc]<a x= y=1></a>[/doc]");
+
+	check("valueless attribute before the close",
+		"<a x ></a>",
+		"[doc]<a x=></a>[/doc]");
+
+	/* Unquoted values are not XML, but the parser has always taken them. */
+	check("unquoted value",
+		"<a x=1></a>",
+		"[doc]<a x=1></a>[/doc]");
+
+	check("unquoted value then another attribute",
+		"<a x=1 y=2></a>",
+		"[doc]<a x=1 y=2></a>[/doc]");
+
+	/* Inside a value the delimiters are ordinary characters. */
+	check("angle bracket inside a value",
+		"<a x=\"p>q\"></a>",
+		"[doc]<a x=p>q></a>[/doc]");
+
+	check("the other quote inside a value",
+		"<a x=\"it's\"></a>",
+		"[doc]<a x=it's></a>[/doc]");
+
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
 	return failures ? 1 : 0;
 }

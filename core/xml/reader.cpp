@@ -13,8 +13,6 @@ namespace XML {
 extern std::string unescape(std::string str);
 }
 
-const char xml_white_space_table[5] = { ' ', '\t', '\n', '\r' };
-
 XML::SAX::XMLReader::XMLReader(Samurai::IO::Buffer* in_, ContentHandler* handler_) : in(in_), handler(handler_) {
 	
 }
@@ -23,68 +21,52 @@ XML::SAX::XMLReader::~XMLReader() {
 
 }
 
-#define EXTRACT_TAG() \
-{ \
-	const std::string tagname = in->copyRange(name_start, name_end); \
-	if (!endTag) { \
-		handler->startElement(0, tagname.c_str(), 0, attributes); \
-		if (emptyBody) \
-			handler->endElement(0, tagname.c_str(), 0); \
-	} else { \
-		handler->endElement(0, tagname.c_str(), 0); \
-	} \
-	balance--; \
-}
-
-#define EXTRACT_ATTRIBUTE() \
-{ \
-	if (isAttrib) { \
-		std::string attr_name; \
-		std::string attr_val; \
-		if (attr_split > attr_start) { \
-			attr_name = in->copyRange(attr_start, attr_split); \
-			if ((in->at(attr_split+1) == '\"' && in->at(n-1) == '\"') || \
-				(in->at(attr_split+1) == '\'' && in->at(n-1) == '\'')) { \
-				attr_val = in->copyRange(attr_split+2, n-1); \
-			} else { \
-				attr_val = in->copyRange(attr_split+1, n); \
-			} \
-		} else { \
-			attr_name = in->copyRange(attr_start, n); \
-		} \
-		if (attr_name.empty()) { \
-			handler->error("Invalid empty attribute name"); \
-		} \
-		attributes.emplace_back(XML::unescape(attr_name), XML::unescape(attr_val)); \
-		isAttrib = false; \
-	} \
-}
-
-
 void XML::SAX::XMLReader::parse() {
 	if (!handler) return;
-	
+
 	bool document = false;
 	int balance = 0;
-	
-	enum TagState { CData, Modifier, Name, Open, Attrib, Quote, Ignore };
+
+	/*
+	 * A name and its value are separate runs rather than one run split at the
+	 * '=', because XML allows white space on either side of it.
+	 */
+	enum TagState { CData, Modifier, Name, Open, AttrName, AfterName, AfterEquals,
+	                QuotedValue, UnquotedValue, SkipQuoted, Ignore };
 	enum TagState state = CData;
-	
+
 	size_t data_begin = 0; // position of data start
-	size_t tag_begin  = 0; // position of '<'
-	size_t attr_start = 0; // position of attribute start
-	size_t attr_split = 0; // position of attribute split (=)
-	size_t q_start    = 0; // position of quote start
+	size_t attr_start = 0; // position of the attribute name start
+	size_t attr_end   = 0; // position after the attribute name
+	size_t val_start  = 0; // position of the attribute value start
 	size_t name_start = 0;
 	size_t name_end   = 0;
-	
+
 	char q_chr        = 0; // type of quote started
 	bool emptyBody    = false;
 	bool endTag       = false;
-	bool isAttrib     = false;
-	
+
 	ContentHandler::AttributeList attributes;
-	
+
+	auto emitTag = [&]() {
+		const std::string tagname = in->copyRange(name_start, name_end);
+		if (!endTag) {
+			handler->startElement(0, tagname.c_str(), 0, attributes);
+			if (emptyBody)
+				handler->endElement(0, tagname.c_str(), 0);
+		} else {
+			handler->endElement(0, tagname.c_str(), 0);
+		}
+		balance--;
+	};
+
+	auto emitAttribute = [&](const std::string& value) {
+		const std::string name = in->copyRange(attr_start, attr_end);
+		if (name.empty())
+			handler->error("Invalid empty attribute name");
+		attributes.emplace_back(XML::unescape(name), XML::unescape(value));
+	};
+
 	for (size_t n = 0; n < in->size(); n++) {
 		char c = (char) in->at(n);
 		if (state == CData) {
@@ -97,7 +79,6 @@ void XML::SAX::XMLReader::parse() {
 				attributes.clear();
 
 				// start of tag.
-				tag_begin = n;
 				emptyBody = false;
 				endTag    = false;
 				// FIXME: Character data callback
@@ -159,79 +140,113 @@ void XML::SAX::XMLReader::parse() {
 				state = Open;
 			} else if (c == '>') {
 				name_end = n;
-				EXTRACT_TAG();
+				emitTag();
 				data_begin = n+1;
 				state = CData;
 			}
-		
-		} else if (state == Open) {
-			switch (c) {
-				case '>':
-				{
-					EXTRACT_TAG();
-					state = CData;
-					data_begin = n+1;
-					break;
-				}
-				case '/':
-					emptyBody = true;
-					break;
-					
-				default:
-					if (!isspace(c)) {
-						if (c == '\"' || c == '\'') {
-							q_chr = c;
-							q_start = n;
-							attr_start = n;
-							state = Quote;
-						} else {
-							state = Attrib;
-							attr_start = n;
-							isAttrib = true;
-						}
-					}
-			}
-		
-		} else if (state == Attrib) {
-			switch (c) {
-				case '>':
-				{
-					EXTRACT_ATTRIBUTE();
-					EXTRACT_TAG();
-					state = CData;
-					data_begin = n+1;
-					break;
-				}
-				case '=':
-					attr_split = n;
-					break;
 
-				/* Ends the attribute as a space would. A '/' inside a quoted
-				   value never arrives here, since that is the Quote state. */
-				case '/':
-					EXTRACT_ATTRIBUTE();
+		} else if (state == Open) {
+			if (c == '>') {
+				emitTag();
+				state = CData;
+				data_begin = n+1;
+			} else if (c == '/') {
+				emptyBody = true;
+			} else if (c == '\"' || c == '\'') {
+				/* A quoted run where a name belongs is not an attribute; skip
+				   it rather than read the rest of the document as quoted. */
+				q_chr = c;
+				state = SkipQuoted;
+			} else if (!isspace(c)) {
+				attr_start = n;
+				state = AttrName;
+			}
+
+		} else if (state == SkipQuoted) {
+			if (c == q_chr)
+				state = Open;
+
+		} else if (state == AttrName) {
+			if (c == '=') {
+				attr_end = n;
+				state = AfterEquals;
+			} else if (isspace(c)) {
+				attr_end = n;
+				state = AfterName;
+			} else if (c == '/' || c == '>') {
+				attr_end = n;
+				emitAttribute("");
+				if (c == '>') {
+					emitTag();
+					state = CData;
+					data_begin = n+1;
+				} else {
 					emptyBody = true;
 					state = Open;
-					break;
-
-				case '\"':
-				case '\'':
-						q_chr = c;
-						q_start = n;
-						state = Quote;
-						break;
-				default:
-					if (isspace(c)) {
-						EXTRACT_ATTRIBUTE();
-						state = Open;
-					}
 				}
-		} else if (state == Quote) {
-			if ((c == '\"' || c == '\'') && q_chr == c) {
-				state = Attrib;
+			}
+
+		/* White space between the name and its '=', so the name is complete but
+		   it is not yet known whether a value follows. */
+		} else if (state == AfterName) {
+			if (c == '=') {
+				state = AfterEquals;
+			} else if (c == '>') {
+				emitAttribute("");
+				emitTag();
+				state = CData;
+				data_begin = n+1;
+			} else if (c == '/') {
+				emitAttribute("");
+				emptyBody = true;
+				state = Open;
+			} else if (!isspace(c)) {
+				emitAttribute("");
+				attr_start = n;
+				state = AttrName;
+			}
+
+		/* White space between the '=' and the value. */
+		} else if (state == AfterEquals) {
+			if (c == '\"' || c == '\'') {
+				q_chr = c;
+				val_start = n+1;
+				state = QuotedValue;
+			} else if (c == '>') {
+				emitAttribute("");
+				emitTag();
+				state = CData;
+				data_begin = n+1;
+			} else if (c == '/') {
+				emitAttribute("");
+				emptyBody = true;
+				state = Open;
+			} else if (!isspace(c)) {
+				val_start = n;
+				state = UnquotedValue;
+			}
+
+		} else if (state == QuotedValue) {
+			/* Only the matching quote ends it, so '>' and '/' are literal. */
+			if (c == q_chr) {
+				emitAttribute(in->copyRange(val_start, n));
+				state = Open;
+			}
+
+		} else if (state == UnquotedValue) {
+			if (isspace(c) || c == '/' || c == '>') {
+				emitAttribute(in->copyRange(val_start, n));
+				if (c == '>') {
+					emitTag();
+					state = CData;
+					data_begin = n+1;
+				} else {
+					if (c == '/') emptyBody = true;
+					state = Open;
+				}
 			}
 		}
-		
+
 	}
 	
 	if (balance) {
