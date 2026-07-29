@@ -35,10 +35,18 @@ bool QuickDC::Transfer::exec()
 	/* A socket can still report readable after we are done with it. */
 	if (closed) return true;
 
+	/*
+	 * Nobody is going to open it later, so this is the end of the transfer and
+	 * not something to come back to. Reporting 'not finished' left it in the
+	 * manager being polled, with its session never told, for good.
+	 */
 	if (!file->isOpen())
 	{
 		QERR("QuickDC::Transfer::exec(): file is not open!");
-		return false;
+		status = IOFail;
+		closed = true;
+		close();
+		return true;
 	}
 
 	transfer();
@@ -61,19 +69,26 @@ bool QuickDC::Transfer::exec()
 #define MAXSENDBUF 1024*1024*4
 
 QuickDC::Upload::Upload(TransferManager* mgr, PrivateTransferListener* listener, std::shared_ptr<Samurai::IO::Net::Socket> conn, Samurai::IO::File* file_, off_t offset, off_t length)
-	: QuickDC::Transfer(mgr, listener, std::move(conn), file_, QuickDC::Transfer::Upload, offset, length), uploadBuffer(0)
+	: QuickDC::Transfer(mgr, listener, std::move(conn), file_, QuickDC::Transfer::Upload, offset, length)
+	, uploadBuffer(0), uploadBufferSize(0)
 {
 	QDBG("QuickDC::Upload::Upload()");
-	
-	bool ok = file->open(Samurai::IO::File::Mode::Read);
-	if (!ok)
+
+	if (!file->open(Samurai::IO::File::Mode::Read))
 	{
 		QERR("Unable to open file: %s", file->getName().c_str());
+		status = IOFail;
+		return;
 	}
-	
+
 	QDBG("Upload-ctor: Seek to %d\n", (int) offset);
-	file->seek(offset);
-	
+	if (!file->seek(offset))
+	{
+		QERR("Unable to seek to %d in '%s'", (int) offset, file->getName().c_str());
+		status = IOFail;
+		return;
+	}
+
 	manager->onTransferStarted(this);
 	socket->toggleWriteNotifier(true);
 	
@@ -103,17 +118,46 @@ void QuickDC::Upload::close()
 void QuickDC::Upload::transfer()
 {
 	QDBG("Upload: Seek to %d\n", (int) offset);
-	file->seek(offset);
-	
-	ssize_t chunk = (ssize_t) std::min<uint64_t>(uploadBufferSize, total - offset);
-	if (chunk)
+	if (!file->seek(offset))
 	{
-		ssize_t in = file->read(uploadBuffer, chunk);
-		ssize_t out = socket->write(uploadBuffer, in);
-		QDBG("Upload::transfer, in=%d, out=%d", (int) in, (int) out);
-		rate.add(out);
-		offset += out;
+		QERR("Upload: unable to seek to %d in '%s'", (int) offset, file->getName().c_str());
+		status = IOFail;
+		return;
 	}
+
+	size_t chunk = (size_t) std::min<uint64_t>(uploadBufferSize, total - offset);
+	if (!chunk) return;
+
+	/*
+	 * A failing read hands back -1, and passing that on as a length reads a
+	 * gigabyte and a half past the buffer; an empty one means the file shrank
+	 * under us, and there is no way to send bytes that are no longer there.
+	 */
+	ssize_t in = file->read(uploadBuffer, chunk);
+	if (in <= 0)
+	{
+		QERR("Upload: unable to read from '%s'", file->getName().c_str());
+		status = IOFail;
+		return;
+	}
+
+	/*
+	 * And a failing write hands back -1 too. Added to an unsigned offset that
+	 * moved the transfer one byte further from its end than it started, so it
+	 * could never complete - and since a dead socket reports 0 from then on,
+	 * nothing else ended it either.
+	 */
+	ssize_t out = socket->write(uploadBuffer, (size_t) in);
+	if (out < 0)
+	{
+		QERR("Upload: unable to write to the peer");
+		status = IOFail;
+		return;
+	}
+
+	QDBG("Upload::transfer, in=%d, out=%d", (int) in, (int) out);
+	rate.add(out);
+	offset += (uint64_t) out;
 }
 
 
