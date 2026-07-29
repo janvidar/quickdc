@@ -195,10 +195,9 @@ bool ADC::CommandProxy::read()
 			split = readbuffer->find('\n');
 			continue;
 		}
-		char* command = readbuffer->memdup(0, split+1);
+		std::string command = readbuffer->copyRange(0, split+1);
 		readbuffer->remove(split+1);
-		invoke(command, split);
-		free(command);
+		invoke(command.c_str(), split);
 
 		if (handover) break;
 
@@ -213,10 +212,9 @@ bool ADC::CommandProxy::read()
 		size_t left = readbuffer->size();
 		if (left)
 		{
-			char* data = readbuffer->memdup(0, left);
+			const std::string data = readbuffer->copyRange(0, left);
 			readbuffer->remove(left);
-			download->pushPending(data, left);
-			free(data);
+			download->pushPending(data.c_str(), left);
 
 			/* A small chunk may be here in full, with no further read event
 			   coming. Only safe with data in hand, since the download then

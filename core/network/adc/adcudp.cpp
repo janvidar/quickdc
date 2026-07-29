@@ -6,7 +6,7 @@
 #include "quickdc.h"
 #include <samurai/io/buffer.h>
 #include <samurai/io/net/datagram.h>
-#include <stdlib.h>
+#include <string>
 
 #include "api/core.h"
 #include "api/hub.h"
@@ -22,25 +22,20 @@ void ADC::DatagramHandler::onDatagram(Samurai::IO::Net::DatagramSocket*, Samurai
 {
 	if (!packet || !packet->getBuffer()) return;
 
-	size_t length = packet->getBuffer()->size();
+	const size_t length = packet->getBuffer()->size();
 	if (!length) return;
 
-	char* raw = packet->getBuffer()->memdup(0, length);
-	if (!raw) return;
+	std::string raw = packet->getBuffer()->copyRange(0, length);
 
 	/* TCP framing strips the terminator before parsing; nothing frames a
 	   datagram, so trim it or the last argument keeps it as part of its value. */
-	while (length && (raw[length - 1] == '\n' || raw[length - 1] == '\r'))
-		raw[--length] = '\0';
+	while (!raw.empty() && (raw.back() == '\n' || raw.back() == '\r'))
+		raw.pop_back();
 
-	if (!length)
-	{
-		free(raw);
-		return;
-	}
+	if (raw.empty()) return;
 
 	ADC::Command cmd;
-	if (ADC::Parser::parse(raw, length, cmd))
+	if (ADC::Parser::parse(raw.c_str(), raw.size(), cmd))
 	{
 		switch (cmd.getFourcc())
 		{
@@ -59,10 +54,8 @@ void ADC::DatagramHandler::onDatagram(Samurai::IO::Net::DatagramSocket*, Samurai
 	}
 	else
 	{
-		QDBG("Unparseable ADC datagram, %d bytes", (int) length);
+		QDBG("Unparseable ADC datagram, %d bytes", (int) raw.size());
 	}
-
-	free(raw);
 }
 
 void ADC::DatagramHandler::onPartialStatus(ADC::Command* cmd)

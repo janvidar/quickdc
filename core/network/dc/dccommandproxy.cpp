@@ -202,11 +202,9 @@ bool DC::CommandProxy::read()
 			continue;
 		}
 
-		char* command = readbuffer->memdup(0, split+1);
+		const std::string command = readbuffer->copyRange(0, split); // excludes the pipe
 		readbuffer->remove(split+1);
-		command[split] = 0; // remove pipe
-		invoke(command, split);
-		free(command);
+		invoke(command.c_str(), split);
 
 		/* A handler dropped the connection; the rest of the packet is not ours
 		   to act on any more. */

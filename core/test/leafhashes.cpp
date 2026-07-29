@@ -74,15 +74,14 @@ static void run(const char* label, size_t size, size_t depth = 7)
 	size_t leaves = 0;
 	hash_file(tth, leafdata, leaves, depth);
 
-	size_t length = leafdata.size();
-	char* data = leafdata.memdup(0, length);
+	const size_t length = leafdata.size();
+	const std::string data = leafdata.copyRange(0, length);
 
 	QuickDC::LeafHashes lh;
-	if (!lh.load(tth.c_str(), size, data, length))
+	if (!lh.load(tth.c_str(), size, data.data(), length))
 	{
 		printf("FAIL %s: leaves rejected\n", label);
 		failures++;
-		free(data);
 		return;
 	}
 
@@ -142,7 +141,7 @@ static void run(const char* label, size_t size, size_t depth = 7)
 	{
 		QuickDC::LeafHashes other;
 		char* twisted = (char*) malloc(length);
-		memcpy(twisted, data, length);
+		memcpy(twisted, data.data(), length);
 		twisted[0] = (char) (twisted[0] ^ 0xff);
 		CHECK(!other.load(tth.c_str(), size, twisted, length));
 		CHECK(!other.isLoaded());
@@ -152,14 +151,14 @@ static void run(const char* label, size_t size, size_t depth = 7)
 	/* A wrong root is rejected even with genuine leaves. */
 	{
 		QuickDC::LeafHashes other;
-		CHECK(!other.load("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", size, data, length));
+		CHECK(!other.load("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", size, data.data(), length));
 	}
 
 	/* Truncated leaf data is rejected. */
 	if (length > 24)
 	{
 		QuickDC::LeafHashes other;
-		CHECK(!other.load(tth.c_str(), size, data, length - 1));
+		CHECK(!other.load(tth.c_str(), size, data.data(), length - 1));
 	}
 
 	/* Round trip through the file the download keeps them in. */
@@ -178,7 +177,6 @@ static void run(const char* label, size_t size, size_t depth = 7)
 	}
 
 	printf("  ok %-22s %9zu bytes, %3zu leaves of %6d\n", label, size, leaves, (int) ls);
-	free(data);
 }
 
 int main(int argc, char** argv)
