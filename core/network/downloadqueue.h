@@ -348,7 +348,11 @@ struct QueueStatus {
 
 class QueueManager {
 	public:
-		QueueManager();
+		/**
+		 * @param path_ where the queue is read from and written back to, so it
+		 *        can be pointed somewhere other than the real one.
+		 */
+		QueueManager(const char* path_ = QUICKDC_QUEUE_FILE);
 		virtual ~QueueManager();
 
 		/**
@@ -592,6 +596,9 @@ class QueueManager {
 
 		Samurai::TimeStamp lastSourceSearch;
 		size_t searchRotation;
+
+		std::string path;      // the queue on disk
+		std::string pathNew;   // written first, then moved into place
 };
 
 

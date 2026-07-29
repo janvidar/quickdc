@@ -612,12 +612,14 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 /* QueueManager                                                              */
 /* ------------------------------------------------------------------------- */
 
-QuickDC::QueueManager::QueueManager()
+QuickDC::QueueManager::QueueManager(const char* path_)
 	: verifier(0)
 	, dirty(false)
 	, tokenCounter(0)
 	, lastSourceSearch(0)
 	, searchRotation(0)
+	, path(path_ ? path_ : "")
+	, pathNew(path + ".new")
 {
 	QDBG("QueueManager::QueueManager()");
 
@@ -1696,7 +1698,7 @@ void QuickDC::QueueManager::processVerifications()
 
 bool QuickDC::QueueManager::load()
 {
-	Samurai::IO::File file(QUICKDC_QUEUE_FILE);
+	Samurai::IO::File file(path);
 
 	if (!file.exists())
 	{
@@ -1713,7 +1715,7 @@ bool QuickDC::QueueManager::load()
 
 	if (!file.open(Samurai::IO::File::Mode::Read))
 	{
-		QERR("Unable to open '%s' for reading", QUICKDC_QUEUE_FILE);
+		QERR("Unable to open '%s' for reading", path.c_str());
 		return false;
 	}
 
@@ -1817,7 +1819,7 @@ bool QuickDC::QueueManager::save()
 
 	/* Write beside the real file, then move it into place. */
 	bool ret = false;
-	Samurai::IO::File out(QUICKDC_QUEUE_FILE_NEW);
+	Samurai::IO::File out(pathNew);
 
 	if (out.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate))
 	{
@@ -1831,12 +1833,12 @@ bool QuickDC::QueueManager::save()
 
 		if (written == (ssize_t) length)
 		{
-			Samurai::IO::File target(QUICKDC_QUEUE_FILE);
+			Samurai::IO::File target(path);
 			target.remove();
 
-			ret = out.rename(std::string(QUICKDC_QUEUE_FILE));
+			ret = out.rename(path);
 			if (!ret)
-				QERR("Unable to move '%s' into place", QUICKDC_QUEUE_FILE_NEW);
+				QERR("Unable to move '%s' into place", pathNew.c_str());
 		}
 		else
 		{
@@ -1845,7 +1847,7 @@ bool QuickDC::QueueManager::save()
 	}
 	else
 	{
-		QERR("Unable to open '%s' for writing", QUICKDC_QUEUE_FILE_NEW);
+		QERR("Unable to open '%s' for writing", pathNew.c_str());
 	}
 
 	delete xmlout;
