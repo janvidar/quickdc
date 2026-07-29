@@ -58,14 +58,13 @@ void escape(Samurai::IO::Buffer* buffer, const std::string& str)
 }
 
 
-char* unescape(char* str)
+std::string unescape(std::string str)
 {
-	if (!str) return 0;
 	for (size_t t = 0; t < XML_TRANSLATIONS; t++) {
 		size_t newsize = 0;
-		size_t max = strlen(str);
+		const size_t max = str.size();
 		for (size_t i = 0; i < max; i++) {
-			if (strncmp(&str[i], xml_translation_table[t].escaped, xml_translation_table[t].length) == 0)
+			if (str.compare(i, xml_translation_table[t].length, xml_translation_table[t].escaped) == 0)
 			{
 				str[newsize++] = xml_translation_table[t].unescaped;
 				i += xml_translation_table[t].length-1;
@@ -73,7 +72,7 @@ char* unescape(char* str)
 				str[newsize++] = str[i];
 			}
 		}
-		str[newsize] = '\0';
+		str.resize(newsize);
 	}
 	return str;
 }

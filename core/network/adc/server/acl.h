@@ -149,7 +149,7 @@ class XMLReader : public XML::SAX::ContentHandler {
 	public:
 		void startDocument();
 		void endDocument();
-		void startElement(const char*, const char* localName, const char*, AttributeList list);
+		void startElement(const char*, const char* localName, const char*, const AttributeList& list);
 		void endElement(const char*, const char* localName, const char*);
 		void characters(const char* ch, size_t, size_t);
 		void ignorableWhitespace(const char*, size_t, size_t);

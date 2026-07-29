@@ -355,7 +355,7 @@ void ADC::ACL::XMLReader::endDocument()
 
 }
 
-void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const char*, AttributeList list)
+void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const char*, const AttributeList& list)
 {
 	if (strcasecmp(localName, "AccessList") == 0)
 	{
@@ -380,17 +380,18 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 		
 		for (size_t n = 0; n < list.size(); n++)
 		{
-			if (!strcasecmp(list[n].first, "name"))
-				s_name = list[n].second;
-			else if (!strcasecmp(list[n].first, "description"))
-				s_description = list[n].second;
-			else if (!strcasecmp(list[n].first, "credential"))
-				s_credential = list[n].second;
-			else if (!strcasecmp(list[n].first, "expire"))
-				s_expire = list[n].second;
+			if (!strcasecmp(list[n].first.c_str(), "name"))
+				s_name = list[n].second.c_str();
+			else if (!strcasecmp(list[n].first.c_str(), "description"))
+				s_description = list[n].second.c_str();
+			else if (!strcasecmp(list[n].first.c_str(), "credential"))
+				s_credential = list[n].second.c_str();
+			else if (!strcasecmp(list[n].first.c_str(), "expire"))
+				s_expire = list[n].second.c_str();
 		}
 		
-		if (!(s_name && s_description && s_credential && s_expire))
+		if (!(s_name && *s_name && s_description && *s_description
+			&& s_credential && *s_credential && s_expire && *s_expire))
 		{
 			fatalError("Missing/invalid parameters in user");
 			return;
@@ -426,13 +427,13 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 
 		for (size_t n = 0; n < list.size(); n++)
 		{
-			if (!strcasecmp(list[n].first, "type"))
-				s_type = list[n].second;
-			else if (!strcasecmp(list[n].first, "data"))
-				s_data = list[n].second;
+			if (!strcasecmp(list[n].first.c_str(), "type"))
+				s_type = list[n].second.c_str();
+			else if (!strcasecmp(list[n].first.c_str(), "data"))
+				s_data = list[n].second.c_str();
 		}
 		
-		if (!(s_type && s_data))
+		if (!(s_type && *s_type && s_data && *s_data))
 		{
 			fatalError("Missing/invalid parameters in id/verify");
 			return;

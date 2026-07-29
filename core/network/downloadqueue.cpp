@@ -460,7 +460,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 		void error(const char* str) { QERR("queue.xml: %s", str); }
 		void fatalError(const char* str) { QERR("queue.xml: %s", str); broken = true; }
 
-		void startElement(const char*, const char* localName, const char*, AttributeList list)
+		void startElement(const char*, const char* localName, const char*, const AttributeList& list)
 		{
 			if (!strcasecmp(localName, "File"))
 				startFile(list);
@@ -482,16 +482,16 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 		}
 
 	protected:
-		static const char* getAttribute(AttributeList& list, const char* name)
+		static const char* getAttribute(const AttributeList& list, const char* name)
 		{
 			for (size_t n = 0; n < list.size(); n++)
 			{
-				if (!strcasecmp(list[n].first, name)) return list[n].second;
+				if (!strcasecmp(list[n].first.c_str(), name)) return list[n].second.c_str();
 			}
 			return 0;
 		}
 
-		void startFile(AttributeList& list)
+		void startFile(const AttributeList& list)
 		{
 			if (current)
 			{
@@ -505,7 +505,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 			const char* s_added = getAttribute(list, "added");
 			const char* prio = getAttribute(list, "priority");
 
-			if (!name || !*name || !s_size || !tth)
+			if (!name || !*name || !s_size || !*s_size || !tth || !*tth)
 			{
 				error("<File> is missing name, size or tth");
 				dropped++;
@@ -534,7 +534,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 				current->added = Samurai::TimeStamp((time_t) Samurai::Util::Convert::to_int64(s_added));
 		}
 
-		void startSource(AttributeList& list)
+		void startSource(const AttributeList& list)
 		{
 			if (!current) return;
 
@@ -571,14 +571,14 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 			current->addSource(source);
 		}
 
-		void startChunk(AttributeList& list)
+		void startChunk(const AttributeList& list)
 		{
 			if (!current) return;
 
 			const char* s_start = getAttribute(list, "start");
 			const char* s_end = getAttribute(list, "end");
 
-			if (!s_start || !s_end)
+			if (!s_start || !*s_start || !s_end || !*s_end)
 			{
 				error("<Chunk> is missing start or end");
 				return;

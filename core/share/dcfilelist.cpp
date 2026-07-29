@@ -89,7 +89,7 @@ void Share::XMLFileListHandler::startDocument() {
 void Share::XMLFileListHandler::endDocument() {
 }
 
-void Share::XMLFileListHandler::startElement(const char*, const char* localName, const char*, AttributeList list) {
+void Share::XMLFileListHandler::startElement(const char*, const char* localName, const char*, const AttributeList& list) {
 	if (strcasecmp(localName, "FileListing") == 0) {
 		if (currentDir) onProblem();
 		currentDir = root;
@@ -99,11 +99,11 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 		
 		const char* name = 0;
 		for (size_t n = 0; n < list.size(); n++) {
-			if (strcasecmp(list[n].first, "Name") == 0)
-				name = list[n].second;
+			if (strcasecmp(list[n].first.c_str(), "Name") == 0)
+				name = list[n].second.c_str();
 		}
 		
-		if (name) {
+		if (name && *name) {
 			RemoteDir* dir = new RemoteDir(name, currentDir);
 			currentDir = dir;
 		}
@@ -114,14 +114,14 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 		uint64_t size = 0;
 		
 		for (size_t n = 0; n < list.size(); n++) {
-			if (strcasecmp(list[n].first, "Name") == 0)
-				name = list[n].second;
-			else if (strcasecmp(list[n].first, "TTH") == 0)
-				tth = list[n].second;
-			else if (strcasecmp(list[n].first, "Size") == 0)
-				size = Samurai::Util::Convert::to_uint64(list[n].second);
+			if (strcasecmp(list[n].first.c_str(), "Name") == 0)
+				name = list[n].second.c_str();
+			else if (strcasecmp(list[n].first.c_str(), "TTH") == 0)
+				tth = list[n].second.c_str();
+			else if (strcasecmp(list[n].first.c_str(), "Size") == 0)
+				size = Samurai::Util::Convert::to_uint64(list[n].second.c_str());
 		}
-		if (name && tth)
+		if (name && *name && tth && *tth)
 			new Share::RemoteFile(name, size, tth, currentDir);
 	}
 }

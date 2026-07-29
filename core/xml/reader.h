@@ -7,6 +7,8 @@
 #define HAVE_QUICKDC_XML_READER
 
 #include <sys/types.h>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace Samurai {
@@ -23,7 +25,7 @@ class ContentHandler {
 	public:
 		virtual ~ContentHandler() { }
 		
-		typedef std::vector< std::pair<const char*, const char*> > AttributeList;
+		typedef std::vector< std::pair<std::string, std::string> > AttributeList;
 		
 		virtual void startDocument() = 0;
 		virtual void endDocument() = 0;
@@ -33,7 +35,7 @@ class ContentHandler {
 		 * @param localName the local name (without prefix), or 0.
 		 * @param qName the qualified XML name (with prefix).
 		 */
-		virtual void startElement(const char* uri, const char* localName, const char* qName, AttributeList list) = 0;
+		virtual void startElement(const char* uri, const char* localName, const char* qName, const AttributeList& list) = 0;
 		
 		/**
 		 * @param uri the Namespace URI, or 0 if the element has no Namespace URI.

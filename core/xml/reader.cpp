@@ -10,7 +10,7 @@
 
 
 namespace XML {
-extern char* unescape(char* str);
+extern std::string unescape(std::string str);
 }
 
 const char xml_white_space_table[5] = { ' ', '\t', '\n', '\r' };
@@ -25,38 +25,37 @@ XML::SAX::XMLReader::~XMLReader() {
 
 #define EXTRACT_TAG() \
 { \
-	char* tagname = in->memdup(name_start, name_end); \
+	const std::string tagname = in->copyRange(name_start, name_end); \
 	if (!endTag) { \
-		handler->startElement(0, tagname, 0, attributes); \
+		handler->startElement(0, tagname.c_str(), 0, attributes); \
 		if (emptyBody) \
-			handler->endElement(0, tagname, 0); \
+			handler->endElement(0, tagname.c_str(), 0); \
 	} else { \
-		handler->endElement(0, tagname, 0); \
+		handler->endElement(0, tagname.c_str(), 0); \
 	} \
-	free(tagname); \
 	balance--; \
 }
 
 #define EXTRACT_ATTRIBUTE() \
 { \
 	if (isAttrib) { \
-		char* attr_name = 0; \
-		char* attr_val = 0; \
+		std::string attr_name; \
+		std::string attr_val; \
 		if (attr_split > attr_start) { \
-			attr_name = in->memdup(attr_start, attr_split); \
+			attr_name = in->copyRange(attr_start, attr_split); \
 			if ((in->at(attr_split+1) == '\"' && in->at(n-1) == '\"') || \
 				(in->at(attr_split+1) == '\'' && in->at(n-1) == '\'')) { \
-				attr_val = in->memdup(attr_split+2, n-1); \
+				attr_val = in->copyRange(attr_split+2, n-1); \
 			} else { \
-				attr_val = in->memdup(attr_split+1, n); \
+				attr_val = in->copyRange(attr_split+1, n); \
 			} \
 		} else { \
-			attr_name = in->memdup(attr_start, n); \
+			attr_name = in->copyRange(attr_start, n); \
 		} \
-		if (!strlen(attr_name)) { \
+		if (attr_name.empty()) { \
 			handler->error("Invalid empty attribute name"); \
 		} \
-		attributes.push_back(std::pair<char*,char*>(XML::unescape(attr_name), XML::unescape(attr_val))); \
+		attributes.emplace_back(XML::unescape(attr_name), XML::unescape(attr_val)); \
 		isAttrib = false; \
 	} \
 }
@@ -95,12 +94,8 @@ void XML::SAX::XMLReader::parse() {
 					handler->startDocument();
 				}
 			
-				while (attributes.size()) {
-					free((char*) attributes.back().first);
-					free((char*) attributes.back().second);
-					attributes.pop_back();
-				}
-			
+				attributes.clear();
+
 				// start of tag.
 				tag_begin = n;
 				emptyBody = false;
@@ -114,12 +109,11 @@ void XML::SAX::XMLReader::parse() {
 						if (!isspace(in->at(t)))
 							wspace = false;
 	
-					char* p = in->memdup(data_begin, n);
+					const std::string p = in->copyRange(data_begin, n);
 					if (wspace)
-						handler->ignorableWhitespace(p, 0, n - data_begin);
+						handler->ignorableWhitespace(p.c_str(), 0, n - data_begin);
 					else
-						handler->characters(p, 0, n - data_begin);
-					free(p);
+						handler->characters(p.c_str(), 0, n - data_begin);
 				}
 				
 				state = Modifier;
