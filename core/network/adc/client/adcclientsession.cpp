@@ -860,6 +860,10 @@ void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
 	 * ADC::HubSession::EventConnected().
 	 */
 	QDBG("Peer wants ADCS; starting the TLS handshake");
+
+	/* A peer's certificate is vouched for by the keyprint the hub published for
+	   them, checked in EventTLSConnected(), and by nothing a CA ever signed. */
+	socket->TLSsetAllowUntrusted(true);
 	if (!socket->TLSInitialize(false))
 	{
 		QERR("Unable to initialize TLS for the peer connection");

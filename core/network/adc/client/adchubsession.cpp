@@ -231,6 +231,15 @@ void ADC::HubSession::EventConnected(const Samurai::IO::Net::Socket*)
 	{
 		listener->EventNetStatus(QuickDC::HubListener::NetConnected);
 		resetIdleTimer();
+
+		/*
+		 * ADCS authenticates a hub by keyprint, not by PKI: hubs are named by
+		 * address and sign their own certificates, so a trust store check would
+		 * refuse nearly all of them during the handshake - before there is a
+		 * certificate for verifyKeyprint() to look at. The keyprint is the whole
+		 * of the authentication here.
+		 */
+		socket->TLSsetAllowUntrusted(true);
 		socket->TLSInitialize(false);
 		socket->TLSsendHandshake();
 	}
