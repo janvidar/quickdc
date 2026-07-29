@@ -26,6 +26,26 @@ namespace QuickDC {
 class ConnectionManager;
 
 /**
+ * What the first bytes of a connection look like, before anything at all is
+ * known about who sent them.
+ */
+enum class Protocol { Unknown, TLS, ADC, ADCHub, DC, HTTP };
+
+/**
+ * Fingerprint the first 'length' bytes of a stream.
+ *
+ * @return Unknown for anything we do not speak, which includes there being too
+ *         few bytes to tell one from another yet.
+ */
+Protocol identify(const char* buffer, size_t length);
+
+/**
+ * The same for a datagram, which is told apart by its four character code
+ * alone.
+ */
+Protocol identifyDatagram(const char* buffer, size_t length);
+
+/**
  * The protocol probe is used to identify the type of request given 
  * to it and assign an apropriate connection handler.
  *

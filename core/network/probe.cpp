@@ -21,6 +21,16 @@
 
 #define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
 
+/* Unsigned: char is signed here, so a byte with the top bit set sign extends
+   into the whole word, and shifting a negative int left is undefined besides. */
+static uint32_t fourcc_of(const char* buffer)
+{
+	return (((uint32_t) (unsigned char) buffer[0] << 24)
+	      | ((uint32_t) (unsigned char) buffer[1] << 16)
+	      | ((uint32_t) (unsigned char) buffer[2] << 8)
+	      |  (uint32_t) (unsigned char) buffer[3]);
+}
+
 static bool probe_tcp_tls(const char* buffer, size_t length) {
 	if (length < 16) return false;
 
@@ -74,7 +84,7 @@ static bool probe_tcp_tls(const char* buffer, size_t length) {
  */
 static bool probe_tcp_adc(const char* buffer, size_t length) {
 	if (length < 4) return false;
-	uint32_t fourcc = ((buffer[0] << 24) | (buffer[1] << 16) | (buffer[2] << 8) | (buffer[3]));
+	uint32_t fourcc = fourcc_of(buffer);
 	if (FOURCC('C', 'S', 'U', 'P') == fourcc)
 		return true;
 	return false;
@@ -85,7 +95,7 @@ static bool probe_tcp_adc(const char* buffer, size_t length) {
  */
 static bool probe_tcp_adchub(const char* buffer, size_t length) {
 	if (length < 4) return false;
-	uint32_t fourcc = ((buffer[0] << 24) | (buffer[1] << 16) | (buffer[2] << 8) | (buffer[3]));
+	uint32_t fourcc = fourcc_of(buffer);
 	if (FOURCC('H', 'S', 'U', 'P') == fourcc) return true;
 	return false;
 }
@@ -151,7 +161,7 @@ static bool probe_tcp_dc(const char* buffer, size_t length) {
  */
 static bool probe_tcp_http(const char* buffer, size_t length) {
 	if (length < 4) return false;
-	uint32_t fourcc = ((buffer[0] << 24) | (buffer[1] << 16) | (buffer[2] << 8) | (buffer[3]));
+	uint32_t fourcc = fourcc_of(buffer);
 	switch (fourcc) {
 		case FOURCC('G', 'E', 'T', ' '): // GET
 		case FOURCC('H', 'E', 'A', 'D'): // HEAD
@@ -164,6 +174,33 @@ static bool probe_tcp_http(const char* buffer, size_t length) {
 		default:
 			return false;
 	}
+}
+
+
+QuickDC::Protocol QuickDC::identify(const char* buffer, size_t length)
+{
+	if (!buffer) return Protocol::Unknown;
+
+	if (probe_tcp_adchub(buffer, length)) return Protocol::ADCHub;
+	if (probe_tcp_dc(buffer, length))     return Protocol::DC;
+	if (probe_tcp_adc(buffer, length))    return Protocol::ADC;
+	if (probe_tcp_http(buffer, length))   return Protocol::HTTP;
+	if (probe_tcp_tls(buffer, length))    return Protocol::TLS;
+
+	return Protocol::Unknown;
+}
+
+QuickDC::Protocol QuickDC::identifyDatagram(const char* buffer, size_t length)
+{
+	if (!buffer || length < 4) return Protocol::Unknown;
+
+	const uint32_t fourcc = fourcc_of(buffer);
+
+	if (probe_udp_adc(fourcc))    return Protocol::ADC;
+	if (probe_udp_adchub(fourcc)) return Protocol::ADCHub;
+	if (probe_udp_dc(fourcc))     return Protocol::DC;
+
+	return Protocol::Unknown;
 }
 
 
@@ -199,28 +236,33 @@ void QuickDC::ProtocolProbe::EventTimeout(Samurai::Timer*) {
 void QuickDC::ProtocolProbe::probeDatagram(Samurai::IO::Net::DatagramSocket* socket, Samurai::IO::Net::DatagramPacket* packet) {
 	if (packet->size() < 4) return;
 	Samurai::IO::Buffer* buffer = packet->getBuffer();
-	uint32_t fourcc = ((buffer->at(0) << 24) | (buffer->at(1) << 16) | (buffer->at(2) << 8) | (buffer->at(3)));
-	
-	if (probe_udp_adc(fourcc)) {
-		ADC::DatagramHandler::onDatagram(socket, packet);
+	const char head[4] = { buffer->at(0), buffer->at(1), buffer->at(2), buffer->at(3) };
 
-	} else if (probe_udp_adchub(fourcc)) {
-		/* handle ADC hub packet */
-		
-		ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
-		if (hub) {
-			(void) socket;
-			// hub->onDatagram(socket, packet);
+	switch (QuickDC::identifyDatagram(head, sizeof(head))) {
+		case Protocol::ADC:
+			ADC::DatagramHandler::onDatagram(socket, packet);
+			break;
+
+		case Protocol::ADCHub:
+		{
+			ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
+			if (hub) {
+				(void) socket;
+				// hub->onDatagram(socket, packet);
+			}
+			break;
 		}
-	
 
-	} else if (probe_udp_dc(fourcc)) {
-		/* handle NMDC packet */
- 	} else {
-		/* ignore packet */
+		case Protocol::DC:
+			/* handle NMDC packet */
+			break;
+
+		default:
+			/* ignore packet */
 #ifdef DATADUMP
-		QDBG("UDP junk");
-#endif // DATATUMP
+			QDBG("UDP junk");
+#endif // DATADUMP
+			break;
 	}
 }
 
@@ -231,7 +273,7 @@ void QuickDC::ProtocolProbe::EventTLSConnected(const Samurai::IO::Net::Socket*) 
 }
 
 void QuickDC::ProtocolProbe::probe() {
-	static char buf[16] = {0,};
+	char buf[16] = {0,};
 
 	/*
 	 * Not the result returning peek(): that one reads the descriptor directly
@@ -248,71 +290,89 @@ void QuickDC::ProtocolProbe::probe() {
 	ssize_t len = socket->peek(buf, 16);
 	if (len <= 0) return;
 
-	if (probe_tcp_adchub(buf, (size_t) len)) {
-		ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
-		if (hub) {
+	switch (QuickDC::identify(buf, (size_t) len)) {
+		case Protocol::ADCHub:
+		{
+			ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
+			if (hub) {
 #ifdef DATADUMP
-			QDBG("ADC hub connection");
+				QDBG("ADC hub connection");
 #endif
-			hub->onConnected(socket);
-			socket->setEventHandler(hub);
-			socket.reset();
+				hub->onConnected(socket);
+				socket->setEventHandler(hub);
+				socket.reset();
+			}
+			break;
 		}
 
-	} else if (probe_tcp_dc(buf, (size_t) len)) {
+		case Protocol::DC:
+		{
 #ifdef DATADUMP
-		QDBG("DC connection");
+			QDBG("DC connection");
 #endif // DATADUMP
-		DC::ClientSession* connection = new DC::ClientSession(socket);
-		socket->setEventHandler(connection);
-		socket.reset();
-
-	} else if (probe_tcp_adc(buf, (size_t) len)) {
-#ifdef DATADUMP
-		QDBG("ADC connection");
-#endif // DATADUMP
-		ADC::ClientSession* connection = new ADC::ClientSession(socket, 0, 0, 0, secure);
-		socket->setEventHandler(connection);
-		socket.reset();
-
-	} else if (probe_tcp_http(buf, (size_t) len)) {
-#ifdef DATADUMP
-		QDBG("HTTP connection");
-#endif // DATADUMP
-		QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
-		config->setGroup("HTTP server");
-		bool enabled = config->getBool("Enabled", false);
-		if (enabled) {
-			Http::Connection* connection = new Http::Connection(socket, false);
+			DC::ClientSession* connection = new DC::ClientSession(socket);
 			socket->setEventHandler(connection);
 			socket.reset();
-		} else {
-			QERR("HTTP server is disabled -- closing connection");
+			break;
 		}
 
-	} else if (!secure && probe_tcp_tls(buf, (size_t) len)) {
-		/* Nothing can be fingerprinted through TLS, so finish the handshake
-		   and probe again once the decrypted stream is readable. */
-		QDBG("TLS connection; deferring the probe until the handshake is done");
-		if (!socket->TLSInitialize(true))
+		case Protocol::ADC:
 		{
-			QERR("Unable to accept a TLS connection");
-			close();
+#ifdef DATADUMP
+			QDBG("ADC connection");
+#endif // DATADUMP
+			ADC::ClientSession* connection = new ADC::ClientSession(socket, 0, 0, 0, secure);
+			socket->setEventHandler(connection);
+			socket.reset();
+			break;
+		}
+
+		case Protocol::HTTP:
+		{
+#ifdef DATADUMP
+			QDBG("HTTP connection");
+#endif // DATADUMP
+			QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+			config->setGroup("HTTP server");
+			if (config->getBool("Enabled", false)) {
+				Http::Connection* connection = new Http::Connection(socket, false);
+				socket->setEventHandler(connection);
+				socket.reset();
+			} else {
+				QERR("HTTP server is disabled -- closing connection");
+			}
+			break;
+		}
+
+		case Protocol::TLS:
+		{
+			/* Nothing can be fingerprinted through TLS, so finish the handshake
+			   and probe again once the decrypted stream is readable. Already
+			   inside one, this is not a handshake but a stream we cannot read. */
+			if (secure) break;
+
+			QDBG("TLS connection; deferring the probe until the handshake is done");
+			if (!socket->TLSInitialize(true))
+			{
+				QERR("Unable to accept a TLS connection");
+				close();
+				return;
+			}
+
+			/*
+			 * One pass rarely completes a handshake. The socket resumes it as
+			 * the connection becomes readable or writable again and reports the
+			 * result through EventTLSConnected(), so it has to be left alone
+			 * until then - closing it here is what made an inbound ADCS
+			 * connection look like a reset to the peer.
+			 */
+			socket->TLSsendHandshake();
 			return;
 		}
 
-		/*
-		 * One pass rarely completes a handshake. The socket resumes it as the
-		 * connection becomes readable or writable again and reports the result
-		 * through EventTLSConnected(), so it has to be left alone until then -
-		 * closing it here is what made an inbound ADCS connection look like a
-		 * reset to the peer.
-		 */
-		socket->TLSsendHandshake();
-		return;
-
-	} else {
-		QDBG("Unknown connection handshake -- closing connection");
+		case Protocol::Unknown:
+			QDBG("Unknown connection handshake -- closing connection");
+			break;
 	}
 
 	close();
