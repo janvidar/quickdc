@@ -249,6 +249,72 @@ int main()
 		"<a x=\"it's\"></a>",
 		"[doc]<a x=it's></a>[/doc]");
 
+	/* A '/' in an unquoted value is data unless it closes the tag. */
+	check("unquoted url value",
+		"<a href=http://example.org/x></a>",
+		"[doc]<a href=http://example.org/x></a>[/doc]");
+
+	check("unquoted url value, self-closing",
+		"<a href=http://example.org/x/>",
+		"[doc]<a href=http://example.org/x></a>[/doc]");
+
+	check("unquoted value containing a slash",
+		"<a x=p/q></a>",
+		"[doc]<a x=p/q></a>[/doc]");
+
+	check("unquoted value beginning with a slash",
+		"<a x=/root></a>",
+		"[doc]<a x=/root></a>[/doc]");
+
+	check("unquoted value absent before a self-closing slash",
+		"<a x=/>",
+		"[doc]<a x=></a>[/doc]");
+
+	/* Character data is unescaped, as attribute values already were. */
+	check("entities in character data",
+		"<a>&lt;b&gt; &amp; &quot;c&quot;</a>",
+		"[doc]<a>'<b> & \"c\"'</a>[/doc]");
+
+	check("text after the last tag is not lost",
+		"<a></a>tail",
+		"[doc]<a></a>'tail'[/doc]");
+
+	/* A comment ends at "-->", so a '>' inside it is not a terminator. */
+	check("comment containing an angle bracket",
+		"<a><!-- p > q --><b></b></a>",
+		"[doc]<a><b></b></a>[/doc]");
+
+	check("empty comment",
+		"<a><!----></a>",
+		"[doc]<a></a>[/doc]");
+
+	check("comment containing a tag",
+		"<a><!-- <b></b> --></a>",
+		"[doc]<a></a>[/doc]");
+
+	/* CDATA is literal: no markup, no entities. */
+	check("cdata section",
+		"<a><![CDATA[p>q & <b>]]></a>",
+		"[doc]<a>'p>q & <b>'</a>[/doc]");
+
+	check("empty cdata section",
+		"<a><![CDATA[]]></a>",
+		"[doc]<a></a>[/doc]");
+
+	/* A doctype has no special terminator and still ends at its '>'. */
+	check("doctype is skipped",
+		"<!DOCTYPE a><a></a>",
+		"[doc]<a></a>[/doc]");
+
+	/* Bytes over 127 must not be handed to isspace() as a negative char. */
+	check("utf-8 in an attribute value",
+		"<a x=\"\xc3\xa6\xc3\xb8\xc3\xa5\"></a>",
+		"[doc]<a x=\xc3\xa6\xc3\xb8\xc3\xa5></a>[/doc]");
+
+	check("utf-8 in character data",
+		"<a>\xc3\xa6\xc3\xb8\xc3\xa5</a>",
+		"[doc]<a>'\xc3\xa6\xc3\xb8\xc3\xa5'</a>[/doc]");
+
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
 	return failures ? 1 : 0;
 }

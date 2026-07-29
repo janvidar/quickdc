@@ -7,6 +7,7 @@
 #include "xml/reader.h"
 #include "xml/node.h"
 #include <samurai/io/buffer.h>
+#include <string_view>
 
 
 namespace XML {
@@ -32,21 +33,54 @@ void XML::SAX::XMLReader::parse() {
 	 * '=', because XML allows white space on either side of it.
 	 */
 	enum TagState { CData, Modifier, Name, Open, AttrName, AfterName, AfterEquals,
-	                QuotedValue, UnquotedValue, SkipQuoted, Ignore };
+	                QuotedValue, UnquotedValue, SkipQuoted, Comment, CDataSection,
+	                Ignore };
 	enum TagState state = CData;
 
-	size_t data_begin = 0; // position of data start
-	size_t attr_start = 0; // position of the attribute name start
-	size_t attr_end   = 0; // position after the attribute name
-	size_t val_start  = 0; // position of the attribute value start
-	size_t name_start = 0;
-	size_t name_end   = 0;
+	size_t data_begin  = 0; // position of data start
+	size_t attr_start  = 0; // position of the attribute name start
+	size_t attr_end    = 0; // position after the attribute name
+	size_t val_start   = 0; // position of the attribute value start
+	size_t token_start = 0; // position after a comment or CDATA introducer
+	size_t name_start  = 0;
+	size_t name_end    = 0;
 
 	char q_chr        = 0; // type of quote started
 	bool emptyBody    = false;
 	bool endTag       = false;
 
 	ContentHandler::AttributeList attributes;
+
+	/* isspace() is only defined for EOF and unsigned char values, and a byte
+	   over 127 - which any UTF-8 name or value has - is negative where char is
+	   signed. */
+	auto isSpace = [](char ch) { return isspace((unsigned char) ch) != 0; };
+
+	auto matches = [&](size_t pos, std::string_view text) {
+		if (pos + text.size() > in->size()) return false;
+		for (size_t t = 0; t < text.size(); t++)
+			if (in->at(pos + t) != text[t]) return false;
+		return true;
+	};
+
+	auto flushText = [&](size_t end) {
+		if (end <= data_begin) return;
+
+		bool wspace = true;
+		for (size_t t = data_begin; t < end; t++)
+			if (!isSpace(in->at(t)))
+				wspace = false;
+
+		/* Nothing white space only can carry an entity, which is worth skipping
+		   because indentation is most of a file list's character data. */
+		const std::string raw = in->copyRange(data_begin, end);
+		if (wspace) {
+			handler->ignorableWhitespace(raw.c_str(), 0, raw.size());
+		} else {
+			const std::string text = XML::unescape(raw);
+			handler->characters(text.c_str(), 0, text.size());
+		}
+	};
 
 	auto emitTag = [&]() {
 		const std::string tagname = in->copyRange(name_start, name_end);
@@ -81,22 +115,9 @@ void XML::SAX::XMLReader::parse() {
 				// start of tag.
 				emptyBody = false;
 				endTag    = false;
-				// FIXME: Character data callback
-				
-				// Check if this is only white space only
-				if (n > data_begin) {
-					bool wspace = true;
-					for (size_t t = data_begin; t < n; t++)
-						if (!isspace(in->at(t)))
-							wspace = false;
-	
-					const std::string p = in->copyRange(data_begin, n);
-					if (wspace)
-						handler->ignorableWhitespace(p.c_str(), 0, n - data_begin);
-					else
-						handler->characters(p.c_str(), 0, n - data_begin);
-				}
-				
+
+				flushText(n);
+
 				state = Modifier;
 				balance++;
 			}
@@ -106,10 +127,44 @@ void XML::SAX::XMLReader::parse() {
 				state = CData;
 				data_begin = n+1;
 			}
-			
+
+		/* A comment ends at "-->", not at the first '>', which may appear
+		   inside it. token_start is where its body begins, so the introducer's
+		   own dashes cannot be mistaken for the terminator. */
+		} else if (state == Comment) {
+			if (c == '>' && n >= token_start + 2
+				&& in->at(n-1) == '-' && in->at(n-2) == '-') {
+				state = CData;
+				data_begin = n+1;
+			}
+
+		/* CDATA ends at "]]>" and its content is literal - no markup, no
+		   entities. */
+		} else if (state == CDataSection) {
+			if (c == '>' && n >= token_start + 2
+				&& in->at(n-1) == ']' && in->at(n-2) == ']') {
+				const std::string text = in->copyRange(token_start, n-2);
+				if (!text.empty())
+					handler->characters(text.c_str(), 0, text.size());
+				state = CData;
+				data_begin = n+1;
+			}
+
 		} else if (state == Modifier) {
 			switch (c) {
-				case '!': // e.g. comment
+				case '!': // e.g. comment, CDATA or <!DOCTYPE
+					balance--;
+					if (matches(n+1, "--")) {
+						token_start = n+3;
+						state = Comment;
+					} else if (matches(n+1, "[CDATA[")) {
+						token_start = n+8;
+						state = CDataSection;
+					} else {
+						state = Ignore;
+					}
+					break;
+
 				case '?': // e.g. <?xml ...
 					balance--;
 					state = Ignore;
@@ -130,7 +185,7 @@ void XML::SAX::XMLReader::parse() {
 			}
 		
 		} else if (state == Name) {
-			if (isspace(c)) {
+			if (isSpace(c)) {
 				if (endTag) handler->error("Whitespace in end-tag");
 				name_end = n;
 				state = Open;
@@ -157,7 +212,7 @@ void XML::SAX::XMLReader::parse() {
 				   it rather than read the rest of the document as quoted. */
 				q_chr = c;
 				state = SkipQuoted;
-			} else if (!isspace(c)) {
+			} else if (!isSpace(c)) {
 				attr_start = n;
 				state = AttrName;
 			}
@@ -170,7 +225,7 @@ void XML::SAX::XMLReader::parse() {
 			if (c == '=') {
 				attr_end = n;
 				state = AfterEquals;
-			} else if (isspace(c)) {
+			} else if (isSpace(c)) {
 				attr_end = n;
 				state = AfterName;
 			} else if (c == '/' || c == '>') {
@@ -200,7 +255,7 @@ void XML::SAX::XMLReader::parse() {
 				emitAttribute("");
 				emptyBody = true;
 				state = Open;
-			} else if (!isspace(c)) {
+			} else if (!isSpace(c)) {
 				emitAttribute("");
 				attr_start = n;
 				state = AttrName;
@@ -217,11 +272,13 @@ void XML::SAX::XMLReader::parse() {
 				emitTag();
 				state = CData;
 				data_begin = n+1;
-			} else if (c == '/') {
+			/* A value may itself begin with a '/', so only a '/' that closes
+			   the tag means the value is absent. */
+			} else if (c == '/' && matches(n+1, ">")) {
 				emitAttribute("");
 				emptyBody = true;
 				state = Open;
-			} else if (!isspace(c)) {
+			} else if (!isSpace(c)) {
 				val_start = n;
 				state = UnquotedValue;
 			}
@@ -234,26 +291,34 @@ void XML::SAX::XMLReader::parse() {
 			}
 
 		} else if (state == UnquotedValue) {
-			if (isspace(c) || c == '/' || c == '>') {
+			/* A '/' ends the value only where it closes the tag. Anywhere else
+			   it is an ordinary character, as in a URL. */
+			const bool selfClose = (c == '/' && matches(n+1, ">"));
+			if (isSpace(c) || selfClose || c == '>') {
 				emitAttribute(in->copyRange(val_start, n));
 				if (c == '>') {
 					emitTag();
 					state = CData;
 					data_begin = n+1;
 				} else {
-					if (c == '/') emptyBody = true;
+					if (selfClose) emptyBody = true;
 					state = Open;
 				}
 			}
 		}
 
 	}
-	
+
+	/* Character data is delivered when the next '<' arrives, so whatever
+	   trails the last tag needs flushing by hand. */
+	if (document && state == CData)
+		flushText(in->size());
+
 	if (balance) {
 		handler->error("Document is not well formed XML");
 		QDBG("Balance: %d", balance);
 	}
-	
+
 	if (document)
 		handler->endDocument();
 }
