@@ -70,7 +70,8 @@ QuickDC::Core::Core()
 }
 
 
-QuickDC::Core::Core(const std::string& config_file, const std::string& session_file)
+QuickDC::Core::Core(const std::string& config_file, const std::string& session_file,
+                    const std::string& queue_file)
 {
 	startup = time(0);
 	references = 0;
@@ -86,12 +87,18 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	hash = 0;
 	shares = new QuickDC::Share::Manager(config, hash);
 
+	/* Peer sessions reach for this without checking whether there is one. */
+	securityManager = new QuickDC::SecurityManager();
+
+	/* Only when asked for: it reads and writes the file it is given. */
+	queue = queue_file.empty() ? 0 : new QuickDC::QueueManager(queue_file.c_str());
+
+	/* Consulted before an upload starts, to count the ones in flight. */
+	transfers = new TransferManager();
+
 	server = 0;
-	transfers = 0;
 	timers = 0;
 	localHub = 0;
-	queue = 0;
-	securityManager = 0;
 	bandwidthManager = 0;
 
 	/* Borrowed singletons, not ours; the destructor must not release them. */

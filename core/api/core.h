@@ -133,9 +133,13 @@ class Core {
 		 * which a hub session needs. This builds the four things it does need -
 		 * the two preference stores, the connection manager and the hub manager
 		 * - with the stores taken as arguments so they can be pointed away from
-		 * the real ones. Every other member is null.
+		 * the real ones, plus a security manager and a transfer manager, which
+		 * peer sessions consult without checking for either. A download queue is built only if a file is
+		 * named for it; the sessions that use one check first. Every other
+		 * member is null.
 		 */
-		Core(const std::string& config_file, const std::string& session_file);
+		Core(const std::string& config_file, const std::string& session_file,
+		     const std::string& queue_file = std::string());
 
 		virtual ~Core();
 };

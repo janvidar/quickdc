@@ -54,6 +54,14 @@ bool ADC::CCmdGET::invoke(ADC::Command* cmd) {
 	char* tlen = cmd->getArgument(3);
 	/* getArgument() strips the name, so the flag is at [0]. */
 	char* t_zl = cmd->getArgument("ZL", 2, 4);
+
+	/*
+	 * A peer can send this with anything after it, or nothing at all, and it
+	 * arrives before any of it has been authorised. getArgument() answers null
+	 * past the end, and the type is read four characters deep.
+	 */
+	if (!ttyp || strlen(ttyp) != 4 || !file || !toff || !tlen) return false;
+
 	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
 	uint64_t offset = Samurai::Util::Convert::to_uint64(toff);
 	int64_t len = Samurai::Util::Convert::to_int64(tlen);
@@ -72,6 +80,14 @@ bool ADC::CCmdSND::invoke(ADC::Command* cmd) {
 	char* tlen = cmd->getArgument(3);
 	/* getArgument() strips the name, so the flag is at [0]. */
 	char* t_zl = cmd->getArgument("ZL", 2, 4);
+
+	/*
+	 * A peer can send this with anything after it, or nothing at all, and it
+	 * arrives before any of it has been authorised. getArgument() answers null
+	 * past the end, and the type is read four characters deep.
+	 */
+	if (!ttyp || strlen(ttyp) != 4 || !file || !toff || !tlen) return false;
+
 	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
 	uint64_t offset = Samurai::Util::Convert::to_uint64(toff);
 	int64_t len = Samurai::Util::Convert::to_int64(tlen);
@@ -86,6 +102,14 @@ bool ADC::CCmdGFI::invoke(ADC::Command* cmd) {
 	QDBG("ADC::CCmdGFI::invoke");
 	char* ttyp = cmd->getArgument(0);
 	char* file = cmd->getArgument(1);
+
+	/*
+	 * A peer can send this with anything after it, or nothing at all, and it
+	 * arrives before any of it has been authorised. getArgument() answers null
+	 * past the end, and the type is read four characters deep.
+	 */
+	if (!ttyp || strlen(ttyp) != 4 || !file) return false;
+
 	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
 	session->onGFI(file, type);
 	return true;

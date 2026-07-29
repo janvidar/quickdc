@@ -28,6 +28,8 @@ add_executable(testsources sources.cpp)
 add_executable(testusers users.cpp)
 add_executable(testhubsession hubsession.cpp)
 add_executable(testdchubsession dchubsession.cpp)
+add_executable(testsecurity security.cpp)
+add_executable(testclientsession clientsession.cpp)
 
 # testdebug needs console.cpp for its output helpers.
 add_executable(testdebug debug.cpp cli/console.cpp)
@@ -35,7 +37,8 @@ add_executable(testdebug debug.cpp cli/console.cpp)
 set(QUICKDC_TEST_APPS
     quickdc_cli testfile testshare testlock hublist testdebug testzupload
     testleafhashes testxml testadccommand testfilelist testacl testqueue
-    testsources testusers testhubsession testdchubsession)
+    testsources testusers testhubsession testdchubsession testsecurity
+    testclientsession)
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
     # quickdc pulls in samurai (and thus OpenSSL, zlib, bzip2 and pthread)
@@ -64,5 +67,7 @@ add_test(NAME sources COMMAND testsources)
 add_test(NAME users COMMAND testusers)
 add_test(NAME hubsession COMMAND testhubsession)
 add_test(NAME dchubsession COMMAND testdchubsession)
+add_test(NAME security COMMAND testsecurity)
+add_test(NAME clientsession COMMAND testclientsession)
 
 add_subdirectory(autotests)
