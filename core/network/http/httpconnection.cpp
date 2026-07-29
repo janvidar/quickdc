@@ -82,7 +82,7 @@ bool Http::Connection::read()
 	Samurai::IO::ReadResult result =
 		QuickDC::Connection::socket->read(buffer, bufsize, n, ec);
 
-	if (result == Samurai::IO::ReadError)
+	if (result == Samurai::IO::ReadResult::Error)
 	{
 		delete[] buffer;
 		return false;

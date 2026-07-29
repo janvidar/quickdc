@@ -90,10 +90,10 @@ class Core {
 		 *
 		 * One store for the whole process, shared by every hub session, because
 		 * they all persist to the same file. A Preferences holds the entire file
-		 * in memory and writes all of it back, so a store per session meant each
-		 * one wrote a snapshot taken before the others existed - and silently
-		 * dropped their settings, a remembered keyprint among them. Sessions
-		 * borrow this and must not delete it.
+		 * in memory and writes all of it back, so a store per session would write
+		 * a snapshot taken before the others existed and silently drop their
+		 * settings, a remembered keyprint among them. Sessions borrow this and
+		 * must not delete it.
 		 *
 		 * The current group is shared state as a result: select a group
 		 * immediately before reading or writing, never rely on one set earlier.
@@ -130,10 +130,8 @@ class Core {
 }
 
 /*
- * NOTE: this was declared extern "C", while the definition in api/server.cpp
- * is not, so the two disagreed about language linkage. gcc and clang do not
- * diagnose that for a variable and mangle a global-namespace name to itself
- * anyway, but MSVC does mangle it, and would not have found the definition.
+ * NOTE: not extern "C". The definition in api/server.cpp is not either, and
+ * MSVC mangles a global variable's name, so the two have to agree.
  */
 extern QuickDC::Core* quickdc_core;
 

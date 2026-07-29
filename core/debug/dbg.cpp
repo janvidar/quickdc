@@ -49,10 +49,10 @@ void QuickDC_Debug_Init() {
 	quickdc_dump_sch = new Samurai::IO::File(DUMP_FILE_SEARCH);
 	quickdc_dump_dbg = new Samurai::IO::File(DUMP_FILE_DEBUG);
 	quickdc_dump_hub = new Samurai::IO::File(DUMP_FILE_HUB);
-	quickdc_dump_net->open(Samurai::IO::File::Write | Samurai::IO::File::Truncate);
-	quickdc_dump_sch->open(Samurai::IO::File::Write | Samurai::IO::File::Append);
-	quickdc_dump_dbg->open(Samurai::IO::File::Write | Samurai::IO::File::Truncate);
-	quickdc_dump_hub->open(Samurai::IO::File::Write | Samurai::IO::File::Append);
+	quickdc_dump_net->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
+	quickdc_dump_sch->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Append);
+	quickdc_dump_dbg->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
+	quickdc_dump_hub->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Append);
 	
 }
 

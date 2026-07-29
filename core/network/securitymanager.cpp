@@ -31,8 +31,7 @@ QuickDC::Clearance::Clearance(enum ClearanceType type_, enum ClearanceProtocol p
 				"NMDC" :
 				"HTTP",
 		(type == UnknownUser ? "everyone" : type == KnownUser ? "authenticated" : "exclusive"),
-		token)
-	
+		token);
 }
 
 QuickDC::Clearance::~Clearance() {

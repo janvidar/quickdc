@@ -7,7 +7,6 @@
 #define HAVE_QUICKDC_CLI_UTIL_H
 
 extern const char* getTimestamp();
-extern const char* getFormatSize(uint64_t size);
 
 #endif // HAVE_QUICKDC_CLI_UTIL_H
 

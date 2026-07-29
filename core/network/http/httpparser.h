@@ -53,7 +53,7 @@ class Parser
 		enum Status getLine();
 
 	protected:
-		enum Mode state;
+		Mode state;
 		ssize_t length;
 		Http::Entity* entity;
 		Samurai::IO::Buffer* buffer;

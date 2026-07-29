@@ -75,7 +75,7 @@ bool QuickDC::LeafHashes::load(const char* tth, uint64_t fileSize_, const char* 
 	char root[100];
 	Samurai::Crypto::Digest::HashValue* digest = tree.digest();
 	bool ok = digest
-		&& digest->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, root, sizeof(root))
+		&& digest->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, root, sizeof(root))
 		&& !strcmp(root, tth);
 
 	delete hasher;
@@ -182,7 +182,7 @@ bool QuickDC::LeafHashes::save(const char* filename) const
 	if (!leaves || !filename) return false;
 
 	Samurai::IO::File file(filename);
-	if (!file.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate)) return false;
+	if (!file.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate)) return false;
 
 	bool ok = (file.write(leaves, leafCount * hashSize) == (ssize_t) (leafCount * hashSize));
 	file.close();
@@ -194,7 +194,7 @@ bool QuickDC::LeafHashes::load(const char* filename, const char* tth, uint64_t f
 	if (!filename) return false;
 
 	Samurai::IO::File file(filename);
-	if (!file.exists() || !file.open(Samurai::IO::File::Read)) return false;
+	if (!file.exists() || !file.open(Samurai::IO::File::Mode::Read)) return false;
 
 	size_t length = (size_t) file.size();
 	if (!length)

@@ -163,7 +163,7 @@ Share::RemoteFileList::~RemoteFileList() {
 	
 bool Share::RemoteFileList::decode() {
 	size_t size = (size_t) file->size();
-	if (!file->open(Samurai::IO::File::Read)) {
+	if (!file->open(Samurai::IO::File::Mode::Read)) {
 		QERR("Unable to open file");
 		return false;
 	}

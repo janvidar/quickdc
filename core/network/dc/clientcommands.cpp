@@ -269,7 +269,8 @@ bool DC::ClientExtADCGET::ClientExtADCGET::invoke(const char* data_, size_t leng
 	char* filename = strdup(&data[13]);
 
 
-	QDBG("ADCGET: filename='%s', offset='%u', length='%l', type=%d\n", filename, offset, len, type);
+	QDBG("ADCGET: filename='%s', offset='%llu', length='%lld', type=%d", filename,
+		(unsigned long long) offset, (long long) len, (int) type);
 	session->onADCGet(filename, type, offset, len, zl1);
 	
 	free(data);
@@ -324,7 +325,8 @@ bool DC::ClientExtADCSND::ClientExtADCSND::invoke(const char* data_, size_t leng
 	char* filename = strdup(&data[13]);
 
 
-	QDBG("ADCSND: filename='%s', offset='%u', length='%l', type=%d\n", filename, offset, len, type);
+	QDBG("ADCSND: filename='%s', offset='%llu', length='%lld', type=%d", filename,
+		(unsigned long long) offset, (long long) len, (int) type);
 	session->onADCSend(filename, type, offset, len, zl1);
 	
 	free(data);

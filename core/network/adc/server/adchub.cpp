@@ -375,9 +375,10 @@ void ADC::Hub::onQuit(ADC::HubUser* user, const char* msg) {
 
 void ADC::Hub::onPublicChat(ADC::HubUser* user, const char* line) {
 	Samurai::TimeStamp timestamp_obj;
-	const char* timestamp = timestamp_obj.getTime("%H:%M");
-	char* chat = (char*) malloc(strlen(line) + strlen(timestamp) + strlen(user->nick) + 9);
-	sprintf(chat, "[%s] <%s> %s", timestamp, user->nick, line);
+	const std::string timestamp = timestamp_obj.getTime("%H:%M");
+	const size_t chat_size = strlen(line) + timestamp.size() + strlen(user->nick) + 9;
+	char* chat = (char*) malloc(chat_size);
+	snprintf(chat, chat_size, "[%s] <%s> %s", timestamp.c_str(), user->nick, line);
 	
 	if (history.size() > maxHistory-1) {
 		char* remove = history.front();

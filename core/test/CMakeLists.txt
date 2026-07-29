@@ -3,12 +3,8 @@
 ## Copyright (c) 2001-2008, Jan Vidar Krey
 #
 
-# Translated from build/Makefile.tests. These are interactive tools rather
-# than automated tests, so they are built but not registered with CTest - the
-# real automated suite is in autotests/.
-#
-# NOTE: Makefile.tests also listed test/crash.cpp in test_SOURCES, but no rule
-# ever built a binary from it and the file does not exist in the tree.
+# These are interactive tools rather than automated tests, so they are built but
+# not registered with CTest - the real automated suite is in autotests/.
 
 add_executable(quickdc_cli
     cli/main.cpp
@@ -33,7 +29,7 @@ set(QUICKDC_TEST_APPS
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
     # quickdc pulls in samurai (and thus OpenSSL, zlib, bzip2 and pthread)
-    # transitively, so this single link is the whole of the old REQLIBS.
+    # transitively, so this single link is enough.
     target_link_libraries(${app} PRIVATE quickdc::quickdc)
 
     set_target_properties(${app} PROPERTIES

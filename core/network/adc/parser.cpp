@@ -417,7 +417,7 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 		case 'C':
 		case 'I':
 		case 'H':
-			stream->appendBinary(fourcc, Samurai::IO::Buffer::BigEndian);
+			stream->appendBinary(fourcc, Samurai::IO::Buffer::BinaryMode::BigEndian);
 			break;
 	
 		case 'B':
@@ -426,7 +426,7 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 		case 'X':
 #endif
 			if (!source_id) return;
-			stream->appendBinary(fourcc, Samurai::IO::Buffer::BigEndian);
+			stream->appendBinary(fourcc, Samurai::IO::Buffer::BinaryMode::BigEndian);
 			stream->append(' ');
 			stream->append(source_id);
 			break;
@@ -434,7 +434,7 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 		case 'E':
 		case 'D':
 			if (!source_id || !target_id) return;
-			stream->appendBinary(fourcc, Samurai::IO::Buffer::BigEndian);
+			stream->appendBinary(fourcc, Samurai::IO::Buffer::BinaryMode::BigEndian);
 			stream->append(' ');
 			stream->append(source_id);
 			stream->append(' ');
@@ -443,7 +443,7 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 		
 		case 'F':
 			if (!source_id || !features_include.size() || !features_exclude.size()) return;
-			stream->appendBinary(fourcc, Samurai::IO::Buffer::BigEndian);
+			stream->appendBinary(fourcc, Samurai::IO::Buffer::BinaryMode::BigEndian);
 			stream->append(' ');
 			stream->append(source_id);
 			stream->append(' ');

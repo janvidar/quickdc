@@ -38,8 +38,8 @@
 
 #define INF_CHECK_IP(CMD, SOCKET, HUB) { \
 	if (CMD->haveArgument("I4", 2)) { \
-		Samurai::IO::Net::InetAddress ip(CMD->getArgument("I4", 2), Samurai::IO::Net::InetAddress::IPv4); \
-		Samurai::IO::Net::InetAddress any("0.0.0.0", Samurai::IO::Net::InetAddress::IPv4); \
+		Samurai::IO::Net::InetAddress ip(CMD->getArgument("I4", 2), Samurai::IO::Net::InetAddress::Version::IPv4); \
+		Samurai::IO::Net::InetAddress any("0.0.0.0", Samurai::IO::Net::InetAddress::Version::IPv4); \
 		Samurai::IO::Net::InetAddress* actualIP = const_cast<Samurai::IO::Net::InetAddress*>(SOCKET->getAddress()); \
 		if (ip == any) { \
 			CMD->removeArgument("I4", 2); \

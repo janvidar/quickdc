@@ -74,7 +74,7 @@ DC::CommandProxy::~CommandProxy() {
  * that will take care of the details of it.
  */ 
 void DC::CommandProxy::invoke(const char* command, size_t length) {
-	QNET("recv[%d]: '%s'", socket->getFD(), command)
+	QNET("recv[%d]: '%s'", socket->getFD(), command);
 
 	/**
 	 * In the command line, isolate the command name 
@@ -180,15 +180,15 @@ bool DC::CommandProxy::read()
 	std::error_code ec;
 	switch (socket->read(buf, READ_BUF_SIZE, n, ec))
 	{
-		case Samurai::IO::ReadOk:
+		case Samurai::IO::ReadResult::Ok:
 			break;
 
 		/* Nothing to parse; the socket reports again when there is. */
-		case Samurai::IO::ReadWouldBlock:
-		case Samurai::IO::ReadEndOfFile:
+		case Samurai::IO::ReadResult::WouldBlock:
+		case Samurai::IO::ReadResult::EndOfFile:
 			return true;
 
-		case Samurai::IO::ReadError:
+		case Samurai::IO::ReadResult::Error:
 			return false;
 	}
 	readbuffer->append(buf, n);

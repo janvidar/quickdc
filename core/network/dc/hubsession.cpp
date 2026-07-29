@@ -511,7 +511,7 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	cmd.write(&buffer);
 	Samurai::IO::Net::DatagramPacket packet(&buffer);
 	Samurai::IO::Net::InetSocketAddress peer(host.c_str(), Samurai::Util::Convert::to_int32(port.c_str()),
-		Samurai::IO::Net::InetAddress::IPv4);
+		Samurai::IO::Net::InetAddress::Version::IPv4);
 	packet.setAddress(&peer);
 	core->server->send(&packet);
 
@@ -679,13 +679,13 @@ void DC::HubSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Ne
 	
 	switch (error)
 	{
-		case Samurai::IO::Net::ConnectionTimeout:
+		case Samurai::IO::Net::SocketError::ConnectionTimeout:
 			listener->EventNetStatus(QuickDC::HubListener::NetErrorTimeout);
 			break;
-		case Samurai::IO::Net::ConnectionRefused:
+		case Samurai::IO::Net::SocketError::ConnectionRefused:
 			listener->EventNetStatus(QuickDC::HubListener::NetErrorConnectionRefused);
 			break;
-		case Samurai::IO::Net::HostNotFound:
+		case Samurai::IO::Net::SocketError::HostNotFound:
 			listener->EventNetStatus(QuickDC::HubListener::NetErrorHostNotFound);
 			break;
 		default:
@@ -771,7 +771,7 @@ void DC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		if (pos && QuickDC::Core::getInstance()->server) {
 			pos[0] = '\0';
 			Samurai::IO::Net::DatagramPacket packet(&buffer);
-			Samurai::IO::Net::InetSocketAddress peerAddr(addr, Samurai::Util::Convert::to_int32(&pos[1]), Samurai::IO::Net::InetAddress::IPv4);
+			Samurai::IO::Net::InetSocketAddress peerAddr(addr, Samurai::Util::Convert::to_int32(&pos[1]), Samurai::IO::Net::InetAddress::Version::IPv4);
 			packet.setAddress(&peerAddr);
 			QuickDC::Core::getInstance()->server->send(&packet);
 		}

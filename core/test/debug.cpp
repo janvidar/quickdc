@@ -111,7 +111,7 @@ class Telnet : public SocketEventHandler {
 			/* can write */
 		}
 		
-		void EventError(const Socket*, enum SocketError error, const char* msg) { 
+		void EventError(const Socket*, SocketError error, const char* msg) { 
 			printf(" ERROR: %s\n", msg);
 			disconnect();
 			exit((int) error);

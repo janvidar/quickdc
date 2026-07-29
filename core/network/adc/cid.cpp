@@ -12,6 +12,7 @@
 #include "api/core.h"
 #include <samurai/timestamp.h>
 #include <samurai/util/base32.h>
+#include <span>
 #include <openssl/rand.h>
 #include <openssl/crypto.h>
 #include <unistd.h>
@@ -73,16 +74,16 @@ bool ADC::CID::verifyCIDandPID(const char* cid, const char* pid) {
 	if (!verify(cid) || !verify(pid)) return false;
 	
 	char x_cid[HASH];
-	uint8_t raw_pid[TIGER_HASH_SIZE];
+	uint8_t raw_pid[Samurai::Crypto::Digest::TIGER_HASH_SIZE];
 	
-	base32_decode(pid, (unsigned char*) raw_pid, TIGER_HASH_SIZE);
+	Samurai::Util::base32_decode(pid, std::span<unsigned char>((unsigned char*) raw_pid, Samurai::Crypto::Digest::TIGER_HASH_SIZE));
 	
 	Samurai::Crypto::Digest::Tiger tiger;
 	Samurai::Crypto::Digest::HashValue* value;
 	
-	tiger.update(raw_pid, TIGER_HASH_SIZE);
+	tiger.update(raw_pid, Samurai::Crypto::Digest::TIGER_HASH_SIZE);
 	value = tiger.digest();
-	value->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, x_cid, HASH);
+	value->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, x_cid, HASH);
 	
 	return (strcasecmp(x_cid, cid) == 0);
 }
@@ -119,7 +120,7 @@ ADC::CID::~CID() {
 void ADC::CID::generate() {
 	QDBG("Generating CID...");
 
-	uint8_t raw_pid[TIGER_HASH_SIZE];
+	uint8_t raw_pid[Samurai::Crypto::Digest::TIGER_HASH_SIZE];
 	if (RAND_bytes(raw_pid, sizeof(raw_pid)) != 1)
 	{
 		/* A guessable identity is worse than refusing to invent one. */
@@ -132,12 +133,12 @@ void ADC::CID::generate() {
 	cid = new char[HASH];
 	pid = new char[HASH];
 
-	base32_encode(raw_pid, sizeof(raw_pid), pid, HASH);
+	Samurai::Util::base32_encode(std::span<const unsigned char>(raw_pid, sizeof(raw_pid)), std::span<char>(pid, HASH));
 
 	Samurai::Crypto::Digest::Tiger tiger;
 	tiger.update(raw_pid, sizeof(raw_pid));
 	Samurai::Crypto::Digest::HashValue* value = tiger.digest();
-	value->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, cid, HASH);
+	value->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, cid, HASH);
 
 	OPENSSL_cleanse(raw_pid, sizeof(raw_pid));
 
@@ -173,14 +174,14 @@ bool ADC::CID::load() {
 
 	
 
-	uint8_t pid_decoded[TIGER_HASH_SIZE] = { 0, };
-	base32_decode(pid, (unsigned char*) pid_decoded, TIGER_HASH_SIZE);
+	uint8_t pid_decoded[Samurai::Crypto::Digest::TIGER_HASH_SIZE] = { 0, };
+	Samurai::Util::base32_decode(pid, std::span<unsigned char>((unsigned char*) pid_decoded, Samurai::Crypto::Digest::TIGER_HASH_SIZE));
 	
 	Samurai::Crypto::Digest::Tiger tiger;
 	Samurai::Crypto::Digest::HashValue* value;
-	tiger.update(pid_decoded, TIGER_HASH_SIZE);
+	tiger.update(pid_decoded, Samurai::Crypto::Digest::TIGER_HASH_SIZE);
 	value = tiger.digest();
-	value->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, cid, HASH);
+	value->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, cid, HASH);
 	
 	/* The CID is public; the PID is the secret behind it and is never logged. */
 	QDBG("CID loaded: %s", cid);

@@ -47,9 +47,6 @@ add_custom_command(
 # include guard) but still emits an #include for it, so the header only has to
 # exist to satisfy the preprocessor. Prefer the real one; fall back to an empty
 # stand-in so the suite builds without exotic's source tree present.
-#
-# This replaces the old Makefile's "-lexotic", which required the generator's
-# runtime library to be installed as well.
 find_path(QUICKDC_EXOTIC_INCLUDE_DIR autotest.h
     PATH_SUFFIXES exotic exotic/src
     DOC "Directory containing exotic's autotest.h")

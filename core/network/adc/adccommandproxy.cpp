@@ -174,15 +174,15 @@ bool ADC::CommandProxy::read()
 	std::error_code ec;
 	switch (socket->read(buf, READ_BUF_SIZE, n, ec))
 	{
-		case Samurai::IO::ReadOk:
+		case Samurai::IO::ReadResult::Ok:
 			break;
 
 		/* Nothing to parse; the socket reports again when there is. */
-		case Samurai::IO::ReadWouldBlock:
-		case Samurai::IO::ReadEndOfFile:
+		case Samurai::IO::ReadResult::WouldBlock:
+		case Samurai::IO::ReadResult::EndOfFile:
 			return true;
 
-		case Samurai::IO::ReadError:
+		case Samurai::IO::ReadResult::Error:
 			return false;
 	}
 	readbuffer->append(buf, n);
@@ -253,7 +253,7 @@ void ADC::CommandProxy::connect()
 
 void ADC::CommandProxy::defaultHandler(const char* command)
 {
-	QDBG("Unhandled input '%s', length=%d", command, strlen(command));
+	QDBG("Unhandled input '%s', length=%zu", command, strlen(command));
 }
 
 size_t ADC::CommandProxy::getSendQueueSize() const

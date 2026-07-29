@@ -42,6 +42,7 @@
 #include <samurai/io/net/tlsfactory.h>
 #include <samurai/io/net/url.h>
 #include <samurai/util/base32.h>
+#include <span>
 
 
 /*
@@ -422,19 +423,19 @@ void ADC::HubSession::EventCanWrite(const Samurai::IO::Net::Socket*)
 }
 
 
-void ADC::HubSession::EventError(const Samurai::IO::Net::Socket*, enum Samurai::IO::Net::SocketError error, const char* msg)
+void ADC::HubSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError error, const char* msg)
 {
 	manager->remove(this);
 	userState = QuickDC::HubSession::StateNone;
 	switch (error)
 	{
-		case Samurai::IO::Net::ConnectionTimeout:
+		case Samurai::IO::Net::SocketError::ConnectionTimeout:
 			listener->EventNetStatus(QuickDC::HubListener::NetErrorTimeout);
 			break;
-		case Samurai::IO::Net::ConnectionRefused:
+		case Samurai::IO::Net::SocketError::ConnectionRefused:
 			listener->EventNetStatus(QuickDC::HubListener::NetErrorConnectionRefused);
 			break;
-		case Samurai::IO::Net::HostNotFound:
+		case Samurai::IO::Net::SocketError::HostNotFound:
 			listener->EventNetStatus(QuickDC::HubListener::NetErrorHostNotFound);
 			break;
 		default:
@@ -563,7 +564,7 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		Samurai::IO::Buffer buffer;
 		cmd.write(&buffer);
 		Samurai::IO::Net::DatagramPacket packet(&buffer);
-		Samurai::IO::Net::InetSocketAddress peerAddr(user->getAddressIPv4(), user->getPortIPv4(), Samurai::IO::Net::InetAddress::IPv4);
+		Samurai::IO::Net::InetSocketAddress peerAddr(user->getAddressIPv4(), user->getPortIPv4(), Samurai::IO::Net::InetAddress::Version::IPv4);
 		packet.setAddress(&peerAddr);
 		QuickDC::Core::getInstance()->server->send(&packet);
 
@@ -913,7 +914,7 @@ void ADC::HubSession::onRequestPasword(char* token)
 	uint8_t* tok_decoded = new uint8_t[tok_size];
 	uint8_t* str = new uint8_t[size];
 
-	base32_decode(token, tok_decoded, tok_size);
+	Samurai::Util::base32_decode(token, std::span<unsigned char>(tok_decoded, tok_size));
 
 	memcpy(&str[0], password, strlen(password));
 	memcpy(&str[strlen(password)], tok_decoded, tok_size);
@@ -921,7 +922,7 @@ void ADC::HubSession::onRequestPasword(char* token)
 	Samurai::Crypto::Digest::Tiger tiger;
 	tiger.update(str, size);
 	Samurai::Crypto::Digest::HashValue* value = tiger.digest();
-	value->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, password_encoded, 40);
+	value->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, password_encoded, 40);
 
 	ADC::Command* cmd = new ADC::Command(FOURCC('H','P','A','S'));
 	cmd->addArgument(password_encoded);
@@ -1176,7 +1177,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	if (!user) return;
 
 	const char* ip = user->getAddressIPv4();
-	QDBG("Requested to connect to '%s' using '%s' on port %d (token=%s)", from, proto, port, token, ip);
+	QDBG("Requested to connect to '%s' at %s using '%s' on port %d (token=%s)", from, ip, proto, port, token);
 
 	if (!ip)
 	{
@@ -1393,7 +1394,7 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 		cmd.write(&buffer);
 		Samurai::IO::Net::DatagramPacket packet(&buffer);
 		Samurai::IO::Net::InetSocketAddress peer(user->getAddressIPv4(), user->getPortIPv4(),
-			Samurai::IO::Net::InetAddress::IPv4);
+			Samurai::IO::Net::InetAddress::Version::IPv4);
 		packet.setAddress(&peer);
 		core->server->send(&packet);
 	}

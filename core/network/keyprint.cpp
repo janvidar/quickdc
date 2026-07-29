@@ -13,6 +13,7 @@
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/tlsfactory.h>
 #include <samurai/util/base32.h>
+#include <span>
 
 #define KEYPRINT_HASH   "SHA256/"
 #define KEYPRINT_DIGITS 52 /* base32 of 32 bytes, unpadded */
@@ -69,7 +70,7 @@ bool QuickDC::Keyprint::fromQuery(const std::string& query, std::string& keyprin
 void QuickDC::Keyprint::format(const uint8_t* digest, std::string& keyprint)
 {
 	char encoded[KEYPRINT_DIGITS + 1];
-	base32_encode(digest, Samurai::IO::Net::TlsFactory::SHA256_LENGTH, encoded, sizeof(encoded));
+	Samurai::Util::base32_encode(std::span<const unsigned char>(digest, Samurai::IO::Net::TlsFactory::SHA256_LENGTH), std::span<char>(encoded, sizeof(encoded)));
 
 	keyprint = KEYPRINT_HASH;
 	keyprint += encoded;
@@ -79,19 +80,18 @@ bool QuickDC::Keyprint::ofPeer(Samurai::IO::Net::Socket* socket, std::string& ke
 {
 	if (!socket) return false;
 
-	uint8_t digest[Samurai::IO::Net::TlsFactory::SHA256_LENGTH];
-	if (!socket->TLSgetPeerCertificateSHA256(digest, sizeof(digest))) return false;
+	const auto digest = socket->TLSgetPeerCertificateSHA256();
+	if (!digest) return false;
 
-	format(digest, keyprint);
+	format(digest->data(), keyprint);
 	return true;
 }
 
 bool QuickDC::Keyprint::ofOwnCertificate(std::string& keyprint)
 {
-	uint8_t digest[Samurai::IO::Net::TlsFactory::SHA256_LENGTH];
-	if (!Samurai::IO::Net::TlsFactory::getOwnCertificateSHA256(digest, sizeof(digest)))
-		return false;
+	const auto digest = Samurai::IO::Net::TlsFactory::getOwnCertificateSHA256();
+	if (!digest) return false;
 
-	format(digest, keyprint);
+	format(digest->data(), keyprint);
 	return true;
 }

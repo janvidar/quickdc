@@ -18,8 +18,8 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # Options
 # ---------------------------------------------------------------------------
 
-# Makefile.system had DEBUG := YES hardcoded, and that is what turns on the
-# QDBG/QERR tracing. Keep it as the default for single-config generators.
+# Debug is the default for single-config generators, because that is what turns
+# on the QDBG/QERR tracing.
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
 endif()
@@ -36,14 +36,13 @@ option(QUICKDC_SANITIZE
 #
 # There is no such thing as a QuickDC without TLS. ADCS, the TLS fingerprinting
 # the protocol probe does on an inbound connection, and KEYP certificate
-# pinning are all unconditional - the SSL_SUPPORT switch that used to guard
-# them is gone, and so is every #ifdef that went with it.
+# pinning are all unconditional, so there is no switch guarding them.
 #
 # Samurai requires the same library and owns the version floors: OpenSSL 3.0 or
 # newer, or LibreSSL 3.5 or newer, which FindOpenSSL reports under the same
-# name and imported targets. GnuTLS is no longer a backend. Asking here as well
-# means a missing library is a configure error against QuickDC rather than a
-# link failure at the end of a build.
+# name and imported targets. Asking here as well means a missing library is a
+# configure error against QuickDC rather than a link failure at the end of a
+# build.
 # ---------------------------------------------------------------------------
 
 find_package(OpenSSL REQUIRED)
@@ -79,19 +78,16 @@ add_subdirectory(samurai)
 # ---------------------------------------------------------------------------
 # Build identification
 #
-# Replaces the -DVERSION/-DSYSTEM/-DCPU/-DPRODUCT/-DBUILD block in
-# Makefile.common. SYSTEM and ARCH came from uname; CMake has already probed
-# the equivalents.
+# PRODUCT, VERSION, SYSTEM, CPU and BUILD, which the sources compile against.
 # ---------------------------------------------------------------------------
 
 set(QUICKDC_PRODUCT "QuickDC")
 set(QUICKDC_SYSTEM  "${CMAKE_SYSTEM_NAME}")
 set(QUICKDC_CPU     "${CMAKE_SYSTEM_PROCESSOR}")
 
-# The Makefile defined BUILD only when "git describe" succeeded, but
-# network/adc/cid.cpp and network/adc/server/adchubservice.cpp use it
-# unconditionally and only compiled because debug/dbg.h has an #ifndef BUILD
-# fallback. Always define it, and use --always so a tagless clone still works.
+# BUILD is always defined: network/adc/cid.cpp and
+# network/adc/server/adchubservice.cpp use it unconditionally. --always so that
+# a tagless clone still works.
 set(QUICKDC_BUILD_ID "internal")
 
 find_package(Git QUIET)

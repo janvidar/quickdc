@@ -830,7 +830,7 @@ EXO_TEST(queue_load_drops_bad_entries_and_keeps_good, {
 		(unsigned long) Samurai::TimeStamp().getInternalData());
 
 	Samurai::IO::File out(QUICKDC_QUEUE_FILE);
-	if (!out.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate)) return false;
+	if (!out.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate)) return false;
 	out.write(xml, strlen(xml));
 	out.close();
 

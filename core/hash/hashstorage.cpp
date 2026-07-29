@@ -53,7 +53,7 @@ bool QuickDC::Hash::CacheStorage::openForReading()
 	if (!file.exists())
 		return false;
 		
-	if (!file.open(Samurai::IO::File::Read))
+	if (!file.open(Samurai::IO::File::Mode::Read))
 		return false;
 	
 	position = 0;
@@ -181,7 +181,7 @@ bool QuickDC::Hash::CacheStorage::write(QuickDC::Hash::CacheEntry* entry)
 
 bool QuickDC::Hash::CacheStorage::openForWriting()
 {
-	if (!file.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate))
+	if (!file.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate))
 		return false;
 	
 	QDBG("QuickDC::Hash::CacheStorage::openForWriting()");

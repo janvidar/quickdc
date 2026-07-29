@@ -52,7 +52,7 @@ class Connection : public Samurai::IO::Net::SocketEventHandler
 		virtual void EventDisconnected(const Samurai::IO::Net::Socket*) = 0;
 		virtual void EventDataAvailable(const Samurai::IO::Net::Socket*) = 0;
 		virtual void EventCanWrite(const Samurai::IO::Net::Socket*) = 0;
-		virtual void EventError(const Samurai::IO::Net::Socket*, enum Samurai::IO::Net::SocketError error, const char*) = 0;
+		virtual void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError error, const char*) = 0;
 	
 	protected:
 		std::shared_ptr<Samurai::IO::Net::Socket> socket;

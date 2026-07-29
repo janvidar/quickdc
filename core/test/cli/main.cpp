@@ -3,6 +3,7 @@
  * See the file "COPYING" for licensing details.
  */
 
+#include <samurai/util/format.h>
 #include "quickdc.h"
 #include "api/core.h"
 #include "test/cli/console.h"
@@ -66,23 +67,21 @@ class TransferReporter : public QuickDC::TransferListener
 				getTimestamp(),
 				xfer->isDownload() ? "Download" : "Upload",
 				name(xfer),
-				getFormatSize(xfer->getLength()));
+				Samurai::Util::formatSize(xfer->getLength()).c_str());
 		}
 
 		void EventTransferFinished(QuickDC::Transfer* xfer)
 		{
 			if (!xfer) return;
 
-			char moved[32];
-			char rate[32];
-			formatSize(moved, sizeof(moved), xfer->getTransferred());
-			formatSize(rate, sizeof(rate), xfer->getBps());
+			const std::string moved = Samurai::Util::formatSize(xfer->getTransferred());
+			const std::string rate = Samurai::Util::formatSize(xfer->getBps());
 
 			console_printf("%s * %s finished: %s (%s at %s/s)\n",
 				getTimestamp(),
 				xfer->isDownload() ? "Download" : "Upload",
 				name(xfer),
-				moved, rate);
+				moved.c_str(), rate.c_str());
 		}
 
 		void EventTransferStopped(QuickDC::Transfer* xfer)
@@ -96,15 +95,6 @@ class TransferReporter : public QuickDC::TransferListener
 		}
 
 	private:
-		/**
-		 * getFormatSize() formats into a single static buffer, so two calls in
-		 * one argument list would both render the last value. Take a copy.
-		 */
-		static void formatSize(char* out, size_t length, uint64_t bytes)
-		{
-			snprintf(out, length, "%s", getFormatSize(bytes));
-		}
-
 		/** The base name; a full path makes the line unreadable. */
 		static const char* name(QuickDC::Transfer* xfer)
 		{
@@ -121,17 +111,15 @@ class TransferReporter : public QuickDC::TransferListener
 		{
 			if (!xfer) return;
 
-			char moved[32];
-			char expected[32];
-			formatSize(moved, sizeof(moved), xfer->getTransferred());
-			formatSize(expected, sizeof(expected), xfer->getLength());
+			const std::string moved = Samurai::Util::formatSize(xfer->getTransferred());
+			const std::string expected = Samurai::Util::formatSize(xfer->getLength());
 
 			console_printf("%s * %s %s: %s (%s of %s)\n",
 				getTimestamp(),
 				xfer->isDownload() ? "Download" : "Upload",
 				what,
 				name(xfer),
-				moved, expected);
+				moved.c_str(), expected.c_str());
 		}
 };
 

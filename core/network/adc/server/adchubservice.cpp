@@ -183,7 +183,7 @@ bool ADC::AdcSrvMotd::invoke(Command* cmd) {
 	Samurai::IO::File motd("~/.quickdc/hub/motd");
 	if (motd.getTimeModified() > last_mod_time) {
 	
-		if (user && motd.exists() && motd.isReadable() && motd.open(Samurai::IO::File::Read)) {
+		if (user && motd.exists() && motd.isReadable() && motd.open(Samurai::IO::File::Mode::Read)) {
 			size_t size = motd.size();
 			if (size >  MAX_MOTD_LEN) {
 				QDBG("Motd message is too large to be cached (!)");

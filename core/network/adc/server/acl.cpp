@@ -65,7 +65,7 @@ ADC::ACL::Authorization::Authorization(enum Credential cred_, Samurai::TimeStamp
 	description = 0;
 	if (description_) description = strdup(description_);
 
-	QDBG("* Creating authorization for user %s (%s). access=%s, expires=%s", name, description, convertCredential(credential), expire.getTime());
+	QDBG("* Creating authorization for user %s (%s). access=%s, expires=%s", name, description, convertCredential(credential), expire.getTime().c_str());
 }
 
 ADC::ACL::Authorization::~Authorization()
@@ -234,7 +234,7 @@ bool ADC::ACL::Table::load()
 	Samurai::IO::File file("~/.quickdc/hub/acl.xml");
 	
 	size_t size = (size_t) file.size();
-	if (!file.open(Samurai::IO::File::Read))
+	if (!file.open(Samurai::IO::File::Mode::Read))
 	{
 		QERR("Unable to open file");
 		return false;
@@ -310,7 +310,7 @@ bool ADC::ACL::Table::save() {
 	xmlout->append("</AccessList>" XML_NEWLINE);
 	
 	Samurai::IO::File xmlacl("~/.quickdc/hub/acl.xml");
-	bool ret = xmlacl.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate);
+	bool ret = xmlacl.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
 	if (ret) {
 		char* out = new char[xmlout->size()];
 		xmlout->pop(out, xmlout->size());

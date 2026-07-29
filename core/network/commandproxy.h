@@ -67,8 +67,7 @@ class CommandProxy {
 /**
  * Commands are handed around between the proxy that parsed them, the send
  * queue and whatever holds on to them afterwards, so each holder counts its
- * own reference and the last one out deletes. Samurai used to supply the
- * counter; it does not any longer, and CommandBase was its only user.
+ * own reference and the last one out deletes.
  */
 class CommandBase
 {

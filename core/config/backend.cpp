@@ -45,7 +45,7 @@ bool Backend::write() {
 	
 	// If file does not exist, let's create it.
 	// If it does exist, let's truncate it (overwrite).
-	bool ok = file->open(Samurai::IO::File::Write | Samurai::IO::File::Truncate);
+	bool ok = file->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
 	if (!ok) return false;
 
 	size_t length = BUFSIZE;
@@ -73,7 +73,7 @@ bool Backend::write() {
 
 bool Backend::read() {
 	if (!file->exists()) return false;
-	if (!file->open(Samurai::IO::File::Read)) return false;
+	if (!file->open(Samurai::IO::File::Mode::Read)) return false;
 	buffer->clear();
 	
 	size_t length = BUFSIZE;

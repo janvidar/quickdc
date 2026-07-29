@@ -319,11 +319,11 @@ void QuickDC::ProtocolProbe::probe() {
 }
 
 void QuickDC::ProtocolProbe::EventDisconnected(const Samurai::IO::Net::Socket*) {
-	QDBG("Disconnected")
+	QDBG("Disconnected");
 	close();
 }
 
-void QuickDC::ProtocolProbe::EventError(const Samurai::IO::Net::Socket*, enum Samurai::IO::Net::SocketError error, const char* msg)
+void QuickDC::ProtocolProbe::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError error, const char* msg)
 {
 	(void) error;
 	if (msg) QERR("Error caught: '%s'", msg);

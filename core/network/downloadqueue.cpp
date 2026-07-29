@@ -1004,7 +1004,7 @@ bool QuickDC::QueueManager::verifyChunk(QueueFile* file, uint64_t offset, uint64
 	if (!leaves || !leaves->isLoaded()) return true;   /* nothing to check against */
 
 	Samurai::IO::File part(file->getTempFilename());
-	if (!part.open(Samurai::IO::File::Read))
+	if (!part.open(Samurai::IO::File::Mode::Read))
 	{
 		QERR("Unable to open '%s' to verify it", file->getTempFilename());
 		return false;
@@ -1518,7 +1518,7 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 	bool compressed = false;
 	size_t size = (size_t) raw.size();
 
-	if (size > 3 && raw.open(Samurai::IO::File::Read))
+	if (size > 3 && raw.open(Samurai::IO::File::Mode::Read))
 	{
 		char magic[3];
 		compressed = (raw.read(magic, 3) == 3 && !memcmp(magic, "BZh", 3));
@@ -1541,7 +1541,7 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 #ifdef BZIP2
 		QDBG("The file list is bzip2 encoded; unpacking it");
 
-		if (!raw.open(Samurai::IO::File::Read))
+		if (!raw.open(Samurai::IO::File::Mode::Read))
 		{
 			QERR("Unable to reopen the downloaded file list");
 			return 0;
@@ -1587,7 +1587,7 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 		delete[] packed;
 
 		Samurai::IO::File target(request->getLocalFilename());
-		if (!target.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate))
+		if (!target.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate))
 		{
 			QERR("Unable to write the unpacked file list");
 			return 0;
@@ -1711,7 +1711,7 @@ bool QuickDC::QueueManager::load()
 		return true;
 	}
 
-	if (!file.open(Samurai::IO::File::Read))
+	if (!file.open(Samurai::IO::File::Mode::Read))
 	{
 		QERR("Unable to open '%s' for reading", QUICKDC_QUEUE_FILE);
 		return false;
@@ -1819,7 +1819,7 @@ bool QuickDC::QueueManager::save()
 	bool ret = false;
 	Samurai::IO::File out(QUICKDC_QUEUE_FILE_NEW);
 
-	if (out.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate))
+	if (out.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate))
 	{
 		size_t length = xmlout->size();
 		char* data = new char[length];

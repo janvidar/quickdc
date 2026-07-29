@@ -3,6 +3,7 @@
  * See the file "COPYING" for licensing details.
  */
 
+#include <algorithm>
 #include "quickdc.h"
 #include <stdio.h>
 
@@ -66,7 +67,8 @@ QuickDC::Hash::CacheEntry* QuickDC::Hash::CacheEntry::create(CacheEntryHeader& d
 	
 	if (file.getTimeModified() != modified)
 	{
-		QERR("File modified time has changed (%s), expected %s, but file is modified at %s", data.name, file.getTimeModified().getTime(), modified.getTime());
+		QERR("File modified time has changed (%s), expected %s, but file is modified at %s", data.name,
+			file.getTimeModified().getTime().c_str(), modified.getTime().c_str());
 		return 0;
 	}
 	
@@ -108,7 +110,7 @@ void QuickDC::Hash::CacheEntry::write(Samurai::IO::Buffer* writer)
 	const char* filename = file.getName().c_str();
 
 	memset(record.name, 0, sizeof(record.name));
-	memcpy(record.name, filename, MIN(strlen(filename), sizeof(record.name)));
+	memcpy(record.name, filename, std::min(strlen(filename), sizeof(record.name)));
 	record.size      = size;
 	record.mtime     = mtime.getInternalData();
 	record.algorithm = (size_t) algorithm;

@@ -120,7 +120,7 @@ void QuickDC::Share::Dir::scan() {
 			QDBG("- Dir %s", file.getName().c_str());
 			subdirs.push_back(new QuickDC::Share::Dir(file.getName(), this));
 		} else if (file.isRegular()) {
-			QDBG("- File %s", file.getName().c_str())
+			QDBG("- File %s", file.getName().c_str());
 			files.push_back(new QuickDC::Share::File(file.getName(), this));
 
 		} else if (file.isSymlink()) {

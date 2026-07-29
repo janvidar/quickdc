@@ -225,7 +225,7 @@ void QuickDC::Share::Manager::createFileLists(bool incomplete) {
 		QDBG("XML file list will be %i bytes long", (int) xmlout->size());
 #endif
 		Samurai::IO::File xmllist("~/.quickdc/files.xml");
-		if (xmllist.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate)) {
+		if (xmllist.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate)) {
 			char* out = new char[xmlout->size()];
 			xmlout->pop(out, xmlout->size());
 			int written = xmllist.write(out, xmlout->size());
@@ -241,7 +241,7 @@ void QuickDC::Share::Manager::createFileLists(bool incomplete) {
 		Samurai::IO::BZip2Compressor* filter = new Samurai::IO::BZip2Compressor();
 		Samurai::IO::Buffer* writer = new Samurai::IO::Buffer();
 		bool ok = process(filter, xmlout, writer);
-		if (ok && dclist.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate)) {
+		if (ok && dclist.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate)) {
 			int written = dclist.write(writer, writer->size());
 			if (written == -1) QDBG("Error writing files.xml.bz2");
 			dclist.close();

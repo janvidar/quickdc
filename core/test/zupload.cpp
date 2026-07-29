@@ -65,7 +65,7 @@ static std::string testfile_path;
 static bool write_test_file(const std::string& data)
 {
 	Samurai::IO::File file(testfile_path);
-	if (!file.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate)) return false;
+	if (!file.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate)) return false;
 
 	bool ok = (file.write(data.data(), data.size()) == (ssize_t) data.size());
 	file.close();
@@ -91,7 +91,7 @@ static bool run_transfer(bool compress, const std::string& data, std::vector<cha
 	int sndbuf = SMALL_SNDBUF;
 	setsockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
-	Samurai::IO::Net::InetSocketAddress addr("127.0.0.1", 0, Samurai::IO::Net::InetAddress::IPv4);
+	Samurai::IO::Net::InetSocketAddress addr("127.0.0.1", 0, Samurai::IO::Net::InetAddress::Version::IPv4);
 	auto sock = Samurai::IO::Net::Socket::create(fds[0], addr);
 
 	QuickDC::TransferManager manager;

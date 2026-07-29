@@ -62,14 +62,6 @@ bool IniParser::write() {
 
 /**
  * Strip leading and trailing spaces and tabs.
- *
- * NOTE: this used to walk the string by hand, and got it wrong twice. An empty
- * value - which the settings file is full of, "E-mail=" and "Password=" being
- * written out by default - started the trailing scan at length-1, so it
- * underflowed to SIZE_MAX and read backwards through whatever happened to
- * follow the string until it met a byte that was not whitespace. It also passed
- * the end offset to substr() as a count, so a value with leading whitespace
- * kept its trailing whitespace.
  */
 std::string remove_whitespace(const std::string& str) {
 	const size_t first = str.find_first_not_of(" \t");

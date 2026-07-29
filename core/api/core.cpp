@@ -98,12 +98,10 @@ void QuickDC::Core::run()
 	// Poll sockets. A zero timeout turns this into a spin - kevent/poll returns
 	// immediately and we burn a core doing nothing - so always block.
 	//
-	// Neither of the two things that used to force a short timeout applies any
-	// more: hashing runs on its own thread, and console input reaches us
-	// through a socket the monitor watches, so a keypress wakes the loop
-	// immediately rather than on the next tick. What is left is what is still
-	// polled rather than event driven, and that sets the interval: collecting
-	// finished hash jobs, and timers, which are all whole seconds anyway.
+	// The interval is set by what is still polled rather than event driven:
+	// collecting finished hash jobs, and timers, which are all whole seconds
+	// anyway. Hashing runs on its own thread and console input arrives through a
+	// socket the monitor watches, so neither needs a short timeout.
 	static const int POLL_INTERVAL_MS = 250;
 	monitor->wait(POLL_INTERVAL_MS);
 
@@ -115,9 +113,7 @@ void QuickDC::Core::run()
 	// A transfer reports completion from inside its own exec(), and the session
 	// that owns it responds by deleting it, so the notification has to be
 	// deferred to here rather than made on the spot. TransferManager parks them
-	// on a list for exactly that reason; nothing was draining the list, which
-	// left a finished download sitting with its socket open waiting for data
-	// that was never coming.
+	// on a list for exactly that reason, and this drains it.
 	transfers->process();
 
 	// Expire dead sources, start queued transfers, and flush the queue now

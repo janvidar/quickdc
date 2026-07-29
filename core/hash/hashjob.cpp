@@ -99,7 +99,7 @@ bool QuickDC::Hash::Job::runToCompletion(std::atomic<uint64_t>& done, std::atomi
 	done.store(0);
 	total.store(0);
 
-	if (!file.open(Samurai::IO::File::Read))
+	if (!file.open(Samurai::IO::File::Mode::Read))
 	{
 		error = errno;
 		return false;
@@ -138,7 +138,7 @@ bool QuickDC::Hash::Job::runToCompletion(std::atomic<uint64_t>& done, std::atomi
 const char* QuickDC::Hash::Job::getHashSum() const
 {
 	static char buf[100];
-	if (hashValue->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, buf, 100))
+	if (hashValue->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, buf, 100))
 		return buf;
 	return "";
 }

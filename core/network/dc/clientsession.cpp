@@ -520,7 +520,7 @@ void DC::ClientSession::onDirection(enum Direction dir, size_t prio)
 
 	remote_direction = dir;
 	remote_prio = prio;
-	QDBG("Remote user requested a %s with priority %d", dir == DirDownload ? "download" : "upload", prio);
+	QDBG("Remote user requested a %s with priority %zu", dir == DirDownload ? "download" : "upload", prio);
 }
 
 
@@ -762,7 +762,8 @@ void DC::ClientSession::onGet(const char* fn, uint64_t offset, int64_t chunklen)
  */
 void DC::ClientSession::onGetZBlock(const char* file, uint64_t offset, int64_t length)
 {
-	QDBG("Requested file (ZBLOCK): '%s', offset=%u, length=%l", file, offset, length);
+	QDBG("Requested file (ZBLOCK): '%s', offset=%llu, length=%llu", file,
+		(unsigned long long) offset, (unsigned long long) length);
 	if (upload_approved && state == StateIdle)
 	{
 		

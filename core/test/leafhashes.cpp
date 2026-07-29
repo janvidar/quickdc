@@ -29,7 +29,7 @@ static std::string path;
 static void write_file(size_t size, unsigned int seed)
 {
 	Samurai::IO::File file(path);
-	file.open(Samurai::IO::File::Write | Samurai::IO::File::Truncate);
+	file.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
 	char* buf = (char*) malloc(size);
 	for (size_t n = 0; n < size; n++)
 	{
@@ -48,7 +48,7 @@ static void hash_file(std::string& tth, Samurai::IO::Buffer& leafdata, size_t& l
 	Samurai::Crypto::Digest::MerkleTree tree(algo, 1024, depth);
 
 	Samurai::IO::File file(path);
-	file.open(Samurai::IO::File::Read);
+	file.open(Samurai::IO::File::Mode::Read);
 
 	char buf[65536];
 	ssize_t got;
@@ -57,7 +57,7 @@ static void hash_file(std::string& tth, Samurai::IO::Buffer& leafdata, size_t& l
 	file.close();
 
 	char root[100];
-	tree.digest()->getFormattedString(Samurai::Crypto::Digest::HashValue::FormatBase32, root, sizeof(root));
+	tree.digest()->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, root, sizeof(root));
 	tth = root;
 
 	leaves = tree.countLeaves();
@@ -95,7 +95,7 @@ static void run(const char* label, size_t size, size_t depth = 7)
 	CHECK((size + ls - 1) / ls == leaves);
 
 	Samurai::IO::File file(path);
-	CHECK(file.open(Samurai::IO::File::Read));
+	CHECK(file.open(Samurai::IO::File::Mode::Read));
 
 	/* Every leaf on its own. */
 	for (size_t n = 0; n < leaves; n++)
@@ -119,14 +119,14 @@ static void run(const char* label, size_t size, size_t depth = 7)
 	/* Corrupt one byte of the first leaf; that leaf must now fail. */
 	{
 		Samurai::IO::File w(path);
-		w.open(Samurai::IO::File::Write);
+		w.open(Samurai::IO::File::Mode::Write);
 		w.seek(0);
 		char bad = 0x2a;
 		w.write(&bad, 1);
 		w.close();
 
 		Samurai::IO::File r(path);
-		r.open(Samurai::IO::File::Read);
+		r.open(Samurai::IO::File::Mode::Read);
 		CHECK(!lh.verify(r, 0, (leaves > 1) ? ls : size));
 		if (leaves > 1)
 		{

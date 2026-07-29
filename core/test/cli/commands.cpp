@@ -4,6 +4,7 @@
  * See the file "COPYING" for licensing details.
  */
 
+#include <samurai/util/format.h>
 #include <stdarg.h>
 
 #include "quickdc.h"
@@ -259,7 +260,7 @@ void cmd_addSearchResult(const char* filename, uint64_t size,
 
 	printf("  %3d  %10s  %-24s %s%s\n",
 		(int) searchHits.size(),
-		getFormatSize(size),
+		Samurai::Util::formatSize(size).c_str(),
 		hit.nick.c_str(),
 		filename,
 		hit.tth.empty() ? "  (no TTH, cannot be queued)" : "");
@@ -480,7 +481,7 @@ static void cmd_list(const std::vector<std::string>&)
 	QuickDC::User* u = users->first();
 	while (u)
 	{
-		printf("  %32s  %16s  '%s'\n", u->getNick(), getFormatSize(u->getSharedBytes()), u->getDescription());
+		printf("  %32s  %16s  '%s'\n", u->getNick(), Samurai::Util::formatSize(u->getSharedBytes()).c_str(), u->getDescription());
 		u = users->next();
 	}
 }
@@ -505,7 +506,7 @@ static void cmd_info(const std::vector<std::string>& args)
 	printf("    Nick:            %s\n", user->getNick());
 	printf("    Description:     %s\n", user->getDescription());
 	printf("    E-mail:          %s\n", user->getEmail());
-	printf("    Shared size:     %s\n", getFormatSize(user->getSharedBytes()));
+	printf("    Shared size:     %s\n", Samurai::Util::formatSize(user->getSharedBytes()).c_str());
 	printf("    User-agent:      %s\n", user->getUserAgent());
 	printf("    Keyprint:        %s\n", *user->getKeyprint() ? user->getKeyprint() : "(none published)");
 	printf("    Stats:           %d slots, %d/%d/%d (op/reg/norm)\n",
@@ -608,7 +609,7 @@ static void cmd_download(const std::vector<std::string>& args)
 	core->queue->process();
 
 	cmd_output("Queued `%s' (%s, %d source(s)).",
-		target.c_str(), getFormatSize(hit.size), (int) qfile->countSources());
+		target.c_str(), Samurai::Util::formatSize(hit.size).c_str(), (int) qfile->countSources());
 }
 
 static void cmd_queue(const std::vector<std::string>&)
@@ -628,7 +629,7 @@ static void cmd_queue(const std::vector<std::string>&)
 
 		printf("  %3d%%  %10s  %s  src %d/%d  %s\n",
 			percent,
-			getFormatSize(item.size),
+			Samurai::Util::formatSize(item.size).c_str(),
 			QuickDC::QueueFile::convertPriority(item.priority),
 			(int) item.activeSources,
 			(int) item.sources,

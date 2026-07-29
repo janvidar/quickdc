@@ -3,6 +3,7 @@
  * See the file "COPYING" for licensing details.
  */
 
+#include <algorithm>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/file.h>
 
@@ -63,7 +64,7 @@ QuickDC::Upload::Upload(TransferManager* mgr, PrivateTransferListener* listener,
 {
 	QDBG("QuickDC::Upload::Upload()");
 	
-	bool ok = file->open(Samurai::IO::File::Read);
+	bool ok = file->open(Samurai::IO::File::Mode::Read);
 	if (!ok)
 	{
 		QERR("Unable to open file: %s", file->getName().c_str());
@@ -75,7 +76,7 @@ QuickDC::Upload::Upload(TransferManager* mgr, PrivateTransferListener* listener,
 	manager->onTransferStarted(this);
 	socket->toggleWriteNotifier(true);
 	
-	uploadBufferSize = MIN(((size_t) socket->getSendBufferSize()), MAXSENDBUF);
+	uploadBufferSize = std::min<size_t>(socket->getSendBufferSize(), MAXSENDBUF);
 	uploadBuffer = new char[uploadBufferSize];
 }
 
@@ -103,7 +104,7 @@ void QuickDC::Upload::transfer()
 	QDBG("Upload: Seek to %d\n", (int) offset);
 	file->seek(offset);
 	
-	ssize_t chunk = MIN(uploadBufferSize, total - offset);
+	ssize_t chunk = (ssize_t) std::min<uint64_t>(uploadBufferSize, total - offset);
 	if (chunk)
 	{
 		ssize_t in = file->read(uploadBuffer, chunk);
@@ -203,7 +204,7 @@ void QuickDC::ZUpload::transfer()
 			return;
 		}
 
-		ssize_t chunk = MIN(compressBufferSize, total - offset);
+		ssize_t chunk = (ssize_t) std::min<uint64_t>(compressBufferSize, total - offset);
 		ssize_t in = file->read(compressBuffer, (size_t) chunk);
 		if (in <= 0)
 		{
@@ -258,7 +259,7 @@ QuickDC::Download::Download(TransferManager* mgr, PrivateTransferListener* liste
 	 * File::open() adds O_CREAT for a write-only open, so a brand new
 	 * download does not need special casing.
 	 */
-	if (!file->open(Samurai::IO::File::Write))
+	if (!file->open(Samurai::IO::File::Mode::Write))
 	{
 		QERR("Unable to open '%s' for writing", file->getName().c_str());
 		status = IOFail;
@@ -275,7 +276,7 @@ QuickDC::Download::Download(TransferManager* mgr, PrivateTransferListener* liste
 
 	manager->onTransferStarted(this);
 
-	downloadBufferSize = MIN(((size_t) socket->getReceiveBufferSize()), (size_t) MAXSENDBUF);
+	downloadBufferSize = std::min<size_t>(socket->getReceiveBufferSize(), MAXSENDBUF);
 	if (!downloadBufferSize) downloadBufferSize = 8192;
 	downloadBuffer = new char[downloadBufferSize];
 }
@@ -369,18 +370,18 @@ void QuickDC::Download::transfer()
 	std::error_code ec;
 	switch (socket->read(downloadBuffer, want, in, ec))
 	{
-		case Samurai::IO::ReadOk:
+		case Samurai::IO::ReadResult::Ok:
 			break;
 
-		case Samurai::IO::ReadWouldBlock:
+		case Samurai::IO::ReadResult::WouldBlock:
 			return;
 
-		case Samurai::IO::ReadEndOfFile:
+		case Samurai::IO::ReadResult::EndOfFile:
 			QDBG("Download: the peer closed after %d of %d bytes", (int) offset, (int) total);
 			status = IOFail;
 			return;
 
-		case Samurai::IO::ReadError:
+		case Samurai::IO::ReadResult::Error:
 			QERR("Download: unable to read from the peer: %s", ec.message().c_str());
 			status = IOFail;
 			return;
