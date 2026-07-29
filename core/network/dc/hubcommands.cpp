@@ -235,7 +235,6 @@ bool DC::MyINFO::invoke(const char* data_, size_t) {
 	const char* sharesize = 0;
 	DC::Tag* tag = 0;
 	char* speed = 0;
-	uint8_t flags = 0x00;
 	uint64_t shared = 0ULL;
 
 	// find and extract nickname
@@ -278,12 +277,12 @@ bool DC::MyINFO::invoke(const char* data_, size_t) {
 	split[0] = '\0';
 	shared = Samurai::Util::Convert::to_int64(sharesize);
 	
-	// extract flags from speed field.
+	/* The speed field carries the status byte as its last character. Strip it:
+	   nothing reads it yet, but leaving it on corrupts the speed string. */
 	if (strlen(speed) > 1) {
 		size_t pos = strlen(speed)-1;
-		flags = (uint8_t) speed[pos];
 		speed[pos] = '\0';
-	} else flags = 0x01;
+	}
 	
 	// extract tag from description string
 	split = strrchr(description, '<');
@@ -294,8 +293,6 @@ bool DC::MyINFO::invoke(const char* data_, size_t) {
 			split[0] = '\0';
 		}
 	}
-
-	if (!(flags | 0x01)) flags |= 0x01;
 
 	QuickDC::User* u = (QuickDC::User*) session->users->getUser(nickname);
 	bool changed = false;
