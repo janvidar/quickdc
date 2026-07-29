@@ -936,6 +936,15 @@ void ADC::HubSession::sendPassword(const char* password_)
 	free(password);
 	password = strdup(password_);
 
+	/*
+	 * Written out now rather than left to the destructor, so a password the
+	 * user just supplied survives a crash or a kill. The group is shared and
+	 * every other session moves it, so it is selected here.
+	 */
+	session->setGroup(address);
+	session->setString("Password", password);
+	session->write();
+
 	sendPasswordResponse();
 }
 

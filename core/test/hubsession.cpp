@@ -43,6 +43,22 @@
 
 static int failures = 0;
 
+/* Where the core under test keeps its session data. */
+static const char* SESSION_FILE = "/tmp/quickdc_hubtest_session.conf";
+
+static std::string readFile(const char* path)
+{
+	FILE* fh = fopen(path, "rb");
+	if (!fh) return std::string();
+
+	std::string out;
+	char buf[4096];
+	size_t got;
+	while ((got = fread(buf, 1, sizeof(buf), fh)) > 0) out.append(buf, got);
+	fclose(fh);
+	return out;
+}
+
 #define CHECK(x) do { if (!(x)) { \
 	printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
 
@@ -560,6 +576,29 @@ static void run()
 		printf("  ok the answer is derived from the password and the token\n");
 	}
 
+	/* And it is remembered, so the next run does not have to ask again. */
+	{
+		Session s;
+		if (s.ready)
+		{
+			std::string line;
+			CHECK(s.hub.nextLine(line));
+			s.say("ISUP ADBASE");
+			s.say("ISID AAAA");
+			CHECK(s.hub.nextLine(line));
+
+			s.say("IGPA ABCDEFGHIJKLMNOP");
+			CHECK(s.hub.nextLine(line));
+
+			s.session->sendPassword("remembered-adc");
+
+			/* On disk before the session goes anywhere. */
+			CHECK(readFile(SESSION_FILE).find("remembered-adc") != std::string::npos);
+			printf("  ok a supplied password is written to the session file\n");
+		}
+		else failures++;
+	}
+
 	/* A password nobody asked for is not sent. */
 	{
 		Session s;
@@ -625,7 +664,7 @@ int main()
 	setbuf(stdout, 0);
 
 	const std::string cfg = "/tmp/quickdc_hubtest_config.conf";
-	const std::string ses = "/tmp/quickdc_hubtest_session.conf";
+	const std::string ses = SESSION_FILE;
 
 	Samurai::IO::File(cfg).remove();
 	Samurai::IO::File(ses).remove();

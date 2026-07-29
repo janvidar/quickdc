@@ -37,6 +37,22 @@
 
 static int failures = 0;
 
+/* Where the core under test keeps its session data. */
+static const char* SESSION_FILE = "/tmp/quickdc_dchubtest_session.conf";
+
+static std::string readFile(const char* path)
+{
+	FILE* fh = fopen(path, "rb");
+	if (!fh) return std::string();
+
+	std::string out;
+	char buf[4096];
+	size_t got;
+	while ((got = fread(buf, 1, sizeof(buf), fh)) > 0) out.append(buf, got);
+	fclose(fh);
+	return out;
+}
+
 #define CHECK(x) do { if (!(x)) { \
 	printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
 
@@ -577,6 +593,51 @@ static void run()
 		else failures++;
 	}
 
+	/*
+	 * A password the user supplied is remembered, so the next run does not ask
+	 * again. Written when it is supplied rather than when the session ends, so
+	 * that a crash does not lose it.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			std::string line;
+			s.say("$GetPass");
+			CHECK(s.hub.expect("$MyPass", line));
+
+			s.session->sendPassword("remembered-nmdc");
+
+			/* On disk before the session goes anywhere. */
+			CHECK(readFile(SESSION_FILE).find("remembered-nmdc") != std::string::npos);
+			printf("  ok a supplied password is written to the session file\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * A password the hub refused is cleared, and the clearing reaches the file
+	 * the same way the password did. A hand-edited one that turns out to be
+	 * wrong does not survive being told so.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			std::string line;
+			s.say("$GetPass");
+			CHECK(s.hub.expect("$MyPass", line));
+
+			s.session->sendPassword("wrong-one");
+			CHECK(readFile(SESSION_FILE).find("wrong-one") != std::string::npos);
+
+			s.say("$BadPass");
+			CHECK(readFile(SESSION_FILE).find("wrong-one") == std::string::npos);
+			printf("  ok a refused password is cleared from the session file\n");
+		}
+		else failures++;
+	}
+
 	/* A password nobody asked for is not sent. */
 	{
 		Session s;
@@ -656,7 +717,7 @@ int main()
 	setbuf(stdout, 0);
 
 	const std::string cfg = "/tmp/quickdc_dchubtest_config.conf";
-	const std::string ses = "/tmp/quickdc_dchubtest_session.conf";
+	const std::string ses = SESSION_FILE;
 
 	Samurai::IO::File(cfg).remove();
 	Samurai::IO::File(ses).remove();

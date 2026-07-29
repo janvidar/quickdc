@@ -321,8 +321,17 @@ void DC::HubSession::onBadPassword()
 	free(password);
 	password = strdup("");
 
-	/* Cleared, so a reconnect does not send the same wrong one again - and the
-	   hub still wants a password, which is the interface's problem to solve. */
+	/*
+	 * Cleared on disk as well as in memory, and now rather than when the
+	 * session ends. The hub has said this password is wrong, so keeping it
+	 * only means every later run offers it again and fails the same way - and
+	 * the destructor would write the cleared one out regardless.
+	 */
+	session->setGroup(address);
+	session->setString("Password", password);
+	session->write();
+
+	/* The hub still wants a password, which is the interface's problem. */
 	listener->EventHubAutenticate();
 }
 
@@ -439,6 +448,15 @@ void DC::HubSession::sendPassword(const char* password_)
 
 	free(password);
 	password = strdup(password_);
+
+	/*
+	 * Written out now rather than left to the destructor, so a password the
+	 * user just supplied survives a crash or a kill. The group is shared and
+	 * every other session moves it, so it is selected here.
+	 */
+	session->setGroup(address);
+	session->setString("Password", password);
+	session->write();
 
 	send(new DC::SendMyPass(getPassword()));
 }
