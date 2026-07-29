@@ -22,13 +22,14 @@ add_executable(testleafhashes leafhashes.cpp)
 add_executable(testxml   xml.cpp)
 add_executable(testadccommand adccommand.cpp)
 add_executable(testfilelist filelist.cpp)
+add_executable(testacl   acl.cpp)
 
 # testdebug needs console.cpp for its output helpers.
 add_executable(testdebug debug.cpp cli/console.cpp)
 
 set(QUICKDC_TEST_APPS
     quickdc_cli testfile testshare testlock hublist testdebug testzupload
-    testleafhashes testxml testadccommand testfilelist)
+    testleafhashes testxml testadccommand testfilelist testacl)
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
     # quickdc pulls in samurai (and thus OpenSSL, zlib, bzip2 and pthread)
@@ -51,5 +52,6 @@ add_test(NAME leafhashes COMMAND testleafhashes)
 add_test(NAME xml COMMAND testxml)
 add_test(NAME adccommand COMMAND testadccommand)
 add_test(NAME filelist COMMAND testfilelist)
+add_test(NAME acl COMMAND testacl)
 
 add_subdirectory(autotests)

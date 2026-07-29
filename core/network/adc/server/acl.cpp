@@ -206,7 +206,8 @@ ADC::ACL::Verification::~Verification()
 /* ------------------------------------------------------------------------- */
 
 
-ADC::ACL::Table::Table()
+ADC::ACL::Table::Table(const char* path_)
+	: path(path_ ? path_ : "")
 {
 	load();
 }
@@ -231,7 +232,7 @@ void ADC::ACL::Table::add(ADC::ACL::Authorization* auth)
 bool ADC::ACL::Table::load()
 {
 	QDBG("Loading acl");
-	Samurai::IO::File file("~/.quickdc/hub/acl.xml");
+	Samurai::IO::File file(path);
 	
 	size_t size = (size_t) file.size();
 	if (!file.open(Samurai::IO::File::Mode::Read))
@@ -309,7 +310,7 @@ bool ADC::ACL::Table::save() {
 	
 	xmlout->append("</AccessList>" XML_NEWLINE);
 	
-	Samurai::IO::File xmlacl("~/.quickdc/hub/acl.xml");
+	Samurai::IO::File xmlacl(path);
 	bool ret = xmlacl.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
 	if (ret) {
 		char* out = new char[xmlout->size()];
@@ -331,10 +332,14 @@ ADC::ACL::XMLReader::XMLReader(ADC::ACL::Table* acl_, Samurai::IO::Buffer* buffe
 	acl = acl_;
 	reader = new XML::SAX::XMLReader(buffer, this);
 	current = 0;
+	problem = false;
 }
 
 ADC::ACL::XMLReader::~XMLReader()
 {
+	/* A file that stops in the middle of a <User> leaves one built but never
+	   handed to the table. */
+	delete current;
 	delete reader;
 }
 
@@ -469,8 +474,13 @@ void ADC::ACL::XMLReader::endElement(const char*, const char* localName, const c
 {
 	if (!strcasecmp(localName, "User"))
 	{
-		acl->add(current);
-		current = 0;
+		/* A <User> the start tag refused leaves nothing to add, and the table
+		   walks its entries without checking them. */
+		if (current)
+		{
+			acl->add(current);
+			current = 0;
+		}
 	}
 }
 

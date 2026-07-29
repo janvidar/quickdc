@@ -10,6 +10,7 @@
 #include <samurai/timestamp.h>
 #include "xml/reader.h"
 
+#include <string>
 #include <vector>
 
 
@@ -127,16 +128,24 @@ class Authorization {
 
 class Table {
 	public:
-		Table();
+		/**
+		 * @param path_ where the table is read from and written back to, so it
+		 *        can be pointed somewhere other than the real one.
+		 */
+		Table(const char* path_ = "~/.quickdc/hub/acl.xml");
 		virtual ~Table();
-		
+
 		void add(Authorization*);
-		
+
 		bool load();
 		bool save();
-		
+
+		size_t countUsers() const { return acl.size(); }
+		const Authorization* getUser(size_t n) const { return (n < acl.size()) ? acl[n] : 0; }
+
 	protected:
 		std::vector<Authorization*> acl;
+		std::string path;
 };
 
 class XMLReader : public XML::SAX::ContentHandler {
@@ -164,10 +173,8 @@ class XMLReader : public XML::SAX::ContentHandler {
 		bool problem;
 		
 	private:
-		Samurai::IO::Buffer* buffer;
 		Authorization* current;
 		Table* acl;
-		int level;
 };
 
 } // namespace ACL
