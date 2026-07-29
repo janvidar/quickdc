@@ -951,6 +951,10 @@ void ADC::HubSession::onHubName(char* txt)
 {
 	if (hubname) free(hubname);
 	hubname = strdup(txt);
+
+	/* As the NMDC session does. Without this the name is only ever used as a
+	   label on hub messages, and the interface never learns it. */
+	listener->EventHubName(hubname);
 }
 
 

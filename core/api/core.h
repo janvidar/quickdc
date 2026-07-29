@@ -124,6 +124,19 @@ class Core {
 		 * Constructing multiple will throw an error.
 		 */
 		Core();
+
+		/**
+		 * A core that runs a hub session and nothing else.
+		 *
+		 * The full constructor creates ~/.quickdc, reads and writes the user's
+		 * configuration, scans the shares and opens a listening socket, none of
+		 * which a hub session needs. This builds the four things it does need -
+		 * the two preference stores, the connection manager and the hub manager
+		 * - with the stores taken as arguments so they can be pointed away from
+		 * the real ones. Every other member is null.
+		 */
+		Core(const std::string& config_file, const std::string& session_file);
+
 		virtual ~Core();
 };
 

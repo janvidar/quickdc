@@ -70,6 +70,37 @@ QuickDC::Core::Core()
 }
 
 
+QuickDC::Core::Core(const std::string& config_file, const std::string& session_file)
+{
+	startup = time(0);
+	references = 0;
+
+	config = new Preferences(config_file);
+	session = new Preferences(session_file);
+
+	connections = new ConnectionManager();
+	hubs = new HubManager();
+
+	/* Only ever asked how much is shared, which is nothing until it is told to
+	   scan - and the constructor does not scan. */
+	hash = 0;
+	shares = new QuickDC::Share::Manager(config, hash);
+
+	server = 0;
+	transfers = 0;
+	timers = 0;
+	localHub = 0;
+	queue = 0;
+	securityManager = 0;
+	bandwidthManager = 0;
+
+	/* Borrowed singletons, not ours; the destructor must not release them. */
+	monitor = Samurai::IO::Net::SocketMonitor::getInstance();
+	messageHandler = 0;
+
+	quickdc_core = this;
+}
+
 QuickDC::Core::~Core()
 {
 	quickdc_core = 0;
