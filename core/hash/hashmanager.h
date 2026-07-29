@@ -17,7 +17,6 @@
 #include <condition_variable>
 
 #include <samurai/crypto/digest/hash.h>
-#include <samurai/crypto/digest/tigertree.h>
 
 #define DEFAULT_HASH_BUFFER_SIZE 1024*1024
 

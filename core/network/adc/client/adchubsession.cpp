@@ -32,7 +32,7 @@
 #include "network/filesource.h"
 #include "network/user.h"
 #include <string>
-#include <samurai/crypto/digest/tigertree.h>
+#include <samurai/crypto/digest/tiger.h>
 #include <samurai/io/buffer.h>
 #include <samurai/io/file.h>
 #include <samurai/io/net/datagram.h>

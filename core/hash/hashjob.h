@@ -16,7 +16,6 @@
 
 #include <samurai/io/file.h>
 #include <samurai/crypto/digest/hash.h>
-#include <samurai/crypto/digest/tigertree.h>
 
 namespace Samurai {
 namespace IO {
