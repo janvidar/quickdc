@@ -22,14 +22,28 @@ dc_text_translation_table[DC_TRANSLATIONS] =
 };
 
 // FIXME: Make char* version of this also.
+/*
+ * One pass, because a replacement may contain a character that is itself
+ * escaped: replacing each in turn from the start of the string meant the
+ * ampersand pass kept finding the ampersand it had just written, and the
+ * ampersands already written by the two passes before it.
+ */
 std::string DC::TextEscape::escape(const std::string& str)
 {
-	std::string message = str;
-	size_t offset;
-	while ((offset = message.find('|')) != std::string::npos) message.replace(offset, 1, "&#124;");
-	while ((offset = message.find('$')) != std::string::npos) message.replace(offset, 1, "&#36;");
-	while ((offset = message.find('&')) != std::string::npos) message.replace(offset, 1, "&amp;");
-	
+	std::string message;
+	message.reserve(str.size());
+
+	for (size_t n = 0; n < str.size(); n++)
+	{
+		switch (str[n])
+		{
+			case '&': message += "&amp;";  break;
+			case '|': message += "&#124;"; break;
+			case '$': message += "&#36;";  break;
+			default:  message += str[n];   break;
+		}
+	}
+
 	return message;
 }
 

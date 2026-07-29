@@ -19,7 +19,7 @@ DC::Tag::Tag(const char* string) {
 	hubcount = 0;
 	slotcount = 0;
 	ua = 0;
-	tag = strdup(string);
+	tag = strdup(string ? string : "");
 	parse();
 }
 
@@ -37,10 +37,14 @@ DC::Tag::~Tag() {
 bool DC::Tag::isOK() { return ok; }
 
 void DC::Tag::parse() {
+	/* Checked before anything is read: &tag[1] is past the end of an empty
+	   string, not the terminator of one. */
+	const size_t len = strlen(tag);
+	if (len < 2) return;
+
 	char* start = &tag[1];
 	char* split = strchr(start, ' ');
-	size_t len = strlen(tag);
-	if (!split || !len) return;
+	if (!split) return;
 	tag[len-1] = '\0';
 
 	client = strndup(&start[0], &split[0]-&start[0]);
@@ -59,7 +63,6 @@ void DC::Tag::parse() {
 			split = strchr(start, ':');
 		} else {
 			param_data = strdup(start);
-			start = &split[1];
 			split = 0;
 		}
 		
@@ -121,7 +124,7 @@ bool DC::Tag::getHubCount(int& op, int& registered, int& regular) {
 	char* tmp = strdup(hubcount);
 	char* split1 = strchr(tmp, '/');
 	char* split2 = strrchr(tmp, '/');
-	if (!split1 || !split2 || split1 == split2) return false;
+	if (!split1 || !split2 || split1 == split2) { free(tmp); return false; }
 	split1[0] = '\0';
 	split2[0] = '\0';
 	op = Samurai::Util::Convert::to_int32(tmp);
