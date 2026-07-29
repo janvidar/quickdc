@@ -178,9 +178,10 @@ bool Share::RemoteFileList::decode() {
 	
 	XMLFileListHandler* handler = new XMLFileListHandler(root, buffer);
 	bool ret = handler->parse();
-	
+	delete handler;
+
 	file->close();
-	
+
 	return ret;
 }
 
