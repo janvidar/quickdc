@@ -71,6 +71,10 @@ class Recorder : public XML::SAX::ContentHandler
 		void fatalError(const char* str) { log += "[fatal:"; log += str; log += "]"; }
 };
 
+namespace XML {
+extern void escape(Samurai::IO::Buffer* buffer, const char* str);
+}
+
 static void check(const char* label, const char* xml, const char* expect)
 {
 	Samurai::IO::Buffer buf;
@@ -88,6 +92,38 @@ static void check(const char* label, const char* xml, const char* expect)
 
 	printf("FAIL %s\n    input:    %s\n    expected: %s\n    actual:   %s\n",
 		label, xml, expect, rec.log.c_str());
+	failures++;
+}
+
+/*
+ * Whatever the writer escapes the reader must hand back unchanged. This is the
+ * property the multi-pass decoder broke: "&lt;" goes out as "&amp;lt;" and came
+ * back as "<".
+ */
+static void checkRoundTrip(const char* payload)
+{
+	Samurai::IO::Buffer escaped;
+	XML::escape(&escaped, payload);
+	const std::string body = escaped.copyRange(0, escaped.size());
+
+	Samurai::IO::Buffer doc;
+	doc.append("<a x=\"", 6);
+	doc.append(body.c_str(), body.size());
+	doc.append("\"></a>", 6);
+
+	Recorder rec;
+	XML::SAX::XMLReader reader(&doc, &rec);
+	reader.parse();
+
+	const std::string expect = std::string("[doc]<a x=") + payload + "></a>[/doc]";
+	if (rec.log == expect)
+	{
+		printf("  ok round trip %s\n", payload);
+		return;
+	}
+
+	printf("FAIL round trip\n    payload:  %s\n    escaped:  %s\n    expected: %s\n    actual:   %s\n",
+		payload, body.c_str(), expect.c_str(), rec.log.c_str());
 	failures++;
 }
 
@@ -314,6 +350,94 @@ int main()
 	check("utf-8 in character data",
 		"<a>\xc3\xa6\xc3\xb8\xc3\xa5</a>",
 		"[doc]<a>'\xc3\xa6\xc3\xb8\xc3\xa5'</a>[/doc]");
+
+	/* Numeric character references, decimal and hexadecimal, encoded as UTF-8. */
+	check("decimal character reference",
+		"<a>&#65;&#66;</a>",
+		"[doc]<a>'AB'</a>[/doc]");
+
+	check("hex character reference",
+		"<a>&#x41;&#X42;</a>",
+		"[doc]<a>'AB'</a>[/doc]");
+
+	check("character reference in an attribute",
+		"<a x=\"&#65;\"></a>",
+		"[doc]<a x=A></a>[/doc]");
+
+	/* Two bytes: U+00E5. */
+	check("two byte character reference",
+		"<a>&#229;</a>",
+		"[doc]<a>'\xc3\xa5'</a>[/doc]");
+
+	/* Three bytes: U+263A. */
+	check("three byte character reference",
+		"<a>&#x263A;</a>",
+		"[doc]<a>'\xe2\x98\xba'</a>[/doc]");
+
+	/* Four bytes: U+1F600. */
+	check("four byte character reference",
+		"<a>&#x1F600;</a>",
+		"[doc]<a>'\xf0\x9f\x98\x80'</a>[/doc]");
+
+	check("character reference beside text",
+		"<a>a&#66;c</a>",
+		"[doc]<a>'aBc'</a>[/doc]");
+
+	/* Anything that is not a reference we understand is left as it stands. */
+	check("bare ampersand",
+		"<a>a &amp; b</a>",
+		"[doc]<a>'a & b'</a>[/doc]");
+
+	check("unknown entity is left alone",
+		"<a>&nbsp;</a>",
+		"[doc]<a>'&nbsp;'</a>[/doc]");
+
+	check("empty reference is left alone",
+		"<a>&#;</a>",
+		"[doc]<a>'&#;'</a>[/doc]");
+
+	check("non-digit reference is left alone",
+		"<a>&#xZZ;</a>",
+		"[doc]<a>'&#xZZ;'</a>[/doc]");
+
+	check("out of range reference is left alone",
+		"<a>&#x110000;</a>",
+		"[doc]<a>'&#x110000;'</a>[/doc]");
+
+	check("surrogate reference is left alone",
+		"<a>&#xD800;</a>",
+		"[doc]<a>'&#xD800;'</a>[/doc]");
+
+	check("nul reference is left alone",
+		"<a>&#0;</a>",
+		"[doc]<a>'&#0;'</a>[/doc]");
+
+	check("unterminated reference is left alone",
+		"<a>&#65</a>",
+		"[doc]<a>'&#65'</a>[/doc]");
+
+	/*
+	 * What a reference expands to is not scanned again, so an escaped ampersand
+	 * followed by an entity name is that text and not the entity.
+	 */
+	check("expansion is not rescanned",
+		"<a x=\"&amp;lt;\">&amp;gt;</a>",
+		"[doc]<a x=&lt;>'&gt;'</a>[/doc]");
+
+	/* A CDATA section is literal, so a reference inside it stays as written. */
+	check("reference inside cdata is literal",
+		"<a><![CDATA[&#65;&amp;]]></a>",
+		"[doc]<a>'&#65;&amp;'</a>[/doc]");
+
+	checkRoundTrip("&");
+	checkRoundTrip("<");
+	checkRoundTrip(">");
+	checkRoundTrip("\"");
+	checkRoundTrip("'");
+	checkRoundTrip("&lt;");
+	checkRoundTrip("&amp;");
+	checkRoundTrip("a&b<c>d\"e'f");
+	checkRoundTrip("Bj\xc3\xb8rn & S\xc3\xb8n <2024>");
 
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
 	return failures ? 1 : 0;

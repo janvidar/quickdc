@@ -6,6 +6,8 @@
 #include "xml/writer.h"
 #include "xml/node.h"
 #include <samurai/io/buffer.h>
+#include <cstdint>
+#include <string>
 
 #define XML_TRANSLATIONS 5
 
@@ -58,23 +60,105 @@ void escape(Samurai::IO::Buffer* buffer, const std::string& str)
 }
 
 
+/* The longest reference worth looking for is "&#x10FFFF;". */
+#define XML_REFERENCE_MAX 10
+
+static int digitValue(char c, unsigned base)
+{
+	unsigned v;
+	if (c >= '0' && c <= '9') v = (unsigned) (c - '0');
+	else if (c >= 'a' && c <= 'f') v = (unsigned) (c - 'a') + 10;
+	else if (c >= 'A' && c <= 'F') v = (unsigned) (c - 'A') + 10;
+	else return -1;
+	return (v < base) ? (int) v : -1;
+}
+
+/* XML 1.0 section 2.2: everything else is not a character a document may name. */
+static bool isCharacter(uint32_t cp)
+{
+	if (cp == 0x9 || cp == 0xa || cp == 0xd) return true;
+	if (cp >= 0x20 && cp <= 0xd7ff) return true;
+	if (cp >= 0xe000 && cp <= 0xfffd) return true;
+	if (cp >= 0x10000 && cp <= 0x10ffff) return true;
+	return false;
+}
+
+static void appendUTF8(std::string& out, uint32_t cp)
+{
+	if (cp < 0x80) {
+		out += (char) cp;
+	} else if (cp < 0x800) {
+		out += (char) (0xc0 | (cp >> 6));
+		out += (char) (0x80 | (cp & 0x3f));
+	} else if (cp < 0x10000) {
+		out += (char) (0xe0 | (cp >> 12));
+		out += (char) (0x80 | ((cp >> 6) & 0x3f));
+		out += (char) (0x80 | (cp & 0x3f));
+	} else {
+		out += (char) (0xf0 | (cp >> 18));
+		out += (char) (0x80 | ((cp >> 12) & 0x3f));
+		out += (char) (0x80 | ((cp >> 6) & 0x3f));
+		out += (char) (0x80 | (cp & 0x3f));
+	}
+}
+
+/*
+ * Decodes "&#65;" and "&#x41;" as well as the five named entities, in a single
+ * left to right pass so that what a reference expands to is never scanned
+ * again: "&amp;lt;" is the text "&lt;", not '<'. Anything that is not a
+ * reference this understands is copied through as it stands.
+ */
 std::string unescape(std::string str)
 {
-	for (size_t t = 0; t < XML_TRANSLATIONS; t++) {
-		size_t newsize = 0;
-		const size_t max = str.size();
-		for (size_t i = 0; i < max; i++) {
-			if (str.compare(i, xml_translation_table[t].length, xml_translation_table[t].escaped) == 0)
-			{
-				str[newsize++] = xml_translation_table[t].unescaped;
-				i += xml_translation_table[t].length-1;
-			} else {
-				str[newsize++] = str[i];
+	std::string out;
+	out.reserve(str.size());
+
+	for (size_t i = 0; i < str.size(); ) {
+		if (str[i] != '&') { out += str[i++]; continue; }
+
+		size_t end = std::string::npos;
+		const size_t limit = (str.size() < i + XML_REFERENCE_MAX + 1)
+			? str.size() : i + XML_REFERENCE_MAX + 1;
+		for (size_t s = i + 1; s < limit; s++)
+			if (str[s] == ';') { end = s; break; }
+
+		bool decoded = false;
+
+		if (end != std::string::npos && str[i+1] == '#') {
+			size_t d = i + 2;
+			unsigned base = 10;
+			if (d < end && (str[d] == 'x' || str[d] == 'X')) { base = 16; d++; }
+
+			uint32_t cp = 0;
+			bool ok = (d < end);
+			for (; d < end && ok; d++) {
+				const int v = digitValue(str[d], base);
+				if (v < 0 || cp > 0x10ffff) ok = false;
+				else cp = cp * base + (uint32_t) v;
+			}
+
+			if (ok && isCharacter(cp)) {
+				appendUTF8(out, cp);
+				decoded = true;
+			}
+
+		} else if (end != std::string::npos) {
+			const size_t len = end - i + 1;
+			for (size_t t = 0; t < XML_TRANSLATIONS; t++) {
+				if (len == xml_translation_table[t].length
+					&& str.compare(i, len, xml_translation_table[t].escaped) == 0) {
+					out += xml_translation_table[t].unescaped;
+					decoded = true;
+					break;
+				}
 			}
 		}
-		str.resize(newsize);
+
+		if (decoded) i = end + 1;
+		else out += str[i++];
 	}
-	return str;
+
+	return out;
 }
 
 }
