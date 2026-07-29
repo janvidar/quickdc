@@ -907,6 +907,11 @@ void ADC::HubSession::onRequestPasword(char* token)
 	userState = QuickDC::HubSession::StateVerify;
 	char password_encoded[40] = { 0, };
 
+	/* Hashing the token with an empty password produces an answer the hub will
+	   refuse. Say so rather than let the login fail with nothing reported. */
+	if (!password || !*password)
+		listener->EventHubAutenticate();
+
 	if (!token) return;
 
 	size_t tok_size = (strlen(token) * 5) >> 3;

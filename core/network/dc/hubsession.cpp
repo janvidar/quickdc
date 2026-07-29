@@ -318,7 +318,12 @@ void DC::HubSession::onRedirect(const char* host, uint16_t port)
 
 void DC::HubSession::onBadPassword()
 {
+	free(password);
 	password = strdup("");
+
+	/* Cleared, so a reconnect does not send the same wrong one again - and the
+	   hub still wants a password, which is the interface's problem to solve. */
+	listener->EventHubAutenticate();
 }
 
 void DC::HubSession::onLoggedIn()
@@ -414,6 +419,14 @@ void DC::HubSession::sendMyInfo()
 void DC::HubSession::onRequestPasword()
 {
 	state = Password;
+
+	/*
+	 * An empty password is not an answer, and the hub will refuse it. Say so
+	 * rather than let the login fail with nothing reported.
+	 */
+	if (!password || !*password)
+		listener->EventHubAutenticate();
+
 	send(new DC::SendMyPass(getPassword()));
 }
 

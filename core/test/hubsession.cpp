@@ -468,6 +468,37 @@ static void run()
 		else failures++;
 	}
 
+	/*
+	 * A hub asking for a password gets an answer derived from what was
+	 * configured. Nothing here configures one, so the interface is told rather
+	 * than the login failing with nothing reported.
+	 */
+	{
+		Session s;
+		if (s.ready)
+		{
+			/*
+			 * GPA belongs to the identify phase: after the SID and the client's
+			 * own INF, before the hub accepts it. A completed login is too late
+			 * and the session says so rather than answering.
+			 */
+			std::string line;
+			CHECK(s.hub.nextLine(line));
+			s.say("ISUP ADBASE");
+			s.say("ISID AAAA");
+			CHECK(s.hub.nextLine(line));
+			CHECK(line.compare(0, 4, "BINF") == 0);
+
+			s.say("IGPA SOMETOKEN");
+
+			CHECK(s.hub.nextLine(line));
+			CHECK(line.compare(0, 4, "HPAS") == 0);
+			CHECK(s.listener.authRequested);
+			printf("  ok a password request with none configured is reported\n");
+		}
+		else failures++;
+	}
+
 	/* A status message from the hub. */
 	{
 		Session s;

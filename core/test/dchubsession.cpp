@@ -539,10 +539,9 @@ static void run()
 	}
 
 	/*
-	 * A password request is answered from what was configured, without asking
-	 * anyone. HubListener declares EventHubAutenticate for this and nothing in
-	 * the tree ever calls it, so an unconfigured password sends an empty one
-	 * rather than prompting.
+	 * A password request is answered from what was configured. Nothing here
+	 * configures one, so the interface is told the hub wants authentication
+	 * rather than the login failing with nothing reported.
 	 */
 	{
 		Session s;
@@ -552,8 +551,27 @@ static void run()
 
 			std::string line;
 			CHECK(s.hub.expect("$MyPass", line));
-			CHECK(!s.listener.authRequested);
-			printf("  ok a password request is answered from the configuration\n");
+			CHECK(s.listener.authRequested);
+			printf("  ok a password request with none configured is reported\n");
+		}
+		else failures++;
+	}
+
+	/* A password the hub refused is forgotten, and reported. */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			s.say("$GetPass");
+
+			std::string line;
+			CHECK(s.hub.expect("$MyPass", line));
+
+			s.listener.authRequested = false;
+			s.say("$BadPass");
+
+			CHECK(s.listener.authRequested);
+			printf("  ok a refused password is reported\n");
 		}
 		else failures++;
 	}
