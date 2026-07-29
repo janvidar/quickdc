@@ -15,8 +15,10 @@ Share::RemoteFile::RemoteFile(const char* name_, uint64_t size_, const char* tth
 	size = size_;
 	tth = strdup(tth_);
 	parent = parent_;
-	if (parent)
+	if (parent) {
+		parent->files.push_back(this);
 		parent->addSize(size);
+	}
 }
 
 Share::RemoteFile::~RemoteFile() {
