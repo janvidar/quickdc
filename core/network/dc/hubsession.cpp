@@ -657,6 +657,11 @@ void DC::HubSession::EventTimeout(const Samurai::IO::Net::Socket*)
 
 void DC::HubSession::EventDisconnected(const Samurai::IO::Net::Socket*)
 {
+	/* As the ADC session does. Without this the session goes on reporting
+	   itself logged in to a hub it is no longer connected to, and the hub
+	   manager searches on it and counts it. */
+	state = None;
+
 	manager->remove(this);
 	listener->EventNetStatus(QuickDC::HubListener::NetDisconnected);
 	hub->onDisconnected();
