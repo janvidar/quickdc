@@ -53,6 +53,13 @@ class Entity {
 		void setMessage(const char*);
 		void setCode(uint16_t);
 
+		enum Method getMethod() const { return method; }
+		const char* getURI() const { return uri; }
+		enum Protocol getProtocol() const { return protocol; }
+
+		uint16_t getCode() const { return code; }
+		const char* getMessage() const { return msg; }
+
 		bool isRequest() const { return request; }
 		
 		/**

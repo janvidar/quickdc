@@ -13,9 +13,12 @@ Http::Header::Header(const char* line) {
 	value = 0;
 	if (line && strlen(line)) {
 		const char* split = strchr(line, ':');
-		if (split && strlen(split) > 1) {
+
+		/* A field value is allowed to be empty, so anything with a name and a
+		   colon is a header; only the name has to be there. */
+		if (split && split != line) {
 			name = strndup(line, &split[0]-&line[0]);
-			
+
 			size_t offset = 1;
 			for (; split[offset] == ' '; offset++) { }
 			value = strdup(&split[offset]);
@@ -36,11 +39,7 @@ Http::Header::~Header() {
 }
 
 bool Http::Header::isValid() const {
-	if (!name || !value) return false;
-	for (size_t n = 0; n < strlen(name); n++) {
-		
-	}
-	return true;
+	return name && value;
 }
 
 Http::HeaderList::HeaderList() {
@@ -63,7 +62,7 @@ size_t Http::HeaderList::count(const char* name) {
 	size_t cnt = 0;
 	for (std::vector<Http::Header*>::iterator it = headers.begin(); it != headers.end(); it++) {
 		Http::Header* header = (*it);
-		if (!strcasecmp(header->getName(), name) && header->isValid()) cnt++;
+		if (header->isValid() && !strcasecmp(header->getName(), name)) cnt++;
 	}
 	return cnt;
 }
@@ -71,7 +70,7 @@ size_t Http::HeaderList::count(const char* name) {
 Http::Header* Http::HeaderList::get(const char* name) {
 	for (std::vector<Http::Header*>::iterator it = headers.begin(); it != headers.end(); it++) {
 		Http::Header* header = (*it);
-		if (!strcasecmp(header->getName(), name) && header->isValid()) return header;
+		if (header->isValid() && !strcasecmp(header->getName(), name)) return header;
 	}
 	return 0;
 }
@@ -80,6 +79,7 @@ Http::Header* Http::HeaderList::get(const char* name) {
 void Http::HeaderList::compose(Samurai::IO::Buffer* out) {
 	for (std::vector<Http::Header*>::iterator it = headers.begin(); it != headers.end(); it++) {
 		Http::Header* header = (*it);
+		if (!header->isValid()) continue;
 		out->append(header->getName());
 		out->append(": ");
 		out->append(header->getValue());

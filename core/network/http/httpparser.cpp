@@ -8,6 +8,7 @@
 #include "network/http/entity.h"
 #include "network/http/pipeline.h"
 #include <samurai/io/buffer.h>
+#include <string>
 
 #define MAX_HEADER_LINE_SIZE 16384
 
@@ -103,7 +104,7 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 				QDBG("DetectBody");
 				Http::Header* cl = entity->getHeader("Content-Length");
 				Http::Header* te = entity->getHeader("Transfer-Encoding");
-				if (te && !strcasecmp(te->getName(), "identity")) te = 0;
+				if (te && te->getValue() && !strcasecmp(te->getValue(), "identity")) te = 0;
 	
 				if (cl || te)
 				{
@@ -173,7 +174,10 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 			}
 		}
 	}
-	return StatusError;
+
+	/* Nothing left to look at, which is a read that came up empty rather than
+	   anything being wrong with what it held. */
+	return StatusMore;
 }
 
 Http::Entity* Http::Parser::getEntity()
@@ -214,44 +218,36 @@ enum Http::Parser::Status  Http::Parser::getLine()
  * GET /path/file HTTP/1.1
  */
 bool Http::Parser::parseRequestLine(const char* line_) {
-	if (strlen(line_) > 8) {
-		char* line = strdup(line_);
-		char* split = strchr(line, ' '); 
+	const std::string line(line_ ? line_ : "");
+	if (line.size() <= 8) return false;
 
-		if (!split || strlen(split) < 2) {
-			free(line);
-			return false;
-		}
+	const size_t first = line.find(' ');
+	if (first == std::string::npos) return false;
 
-		split[0] = '\0';
-		char* file  = &split[1];
-		
-		split = strchr(file, ' '); 
-		if (!split || strlen(split) < 2) {
-			free(line);
-			return false;
-		}
-		
-		split[0] = '\0';
-		char* protocol = &split[1];
-		
-		if      (!strcasecmp(line, "GET"))     entity->setMethod(Http::Entity::GET);
-		else if (!strcasecmp(line, "HEAD"))    entity->setMethod(Http::Entity::HEAD);
-		else if (!strcasecmp(line, "POST"))    entity->setMethod(Http::Entity::POST);
-		else if (!strcasecmp(line, "CONNECT")) entity->setMethod(Http::Entity::CONNECT);
-		else if (!strcasecmp(line, "DELETE"))  entity->setMethod(Http::Entity::DELETE);
-		else if (!strcasecmp(line, "OPTIONS")) entity->setMethod(Http::Entity::OPTIONS);
-		else if (!strcasecmp(line, "TRACE"))   entity->setMethod(Http::Entity::TRACE);
-		else if (!strcasecmp(line, "PUT"))     entity->setMethod(Http::Entity::PUT);
-		else                                   entity->setMethod(Http::Entity::UNKNOWN);
+	const size_t second = line.find(' ', first + 1);
+	if (second == std::string::npos || second + 1 >= line.size()) return false;
 
-		if (!strcasecmp(protocol, "HTTP/1.1")) entity->setProtocol(Http::Entity::HTTP_1_1);
-		else                                   entity->setProtocol(Http::Entity::HTTP_1_0);
-		
-		entity->setURI(file);
-		return true;
-	}
-	return false;
+	const std::string method   = line.substr(0, first);
+	const std::string uri      = line.substr(first + 1, second - first - 1);
+	const std::string protocol = line.substr(second + 1);
+
+	if (uri.empty()) return false;
+
+	if      (!strcasecmp(method.c_str(), "GET"))     entity->setMethod(Http::Entity::GET);
+	else if (!strcasecmp(method.c_str(), "HEAD"))    entity->setMethod(Http::Entity::HEAD);
+	else if (!strcasecmp(method.c_str(), "POST"))    entity->setMethod(Http::Entity::POST);
+	else if (!strcasecmp(method.c_str(), "CONNECT")) entity->setMethod(Http::Entity::CONNECT);
+	else if (!strcasecmp(method.c_str(), "DELETE"))  entity->setMethod(Http::Entity::DELETE);
+	else if (!strcasecmp(method.c_str(), "OPTIONS")) entity->setMethod(Http::Entity::OPTIONS);
+	else if (!strcasecmp(method.c_str(), "TRACE"))   entity->setMethod(Http::Entity::TRACE);
+	else if (!strcasecmp(method.c_str(), "PUT"))     entity->setMethod(Http::Entity::PUT);
+	else                                             entity->setMethod(Http::Entity::UNKNOWN);
+
+	if (!strcasecmp(protocol.c_str(), "HTTP/1.1")) entity->setProtocol(Http::Entity::HTTP_1_1);
+	else                                           entity->setProtocol(Http::Entity::HTTP_1_0);
+
+	entity->setURI(uri.c_str());
+	return true;
 }
 
 /*
@@ -260,41 +256,29 @@ bool Http::Parser::parseRequestLine(const char* line_) {
  * HTTP/1.1 200 OK
  */
 bool Http::Parser::parseStatusLine(const char* line_) {
-	if (strlen(line_) > 12) {
-		char* line = strdup(line_);
-		char* split = strchr(line, ' '); 
+	const std::string line(line_ ? line_ : "");
+	if (line.size() <= 12) return false;
 
-		if (!split || strlen(split) < 2) {
-			free(line);
-			return false;
-		}
+	const size_t first = line.find(' ');
+	if (first == std::string::npos) return false;
 
-		split[0] = '\0';
-		char* code  = &split[1];
-		
-		split = strchr(code, ' '); 
-		if (!split || strlen(split) < 2) {
-			free(line);
-			return false;
-		}
-		
-		split[0] = '\0';
-		char* message = &split[1];
-		
-		uint16_t ncode = (uint16_t) Samurai::Util::Convert::to_int32(code);
-		if (ncode == 0) return false;
+	/* The separator before the reason phrase is required; the phrase itself is
+	   not, and a proxy in front of an HTTP/2 server sends it empty. */
+	const size_t second = line.find(' ', first + 1);
+	if (second == std::string::npos) return false;
 
-		entity->setCode(ncode);
-		entity->setMessage(message);
+	const std::string version = line.substr(0, first);
+	const std::string code    = line.substr(first + 1, second - first - 1);
+	const std::string message = line.substr(second + 1);
 
-		if (!strcasecmp(line, "HTTP/1.1")) entity->setProtocol(Http::Entity::HTTP_1_1);
-		else                               entity->setProtocol(Http::Entity::HTTP_1_0);
+	const uint16_t ncode = (uint16_t) Samurai::Util::Convert::to_int32(code.c_str());
+	if (!ncode) return false;
 
-		return true;
-	}
-	return false;
+	entity->setCode(ncode);
+	entity->setMessage(message.c_str());
+
+	if (!strcasecmp(version.c_str(), "HTTP/1.1")) entity->setProtocol(Http::Entity::HTTP_1_1);
+	else                                          entity->setProtocol(Http::Entity::HTTP_1_0);
+
+	return true;
 }
-
-
-
-
