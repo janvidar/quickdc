@@ -90,10 +90,10 @@ class CommandBase
 		virtual void write(Samurai::IO::Buffer* stream) = 0;
 		
 		/**
-		 * Returns a char* to the RAW command.
-		 * FIXME: API should change.
+		 * Returns the RAW command, owned by the command and valid until it is
+		 * modified or destroyed.
 		 */
-		virtual char* getRawCommand() = 0;
+		virtual const char* getRawCommand() = 0;
 
 	private:
 		size_t references = 0;
@@ -106,7 +106,7 @@ class QueuedCommand
 		virtual ~QueuedCommand();
 		
 		CommandBase* getCommand() { return command; }
-		virtual char* getRawCommand();
+		virtual const char* getRawCommand();
 		virtual size_t getSize();
 		
 		virtual size_t getOffset();

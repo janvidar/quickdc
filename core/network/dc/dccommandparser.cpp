@@ -31,7 +31,7 @@ void DC::Command::write(Samurai::IO::Buffer* stream)
 	stream->append(buffer);
 }
 
-char* DC::Command::getRawCommand()
+const char* DC::Command::getRawCommand()
 {
 	return buffer->ptr();
 }

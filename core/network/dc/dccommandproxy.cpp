@@ -128,7 +128,7 @@ bool DC::CommandProxy::write()
 	while (more && queue.getQueueSize())
 	{
 		QuickDC::QueuedCommand* qcmd = queue.first();
-		char*  command = qcmd->getRawCommand();
+		const char* command = qcmd->getRawCommand();
 		size_t size    = qcmd->getSize();
 		size_t offset  = qcmd->getOffset();
 		size_t toSend  = size-offset;

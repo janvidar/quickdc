@@ -28,7 +28,7 @@ class Command : public QuickDC::CommandBase
 		
 		size_t getSize();
 		void write(Samurai::IO::Buffer* stream);
-		char* getRawCommand();
+		const char* getRawCommand();
 		
 	protected:
 		Samurai::IO::Buffer* buffer;

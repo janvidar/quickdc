@@ -50,7 +50,7 @@ QuickDC::QueuedCommand::~QueuedCommand()
 	}
 }
 
-char* QuickDC::QueuedCommand::getRawCommand()
+const char* QuickDC::QueuedCommand::getRawCommand()
 {
 	return command->getRawCommand();
 }

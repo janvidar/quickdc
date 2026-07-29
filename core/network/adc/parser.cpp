@@ -121,25 +121,15 @@ bool ADC::Parser::parse(const char* buffer, size_t buflen, ADC::Command& command
 			return false;
 	}
 
-	if (command.cached) free(command.cached);
-
 	/*
 	 * Sized from buflen, not from strlen(buffer). The two disagreed whenever the
 	 * caller's buffer was not terminated exactly where buflen said - a datagram
 	 * without a trailing newline reads past the end, and a line carrying a NUL
-	 * allocated less than cachedSize then claimed, which the hub went on to hand
-	 * to write() and broadcast whatever followed it on the heap.
+	 * was shorter than the size claimed, which the hub went on to hand to
+	 * write() and broadcast whatever followed it on the heap.
 	 */
-	command.cachedSize = buflen + 1;
-	command.cached = (char*) malloc(command.cachedSize + 1);
-	if (!command.cached)
-	{
-		command.cachedSize = 0;
-		return false;
-	}
-	memcpy(command.cached, buffer, buflen);
-	command.cached[buflen]     = '\n';
-	command.cached[buflen + 1] = '\0';
+	command.cached.assign(buffer, buflen);
+	command.cached += '\n';
 
 	return true;
 }
@@ -209,7 +199,7 @@ void ADC::Parser::escape(const char* old, size_t oldsize, char* str, size_t max)
 /* **************************************************************************************************** */
 /* **************************************************************************************************** */
 
-ADC::Command::Command(Command* copy) : source_id(0), target_id(0), socket(0), cached(0), cachedSize(0), priority(Normal)
+ADC::Command::Command(Command* copy) : source_id(0), target_id(0), socket(0), priority(Normal)
 {
 	fourcc = copy->fourcc;
 	if (copy->source_id) source_id = strdup(copy->source_id);
@@ -233,12 +223,12 @@ ADC::Command::Command(Command* copy) : source_id(0), target_id(0), socket(0), ca
 	}
 }
 
-ADC::Command::Command() : source_id(0), target_id(0), socket(0), cached(0), cachedSize(0), priority(Normal)
+ADC::Command::Command() : source_id(0), target_id(0), socket(0), priority(Normal)
 {
 
 }
 
-ADC::Command::Command(uint32_t fourcc_, const char* source_id_, const char* target_id_) : source_id(0), target_id(0), socket(0), cached(0), cachedSize(0), priority(Normal)
+ADC::Command::Command(uint32_t fourcc_, const char* source_id_, const char* target_id_) : source_id(0), target_id(0), socket(0), priority(Normal)
 {
 	fourcc = fourcc_;
 	if (source_id_) source_id = strdup(source_id_);
@@ -276,15 +266,13 @@ ADC::Command::~Command()
 
 void ADC::Command::resetCache()
 {
-	free(cached);
-	cached = 0;
-	cachedSize = 0;
+	cached.clear();
 }
 
 void ADC::Command::addArgument(const char* name, const char* arg)
 {
 	if (!arg) return;
-	if (cached) resetCache();
+	if (!cached.empty()) resetCache();
 	
 	char* tmp = (char*) malloc(strlen(arg) + 3);
 	memset(tmp, 0, strlen(arg) + 2);
@@ -295,7 +283,7 @@ void ADC::Command::addArgument(const char* name, const char* arg)
 
 void ADC::Command::addArgument(const char* name, const std::string& arg)
 {
-	if (cached) resetCache();
+	if (!cached.empty()) resetCache();
 	
 	char* tmp = (char*) malloc(arg.size() + 3);
 	memset(tmp, 0, arg.size() + 2);
@@ -308,7 +296,7 @@ void ADC::Command::addArgument(const char* name, const std::string& arg)
 void ADC::Command::addArgument(const char* arg)
 {
 	if (!arg) return;
-	if (cached) resetCache();
+	if (!cached.empty()) resetCache();
 	
 	arguments.push_back(strdup(arg));
 }
@@ -350,7 +338,7 @@ char* ADC::Command::getArgument(const char* name, size_t len, size_t after)
 
 bool ADC::Command::removeArgument(const char* name, size_t len, size_t after)
 {
-	if (cached) resetCache();
+	if (!cached.empty()) resetCache();
 
 	bool found = false;
 	std::vector<char*> copy;
@@ -383,20 +371,20 @@ bool ADC::Command::removeArgument(const char* name, size_t len, size_t after)
 
 size_t ADC::Command::getSize()
 {
-	if (cachedSize)
-		return cachedSize;
-	
+	if (!cached.empty())
+		return cached.size();
+
 	write(0);
-	return cachedSize;
+	return cached.size();
 }
 
-char* ADC::Command::getRawCommand()
+const char* ADC::Command::getRawCommand()
 {
-	if (cachedSize)
-		return cached;
-	
+	if (!cached.empty())
+		return cached.c_str();
+
 	write(0);
-	return cached;
+	return cached.c_str();
 }
 
 
@@ -405,9 +393,10 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 	Samurai::IO::Buffer* stream = stream_;
 	if (!stream_) stream = new Samurai::IO::Buffer();
 	
-	if (cached)
+	if (!cached.empty())
 	{
-		stream->append(cached);
+		stream->append(cached.c_str(), cached.size());
+		if (!stream_) delete stream;
 		return;
 	}
 	
@@ -474,9 +463,8 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 		delete[] tmp;
 	}
 	stream->append('\n');
-	cached = stream->memdup(start, stream->size());
-	cachedSize = (stream->size() - start);
-	
+	cached = stream->copyRange(start, stream->size());
+
 	if (!stream_)
 		delete stream;
 }

@@ -8,6 +8,7 @@
 
 #include "quickdc.h"
 #include <samurai/timestamp.h>
+#include <string>
 #include <vector>
 
 #define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
@@ -186,8 +187,8 @@ class Command : public QuickDC::CommandBase
 		 */
 		void setPriority(enum Priority prio) { priority = prio; }
 
-		char* getRawCommand();
-		
+		const char* getRawCommand();
+
 		size_t getSize();
 		
 		/**
@@ -209,8 +210,7 @@ class Command : public QuickDC::CommandBase
 		std::vector<char*> features_exclude;
 		std::vector<char*> arguments;
 		Samurai::IO::Net::Socket* socket;
-		char* cached;
-		size_t cachedSize;
+		std::string cached;
 		enum Priority priority;
 		Samurai::TimeStamp timestamp;
 		
