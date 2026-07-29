@@ -421,15 +421,14 @@ void DC::HubSession::onRequestPasword()
 	state = Password;
 
 	/*
-	 * An empty password is not an answer. Ask for one and wait: sending it
-	 * anyway would have the hub refuse the login before anyone could supply
-	 * the real one.
+	 * An empty password is not an answer and the hub will refuse it, but it is
+	 * still sent: waiting for the interface to supply one would turn a login
+	 * that fails immediately into one that hangs. The refusal comes back as
+	 * $BadPass, which leaves the session here in the password state, so a
+	 * password supplied then is sent as a second attempt.
 	 */
 	if (!password || !*password)
-	{
 		listener->EventHubAutenticate();
-		return;
-	}
 
 	send(new DC::SendMyPass(getPassword()));
 }

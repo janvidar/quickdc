@@ -915,13 +915,13 @@ void ADC::HubSession::onRequestPasword(char* token)
 
 	/*
 	 * Hashing the token with an empty password produces an answer the hub will
-	 * refuse. Ask for one and wait, rather than spend the request on nothing.
+	 * refuse, but it is still sent: waiting for the interface to supply one
+	 * would turn a login that fails immediately into one that hangs. The token
+	 * is kept, so a password supplied while the session is still here is sent
+	 * as a second attempt.
 	 */
 	if (!password || !*password)
-	{
 		listener->EventHubAutenticate();
-		return;
-	}
 
 	sendPasswordResponse();
 }

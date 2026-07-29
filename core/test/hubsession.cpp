@@ -483,8 +483,9 @@ static void run()
 			 * and the session says so rather than answering.
 			 *
 			 * Nothing here configures a password, so the request is put to the
-			 * interface and nothing is sent until it answers - the token hashed
-			 * with an empty password is an answer the hub would refuse.
+			 * interface - and answered anyway, with the token hashed against
+			 * the empty one. The hub refuses that, which is a faster and
+			 * clearer end than waiting for an interface that may never answer.
 			 */
 			std::string line;
 			CHECK(s.hub.nextLine(line));
@@ -496,9 +497,9 @@ static void run()
 			s.say("IGPA SOMETOKEN");
 			CHECK(s.listener.authRequested);
 
-			s.hub.drain();
-			CHECK(s.hub.received.find("HPAS") == std::string::npos);
-			printf("  ok a password request with none configured is put to the interface\n");
+			CHECK(s.hub.nextLine(line));
+			CHECK(line.compare(0, 4, "HPAS") == 0);
+			printf("  ok a password request with none configured is reported and answered\n");
 		}
 		else failures++;
 	}
@@ -517,6 +518,8 @@ static void run()
 			s.say("IGPA ABCDEFGHIJKLMNOP");
 			CHECK(s.listener.authRequested);
 
+			/* The empty answer went first; this is the second attempt. */
+			CHECK(s.hub.nextLine(line));
 			s.session->sendPassword("hunter2");
 
 			CHECK(s.hub.nextLine(line));
@@ -546,8 +549,9 @@ static void run()
 			s.hub.nextLine(line);
 
 			s.say("IGPA ABCDEFGHIJKLMNOP");
-			s.session->sendPassword("hunter2");
+			if (!s.hub.nextLine(line)) { failures++; break; }
 
+			s.session->sendPassword("hunter2");
 			if (!s.hub.nextLine(line)) { failures++; break; }
 			(n == 0 ? first : second) = line;
 		}

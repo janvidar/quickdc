@@ -539,9 +539,10 @@ static void run()
 	}
 
 	/*
-	 * Nothing here configures a password, so a request is put to the interface
-	 * and nothing is sent until it answers - an empty $MyPass would have the
-	 * hub refuse the login before anyone could supply the real one.
+	 * Nothing here configures a password, so the request is put to the
+	 * interface - and answered anyway, with the empty one. The hub refuses
+	 * that, which is a faster and clearer end than waiting for an interface
+	 * that may never answer.
 	 */
 	{
 		Session s;
@@ -550,27 +551,28 @@ static void run()
 			s.say("$GetPass");
 			CHECK(s.listener.authRequested);
 
-			s.hub.drain();
-			CHECK(s.hub.received.find("$MyPass") == std::string::npos);
-			printf("  ok a password request with none configured is put to the interface\n");
+			std::string line;
+			CHECK(s.hub.expect("$MyPass", line));
+			printf("  ok a password request with none configured is reported and answered\n");
 		}
 		else failures++;
 	}
 
-	/* And answering it sends the password. */
+	/* A password supplied while the request is still open is sent. */
 	{
 		Session s;
 		if (s.ready && s.login())
 		{
 			s.say("$GetPass");
-			CHECK(s.listener.authRequested);
+
+			std::string line;
+			CHECK(s.hub.expect("$MyPass", line));
 
 			s.session->sendPassword("hunter2");
 
-			std::string line;
 			CHECK(s.hub.expect("$MyPass ", line));
 			CHECK(line == "$MyPass hunter2");
-			printf("  ok answering the request sends the password\n");
+			printf("  ok a password supplied afterwards is sent\n");
 		}
 		else failures++;
 	}
@@ -595,11 +597,14 @@ static void run()
 		Session s;
 		if (s.ready && s.login())
 		{
-			s.say("$GetPass");
-			s.session->sendPassword("wrong");
-
 			std::string line;
+
+			s.say("$GetPass");
+			CHECK(s.hub.expect("$MyPass", line));   /* the empty one */
+
+			s.session->sendPassword("wrong");
 			CHECK(s.hub.expect("$MyPass ", line));
+			CHECK(line == "$MyPass wrong");
 
 			s.listener.authRequested = false;
 			s.say("$BadPass");
