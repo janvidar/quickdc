@@ -5,6 +5,7 @@
 
 #include "network/adc/parser.h"
 #include <samurai/io/buffer.h>
+#include <memory>
 
 static bool isAlphaNum(char c) {
 	if (c < 48 || c > 90) return false;
@@ -390,16 +391,19 @@ const char* ADC::Command::getRawCommand()
 
 void ADC::Command::write(Samurai::IO::Buffer* stream_)
 {
-	Samurai::IO::Buffer* stream = stream_;
-	if (!stream_) stream = new Samurai::IO::Buffer();
-	
+	/* Owned by this call when the caller supplied no buffer, so that it also
+	   survives the returns below that abandon an incomplete command. */
+	std::unique_ptr<Samurai::IO::Buffer> owned;
+	if (!stream_) owned = std::make_unique<Samurai::IO::Buffer>();
+
+	Samurai::IO::Buffer* stream = stream_ ? stream_ : owned.get();
+
 	if (!cached.empty())
 	{
 		stream->append(cached.c_str(), cached.size());
-		if (!stream_) delete stream;
 		return;
 	}
-	
+
 	size_t start = stream->size();
 	switch ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24))
 	{
@@ -464,9 +468,6 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 	}
 	stream->append('\n');
 	cached = stream->copyRange(start, stream->size());
-
-	if (!stream_)
-		delete stream;
 }
 
 bool ADC::Command::isCommandBroadcast()
