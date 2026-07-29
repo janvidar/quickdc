@@ -4,6 +4,7 @@
  */
 
 #include <algorithm>
+#include <span>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/file.h>
 
@@ -215,11 +216,12 @@ void QuickDC::ZUpload::transfer()
 		consumed = (size_t) in;
 	}
 
-	/* A zero length input is what tells the codec to flush. */
-	const bool flushing = (consumed == 0);
+	/* An empty input is what tells the codec to flush. */
+	const Samurai::IO::Codec::Progress p = compressor->step(
+		std::span<const char>(compressBuffer, consumed),
+		std::span<char>(pendingBuffer, pendingCapacity));
 
-	size_t produced = pendingCapacity;
-	if (!compressor->exec(compressBuffer, consumed, pendingBuffer, produced))
+	if (p.status == Samurai::IO::Codec::Status::Error)
 	{
 		QERR("ZUpload: deflate failed");
 		status = IOFail;
@@ -227,11 +229,14 @@ void QuickDC::ZUpload::transfer()
 	}
 
 	/* Only what the compressor actually took advances the file position. */
-	offset += consumed;
+	offset += p.consumed;
 
-	if (flushing && !produced)
+	/* The flush is over when the codec says so, not when a call happens to
+	   produce nothing - a flush too large for pendingBuffer takes several. */
+	if (p.status == Samurai::IO::Codec::Status::StreamEnd)
 		finished = true;
 
+	const size_t produced = p.produced;
 	pendingSize = produced;
 	pendingOffset = 0;
 

@@ -37,6 +37,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -140,27 +141,22 @@ static bool inflate_all(const std::vector<char>& in, std::vector<char>& out)
 {
 	Samurai::IO::GzipDecompressor codec;
 
-	std::vector<char> input(in.empty() ? 1 : in.size());
-	if (!in.empty()) memcpy(&input[0], &in[0], in.size());
-
 	std::vector<char> chunk(65536);
-	size_t offset = 0;
+	std::span<const char> input(in);
 	int spins = 0;
 
 	for (;;)
 	{
 		if (spins++ > 100000) return false;
 
-		size_t consumed = in.size() - offset;
-		size_t produced = chunk.size();
+		const Samurai::IO::Codec::Progress p = codec.step(input, chunk);
+		if (p.status == Samurai::IO::Codec::Status::Error) return false;
 
-		if (!codec.exec(&input[offset], consumed, &chunk[0], produced)) return false;
+		if (p.produced) out.insert(out.end(), chunk.begin(), chunk.begin() + p.produced);
+		input = input.subspan(p.consumed);
 
-		if (produced) out.insert(out.end(), chunk.begin(), chunk.begin() + produced);
-		offset += consumed;
-
-		if (!consumed && !produced) break;
-		if (offset >= in.size() && !produced) break;
+		if (p.status == Samurai::IO::Codec::Status::StreamEnd) break;
+		if (!p.consumed && !p.produced) break;
 	}
 	return true;
 }

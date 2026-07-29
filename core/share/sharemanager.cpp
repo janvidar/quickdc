@@ -9,6 +9,7 @@
 
 #include "quickdc.h"
 #include <stdio.h>
+#include <span>
 #include <string>
 #include <string.h>
 #include "sharemanager.h"
@@ -195,21 +196,26 @@ Samurai::IO::File* QuickDC::Share::Manager::getFileByTTH(const char* tth) {
 
 #if defined(BZIP2) || defined(ZLIB)
 static bool process(Samurai::IO::Codec* codec, Samurai::IO::Buffer* input, Samurai::IO::Buffer* output) {
-	size_t len = input->size();
-	char* buffer = (char*) malloc(len);
-	char* inbuf = buffer;
+	const std::string source = input->copyRange(0, input->size());
+	std::span<const char> in(source);
 	char outbuf[BUFSIZE];
-	input->pop(inbuf, len);
-	for (bool more = true; more; ) {
-		size_t n = BUFSIZE;
-		size_t in = len;
-		more = codec->exec(inbuf, in, outbuf, n);
-		inbuf += in;
-		len -= in;
-		output->append(outbuf, n);
-		if (!in) more = false;
+
+	/*
+	 * Driven off the status, not off whether anything moved. Stopping as soon
+	 * as nothing was consumed ends the loop on the codec's first flush call,
+	 * and a flush too large for outbuf needs several - which truncated the
+	 * compressed file list, leaving a file no client could unpack.
+	 */
+	while (true) {
+		const Samurai::IO::Codec::Progress p = codec->step(in, outbuf);
+		if (p.status == Samurai::IO::Codec::Status::Error) return false;
+
+		output->append(outbuf, p.produced);
+		in = in.subspan(p.consumed);
+
+		if (p.status == Samurai::IO::Codec::Status::StreamEnd) break;
+		if (!p.consumed && !p.produced) break;
 	}
-	free(buffer);
 	return true;
 }
 #endif

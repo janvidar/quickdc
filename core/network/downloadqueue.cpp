@@ -21,6 +21,7 @@
 #include <samurai/io/buffer.h>
 #include <samurai/io/compression.h>
 
+#include <span>
 #include <stdio.h>
 
 /* Defined in xml/writer.cpp, which does not declare it in a header. */
@@ -1564,27 +1565,26 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 		Samurai::IO::Buffer plain;
 
 		char out[65536];
-		char* in = packed;
-		size_t left = (size_t) got;
+		std::span<const char> in(packed, (size_t) got);
 
-		while (left)
+		while (true)
 		{
-			size_t consumed = left;
-			size_t produced = sizeof(out);
+			const Samurai::IO::Codec::Progress p = codec.step(in, out);
 
-			if (!codec.exec(in, consumed, out, produced))
+			if (p.status == Samurai::IO::Codec::Status::Error)
 			{
 				QERR("The file list is not valid bzip2 data");
 				delete[] packed;
 				return 0;
 			}
 
-			plain.append(out, produced);
-			in += consumed;
-			left -= consumed;
+			plain.append(out, p.produced);
+			in = in.subspan(p.consumed);
+
+			if (p.status == Samurai::IO::Codec::Status::StreamEnd) break;
 
 			/* No forward progress means the stream is truncated. */
-			if (!consumed && !produced) break;
+			if (!p.consumed && !p.produced) break;
 		}
 		delete[] packed;
 
