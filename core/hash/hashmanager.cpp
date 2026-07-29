@@ -46,8 +46,9 @@ size_t QuickDC::Hash::getHashSize(enum HashType type)
 }
 
 
-QuickDC::Hash::Manager::Manager()
-	: dirty(false)
+QuickDC::Hash::Manager::Manager(const char* cache_file)
+	: cachefile(cache_file ? cache_file : FILE_HASH_CACHE)
+	, dirty(false)
 	, idle_announced(true)
 	, inflight(0)
 	, stopping(false)
@@ -274,7 +275,7 @@ Samurai::IO::File* QuickDC::Hash::Manager::getLeafData(const Samurai::IO::File& 
 
 Samurai::IO::File* QuickDC::Hash::Manager::getCacheFile()
 {
-	Samurai::IO::File* cfile = new Samurai::IO::File(FILE_HASH_CACHE);
+	Samurai::IO::File* cfile = new Samurai::IO::File(cachefile);
 	return cfile;
 }
 
@@ -296,7 +297,7 @@ void QuickDC::Hash::Manager::loadCache()
 {
 	QDBG("QuickDC::Hash::Manager::loadCache()");
 	
-	QuickDC::Hash::CacheStorage store(Samurai::IO::File(FILE_HASH_CACHE));
+	QuickDC::Hash::CacheStorage store{Samurai::IO::File(cachefile)};
 	if (!store.open(CacheStorage::ReadAccess))
 	{
 		QERR("-- Unable to open existing hash database cache");
@@ -323,8 +324,8 @@ void QuickDC::Hash::Manager::saveCache()
 	if (dirty)
 	{
 		QDBG("QuickDC::Hash::Manager::saveCache()");
-		Samurai::IO::File cache_new(FILE_HASH_CACHE_NEW);
-		Samurai::IO::File cache_old(FILE_HASH_CACHE);
+		Samurai::IO::File cache_new(cachefile + ".new");
+		Samurai::IO::File cache_old(cachefile);
 		
 		QuickDC::Hash::CacheStorage store(cache_new);
 		if (!store.open(CacheStorage::WriteAccess))

@@ -31,7 +31,10 @@
 
 #define DATADUMP
 
-QuickDC::Share::Manager::Manager(QuickDC::Preferences* config_, QuickDC::Hash::Manager* mgr) : size(0), files(0), config(config_), hash(mgr), filelists(false) {
+QuickDC::Share::Manager::Manager(QuickDC::Preferences* config_, QuickDC::Hash::Manager* mgr,
+                                 const char* dir)
+	: size(0), files(0), config(config_), hash(mgr),
+	  listdir(dir ? dir : "~/.quickdc"), filelists(false) {
 
 }
 
@@ -112,12 +115,9 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 		}
 		else
 		{
-			char* tmp = (char*) malloc(sizeof("~/.quickdc/") + strlen(pubname) + 1);
-			tmp[0] = 0;
-			strcat(tmp, "~/.quickdc/");
-			strcat(tmp, pubname);
-			Samurai::IO::File* file = new Samurai::IO::File(tmp);
-			free(tmp);
+			/* The same directory createFileLists() wrote them to. */
+			Samurai::IO::File* file =
+				new Samurai::IO::File(listdir + "/" + pubname);
 
 #ifdef DATADUMP
 			QDBG("xxx Looking up file: %s (%s)", file->getName().c_str(), pubname);
@@ -230,7 +230,7 @@ void QuickDC::Share::Manager::createFileLists(bool incomplete) {
 #ifdef DATADUMP
 		QDBG("XML file list will be %i bytes long", (int) xmlout->size());
 #endif
-		Samurai::IO::File xmllist("~/.quickdc/files.xml");
+		Samurai::IO::File xmllist(listdir + "/files.xml");
 		if (xmllist.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate)) {
 			char* out = new char[xmlout->size()];
 			xmlout->pop(out, xmlout->size());
@@ -243,7 +243,7 @@ void QuickDC::Share::Manager::createFileLists(bool incomplete) {
 
 #ifdef BZIP2
 	{
-		Samurai::IO::File dclist("~/.quickdc/files.xml.bz2");
+		Samurai::IO::File dclist(listdir + "/files.xml.bz2");
 		Samurai::IO::BZip2Compressor* filter = new Samurai::IO::BZip2Compressor();
 		Samurai::IO::Buffer* writer = new Samurai::IO::Buffer();
 		bool ok = process(filter, xmlout, writer);

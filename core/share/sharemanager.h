@@ -38,7 +38,12 @@ class Dir;
 class Manager {
 
 	public:
-		Manager(QuickDC::Preferences* config, QuickDC::Hash::Manager* mgr);
+		/**
+		 * @param dir where the generated file lists are written, so they can
+		 *        be pointed somewhere other than the real ones.
+		 */
+		Manager(QuickDC::Preferences* config, QuickDC::Hash::Manager* mgr,
+		        const char* dir = "~/.quickdc");
 		virtual ~Manager();
 
 		/**
@@ -133,6 +138,7 @@ class Manager {
 		uint32_t files;
 		QuickDC::Preferences* config;
 		QuickDC::Hash::Manager* hash;
+		std::string listdir;
 		bool filelists;
 
 	friend class QuickDC::Share::Dir;

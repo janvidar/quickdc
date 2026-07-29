@@ -25,8 +25,14 @@ QuickDC::Share::Dir::Dir(const std::string& path_, const std::string& name_, Qui
 
 QuickDC::Share::Dir::Dir(const std::string& name_, QuickDC::Share::Dir* parent_) : parent(parent_), manager(0), path(name_), name(name_), size(0), filecount(0) {
 
+	/*
+	 * Anything after the last slash is the name; the test is only there to
+	 * catch a trailing one, which leaves nothing after it. Requiring more than
+	 * one character meant a directory called "a" fell back to the whole path -
+	 * and the basename is what goes into the file list handed to strangers.
+	 */
 	size_t split = name.rfind('/');
-	if (split != std::string::npos && name.substr(split+1).size() > 1)
+	if (split != std::string::npos && !name.substr(split+1).empty())
 		basename = name.substr(split+1);
 	else
 		basename = name;

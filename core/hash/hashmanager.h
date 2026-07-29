@@ -70,7 +70,11 @@ size_t getHashSize(enum HashType type);
 class Manager
 {
 	public:
-		Manager();
+		/**
+		 * @param cache_file where the hash database is kept, so it can be
+		 *        pointed somewhere other than the real one.
+		 */
+		Manager(const char* cache_file = "~/.quickdc/hashdb.cache");
 		virtual ~Manager();
 
 		/**
@@ -134,6 +138,7 @@ class Manager
 	protected:
 		/* Main thread only. */
 		std::map<std::string, QuickDC::Hash::CacheEntry*> cache;
+		std::string cachefile;
 		bool dirty;
 
 		/* Latches the "all jobs complete" work so it fires on the edge rather
