@@ -108,8 +108,10 @@ void QuickDC::Hash::CacheEntry::write(Samurai::IO::Buffer* writer)
 	
 	const char* filename = file.getName().c_str();
 
+	/* One short of the field: the name is read back as a C string, so a path
+	   that fills it exactly leaves nothing to stop at. */
 	memset(record.name, 0, sizeof(record.name));
-	memcpy(record.name, filename, std::min(strlen(filename), sizeof(record.name)));
+	memcpy(record.name, filename, std::min(strlen(filename), sizeof(record.name) - 1));
 	record.size      = size;
 	record.mtime     = mtime.getInternalData();
 	record.algorithm = (size_t) algorithm;

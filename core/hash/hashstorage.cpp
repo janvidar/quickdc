@@ -45,6 +45,8 @@ void QuickDC::Hash::CacheStorage::reset()
 		position = 0;
 		opened = false;
 	}
+	readable = false;
+	writable = false;
 }
 
 
@@ -72,6 +74,7 @@ bool QuickDC::Hash::CacheStorage::openForReading()
 		return false;
 	}
 	
+	readable = true;
 	opened = true;
 	return true;
 }
@@ -81,13 +84,18 @@ bool QuickDC::Hash::CacheStorage::read(QuickDC::Hash::CacheEntry*& ptr)
 {
 	QDBG("QuickDC::Hash::CacheStorage::read()");
 	ptr = 0;
+	if (!opened || !readable) return false;
+
 	size_t size = 0;
 	CacheEntryHeader file_header;
 	
 	size = readSection(STORAGE_MAGIC_RECORD, &file_header, sizeof(file_header));
 	if (!size)
 		return false;
-	
+
+	/* Whatever the file says, the name is used as a C string from here on. */
+	file_header.name[sizeof(file_header.name) - 1] = '\0';
+
 	buffer.clear();
 	off_t storedPosition = (position + sizeof(CacheRecordHeader));
 	size = readSection(STORAGE_MAGIC_DATA, buffer);
@@ -123,6 +131,15 @@ size_t QuickDC::Hash::CacheStorage::readSectionHeader(uint32_t magic)
 	if (header.magic != magic)
 	{
 		QDBG("Unexpected header found");
+		return 0;
+	}
+
+	/* The size comes out of the file, and the read below buffers all of it
+	   before finding out the file is nowhere near that long. */
+	const off_t remaining = file.size() - position;
+	if (remaining < 0 || (uint64_t) header.size > (uint64_t) remaining)
+	{
+		QERR("Record claims %u bytes, but %lld remain", header.size, (long long) remaining);
 		return 0;
 	}
 
@@ -168,6 +185,8 @@ size_t QuickDC::Hash::CacheStorage::readSection(uint32_t magic, void* ptr, size_
 bool QuickDC::Hash::CacheStorage::write(QuickDC::Hash::CacheEntry* entry)
 {
 	QDBG("QuickDC::Hash::CacheStorage::write(): entry=%p", entry);
+	if (!opened || !writable) return false;
+
 	buffer.clear();
 	entry->write(&buffer);
 	entry->setCacheFileOffset(position + (sizeof(CacheRecordHeader) << 1) + sizeof(CacheEntryHeader));
@@ -204,6 +223,10 @@ bool QuickDC::Hash::CacheStorage::openForWriting()
 	file.write(&buffer, length);
 	position = length;
 	
+	/* close() writes the end of file record only for a storage that says it is
+	   writable, and nothing ever said so - every cache we wrote ended without
+	   one, so every load ran off the end of the file instead. */
+	writable = true;
 	opened = true;
 	return true;
 }
