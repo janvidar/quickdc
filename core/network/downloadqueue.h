@@ -224,7 +224,12 @@ class QueueFile {
  */
 class FilelistRequest {
 	public:
-		FilelistRequest(const char* hub, const char* cid);
+		/**
+		 * @param dir where the downloaded list is kept, so it can be pointed
+		 *        somewhere other than the real one.
+		 */
+		FilelistRequest(const char* hub, const char* cid,
+		                const char* dir = QUICKDC_LIST_DIR);
 		virtual ~FilelistRequest();
 
 		inline const char* getHubUrl() const { return hub; }

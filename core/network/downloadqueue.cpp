@@ -276,7 +276,7 @@ bool QuickDC::QueueFile::isPersistent() const
 /* FilelistRequest                                                           */
 /* ------------------------------------------------------------------------- */
 
-QuickDC::FilelistRequest::FilelistRequest(const char* hub_, const char* cid_)
+QuickDC::FilelistRequest::FilelistRequest(const char* hub_, const char* cid_, const char* dir_)
 	: hub(0)
 	, cid(0)
 	, filename(0)
@@ -287,10 +287,12 @@ QuickDC::FilelistRequest::FilelistRequest(const char* hub_, const char* cid_)
 	hub = strdup(hub_ ? hub_ : "");
 	cid = strdup(cid_ ? cid_ : "");
 
+	const char* dir = dir_ ? dir_ : QUICKDC_LIST_DIR;
+
 	/* directory + '/' + cid + ".xml" + '\0' */
-	size_t length = strlen(QUICKDC_LIST_DIR) + strlen(cid) + 6;
+	size_t length = strlen(dir) + strlen(cid) + 6;
 	filename = (char*) malloc(length);
-	snprintf(filename, length, "%s/%s.xml", QUICKDC_LIST_DIR, cid);
+	snprintf(filename, length, "%s/%s.xml", dir, cid);
 
 	size_t templength = strlen(filename) + strlen(QUICKDC_PART_SUFFIX) + 1;
 	tempname = (char*) malloc(templength);
