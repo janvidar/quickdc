@@ -709,6 +709,28 @@ void QuickDC::QueueManager::searchForSources()
 
 /* ---- contents ---- */
 
+void QuickDC::QueueManager::addListener(QueueListener* listener)
+{
+	if (!listener) return;
+
+	for (size_t n = 0; n < listeners.size(); n++)
+		if (listeners[n] == listener) return;
+
+	listeners.push_back(listener);
+}
+
+void QuickDC::QueueManager::removeListener(QueueListener* listener)
+{
+	for (std::vector<QueueListener*>::iterator it = listeners.begin(); it != listeners.end(); it++)
+	{
+		if (*it == listener)
+		{
+			listeners.erase(it);
+			return;
+		}
+	}
+}
+
 QuickDC::QueueFile* QuickDC::QueueManager::add(const char* filename, const char* tth, uint64_t size)
 {
 	QueueFile* existing = getFileByName(filename);
@@ -745,6 +767,9 @@ void QuickDC::QueueManager::add(QueueFile* file)
 	file->loadLeavesFromDisk();
 
 	if (file->isPersistent()) dirty = true;
+
+	for (size_t n = 0; n < listeners.size(); n++)
+		listeners[n]->EventQueueFileAdded(file);
 }
 
 void QuickDC::QueueManager::remove(QueueFile* file)
@@ -774,6 +799,11 @@ void QuickDC::QueueManager::remove(QueueFile* file)
 
 	fileIterator = files.end();
 	dirty = true;
+
+	/* Last thing before it goes, so a listener can still read it. */
+	for (size_t n = 0; n < listeners.size(); n++)
+		listeners[n]->EventQueueFileRemoved(file);
+
 	delete file;
 }
 
@@ -1668,6 +1698,14 @@ void QuickDC::QueueManager::processVerifications()
 			Samurai::IO::File part(file->getTempFilename());
 			if (part.rename(std::string(file->getLocalFilename())))
 			{
+				/*
+				 * Announced before the entry is removed: this is the only point
+				 * at which a completed download is distinguishable from one that
+				 * was cancelled.
+				 */
+				for (size_t i = 0; i < listeners.size(); i++)
+					listeners[i]->EventQueueFileVerified(file);
+
 				remove(file);
 			}
 			else

@@ -351,6 +351,43 @@ struct QueueStatus {
 };
 
 
+/**
+ * Implement this and register it with QueueManager::addListener() to be told
+ * about the queue as it changes. Intended for user interfaces, in the same way
+ * as TransferListener.
+ *
+ * The bodies are empty rather than pure so that a listener only has to override
+ * the events it cares about.
+ *
+ * Every QueueFile handed over here is only valid for the duration of the call:
+ * the removal events in particular are emitted immediately before it is deleted,
+ * so anything worth keeping has to be copied on the spot.
+ */
+class QueueListener {
+	public:
+		virtual ~QueueListener() { }
+
+		/** A file was queued. */
+		virtual void EventQueueFileAdded(const QueueFile*) { }
+
+		/**
+		 * A file left the queue, for whatever reason - finished, cancelled, or
+		 * given up on. Always emitted, including after EventQueueFileVerified.
+		 */
+		virtual void EventQueueFileRemoved(const QueueFile*) { }
+
+		/**
+		 * A file downloaded in full, matched its hash, and has been moved to
+		 * getLocalFilename().
+		 *
+		 * This is the only notification that a download succeeded. It is emitted
+		 * just before the entry is removed, which is why it is separate from
+		 * EventQueueFileRemoved - by the time that arrives there is no way to
+		 * tell a completed download from a cancelled one.
+		 */
+		virtual void EventQueueFileVerified(const QueueFile*) { }
+};
+
 class QueueManager {
 	public:
 		/**
@@ -359,6 +396,11 @@ class QueueManager {
 		 */
 		QueueManager(const char* path_ = QUICKDC_QUEUE_FILE);
 		virtual ~QueueManager();
+
+	public:
+		/** Listeners are not owned; remove them before they are destroyed. */
+		void addListener(QueueListener*);
+		void removeListener(QueueListener*);
 
 		/**
 		 * Do timely; expire sources and stale requests, start transfers for
@@ -581,6 +623,7 @@ class QueueManager {
 		size_t getMaxDownloads() const;
 
 	protected:
+		std::vector<QueueListener*> listeners;
 		std::vector<QueueFile*> files;
 		std::vector<QueueFile*>::iterator fileIterator;
 		std::vector<FilelistRequest*> filelists;
