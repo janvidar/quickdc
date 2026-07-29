@@ -6,6 +6,31 @@
 #include "quickdc.h"
 #include "network/chunkmap.h"
 
+#include <ctype.h>
+#include <errno.h>
+#include <stdlib.h>
+
+/*
+ * Reads one plain decimal number and leaves 'p' on whatever follows it.
+ *
+ * strtoull() accepts a sign and negates modulo 2^64, and answers ULLONG_MAX for
+ * anything too big, so "0--5" and a hundred digits both decode as a range
+ * reaching the end of the file - which is to say a partial download claiming to
+ * be complete. The same digits arrive from other peers in a PSR.
+ */
+static bool parseNumber(const char*& p, uint64_t& out)
+{
+	if (!isdigit((unsigned char) *p)) return false;
+
+	char* endp = 0;
+	errno = 0;
+	out = (uint64_t) strtoull(p, &endp, 10);
+	if (errno == ERANGE) return false;
+
+	p = endp;
+	return true;
+}
+
 QuickDC::ChunkMap::ChunkMap(uint64_t size_) : size(size_)
 {
 
@@ -353,14 +378,15 @@ bool QuickDC::ChunkMap::fromIndexString(const char* str, uint64_t blockSize)
 	const char* p = str;
 	while (*p)
 	{
-		char* endp = 0;
+		uint64_t first = 0;
+		if (!parseNumber(p, first) || *p != ',') { done.clear(); return false; }
+		p++;
 
-		uint64_t first = (uint64_t) strtoull(p, &endp, 10);
-		if (endp == p || *endp != ',') { done.clear(); return false; }
+		uint64_t last = 0;
+		if (!parseNumber(p, last) || last <= first) { done.clear(); return false; }
 
-		p = endp + 1;
-		uint64_t last = (uint64_t) strtoull(p, &endp, 10);
-		if (endp == p || last <= first) { done.clear(); return false; }
+		/* Block indices are somebody else's arithmetic, so do not wrap on it. */
+		if (last > UINT64_MAX / blockSize) { done.clear(); return false; }
 
 		uint64_t start = first * blockSize;
 		uint64_t end = last * blockSize;
@@ -369,7 +395,6 @@ bool QuickDC::ChunkMap::fromIndexString(const char* str, uint64_t blockSize)
 
 		addRange(start, end);
 
-		p = endp;
 		if (*p == ',')
 		{
 			p++;
@@ -388,18 +413,15 @@ bool QuickDC::ChunkMap::fromString(const char* str)
 	const char* p = str;
 	while (*p)
 	{
-		char* endp = 0;
+		uint64_t start = 0;
+		if (!parseNumber(p, start) || *p != '-') { done.clear(); return false; }
+		p++;
 
-		uint64_t start = (uint64_t) strtoull(p, &endp, 10);
-		if (endp == p || *endp != '-') { done.clear(); return false; }
-
-		p = endp + 1;
-		uint64_t end = (uint64_t) strtoull(p, &endp, 10);
-		if (endp == p || end <= start) { done.clear(); return false; }
+		uint64_t end = 0;
+		if (!parseNumber(p, end) || end <= start) { done.clear(); return false; }
 
 		addRange(start, end);
 
-		p = endp;
 		if (*p == ',')
 		{
 			p++;
