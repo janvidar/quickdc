@@ -153,6 +153,10 @@ void XML::SAX::XMLReader::parse() {
 				if (endTag) handler->error("Whitespace in end-tag");
 				name_end = n;
 				state = Open;
+			} else if (c == '/') {
+				name_end = n;
+				emptyBody = true;
+				state = Open;
 			} else if (c == '>') {
 				name_end = n;
 				EXTRACT_TAG();
@@ -201,7 +205,15 @@ void XML::SAX::XMLReader::parse() {
 				case '=':
 					attr_split = n;
 					break;
-					
+
+				/* Ends the attribute as a space would. A '/' inside a quoted
+				   value never arrives here, since that is the Quote state. */
+				case '/':
+					EXTRACT_ATTRIBUTE();
+					emptyBody = true;
+					state = Open;
+					break;
+
 				case '\"':
 				case '\'':
 						q_chr = c;
