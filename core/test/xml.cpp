@@ -180,6 +180,23 @@ int main()
 		"<a x=\"1\"></a><b></b>",
 		"[doc]<a x=1></a><b></b>[/doc]");
 
+	/*
+	 * A quoted run where an attribute name belongs is skipped rather than
+	 * swallowing the rest of the document. Both quote characters, which is what
+	 * the duplicated test in the Open state used to get wrong.
+	 */
+	check("stray single quoted run",
+		"<a 'foo'></a>",
+		"[doc]<a></a>[/doc]");
+
+	check("stray double quoted run",
+		"<a \"foo\"></a>",
+		"[doc]<a></a>[/doc]");
+
+	check("stray double quoted run before an attribute",
+		"<a \"foo\" x=\"1\"></a>",
+		"[doc]<a x=1></a>[/doc]");
+
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
 	return failures ? 1 : 0;
 }

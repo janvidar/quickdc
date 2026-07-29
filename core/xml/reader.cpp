@@ -179,7 +179,7 @@ void XML::SAX::XMLReader::parse() {
 					
 				default:
 					if (!isspace(c)) {
-						if (c == '\'' || c == '\'') {
+						if (c == '\"' || c == '\'') {
 							q_chr = c;
 							q_start = n;
 							attr_start = n;
