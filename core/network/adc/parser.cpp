@@ -41,6 +41,13 @@ bool ADC::Parser::parse(const char* buffer, size_t buflen, ADC::Command& command
 	 */
 	if (memchr(buffer, '\0', buflen)) return false;
 
+	/*
+	 * The fifth byte is the separator. Without checking it "BINFX AAAA" parses
+	 * as a BINF whose source ID is the empty string, because the split starts at
+	 * the sixth byte regardless of what the fifth one was.
+	 */
+	if (buflen > 4 && buffer[4] != ' ') return false;
+
 	/* Unsigned, or a byte with the top bit set sign-extends into the fourcc. */
 	command.fourcc = (((uint32_t) (unsigned char) buffer[0] << 24)
 	                | ((uint32_t) (unsigned char) buffer[1] << 16)
@@ -206,11 +213,13 @@ ADC::Command::Command(Command* copy) : source_id(0), target_id(0), socket(0), pr
 	if (copy->source_id) source_id = strdup(copy->source_id);
 	if (copy->target_id) target_id = strdup(copy->target_id);
 	
+	/* Duplicated, like everything else here: both destructors free their own,
+	   so sharing the pointers frees each of these twice. */
 	for (std::vector<char*>::iterator it = copy->features_include.begin(); it != copy->features_include.end(); it++)
-		features_include.push_back((*it));
-	
+		features_include.push_back(strdup(*it));
+
 	for (std::vector<char*>::iterator it = copy->features_exclude.begin(); it != copy->features_exclude.end(); it++)
-		features_exclude.push_back((*it));
+		features_exclude.push_back(strdup(*it));
 	
 	timestamp = copy->timestamp;
 	priority = copy->priority;
@@ -435,7 +444,9 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 			break;
 		
 		case 'F':
-			if (!source_id || !features_include.size() || !features_exclude.size()) return;
+			/* One list or the other is enough; a search that excludes nothing
+			   is the ordinary case. */
+			if (!source_id || (features_include.empty() && features_exclude.empty())) return;
 			stream->appendBinary(fourcc, Samurai::IO::Buffer::BinaryMode::BigEndian);
 			stream->append(' ');
 			stream->append(source_id);
