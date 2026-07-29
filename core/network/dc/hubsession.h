@@ -61,13 +61,13 @@ class HubSession
 		HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener, Samurai::IO::Net::URL* url);
 		virtual ~HubSession();
 
-		void sendPrivateChatMessage(const QuickDC::User* user, const char* msg);
-		void sendChatMessage(const char* msg);
-		void sendAdminUserKick(const QuickDC::User* user);
-		void sendAdminUserRedirect(const QuickDC::User* user, const char* address, const char* reason);
-		void sendClientInfo() { }
-		void sendSearchRequest(QuickDC::Share::SearchRequest* request);
-		void sendConnectionRequest(const QuickDC::User*, const char* token);
+		void sendPrivateChatMessage(const QuickDC::User* user, const char* msg) override;
+		void sendChatMessage(const char* msg) override;
+		void sendAdminUserKick(const QuickDC::User* user) override;
+		void sendAdminUserRedirect(const QuickDC::User* user, const char* address, const char* reason) override;
+		void sendClientInfo() override { }
+		void sendSearchRequest(QuickDC::Share::SearchRequest* request) override;
+		void sendConnectionRequest(const QuickDC::User*, const char* token) override;
 		
 		// Events triggered by the server (hub)
 		void onHubName(const char* hubname);
@@ -89,7 +89,7 @@ class HubSession
 
 		/** Offer what we have of a queued file the searcher wanted (PFSR). */
 		void sendPartialStatus(QuickDC::Share::SearchRequest* request);
-		void onSearchResult(QuickDC::Share::SearchResult* result);
+		void onSearchResult(QuickDC::Share::SearchResult* result) override;
 		
 		void onActiveConnect(const char* address, uint16_t port, const char* user);
 		void onPassiveConnect(const char* nick);
@@ -111,16 +111,16 @@ class HubSession
 		char getFlags() const            { return flags;       }
 		// enum User::Access getAccess() const { return access; }
 		void sendMyInfo();
-		void sendPeerError(const char*, const char*, const char*, const char*, const char*) { } // not handled on NMDC
+		void sendPeerError(const char*, const char*, const char*, const char*, const char*) override { } // not handled on NMDC
 		
 		bool knowUser(const char* username);
-		const QuickDC::User* getUser(const char* username);
-		const QuickDC::User* getLocalUser();
-		QuickDC::UserManager* getUserManager();
+		const QuickDC::User* getUser(const char* username) override;
+		const QuickDC::User* getLocalUser() override;
+		QuickDC::UserManager* getUserManager() override;
 		
-		void connect();
-		void disconnect();
-		bool isLoggedIn() const;
+		void connect() override;
+		void disconnect() override;
+		bool isLoggedIn() const override;
 		
 		void send(DC::Command* cmd, bool more = false);
 		
@@ -128,22 +128,22 @@ class HubSession
 		void resetIdleTimer();
 		
 	public:
-		virtual void EventHostLookup(const Samurai::IO::Net::Socket*);
-		virtual void EventHostFound(const Samurai::IO::Net::Socket*);
-		virtual void EventConnecting(const Samurai::IO::Net::Socket*);
-		virtual void EventConnected(const Samurai::IO::Net::Socket*);
-		virtual void EventTimeout(const Samurai::IO::Net::Socket*);
-		virtual void EventDisconnected(const Samurai::IO::Net::Socket*);
-		virtual void EventDataAvailable(const Samurai::IO::Net::Socket*);
-		virtual void EventCanWrite(const Samurai::IO::Net::Socket*);
-		virtual void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char*);
-		virtual void EventSearchReply(QuickDC::Share::SearchReply*);
+		virtual void EventHostLookup(const Samurai::IO::Net::Socket*) override;
+		virtual void EventHostFound(const Samurai::IO::Net::Socket*) override;
+		virtual void EventConnecting(const Samurai::IO::Net::Socket*) override;
+		virtual void EventConnected(const Samurai::IO::Net::Socket*) override;
+		virtual void EventTimeout(const Samurai::IO::Net::Socket*) override;
+		virtual void EventDisconnected(const Samurai::IO::Net::Socket*) override;
+		virtual void EventDataAvailable(const Samurai::IO::Net::Socket*) override;
+		virtual void EventCanWrite(const Samurai::IO::Net::Socket*) override;
+		virtual void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char*) override;
+		virtual void EventSearchReply(QuickDC::Share::SearchReply*) override;
 		
 	private:
-		void EventUserJoin(const char* nick);
-		void EventUserQuit(const QuickDC::User* data, const char* msg);
-		void EventUserInfo(const QuickDC::User* data);
-		void EventTimeout(Samurai::Timer* timer);
+		void EventUserJoin(const char* nick) override;
+		void EventUserQuit(const QuickDC::User* data, const char* msg) override;
+		void EventUserInfo(const QuickDC::User* data) override;
+		void EventTimeout(Samurai::Timer* timer) override;
 		
 	protected:
 		char* nickname;
