@@ -62,7 +62,14 @@ QuickDC::Core::Core()
 	connections = new ConnectionManager();
 	hubs = new HubManager();
 	transfers = new TransferManager();
-	timers = new Samurai::TimerManager();
+	/*
+	 * Borrowed, not made. Samurai::Timer registers itself with
+	 * TimerManager::getInstance(), which is a function-local static, so a manager
+	 * constructed here would be a second one that nothing ever registers with -
+	 * and every timer, the hub reconnect among them, would sit in the singleton
+	 * unprocessed while run() polled an empty list.
+	 */
+	timers = Samurai::TimerManager::getInstance();
 	localHub = new ADC::Hub();
 	queue = new QuickDC::QueueManager();
 	
@@ -113,7 +120,6 @@ QuickDC::Core::~Core()
 	quickdc_core = 0;
 	/* Flush the download queue before anything it might refer to goes away. */
 	delete queue; queue = 0;
-	delete timers; timers = 0;
 	delete transfers; transfers = 0;
 	delete connections; connections = 0;
 	delete server; server = 0;
@@ -126,7 +132,14 @@ QuickDC::Core::~Core()
 	delete hash; hash = 0;
 	delete localHub; localHub = 0;
 	delete bandwidthManager;
-	delete messageHandler; messageHandler = 0;
+
+	/*
+	 * timers and messageHandler are not deleted: both are function-local statics
+	 * behind getInstance(), like the socket monitor, so freeing them is freeing
+	 * something that was never allocated - which aborts the process on exit.
+	 */
+	timers = 0;
+	messageHandler = 0;
 	QDBG_FINI;
 }
 
