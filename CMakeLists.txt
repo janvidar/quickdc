@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.16)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(quickdc
-    VERSION 0.4.19
+    VERSION 0.4.99
     DESCRIPTION "Portable p2p application for ADC/NMDC networks"
     LANGUAGES CXX)
 
