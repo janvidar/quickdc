@@ -338,6 +338,10 @@ void DC::HubSession::onBadPassword()
 void DC::HubSession::onLoggedIn()
 {
 	state = Idle;
+
+	/* As ADC does. Without it a client cannot tell a hub it has merely reached
+	   from one it is actually logged in to. */
+	listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
 }
 
 void DC::HubSession::onActiveConnect(const char* address, uint16_t port, const char* user)

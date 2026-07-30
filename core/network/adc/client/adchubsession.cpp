@@ -900,6 +900,12 @@ void ADC::HubSession::onUserInfo(const char* id, QuickDC::User* data, uint64_t o
 		case QuickDC::HubSession::StateIdentify:
 		case QuickDC::HubSession::StateVerify:
 			userState = QuickDC::HubSession::StateNormal;
+
+			/* This is the transition, so this is where it gets reported.
+			   EventUserInfo() also tries to, and cannot: it is reached through
+			   users->info() below, by which time the state it tests has already
+			   been moved. */
+			listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
 		case QuickDC::HubSession::StateNormal:
 			break;
 	}
