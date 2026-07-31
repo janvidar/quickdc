@@ -677,7 +677,8 @@ QuickDC::UserManager* ADC::HubSession::getUserManager()
 
 
 /* API wise */
-void ADC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const char* msg)
+void ADC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const char* msg,
+                                            bool richText)
 {
 #ifdef DATADUMP
 	QDBG("Sending message to '%s', msg='%s'", user->getNick(), msg);
@@ -685,14 +686,22 @@ void ADC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const ch
 	ADC::Command* cmd = new ADC::Command(FOURCC('E','M','S','G'), sid, user->getID());
 	cmd->addArgument(msg);
 	cmd->addArgument("PM", sid);
+	if (richText) cmd->addArgument("RT", "1");
 	send(cmd);
 }
 
 
-void ADC::HubSession::sendChatMessage(const char* msg)
+void ADC::HubSession::sendChatMessage(const char* msg, bool richText)
 {
 	ADC::Command* cmd = new ADC::Command(FOURCC('B','M','S','G'), sid);
 	cmd->addArgument(msg);
+
+	/*
+	 * Says the text is markdown. Left off an unformatted line on purpose, so that
+	 * somebody typing *asterisks* is quoted rather than emphasised at the far end.
+	 */
+	if (richText) cmd->addArgument("RT", "1");
+
 	send(cmd);
 }
 
@@ -743,16 +752,25 @@ void ADC::HubSession::sendClientInfo()
 	config->setGroup("Network");
 	QDBG("Active mode %d (server=%p)\n", config->getBool("Active mode") ? 1 : 0, QuickDC::Core::getInstance()->server);
 
+	/*
+	 * What we can do, as the other clients see it. Built up rather than written out
+	 * twice: the only difference between the two cases is whether anyone can connect
+	 * to us, and a feature added to one list and forgotten in the other is a bug that
+	 * only shows in passive mode.
+	 */
+	std::string supports = "ADC0";
+
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
 	{
 		cmd->addArgument("I4", config->getString("Address", "0.0.0.0"));
 		cmd->addArgument("U4", std::to_string(config->getNumber("Port")));
-		cmd->addArgument("SU", "ADC0,TCP4,UDP4");
+		supports += ",TCP4,UDP4";
 	}
-	else
-	{
-		cmd->addArgument("SU", "ADC0");
-	}
+
+	supports += ",";
+	supports += ADC_EXT_RICHTEXT;
+
+	cmd->addArgument("SU", supports);
 	send(cmd);
 }
 
@@ -1213,12 +1231,13 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 }
 
 
-void ADC::HubSession::onPublicChat(const char* from, const char* message, bool action)
+void ADC::HubSession::onPublicChat(const char* from, const char* message, bool action,
+                                  bool richText)
 {
 	const QuickDC::User* u = users->getUser(from);
 	if (u)
 	{
-		listener->EventChat(u, message, action);
+		listener->EventChat(u, message, action, richText);
 	}
 	else
 	{
@@ -1227,7 +1246,7 @@ void ADC::HubSession::onPublicChat(const char* from, const char* message, bool a
 }
 
 
-void ADC::HubSession::onPrivateChat(const char* to, const char* from, const char* message, const char* context, bool action) {
+void ADC::HubSession::onPrivateChat(const char* to, const char* from, const char* message, const char* context, bool action, bool richText) {
 
 	const QuickDC::User* u = users->getUser(from);
 	const QuickDC::User* u2 = users->getUser(to);
@@ -1247,7 +1266,7 @@ void ADC::HubSession::onPrivateChat(const char* to, const char* from, const char
 		(void) context;
 		const bool mine = sid && strcmp(from, sid) == 0;
 
-		listener->EventPrivateChat(u, u2, message, mine ? to : from, action);
+		listener->EventPrivateChat(u, u2, message, mine ? to : from, action, richText);
 	}
 }
 

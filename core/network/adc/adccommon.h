@@ -24,6 +24,7 @@ typedef uint32_t bbs_message_t;
 #define ADC_EXT_ZLIG                    "ZLIG" /* p2p: zlib transfer */
 #define ADC_EXT_ZLIF                    "ZLIF" /* full compressed connection (zon, zoff) */
 #define ADC_EXT_PFSR                    "PFSR" /* partial file sharing (PSR) */
+#define ADC_EXT_RICHTEXT                "RTF1" /* p2p: markdown chat, the RT flag on MSG */
 
 #define ADC_INDEX_FILE                  "files.xml"
 #define ADC_INDEX_FILE_BZ2              "files.xml.bz2"

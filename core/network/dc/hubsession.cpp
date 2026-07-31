@@ -150,8 +150,12 @@ void DC::HubSession::send(DC::Command* cmd, bool more)
 	resetIdleTimer();
 }
 
-void DC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const char* msg)
+void DC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const char* msg,
+                                           bool richText)
 {
+	/* NMDC has no room to say a line is markup, so a caller must not claim it is. */
+	(void) richText;
+
 	if (!msg || !strlen(msg)) return;
 	if (!user) return;
 	
@@ -165,8 +169,10 @@ void DC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const cha
 	listener->EventPrivateChat(me, user, msg, user->getNick(), false);
 }
 
-void DC::HubSession::sendChatMessage(const char* msg)
+void DC::HubSession::sendChatMessage(const char* msg, bool richText)
 {
+	(void) richText;
+
 	if (!msg || !strlen(msg)) return;
 
 	const QuickDC::User* me = users->getUser(nickname);

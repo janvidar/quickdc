@@ -293,8 +293,14 @@ bool ADC::CmdQuit::invoke(ADC::Command* cmd) {
 
 bool ADC::CmdMessage::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::High);
+
+	/* getArgument() strips the name, so a flag's value is at [0]. */
 	char* t_act = cmd->getArgument("ME", 2, 1);
-	bool action = (t_act && t_act[1] == '1');
+	bool action = (t_act && t_act[0] == '1');
+
+	char* t_rich = cmd->getArgument("RT", 2, 1);
+	bool richText = (t_rich && t_rich[0] == '1');
+
 	char* privat = cmd->getArgument("PM", 2, 1);
 	char* msg = cmd->getArgument(0);
 	
@@ -302,21 +308,21 @@ bool ADC::CmdMessage::invoke(ADC::Command* cmd) {
 	if (cmd->isCommandBroadcast() || cmd->isCommandFeature()) {
 		
 		/* broadcast message */
-		session->onPublicChat(cmd->getSourceID(), msg, action);
+		session->onPublicChat(cmd->getSourceID(), msg, action, richText);
 		return true;
 		
 	} else if (cmd->isCommandHubInfo()) {
 		
 		/* hub info message */
-		session->onPublicChat(0, cmd->getArgument(0), action);
+		session->onPublicChat(0, cmd->getArgument(0), action, richText);
 		return true;
 		
 	} else if (cmd->isCommandDirect() || cmd->isCommandEcho()) {
 		/* direct message */
 		if (privat) {
-			session->onPrivateChat(cmd->getTargetID(), cmd->getSourceID(), msg, privat, action);
+			session->onPrivateChat(cmd->getTargetID(), cmd->getSourceID(), msg, privat, action, richText);
 		} else {
-			session->onPublicChat(cmd->getSourceID(), msg, action);
+			session->onPublicChat(cmd->getSourceID(), msg, action, richText);
 		}
 		return true;
 	}

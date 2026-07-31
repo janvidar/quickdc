@@ -49,12 +49,17 @@ class HubSession {
 		/**
 		 * Send a chat message to one specific user.
 		 */
-		virtual void sendPrivateChatMessage(const User* user, const char* message) = 0;
+		/**
+		 * @param richText the message is markdown and should be flagged as such.
+		 *        Only ADC can say so; NMDC ignores it.
+		 */
+		virtual void sendPrivateChatMessage(const User* user, const char* message,
+		                                    bool richText = false) = 0;
 
 		/**
 		 * Send a public chat message to all users.
 		 */
-		virtual void sendChatMessage(const char* message) = 0;
+		virtual void sendChatMessage(const char* message, bool richText = false) = 0;
 
 		/**
 		 * Kick a user.

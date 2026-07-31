@@ -61,8 +61,9 @@ class HubSession
 		HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener, Samurai::IO::Net::URL* url);
 		virtual ~HubSession();
 
-		void sendPrivateChatMessage(const QuickDC::User* user, const char* msg) override;
-		void sendChatMessage(const char* msg) override;
+		void sendPrivateChatMessage(const QuickDC::User* user, const char* msg,
+		                            bool richText = false) override;
+		void sendChatMessage(const char* msg, bool richText = false) override;
 		void sendAdminUserKick(const QuickDC::User* user) override;
 		void sendAdminUserRedirect(const QuickDC::User* user, const char* address, const char* reason) override;
 		void sendClientInfo() override { }

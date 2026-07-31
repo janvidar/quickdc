@@ -18,9 +18,9 @@ class HubConnection : public QuickDC::Hub, public QuickDC::HubListener {
 		void EventHubStatus(enum StatusHub);
 		void EventSystemError(const char*);
 
-		void EventChat(const QuickDC::User* user, const char* message, bool);
+		void EventChat(const QuickDC::User* user, const char* message, bool, bool);
 		
-		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action);
+		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action, bool richText);
 		void EventHubMessage(const char* user, const char* message);
 		
 		void EventUserJoin(const char* user);

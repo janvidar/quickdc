@@ -125,6 +125,15 @@ int main()
 	}
 
 	{
+		/* A rich text chat line: the body is escaped, the flag follows it. */
+		ADC::Command cmd(FOURCC('B','M','S','G'), "AAAA");
+		cmd.addArgument("**found it** in `~/Music`");
+		cmd.addArgument("RT", "1");
+		check("rich text broadcast",
+			"BMSG AAAA **found\\sit**\\sin\\s`~/Music` RT1\n", cmd);
+	}
+
+	{
 		ADC::Command cmd(FOURCC('D','M','S','G'), "AAAA", "BBBB");
 		cmd.addArgument("hello");
 		check("direct with both ids", "DMSG AAAA BBBB hello\n", cmd);

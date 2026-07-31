@@ -120,8 +120,12 @@ class HubListener
 	 *
 	 * @param user The user who wrote the message.
 	 * @param message The message
+	 * @param richText The sender flagged the text as markdown (ADC's RT1). Without
+	 *                 it the message is literal, which is what lets an asterisk
+	 *                 stay an asterisk.
 	 */
-	virtual void EventChat(const User* user, const char* message, bool action = false) = 0;
+	virtual void EventChat(const User* user, const char* message, bool action = false,
+	                       bool richText = false) = 0;
 
 	/**
 	 * 'user' sent you a private message.
@@ -131,8 +135,9 @@ class HubListener
 	 * @param message The message
 	 * @param userContextID an ID that identifies the context of a chat message (window, tab, etc). Usually the same as a user's nick name.
 	 * @param action The message is to be considered as a action chat message.
+	 * @param richText The message is markdown; see EventChat().
 	 */
-	virtual void EventPrivateChat(const User* from, const User* to, const char* message, const char* userContextID, bool action) = 0;
+	virtual void EventPrivateChat(const User* from, const User* to, const char* message, const char* userContextID, bool action, bool richText = false) = 0;
 
 	/**
 	 * A fake user sent a message. Usually a message from the hub upon login.
@@ -237,14 +242,19 @@ class Hub
 		void connect();
 		void disconnect();
 
-		void sendChatMessage(const char* message);
+		/**
+		 * @param richText the text is markdown, and the message should carry the RT
+		 *        flag saying so. ADC only; NMDC has nowhere to put it.
+		 */
+		void sendChatMessage(const char* message, bool richText = false);
 
 		/**
 		 * Answer a hub that asked for a password, after the listener was told
 		 * through EventHubAutenticate().
 		 */
 		void sendPassword(const char* password);
-		void sendPrivateChatMessage(const QuickDC::User* user, const char* message);
+		void sendPrivateChatMessage(const QuickDC::User* user, const char* message,
+		                            bool richText = false);
 		void sendKickUser(const char* user);
 		void sendRedirect(const char* user, const char* address, const char* reason);
 

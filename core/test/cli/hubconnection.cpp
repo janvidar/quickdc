@@ -90,8 +90,12 @@ void HubConnection::EventSystemError(const char* msg)
 	console_printf("%s * ERROR: %s\n", getTimestamp(), msg ? msg : "");
 }
 
-void HubConnection::EventChat(const QuickDC::User* user, const char* message, bool action)
+void HubConnection::EventChat(const QuickDC::User* user, const char* message, bool action,
+                              bool richText)
 {
+	/* A console shows the markers as they arrived; that is markdown degrading. */
+	(void) richText;
+
 	if (action)
 	{
 		console_printf("%s      *%s* %s\n", getTimestamp(), user->getNick(), message);
@@ -102,7 +106,9 @@ void HubConnection::EventChat(const QuickDC::User* user, const char* message, bo
 	}
 }
 
-void HubConnection::EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action) {
+void HubConnection::EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action, bool richText) {
+	(void) richText;
+
 	
 	if (!action)
 		console_printf("%s * {%s} Message to %s: <%s> %s\n", getTimestamp(), context, to->getNick(), from->getNick(), message);

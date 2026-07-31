@@ -139,6 +139,68 @@ EXO_TEST(adc_command_feature, {
         return ok && cmd.isCommandFeature();
 });
 
+/*
+ * A flag's value sits at [0] of what getArgument() hands back, because the two letter
+ * name has already been stripped. Reading it at [1] is why the ME flag never took
+ * effect, so these pin the offset rather than the feature.
+ */
+EXO_TEST(adc_command_flag_me, {
+	const char* buf = "BMSG AAAA waves ME1";
+	ADC::Command cmd;
+	if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
+
+	char* flag = cmd.getArgument("ME", 2, 1);
+	return flag && flag[0] == '1';
+});
+
+EXO_TEST(adc_command_flag_richtext, {
+	const char* buf = "BMSG AAAA **bold** RT1";
+	ADC::Command cmd;
+	if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
+
+	char* flag = cmd.getArgument("RT", 2, 1);
+	if (!flag || flag[0] != '1') return false;
+
+	/* The body is still argument zero, and untouched by the flag. */
+	return strcmp(cmd.getArgument(0), "**bold**") == 0;
+});
+
+EXO_TEST(adc_command_flag_richtext_absent, {
+	const char* buf = "BMSG AAAA weighs\\s*about*\\s3kg";
+	ADC::Command cmd;
+	if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
+
+	/* No flag means the asterisks are the sender's own. */
+	if (cmd.getArgument("RT", 2, 1)) return false;
+
+	return strcmp(cmd.getArgument(0), "weighs *about* 3kg") == 0;
+});
+
+EXO_TEST(adc_command_markdown_roundtrip, {
+	/*
+	 * A multi-line markdown payload has to survive as a single argument: the escaper
+	 * turns its spaces and newlines into \s and \n, and the parser has to give back
+	 * exactly what went in.
+	 */
+	const char* body = "> quoted\n```\n  code();\n```";
+
+	ADC::Command out(FOURCC('B','M','S','G'), "AAAA");
+	out.addArgument(body);
+	out.addArgument("RT", "1");
+
+	const char* wire = out.getRawCommand();
+	if (!wire) return false;
+
+	ADC::Command back;
+	/* getSize() counts the trailing newline, which is the terminator, not content. */
+	if (!ADC::Parser::parse(wire, out.getSize() - 1, back)) return false;
+
+	char* flag = back.getArgument("RT", 2, 1);
+	if (!flag || flag[0] != '1') return false;
+
+	return strcmp(back.getArgument(0), body) == 0;
+});
+
 EXO_TEST(adc_command_hub, {
         const char* buf = "HSUP ADBASE";
         ADC::Command cmd;

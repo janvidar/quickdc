@@ -100,11 +100,11 @@ class Listener : public QuickDC::HubListener
 		void EventSystemError(const char* msg) override
 		{ errors.push_back(msg ? msg : ""); }
 
-		void EventChat(const QuickDC::User*, const char* message, bool) override
+		void EventChat(const QuickDC::User*, const char* message, bool, bool) override
 		{ chat.push_back(message ? message : ""); }
 
 		void EventPrivateChat(const QuickDC::User*, const QuickDC::User*,
-			const char* message, const char*, bool) override
+			const char* message, const char*, bool, bool) override
 		{ privateChat.push_back(message ? message : ""); }
 
 		void EventHubMessage(const char*, const char* message) override

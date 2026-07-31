@@ -122,11 +122,11 @@ void QuickDC::Hub::sendPassword(const char* password)
 		listener->EventSystemError("sendPassword(): No session");
 }
 
-void QuickDC::Hub::sendChatMessage(const char *message)
+void QuickDC::Hub::sendChatMessage(const char *message, bool richText)
 {
 	if (session && session->isLoggedIn())
 	{
-		session->sendChatMessage(message);
+		session->sendChatMessage(message, richText);
 	}
 	else
 	{
@@ -134,7 +134,8 @@ void QuickDC::Hub::sendChatMessage(const char *message)
 	}
 }
 
-void QuickDC::Hub::sendPrivateChatMessage(const QuickDC::User* user, const char* message) {
+void QuickDC::Hub::sendPrivateChatMessage(const QuickDC::User* user, const char* message,
+                                         bool richText) {
 	if (!session && session->isLoggedIn())
 	{
 		listener->EventSystemError("sendPrivateChatMessage(): No session");
@@ -159,7 +160,7 @@ void QuickDC::Hub::sendPrivateChatMessage(const QuickDC::User* user, const char*
 		return;
 	}
 
-	session->sendPrivateChatMessage(user, message);
+	session->sendPrivateChatMessage(user, message, richText);
 }
 
 void QuickDC::Hub::sendKickUser(const char* user)

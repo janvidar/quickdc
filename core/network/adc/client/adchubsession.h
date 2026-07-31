@@ -55,8 +55,9 @@ class HubSession :
 		virtual ~HubSession();
 
 		/* External API */
-		void sendPrivateChatMessage(const QuickDC::User*, const char*) override;
-		void sendChatMessage(const char*) override;
+		void sendPrivateChatMessage(const QuickDC::User*, const char*,
+		                            bool richText = false) override;
+		void sendChatMessage(const char*, bool richText = false) override;
 		void sendAdminUserKick(const QuickDC::User*) override;
 		void sendAdminUserRedirect(const QuickDC::User*, const char*, const char*) override;
 		void sendClientInfo() override;
@@ -78,8 +79,9 @@ class HubSession :
 		void onUserInfo(const char* id, QuickDC::User* data, uint64_t oldShare, bool changed);
 		void onStatus(ADC::Command* cmd);
 
-		void onPublicChat(const char* from, const char* message, bool action);
-		void onPrivateChat(const char* to, const char* from, const char* message, const char* contextID, bool action);
+		void onPublicChat(const char* from, const char* message, bool action,
+		                  bool richText = false);
+		void onPrivateChat(const char* to, const char* from, const char* message, const char* contextID, bool action, bool richText = false);
 		void onRequestPasword(char* token);
 		void sendPassword(const char* password) override;
 		void sendPasswordResponse();
