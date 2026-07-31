@@ -1233,7 +1233,21 @@ void ADC::HubSession::onPrivateChat(const char* to, const char* from, const char
 	const QuickDC::User* u2 = users->getUser(to);
 	if (u && u2)
 	{
-		listener->EventPrivateChat(u, u2, message, context, action);
+		/*
+		 * The conversation is with whichever of the two is not us, which is the
+		 * only rule that holds in both directions.
+		 *
+		 * PM cannot be used for it, though it is what names the message private.
+		 * A message is sent as EMSG, which the hub delivers to the target and
+		 * echoes back to the sender, and we put our own SID in PM when we send
+		 * one - so taking the context from PM files our own messages under a
+		 * conversation with ourselves. Clients disagree about whose SID belongs
+		 * there in any case.
+		 */
+		(void) context;
+		const bool mine = sid && strcmp(from, sid) == 0;
+
+		listener->EventPrivateChat(u, u2, message, mine ? to : from, action);
 	}
 }
 
