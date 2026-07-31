@@ -28,6 +28,10 @@
  *   [Network]     Port (1411), Bind (0.0.0.0), Address, Active mode,
  *                 Slots (3), Chunk size (1 MiB), Max downloads (3)
  *   [Shares]      Total shares, Share 0 .. Share N
+ *   [Attachments] Total, File 0 .. File N - files offered in chat by their hash
+ *                 alone. Each entry is a tiger root, a space, and the path:
+ *                 "VN6...RWZ /home/me/diagram.png". These are not shares - they
+ *                 are in no file list and no name search matches them.
  *   [Downloads]   Directory
  *   [Local hub]   Enabled, Name, Description, Max users, Max history,
  *                 Max send queue bytes

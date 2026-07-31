@@ -19,6 +19,10 @@
 #include <samurai/io/file.h>
 #include <samurai/io/compression.h>
 #include <samurai/io/buffer.h>
+#include "api/attachments.h"
+#include "api/core.h"
+#include "hash/hashcache.h"
+#include "hash/hashjob.h"
 #include "hash/hashmanager.h"
 #include "network/adc/cid.h"
 
@@ -34,8 +38,13 @@
 QuickDC::Share::Manager::Manager(QuickDC::Preferences* config_, QuickDC::Hash::Manager* mgr,
                                  const char* dir)
 	: size(0), files(0), config(config_), hash(mgr),
-	  listdir(dir ? dir : "~/.quickdc"), filelists(false) {
+	  listdir(dir ? dir : "~/.quickdc"), filelists(false), attaching(false) {
 
+}
+
+QuickDC::Share::Manager::Attachment::~Attachment() {
+	/* The directory exists to hold this one file, and deletes it. */
+	delete dir;
 }
 
 void QuickDC::Share::Manager::initialize() {
@@ -73,6 +82,9 @@ void QuickDC::Share::Manager::initialize() {
 		}
 		free(data);
 	}
+
+	loadAttachments();
+
 	createFileLists(true);
 }
 
@@ -83,9 +95,18 @@ QuickDC::Share::Manager::~Manager() {
 		dirs.pop_back();
 		delete dir;
 	}
+
+	/* The attachments belong to no share, so nothing else would free them:
+	   'attachments' does it, each record taking its directory and its file. */
+	attachments.clear();
 }
 
 void QuickDC::Share::Manager::addSize(uint64_t sz) {
+	/* Not while attaching: an attachment's Share::File reports its size through
+	   its directory like any other, but it is not part of the share and a hub
+	   must be told the same size as before. */
+	if (attaching) return;
+
 	size += sz;
 	files++;
 }
@@ -183,14 +204,25 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 	
 }
 
+QuickDC::Share::File* QuickDC::Share::Manager::findByTTH(const char* tth) const {
+	std::map<std::string, QuickDC::Share::File*>::const_iterator it = tthTable.find(std::string(tth));
+	if (it != tthTable.end())
+		return (*it).second;
+
+	/* An attachment is in tthTable as well, but its record is what owns it, so
+	   asking here too means anything that empties the table and fills it in
+	   again from the shared directories cannot lose an attachment. */
+	for (const std::unique_ptr<Attachment>& record : attachments)
+		if (record->file && record->tth == tth)
+			return record->file;
+
+	return 0;
+}
+
 Samurai::IO::File* QuickDC::Share::Manager::getFileByTTH(const char* tth) {
-	Samurai::IO::File* file = 0;
-	std::map<std::string, QuickDC::Share::File*>::iterator it = tthTable.find(std::string(tth));
-	if (it != tthTable.end()) {
-		std::pair<std::string, QuickDC::Share::File*> current = *it;
-		file = (Samurai::IO::File*) &current.second->getFile();
-	}
-	return file;
+	QuickDC::Share::File* shf = findByTTH(tth);
+	if (!shf) return 0;
+	return (Samurai::IO::File*) &shf->getFile();
 }
 
 
@@ -222,6 +254,11 @@ static bool process(Samurai::IO::Codec* codec, Samurai::IO::Buffer* input, Samur
 
 void QuickDC::Share::Manager::createFileLists(bool incomplete) {
 	QDBG("QuickDC::Share::Manager::createFileLists");
+
+	/* The hash manager calls this when the last job is collected, which is the
+	   only moment an attachment that will never be hashed can be recognised. */
+	sweepAttachments();
+
 	Samurai::IO::Buffer* xmlout = new Samurai::IO::Buffer();
 	
 	createFileList(xmlout, 0, incomplete);
@@ -340,8 +377,287 @@ void QuickDC::Share::Manager::createFileList(Samurai::IO::Buffer* xmlout, QuickD
 }
 
 void QuickDC::Share::Manager::addLookupFile(const char* name, const char* tth, QuickDC::Share::File* ptr) {
-	searchTable.push_back( std::pair<std::string, QuickDC::Share::File*>(std::string(name), ptr) );
+	/*
+	 * An attachment reaches this the same way a shared file does, since it is an
+	 * ordinary Share::File, but it is left out of the name index: a file that is
+	 * offered by its hash alone must not answer a search for its name.
+	 */
+	if (!attaching && !isAttachment(ptr))
+		searchTable.push_back( std::pair<std::string, QuickDC::Share::File*>(std::string(name), ptr) );
+
 	tthTable.insert( std::pair<std::string, QuickDC::Share::File*>(std::string(tth), ptr) );
+}
+
+bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::AttachmentListener* listener) {
+	if (!path || !path[0] || !listener) return false;
+
+	Samurai::IO::File file(path);
+	if (!file.isRegular()) return false;
+	if (!file.open(Samurai::IO::File::Mode::Read)) return false;
+	file.close();
+
+	QDBG("QuickDC::Share::Manager::attach('%s')", path);
+
+	QuickDC::Share::Manager::Attachment* known = findAttachment(file.getName());
+	if (known) {
+		if (known->tth.empty())
+			known->listeners.push_back(listener);
+		else
+			listener->EventAttachmentReady(path, known->tth.c_str(), known->size);
+		return true;
+	}
+
+	if (!hash) {
+		listener->EventAttachmentFailed(path, "There is no hash manager to hash the file with");
+		return true;
+	}
+
+	std::unique_ptr<Attachment> record = std::make_unique<Attachment>();
+	record->path = path;
+	record->name = file.getName();
+	record->size = (uint64_t) file.size();
+	record->listeners.push_back(listener);
+	attachments.push_back(std::move(record));
+
+	/*
+	 * The same mechanism a shared file is hashed by, so the hash cache applies:
+	 * a file that has been hashed before costs nothing and is answered from
+	 * inside this call, and anything else is hashed on the hash worker thread
+	 * and reported from Hash::Manager::process().
+	 */
+	hash->addJob(file, this);
+	return true;
+}
+
+QuickDC::Share::Manager::Attachment* QuickDC::Share::Manager::findAttachment(const std::string& name) const {
+	for (const std::unique_ptr<Attachment>& record : attachments)
+		if (record->name == name)
+			return record.get();
+
+	return 0;
+}
+
+bool QuickDC::Share::Manager::isAttachment(const QuickDC::Share::File* ptr) const {
+	for (const std::unique_ptr<Attachment>& record : attachments)
+		if (record->file == ptr)
+			return true;
+
+	return false;
+}
+
+bool QuickDC::Share::Manager::registerAttachment(QuickDC::Share::Manager::Attachment& record) {
+	if (tthTable.count(record.tth)) {
+		/* Reachable already: the very same file is shared, or was attached
+		   under another name. Nothing to add, and nothing to own. */
+		QDBG("Attachment '%s' is already reachable by TTH", record.path.c_str());
+		return true;
+	}
+
+	/*
+	 * A Share::File announces its hash through Core::getInstance()->shares
+	 * without checking that there is one, so building one without a core would
+	 * take the process down. There is nothing to do about that from here except
+	 * decline the file.
+	 */
+	if (!QuickDC::Core::getInstance()) return false;
+
+	/*
+	 * A Share::File expects a directory: it reports its size through it, and
+	 * finds the manager and the hash cache through it. This one is not among
+	 * 'dirs', which is what keeps the file out of every file list, and scanning
+	 * it finds nothing because the path it is given is the file itself.
+	 */
+	attaching = true;
+	record.dir = new QuickDC::Share::Dir(record.name, "attachments", this);
+	record.file = new QuickDC::Share::File(record.name, record.dir);
+	record.dir->files.push_back(record.file);
+	attaching = false;
+
+	tthTable.insert( std::pair<std::string, QuickDC::Share::File*>(record.tth, record.file) );
+	return true;
+}
+
+void QuickDC::Share::Manager::dropAttachment(QuickDC::Share::Manager::Attachment& record, const char* reason) {
+	const std::string path = record.path;
+	std::vector<QuickDC::Share::AttachmentListener*> waiting;
+	waiting.swap(record.listeners);
+
+	/* Forgotten before anyone is told, so a listener that responds by attaching
+	   the same file again starts over rather than waiting for a hash that is
+	   not coming. */
+	for (std::vector< std::unique_ptr<Attachment> >::iterator it = attachments.begin(); it != attachments.end(); it++) {
+		if ((*it).get() == &record) {
+			attachments.erase(it);
+			break;
+		}
+	}
+
+	for (QuickDC::Share::AttachmentListener* listener : waiting)
+		listener->EventAttachmentFailed(path.c_str(), reason);
+}
+
+void QuickDC::Share::Manager::sweepAttachments() {
+	if (!hash || hash->isBusy()) return;
+
+	/*
+	 * A hash job that fails is only written to the log - the hash manager tells
+	 * no listener - so a failure is recognised by its absence instead: with no
+	 * hashing left to do, an attachment without a hash is never getting one.
+	 */
+	std::vector<Attachment*> failed;
+	for (const std::unique_ptr<Attachment>& record : attachments)
+		if (record->tth.empty())
+			failed.push_back(record.get());
+
+	for (Attachment* record : failed)
+		dropAttachment(*record, "The file could not be hashed");
+}
+
+/**
+ * A base32 tiger root is always this long, which is what makes the path in an
+ * [Attachments] entry findable by offset - and so allowed to contain spaces.
+ */
+#define TTH_BASE32_LENGTH 39
+
+void QuickDC::Share::Manager::saveAttachments() {
+	config->setGroup("Attachments");
+
+	const int previous = config->getNumber("Total", 0);
+	int total = 0;
+
+	for (const std::unique_ptr<Attachment>& record : attachments) {
+		if (record->tth.empty()) continue;
+
+		char key[16];
+		snprintf(key, sizeof(key), "File %d", total);
+		config->setString(key, record->tth + " " + record->name);
+		total++;
+	}
+
+	/* Whatever a longer list left behind, so nothing outlives the Total. */
+	for (int i = total; i < previous; i++) {
+		char key[16];
+		snprintf(key, sizeof(key), "File %d", i);
+		config->remove(key);
+	}
+
+	config->setNumber("Total", total);
+
+	/* Now rather than at shutdown: an attachment that has been handed out in a
+	   message must survive a crash. */
+	config->write();
+}
+
+void QuickDC::Share::Manager::loadAttachments() {
+	config->setGroup("Attachments");
+	const int total = config->getNumber("Total", 0);
+	if (total <= 0) return;
+
+	QDBG("Attachments remembered: %d", total);
+
+	if (!hash || !QuickDC::Core::getInstance()) {
+		/* Nothing can be offered without these two, and that says nothing about
+		   the entries themselves, so they are left in the configuration rather
+		   than rewritten as if they were stale. */
+		QERR("Cannot offer %d remembered attachment(s) without a hash manager and a core", total);
+		return;
+	}
+
+	bool forgotten = false;
+	for (int i = 0; i < total; i++) {
+		char key[16];
+		snprintf(key, sizeof(key), "File %d", i);
+
+		/* Copied out: the pointer belongs to the setting, which saveAttachments()
+		   may overwrite. */
+		const std::string entry = config->getString(key, "");
+
+		if (entry.size() < TTH_BASE32_LENGTH + 2 || entry[TTH_BASE32_LENGTH] != ' ') {
+			QERR("Attachment %d is not a hash and a path: '%s'", i, entry.c_str());
+			forgotten = true;
+			continue;
+		}
+
+		const std::string tth = entry.substr(0, TTH_BASE32_LENGTH);
+		const std::string path = entry.substr(TTH_BASE32_LENGTH + 1);
+
+		if (!adoptAttachment(tth, path)) {
+			QDBG("Forgetting attachment '%s'", path.c_str());
+			forgotten = true;
+		}
+	}
+
+	if (forgotten) saveAttachments();
+}
+
+bool QuickDC::Share::Manager::adoptAttachment(const std::string& tth, const std::string& path) {
+	Samurai::IO::File file(path);
+	if (!file.exists() || !file.isRegular()) return false;
+
+	if (findAttachment(file.getName())) return true;
+
+	/*
+	 * Not offered on trust: the hash cache is asked whether this is still the
+	 * file the hash was taken from. An entry only survives the cache being read
+	 * if the file's size and modification date are unchanged, and the root
+	 * derived from the leaves it holds says whether that file is the one the
+	 * remembered hash belongs to. Neither reads the file itself.
+	 */
+	QuickDC::Hash::CacheEntry* cached = 0;
+	if (!hash->lookup(file, cached) || !cached) return false;
+	if (cached->getAlgorithm() != QuickDC::Hash::HashTigerTree) return false;
+
+	QuickDC::Hash::SimpleJob known(hash, this, cached);
+	const char* sum = known.getHashSum();
+	if (!sum || tth != sum) return false;
+
+	std::unique_ptr<Attachment> record = std::make_unique<Attachment>();
+	record->path = path;
+	record->name = file.getName();
+	record->tth = tth;
+	record->size = (uint64_t) file.size();
+	attachments.push_back(std::move(record));
+
+	/* The same registration attach() ends in, so the two cannot drift apart. */
+	QuickDC::Share::Manager::Attachment& adopted = *attachments.back();
+	if (!registerAttachment(adopted)) {
+		dropAttachment(adopted, "There is no core for the file to be offered from");
+		return false;
+	}
+
+	QDBG("Offering remembered attachment '%s'", path.c_str());
+	return true;
+}
+
+void QuickDC::Share::Manager::EventFileStarted(const QuickDC::Hash::Job*) { }
+void QuickDC::Share::Manager::EventFileQueued(const QuickDC::Hash::Job*) { }
+void QuickDC::Share::Manager::EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) { }
+
+void QuickDC::Share::Manager::EventFileHashed(const QuickDC::Hash::Job* job) {
+	QuickDC::Share::Manager::Attachment* record = findAttachment(job->getFile().getName());
+	if (!record) return;
+
+	const char* sum = job->getHashSum();
+	if (!sum || !sum[0]) {
+		dropAttachment(*record, "The file could not be hashed");
+		return;
+	}
+
+	record->tth = sum;
+	if (!registerAttachment(*record)) {
+		dropAttachment(*record, "There is no core for the file to be offered from");
+		return;
+	}
+
+	/* Before anyone is told, so the hash we are about to hand out is remembered
+	   even if the client never gets a chance to shut down cleanly. */
+	saveAttachments();
+
+	std::vector<QuickDC::Share::AttachmentListener*> waiting;
+	waiting.swap(record->listeners);
+
+	for (QuickDC::Share::AttachmentListener* listener : waiting)
+		listener->EventAttachmentReady(record->path.c_str(), record->tth.c_str(), record->size);
 }
 
 void QuickDC::Share::Manager::search(SearchRequest* req) {
@@ -361,12 +677,11 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 
 		/* Search TTH */
 		QSEARCH("tth search for: %s", req->tth);
-		std::map<std::string, QuickDC::Share::File*>::iterator it = tthTable.find(std::string(req->tth));
-		if (it != tthTable.end()) {
-			std::pair<std::string, QuickDC::Share::File*> current = *it;
+		QuickDC::Share::File* found = findByTTH(req->tth);
+		if (found) {
 			hits++;
-			SearchReply reply(req, current.second);
-			QSEARCH("(tth hit): %s", current.second->getPublicName().c_str());
+			SearchReply reply(req, found);
+			QSEARCH("(tth hit): %s", found->getPublicName().c_str());
 			if (req->event_handler)
 				req->event_handler->EventSearchReply(&reply);
 		}
