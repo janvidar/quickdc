@@ -14,6 +14,7 @@
  */
 
 #include "quickdc.h"
+#include "network/adc/adccommands.h"
 #include "network/adc/parser.h"
 
 #include <samurai/io/buffer.h>
@@ -131,6 +132,34 @@ int main()
 		cmd.addArgument("RT", "1");
 		check("rich text broadcast",
 			"BMSG AAAA **found\\sit**\\sin\\s`~/Music` RT1\n", cmd);
+	}
+
+	/*
+	 * The support flags. Rich text is a hub extension, so it belongs in the SUP a
+	 * client sends to a hub and in the one a hub answers with, and nowhere in the
+	 * one a client sends to another client - the RT flag only travels via a hub.
+	 */
+	{
+		ADC::Command cmd(FOURCC('H','S','U','P'));
+		ADC::addSupportFlags(cmd, false);
+		check("support flags to a hub",
+			"HSUP ADBASE ADBAS0 ADTIGR ADPFSR ADADCS ADPING ADBBS0 AD"
+			ADC_EXT_RICHTEXT_HUB "\n", cmd);
+	}
+
+	{
+		ADC::Command cmd(FOURCC('C','S','U','P'));
+		ADC::addSupportFlags(cmd, true);
+		check("support flags to a client",
+			"CSUP ADBASE ADBAS0 ADTIGR ADPFSR ADADCS ADBZIP ADZLIG\n", cmd);
+	}
+
+	{
+		/* Our own hub answers out of the same branch, so its ISUP carries it too. */
+		ADC::Command cmd(FOURCC('I','S','U','P'));
+		ADC::addSupportFlags(cmd, false);
+		CHECK(written(cmd).find("AD" ADC_EXT_RICHTEXT_HUB) != std::string::npos);
+		printf("  ok %-34s\n", "support flags from our hub");
 	}
 
 	{

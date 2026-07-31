@@ -26,6 +26,16 @@ typedef uint32_t bbs_message_t;
 #define ADC_EXT_PFSR                    "PFSR" /* partial file sharing (PSR) */
 #define ADC_EXT_RICHTEXT                "RTF1" /* p2p: markdown chat, the RT flag on MSG */
 
+/*
+ * Rich text as a hub extension, negotiated in SUP.
+ *
+ * A client offers it with "ADRTF0" and may only send the RT flag if the hub answers with
+ * the same, so a hub decides whether markdown - and the media a message can point at -
+ * is carried at all. Distinct from ADC_EXT_RICHTEXT above, which tells other clients
+ * what this one understands.
+ */
+#define ADC_EXT_RICHTEXT_HUB            "RTF0"
+
 #define ADC_INDEX_FILE                  "files.xml"
 #define ADC_INDEX_FILE_BZ2              "files.xml.bz2"
 

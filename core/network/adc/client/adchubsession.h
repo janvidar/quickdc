@@ -71,7 +71,10 @@ class HubSession :
 		// Events triggered by the server (hub)
 		void onSID(char* sid);
 		void addSupport(const char* txt);
-		
+
+		/** Called once the hub's entire SUP list has been read. */
+		void onSupports();
+
 		void onHubName(char* txt);
 		void onHubDesc(char* txt);
 		void onHubVersion(char* txt);
@@ -121,11 +124,12 @@ class HubSession :
 		virtual void disconnect() override;
 		virtual bool isLoggedIn() const override;
 		virtual bool isSecure() const override;
-		
+		virtual bool supportsRichText() const override;
+
 		/**
 		 * Check if the server supports a given feature.
 		 */
-		bool supports(const char* feature);
+		bool supports(const char* feature) const;
 
 	protected:
 		/**
@@ -150,7 +154,7 @@ class HubSession :
 		void EventTimeout(Samurai::Timer* timer) override;
 		
 	protected:
-		std::set<char*> extensions;
+		std::set<std::string> extensions;
 		QuickDC::Preferences* session;
 		char* address;
 		

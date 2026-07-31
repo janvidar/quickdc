@@ -269,6 +269,11 @@ bool QuickDC::Hub::isSecure() const
 	return session && session->isSecure();
 }
 
+bool QuickDC::Hub::supportsRichText() const
+{
+	return session && session->supportsRichText();
+}
+
 const QuickDC::User* QuickDC::Hub::getLocalUser() const
 {
 	return (session) ? session->getLocalUser() : 0;

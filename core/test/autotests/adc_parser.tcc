@@ -208,6 +208,46 @@ EXO_TEST(adc_command_hub, {
         return ok && cmd.isCommandHub();
 });
 
+/*
+ * Rich text over a hub is negotiated in SUP, so a hub's answer has to arrive with the
+ * extension still among the others it lists. The flags are positional, and the one that
+ * matters sits in the middle of them.
+ */
+EXO_TEST(adc_command_sup_richtext_hub, {
+	const char* buf = "ISUP ADBASE ADTIGR AD" ADC_EXT_RICHTEXT_HUB " ADPING";
+	ADC::Command cmd;
+	if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
+
+	bool found = false;
+	for (size_t n = 0; cmd.getArgument(n); n++)
+		if (strcmp(cmd.getArgument(n), "AD" ADC_EXT_RICHTEXT_HUB) == 0)
+			found = true;
+
+	return found && cmd.isCommandHubInfo();
+});
+
+EXO_TEST(adc_command_sup_richtext_hub_absent, {
+	/* The p2p extension is a different string, and says nothing about the hub. */
+	const char* buf = "ISUP ADBASE ADTIGR AD" ADC_EXT_RICHTEXT;
+	ADC::Command cmd;
+	if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
+
+	for (size_t n = 0; cmd.getArgument(n); n++)
+		if (strcmp(cmd.getArgument(n), "AD" ADC_EXT_RICHTEXT_HUB) == 0)
+			return false;
+
+	return true;
+});
+
+EXO_TEST(adc_command_sup_richtext_removed, {
+	/* A hub that drops the extension later says so with RM rather than AD. */
+	const char* buf = "ISUP RM" ADC_EXT_RICHTEXT_HUB;
+	ADC::Command cmd;
+	if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
+
+	return strcmp(cmd.getArgument(0), "RM" ADC_EXT_RICHTEXT_HUB) == 0;
+});
+
 EXO_TEST(adc_command_udp, {
         const char* buf = "URES ZOYOBUSFL5KZHQIP7V47MSCZC2F2WT5SDNMYKKY FN/path/file.txt SI51615616 SL3 TOASBIERHFGIZE672 TRLJG4PQGFS6JKREMCZYSCTZT2I5HM2N2UJSSHMYA TD7";
         ADC::Command cmd;

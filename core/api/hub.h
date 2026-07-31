@@ -183,6 +183,17 @@ class HubListener
 	virtual void EventHubName(const char* hubname) = 0;
 	
 	/**
+	 * The hub announced an extension in its SUP reply.
+	 *
+	 * Called once per extension, as the session reads them, which is how a
+	 * client learns whether something like RTF0 is available.
+	 *
+	 * @param fourcc The extension name as the hub gave it, without the AD
+	 *               prefix, for instance "RTF0".
+	 */
+	virtual void EventHubExtension(const char* fourcc) { (void) fourcc; }
+
+	/**
 	 * The hub has redirected you to another hub.
 	 * @return true to follow redirect, or false to ignore it
 	 */
@@ -293,6 +304,14 @@ class Hub
 		 * is nothing to protect and nothing protecting it.
 		 */
 		bool isSecure() const;
+
+		/**
+		 * Whether this hub has agreed to carry markdown.
+		 *
+		 * False until the hub's SUP reply has been read, and false forever on
+		 * a hub that did not announce the extension.
+		 */
+		bool supportsRichText() const;
 
 		const User* getLocalUser() const;
 		UserManager* getUserManager() const;

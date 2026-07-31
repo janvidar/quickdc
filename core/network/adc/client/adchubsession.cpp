@@ -157,14 +157,6 @@ ADC::HubSession::~HubSession()
 
 	QDBG("~HubSession()");
 
-	while (extensions.size())
-	{
-		char* feature = *extensions.begin();
-		extensions.erase(extensions.begin());
-		free(feature);
-	}
-
-
 	free(hubname);
 	free(passwordToken);
 
@@ -686,7 +678,10 @@ void ADC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const ch
 	ADC::Command* cmd = new ADC::Command(FOURCC('E','M','S','G'), sid, user->getID());
 	cmd->addArgument(msg);
 	cmd->addArgument("PM", sid);
-	if (richText) cmd->addArgument("RT", "1");
+
+	/* Only flagged as markdown if the hub announced the extension in its SUP;
+	   anywhere else the message goes out as plain text, which still reads fine. */
+	if (richText && supportsRichText()) cmd->addArgument("RT", "1");
 	send(cmd);
 }
 
@@ -699,8 +694,12 @@ void ADC::HubSession::sendChatMessage(const char* msg, bool richText)
 	/*
 	 * Says the text is markdown. Left off an unformatted line on purpose, so that
 	 * somebody typing *asterisks* is quoted rather than emphasised at the far end.
+	 *
+	 * Also left off unless the hub announced the extension in its SUP: a hub that
+	 * knows nothing of the flag would relay it to clients that cannot read it, so
+	 * the message goes out as plain text instead.
 	 */
-	if (richText) cmd->addArgument("RT", "1");
+	if (richText && supportsRichText()) cmd->addArgument("RT", "1");
 
 	send(cmd);
 }
@@ -1019,16 +1018,29 @@ void ADC::HubSession::sendPasswordResponse()
 
 void ADC::HubSession::addSupport(const char* feature)
 {
-	extensions.insert(strdup(feature));
+	extensions.emplace(feature);
 }
 
 
-bool ADC::HubSession::supports(const char* feature)
+void ADC::HubSession::onSupports()
 {
-	char* f = strdup(feature);
-	bool found = extensions.count(f);
-	free(f);
-	return found;
+	if (!listener)
+		return;
+
+	for (const auto& feature : extensions)
+		listener->EventHubExtension(feature.c_str());
+}
+
+
+bool ADC::HubSession::supports(const char* feature) const
+{
+	return extensions.contains(feature);
+}
+
+
+bool ADC::HubSession::supportsRichText() const
+{
+	return supports(ADC_EXT_RICHTEXT_HUB);
 }
 
 

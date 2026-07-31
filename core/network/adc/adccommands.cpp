@@ -142,6 +142,10 @@ bool ADC::CmdSupport::invoke(ADC::Command* cmd) {
 			if (arg[0] == 'A' && arg[1] == 'D')
 				session->addSupport(&arg[2]);
 	}
+
+	/* What the hub answered decides what may be sent, so the session is told once the
+	   whole list has been read. */
+	session->onSupports();
 	return true;
 }
 
@@ -576,5 +580,12 @@ void ADC::addSupportFlags(ADC::Command& command, bool clientMode)
 	{
 		command.addArgument("AD", ADC_EXT_PING);
 		command.addArgument("AD", ADC_EXT_BBS);
+
+		/*
+		 * Offered by a client and answered by a hub, both of which come through here.
+		 * A peer to peer session has no use for it: a message carrying the RT flag
+		 * only ever travels through a hub.
+		 */
+		command.addArgument("AD", ADC_EXT_RICHTEXT_HUB);
 	}
 }

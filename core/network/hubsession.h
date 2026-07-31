@@ -148,6 +148,15 @@ class HubSession {
 		 virtual bool isSecure() const = 0;
 
 		/**
+		 * Returns true if the hub has agreed to carry markdown chat messages.
+		 *
+		 * False by default, because it takes a negotiated extension to say a
+		 * message is markdown, and a protocol that cannot negotiate one never
+		 * gets the chance: NMDC has nowhere to put the flag at all.
+		 */
+		 virtual bool supportsRichText() const { return false; }
+
+		/**
 		 * Supply a password after EventHubAutenticate() asked for one.
 		 *
 		 * Ignored unless the hub actually asked. A password is only meaningful
