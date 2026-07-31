@@ -499,6 +499,12 @@ bool ADC::HubSession::isLoggedIn() const
 }
 
 
+bool ADC::HubSession::isSecure() const
+{
+	return socket && socket->isSecure();
+}
+
+
 void ADC::HubSession::EventUserJoin(const char* nick)
 {
 	listener->EventUserJoin(nick);

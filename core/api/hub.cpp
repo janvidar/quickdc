@@ -263,6 +263,11 @@ const char* QuickDC::Hub::getUrl() const
 	return canonicalUrl;
 }
 
+bool QuickDC::Hub::isSecure() const
+{
+	return session && session->isSecure();
+}
+
 const QuickDC::User* QuickDC::Hub::getLocalUser() const
 {
 	return (session) ? session->getLocalUser() : 0;

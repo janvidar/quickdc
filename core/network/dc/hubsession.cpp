@@ -754,6 +754,11 @@ bool DC::HubSession::isLoggedIn() const
 	return state == Idle;
 }
 
+bool DC::HubSession::isSecure() const
+{
+	return socket && socket->isSecure();
+}
+
 void DC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 {
 	(void) reply;

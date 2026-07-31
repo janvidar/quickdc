@@ -118,6 +118,7 @@ class HubSession :
 		virtual void connect() override;
 		virtual void disconnect() override;
 		virtual bool isLoggedIn() const override;
+		virtual bool isSecure() const override;
 		
 		/**
 		 * Check if the server supports a given feature.

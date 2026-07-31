@@ -132,6 +132,17 @@ class HubSession {
 		 virtual bool isLoggedIn() const = 0;
 
 		/**
+		 * Returns true if the traffic to the hub is encrypted.
+		 *
+		 * Asked of the socket every time rather than remembered from the
+		 * handshake: a caller that tracked the status events instead would have
+		 * to catch every one of them, and the events do not make it easy - the
+		 * ADC session reports being connected again after its TLS handshake, so
+		 * the last thing said about a secured connection is "connected".
+		 */
+		 virtual bool isSecure() const = 0;
+
+		/**
 		 * Supply a password after EventHubAutenticate() asked for one.
 		 *
 		 * Ignored unless the hub actually asked. A password is only meaningful

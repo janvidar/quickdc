@@ -121,6 +121,7 @@ class HubSession
 		void connect() override;
 		void disconnect() override;
 		bool isLoggedIn() const override;
+		bool isSecure() const override;
 		
 		void send(DC::Command* cmd, bool more = false);
 		

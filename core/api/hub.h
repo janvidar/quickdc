@@ -276,6 +276,14 @@ class Hub
 		 */
 		const char* getUrl() const;
 
+		/**
+		 * Whether the traffic to this hub is encrypted, right now.
+		 *
+		 * False when there is no session, which is also the honest answer: there
+		 * is nothing to protect and nothing protecting it.
+		 */
+		bool isSecure() const;
+
 		const User* getLocalUser() const;
 		UserManager* getUserManager() const;
 
