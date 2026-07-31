@@ -1678,10 +1678,19 @@ void QuickDC::QueueManager::processVerifications()
 
 	for (size_t n = 0; n < work.size(); n++)
 	{
+		/*
+		 * Matched on the resolved path, not on the string. A download is named
+		 * after [Downloads]/Directory, which is "~/.quickdc/downloads" unless it
+		 * is configured otherwise, while the hash manager reports the name
+		 * Samurai::IO::File made of it - so the two are only ever equal by
+		 * accident.
+		 */
+		const std::string wanted = Samurai::IO::File::resolvePath(work[n].tempname);
+
 		QueueFile* file = 0;
 		for (size_t i = 0; i < files.size(); i++)
 		{
-			if (!strcmp(files[i]->getTempFilename(), work[n].tempname.c_str()))
+			if (Samurai::IO::File::resolvePath(files[i]->getTempFilename()) == wanted)
 			{
 				file = files[i];
 				break;

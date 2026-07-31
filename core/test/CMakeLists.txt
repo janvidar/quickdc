@@ -24,6 +24,7 @@ add_executable(testadccommand adccommand.cpp)
 add_executable(testfilelist filelist.cpp)
 add_executable(testacl   acl.cpp)
 add_executable(testqueue queue.cpp)
+add_executable(testqueuecomplete queuecomplete.cpp)
 add_executable(testsources sources.cpp)
 add_executable(testusers users.cpp)
 add_executable(testhubsession hubsession.cpp)
@@ -49,8 +50,8 @@ add_executable(testdebug debug.cpp cli/console.cpp)
 set(QUICKDC_TEST_APPS
     quickdc_cli testfile testshare testlock hublist testdebug testzupload
     testleafhashes testxml testadccommand testfilelist testacl testqueue
-    testsources testusers testhubsession testdchubsession testsecurity
-    testclientsession testdcclientsession testfilelistgen testtransfer
+    testqueuecomplete testsources testusers testhubsession testdchubsession
+    testsecurity testclientsession testdcclientsession testfilelistgen testtransfer
     testchunkmap testadcparser testhashcache testhttpparser
     testsearch testdctext testconfig testprobe testcid)
 
@@ -77,6 +78,7 @@ add_test(NAME adccommand COMMAND testadccommand)
 add_test(NAME filelist COMMAND testfilelist)
 add_test(NAME acl COMMAND testacl)
 add_test(NAME queue COMMAND testqueue)
+add_test(NAME queuecomplete COMMAND testqueuecomplete)
 add_test(NAME sources COMMAND testsources)
 add_test(NAME users COMMAND testusers)
 add_test(NAME hubsession COMMAND testhubsession)
