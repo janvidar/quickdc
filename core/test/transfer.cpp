@@ -53,9 +53,12 @@ static int failures = 0;
 class Listener : public QuickDC::PrivateTransferListener
 {
 	public:
-		Listener() : stopped(false) { }
-		void onTransferStopped() { stopped = true; }
+		Listener() : stopped(false), last(0) { }
+		void onTransferStopped(QuickDC::Transfer* which) { stopped = true; last = which; }
 		bool stopped;
+
+		/** Which transfer the manager named, so a test can check it is the right one. */
+		QuickDC::Transfer* last;
 };
 
 static std::string scratch(const char* leaf)
@@ -618,6 +621,91 @@ int main()
 		manager.process();
 		CHECK(listener.stopped);
 		printf("  ok a download that cannot open its file gives up\n");
+	}
+
+	/*
+	 * A transfer released before its announcement is drained.
+	 *
+	 * The session is told from process() and it is the session that then deletes
+	 * the transfer, but not every deletion arrives that way round: a connection
+	 * dropping in the same turn as a chunk finished has the session release the
+	 * transfer on the spot. The entry waiting in the manager then named memory
+	 * that had already been freed, and the next process() read it - which with a
+	 * file arriving in chunks is a window that comes round several times a
+	 * second.
+	 */
+	{
+		const std::string path = scratch("released-early");
+		writeFile(path, data);
+
+		Pair pair;
+		QuickDC::TransferManager manager;
+		Listener listener;
+		Samurai::IO::File file(path);
+
+		QuickDC::Upload* up = new QuickDC::Upload(&manager, &listener, pair.sock,
+			&file, 0, (off_t) data.size());
+
+		std::string got;
+		CHECK(runUpload(up, pair, got));
+		CHECK(up->isFinished());
+
+		/* Stopped, and waiting to be announced. */
+		CHECK(!listener.stopped);
+		CHECK(manager.size() == 1);
+
+		delete up;
+		CHECK(manager.size() == 0);
+
+		/* Nothing is left naming it, so there is nothing to announce. */
+		manager.process();
+		CHECK(!listener.stopped);
+
+		Samurai::IO::File(path).remove();
+		printf("  ok a transfer released before the drain is not announced\n");
+	}
+
+	/*
+	 * Two transfers, one listener.
+	 *
+	 * That is what a connection has whenever it holds more than one over its life -
+	 * a peer asking us for a file while we are fetching one from them is enough. The
+	 * notification used to carry nothing, so the listener released whichever transfer
+	 * it happened to be holding: for the one that stopped that was right, and for
+	 * anything else it deleted an object the socket was still feeding.
+	 */
+	{
+		const std::string path = scratch("two-at-once");
+		writeFile(path, data);
+
+		Pair one, two;
+		QuickDC::TransferManager manager;
+		Listener listener;
+		Samurai::IO::File file(path);
+
+		QuickDC::Upload first(&manager, &listener, one.sock, &file,
+			0, (off_t) data.size());
+		QuickDC::Upload second(&manager, &listener, two.sock, &file,
+			0, (off_t) data.size());
+
+		CHECK(manager.size() == 2);
+
+		/* The second runs out; the first is left alone half way through. */
+		std::string got;
+		CHECK(runUpload(&second, two, got));
+		CHECK(second.isFinished());
+		CHECK(!first.isFinished());
+
+		manager.process();
+
+		CHECK(listener.stopped);
+		CHECK(listener.last == &second);
+
+		/* And the one still running is still there. */
+		CHECK(manager.size() == 2);
+
+		Samurai::IO::File(path).remove();
+		printf("  ok the listener is told which of its transfers stopped\n");
 	}
 
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);

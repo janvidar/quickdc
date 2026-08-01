@@ -145,8 +145,8 @@ bool DC::ClientGet::ClientGet::invoke(const char* data, size_t length) {
  * $Supports -- list of supported extensions
  */
 bool DC::ClientSupports::ClientSupports::invoke(const char* data, size_t length) {
-	if (length < 9) return false;
-	
+	if (length < 10) return false;
+
 	const char* start = &data[10];
 	const char* split;
 	while ((split = strchr(&start[0], ' ')) != 0) {
@@ -155,6 +155,13 @@ bool DC::ClientSupports::ClientSupports::invoke(const char* data, size_t length)
 		free(feature);
 		start = &split[1];
 	}
+
+	/*
+	 * The last feature has no space after it. DC++ happens to leave a trailing
+	 * one, so what the loop above misses is whatever a peer that does not sends
+	 * last - which is the whole of its list if it names a single extension.
+	 */
+	if (*start) session->addSupport(start);
 
 	return true;
 }

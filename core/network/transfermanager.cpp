@@ -23,18 +23,21 @@ void QuickDC::TransferManager::add(QuickDC::Transfer* transfer) {
 }
 
 void QuickDC::TransferManager::remove(QuickDC::Transfer* transfer) {
-	// transfers.push_back(transfer);
-	QDBG("QuickDC::TransferManager::remove()");
+	std::erase(transfers, transfer);
+
 	/*
-	 * Compared against end(). A transfer that is not in the vector used to run
-	 * off the end here, and erase() then memmoved an out of range interval.
+	 * And out of the announcements still to be made, which is the dangerous one.
+	 * A transfer that has stopped waits in there for process() to tell its
+	 * session, and it is only the session that then deletes it - but not every
+	 * deletion comes from there. A connection dropping in the same turn as a
+	 * chunk finished has the session release the transfer on the spot, and the
+	 * entry left behind was dereferenced by the next process() to name a
+	 * transfer that had already been freed.
+	 *
+	 * Every occurrence goes, so nothing can be left naming it whatever put it
+	 * there.
 	 */
-	for (std::vector<QuickDC::Transfer*>::iterator it = transfers.begin(); it != transfers.end(); it++) {
-		if (*it == transfer) {
-			transfers.erase(it);
-			return;
-		}
-	}
+	std::erase(pendingRemove, transfer);
 }
 
 void QuickDC::TransferManager::addListener(TransferListener* listener) {
@@ -95,7 +98,13 @@ void QuickDC::TransferManager::process() {
 
 		PrivateTransferListener* session = xfer->getPrivateTransferListener();
 		if (!session) continue;
-		session->onTransferStopped();
+
+		/*
+		 * Named, so that a session holding more than one transfer over the life of
+		 * its connection releases the one that stopped rather than whichever it
+		 * happens to be holding now.
+		 */
+		session->onTransferStopped(xfer);
 	}
 }
 

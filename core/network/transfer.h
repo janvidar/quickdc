@@ -26,6 +26,7 @@ namespace QuickDC {
 
 class TransferManager;
 class ClientSession;
+class Transfer;
 
 class PrivateTransferListener {
 	public:
@@ -33,10 +34,18 @@ class PrivateTransferListener {
 		virtual ~PrivateTransferListener() { }
 
 		/**
-		 * Transfer stopped, you need to check the status in the 
-		 * transfer object.
+		 * A transfer stopped; check the status on it.
+		 *
+		 * @param which the transfer that stopped, which is not necessarily the one
+		 *        the listener is holding. It is named rather than assumed because a
+		 *        connection can have more than one transfer over its life - a peer
+		 *        asking for a file while we are downloading from it is enough - and
+		 *        a listener that released whatever it happened to be holding would
+		 *        delete an object the socket is still feeding.
+		 *
+		 * The listener owns 'which' and is the one to delete it.
 		 */
-		virtual void onTransferStopped() = 0;
+		virtual void onTransferStopped(Transfer* which) = 0;
 };
 
 /**

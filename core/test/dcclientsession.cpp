@@ -23,6 +23,7 @@
 #include "api/hub.h"
 #include "network/dc/hubsession.h"
 #include "network/dc/clientsession.h"
+#include "network/downloadqueue.h"
 #include "network/user.h"
 #include "network/usermanager.h"
 
@@ -395,6 +396,48 @@ static void run()
 			std::string line;
 			CHECK(f.peer.expect("$Error", line));
 			printf("  ok a file we do not have is refused: %s\n", line.c_str());
+		}
+		else failures++;
+	}
+
+	/*
+	 * Browsing someone asks for their whole share, as the ADC side does: a
+	 * "list" request names one directory, and a peer that answers it properly
+	 * sends that directory's subdirectories marked Incomplete="1" and nothing
+	 * within them, which is not something to browse.
+	 *
+	 * The queue is what makes this a download rather than an upload - NMDC has
+	 * no token, so a job is correlated by the peer's nickname, and the
+	 * direction negotiation consults the queue for one.
+	 */
+	{
+		Fixture f;
+		if (f.ready)
+		{
+			QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+
+			QuickDC::FilelistRequest* list =
+				queue->requestFilelist(f.ui->getUrl(), "peernick");
+			CHECK(list != 0);
+
+			const char* token = (list) ? queue->createRequest(list) : 0;
+			CHECK(token != 0);
+
+			if (f.handshake())
+			{
+				/* Ours to download: they offered to upload, so nobody loses. */
+				f.say("$Supports ADCGet TTHF XmlBZList");
+				f.say("$Direction Upload 1");
+				f.say("$Key somekey");
+
+				std::string line;
+				CHECK(f.peer.expect("$ADCGET ", line));
+				CHECK(line == "$ADCGET file files.xml.bz2 0 -1");
+				printf("  ok a browse asks for the whole list: %s\n", line.c_str());
+			}
+			else failures++;
+
+			if (list) queue->removeFilelistRequest(list);
 		}
 		else failures++;
 	}

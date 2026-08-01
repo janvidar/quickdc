@@ -133,10 +133,11 @@ class ClientSession :
 		void send(ADC::Command* cmd, bool more = false);
 
 	public:
-		void onTransferStopped();
+		void onTransferStopped(QuickDC::Transfer* which);
 		
 	protected:
-		std::set<char*> extensions;
+		/* Held by value, so that a lookup compares the name and not a pointer. */
+		std::set<std::string> extensions;
 		enum State state;
 		ADC::CommandProxy* proxy;
 		QuickDC::HubSession* hubsession;

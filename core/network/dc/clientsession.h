@@ -125,7 +125,7 @@ class ClientSession :
 		void resetIdleTimer();
 		
 	public:
-		void onTransferStopped();
+		void onTransferStopped(QuickDC::Transfer* which);
 		
 	protected:
 		char* remote_nickname;
@@ -138,7 +138,8 @@ class ClientSession :
 		enum Direction remote_direction;
 		enum Direction my_direction;
 		bool extendedProtocol;
-		std::set<char*> extensions;
+		/* Held by value, so that a lookup compares the name and not a pointer. */
+		std::set<std::string> extensions;
 		enum State state;
 		DC::CommandProxy* proxy;
 		QuickDC::HubSession* hubsession;

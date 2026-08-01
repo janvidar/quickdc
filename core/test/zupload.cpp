@@ -56,9 +56,12 @@ static int failures = 0;
 class Listener : public QuickDC::PrivateTransferListener
 {
 	public:
-		Listener() : stopped(false) { }
-		void onTransferStopped() { stopped = true; }
+		Listener() : stopped(false), last(0) { }
+		void onTransferStopped(QuickDC::Transfer* which) { stopped = true; last = which; }
 		bool stopped;
+
+		/** Which transfer the manager named, so a test can check it is the right one. */
+		QuickDC::Transfer* last;
 };
 
 static std::string testfile_path;

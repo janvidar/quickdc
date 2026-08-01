@@ -86,12 +86,6 @@ ADC::ClientSession::ClientSession(std::shared_ptr<Samurai::IO::Net::Socket> sock
 
 ADC::ClientSession::~ClientSession()
 {
-	while (extensions.size()) {
-		char* feature = *extensions.begin();
-		extensions.erase(extensions.begin());
-		free(feature);
-	}
-
 	releaseTransfer();
 	delete proxy;
 	QDBG("~ADC::ClientSession()");
@@ -260,14 +254,24 @@ void ADC::ClientSession::requestNextChunk()
 		list->setActive(true);
 
 		/*
+		 * The whole share, named as the rootless "files.xml.bz2" in the file
+		 * namespace, rather than asked for as a list.
+		 *
+		 * A list request names one directory and gets one directory: a peer
+		 * that answers it to the letter sends that directory's immediate
+		 * subdirectories, each marked Incomplete="1" and holding nothing, and
+		 * browsing further means asking again for every folder opened. Our own
+		 * upload side answers a list with the entire file list whatever was
+		 * asked for, which is not something to expect of anyone else.
+		 *
 		 * Deliberately no ZL1: that is stream compression, and there is no
 		 * decompressing counterpart to ZUpload on the receiving side yet. A
 		 * bzip2 encoded list is a different matter - that is a file format,
 		 * and QueueManager::onFilelistDownloaded() detects and unpacks it.
 		 */
 		ADC::Command* cmd = new ADC::Command(FOURCC('C','G','E','T'));
-		cmd->addArgument("list");
-		cmd->addArgument("/");
+		cmd->addArgument("file");
+		cmd->addArgument(ADC_INDEX_FILE_BZ2);
 		cmd->addArgument("0");
 		cmd->addArgument("-1");
 		send(cmd);
@@ -396,22 +400,32 @@ void ADC::ClientSession::onStartServer()
 void ADC::ClientSession::addSupport(const char* feature)
 {
 	QDBG("Adding support for '%s'", feature);
-	extensions.insert(strdup(feature));
+	if (feature) extensions.insert(feature);
 }
 
-// FIXME: does this work?
 bool ADC::ClientSession::supports(const char* feature)
 {
-	char* f = strdup(feature);
-	bool found = extensions.count(f);
-	free(f);
-	return found;
+	return feature && extensions.count(feature) != 0;
 }
 
 // connection cancelled/closed
-void ADC::ClientSession::onTransferStopped()
+void ADC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 {
 	QDBG("ADC::ClientSession::onTransferStopped()");
+
+	/*
+	 * Only ever the transfer that stopped. A connection can hold more than one over
+	 * its life - a peer asking us for a file while we are downloading from it is
+	 * enough - and releasing whatever we happen to be holding would delete an object
+	 * the socket is still feeding. One that is not ours to hold any more is still
+	 * ours to free.
+	 */
+	if (which && which != transfer)
+	{
+		QDBG("A transfer stopped that this connection has already moved on from");
+		delete which;
+		return;
+	}
 
 	if (!download_approved)
 	{
@@ -546,7 +560,29 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 		return;
 	}
 	
-	file = 0;
+	/*
+	 * One transfer at a time on a connection. A peer that asks for a file while
+	 * something is already moving - which it may, since a connection can be
+	 * authorised both ways at once - had the running transfer dropped where it
+	 * stood, taking the download it belonged to with it. Refused as busy instead,
+	 * which is what being busy is.
+	 */
+	if (transfer)
+	{
+		QDBG("A transfer is already running on this connection; refusing");
+		ADC::Command* cmd = new ADC::Command(FOURCC('C','S','T','A'));
+		cmd->addArgument(adc_status_code(ADC_STATUS_SEVERITY_ERROR, ADC_CODE_TRANSFER_SLOT_ERROR).c_str());
+		cmd->addArgument(ADC_STR_TRANSFER_SLOT_ERROR);
+		send(cmd);
+		return;
+	}
+
+	/*
+	 * And whatever the last request left behind, before this one takes the members
+	 * over. Clearing 'file' on its own leaked it when it was ours.
+	 */
+	releaseTransfer();
+
 	uint64_t internal_offset = 0; // Our internal file position (might differ from what we send).
 	uint64_t internal_length = 0; // Our internal length (might differ from the file's length, when only a part of it is being transferred).
 
@@ -562,7 +598,14 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	if (type == FOURCC('l','i','s','t'))
 	{
 		QDBG("looking up files.xml");
-		file = sharemgr->getFile(supports(ADC_EXT_ZLIG) ? ADC_INDEX_FILE_BZ2 : ADC_INDEX_FILE);
+
+		/*
+		 * Plain, whatever the peer says it can read: a list response carries the
+		 * XML itself, and the bzip2 form is a file that a peer fetches by name
+		 * instead. ZLIG is stream compression, which is a different thing again
+		 * and is asked for per transfer.
+		 */
+		file = sharemgr->getFile(ADC_INDEX_FILE);
 		if (file) internal_length = file->size();
 		slots_full = false;
 	}
@@ -729,7 +772,12 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 	/* There should be nothing running, but make sure before replacing it. */
 	releaseTransfer();
 
-	if (type == FOURCC('l','i','s','t'))
+	/*
+	 * What was asked for decides this, not what the answer calls itself: the
+	 * whole share is fetched as a file, and a peer answering an older style
+	 * list request is sending the same thing under another name.
+	 */
+	if (request->getKind() == QuickDC::PendingRequest::KindFilelist)
 	{
 		QuickDC::FilelistRequest* list = request->getFilelist();
 		if (!list)

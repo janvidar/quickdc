@@ -8,6 +8,8 @@
 
 namespace QuickDC {
 
+class Transfer;
+
 class ClientSession
 {
 	public:
@@ -27,10 +29,13 @@ class ClientSession
 		virtual void onStartClient() = 0;
 		
 		/**
-		 * Transfer stopped, you need to check the status in the 
-		 * transfer object.
+		 * A transfer stopped; check the status on it.
+		 *
+		 * @param which the transfer that stopped, which is not necessarily the one
+		 *        this session is holding - see PrivateTransferListener, which
+		 *        declares the same thing for the same reason.
 		 */
-		virtual void onTransferStopped() = 0;
+		virtual void onTransferStopped(Transfer* which) = 0;
 		
 };
 

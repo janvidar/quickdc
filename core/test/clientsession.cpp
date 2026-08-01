@@ -22,6 +22,7 @@
 #include "quickdc.h"
 #include "api/core.h"
 #include "network/adc/client/adcclientsession.h"
+#include "network/downloadqueue.h"
 #include "network/securitymanager.h"
 
 #include <samurai/io/file.h>
@@ -341,6 +342,44 @@ static void run()
 		else failures++;
 	}
 
+	/*
+	 * Browsing someone asks for their whole share.
+	 *
+	 * A "list" request names a single directory, and a peer that implements it
+	 * properly answers with that directory's subdirectories marked
+	 * Incomplete="1" and nothing else - one folder and no way into it. The
+	 * share entire is the rootless "files.xml.bz2" in the file namespace, so
+	 * that is what a browse asks for.
+	 */
+	{
+		QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+
+		QuickDC::FilelistRequest* list =
+			queue->requestFilelist("adc://127.0.0.1:1511", PEER_CID);
+		CHECK(list != 0);
+
+		/* The token is what ties the connection to the queued browse. */
+		const char* token = (list) ? queue->createRequest(list) : 0;
+		CHECK(token != 0);
+
+		if (token)
+		{
+			Session s(token);
+			if (s.ready && s.handshake())
+			{
+				s.say("CINF ID" PEER_CID);
+
+				std::string line;
+				CHECK(s.peer.expect("CGET ", line));
+				CHECK(line == "CGET file files.xml.bz2 0 -1");
+				printf("  ok a browse asks for the whole list: %s\n", line.c_str());
+			}
+			else failures++;
+		}
+
+		if (list) queue->removeFilelistRequest(list);
+	}
+
 	/* A well formed GET for a type nobody defined is refused, not acted on. */
 	{
 		Session s("job1");
@@ -446,6 +485,62 @@ static void run()
 			printf("  ok the peer hanging up is survived\n");
 		}
 		else failures++;
+	}
+
+	/*
+	 * A session still registered when the core goes down.
+	 *
+	 * This one is deliberately not deleted here: it is left for the connection
+	 * manager to tear down from ~Core, which is what happens when the window is
+	 * closed with a transfer running. A session owns its transfer and ~Transfer
+	 * unregisters from the transfer manager, so the manager has to outlive the
+	 * sessions - it did not, and every session's destructor then erased from a
+	 * vector that had already been destroyed.
+	 *
+	 * There is no assertion to make here beyond surviving: the crash was in
+	 * ~Core, long after this returns. Run it under a sanitizer and the bad
+	 * ordering is a hard failure.
+	 */
+	{
+		QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+
+		QuickDC::FilelistRequest* list =
+			queue->requestFilelist("adc://127.0.0.1:1512", PEER_CID);
+		const char* token = (list) ? queue->createRequest(list) : 0;
+		CHECK(token != 0);
+
+		if (token)
+		{
+			/*
+			 * The peer's end has to outlive the function for the session to still
+			 * be alive at shutdown, so this one is leaked on purpose too.
+			 */
+			Peer* peer = new Peer();
+			CHECK(peer->connect());
+
+			ADC::ClientSession* session =
+				new ADC::ClientSession(peer->theirs, 0, token, 0, false, 0);
+
+			/* Enough of a handshake to be given a transfer to hold. */
+			peer->send("CSUP ADBASE ADTIGR\n");
+			pump([] { return false; }, 60);
+
+			std::string line;
+			peer->expect("CINF ", line);
+
+			peer->send("CINF ID" PEER_CID "\n");
+			pump([] { return false; }, 60);
+
+			/* We ask for the list; the peer says it is coming. */
+			if (peer->expect("CGET ", line))
+			{
+				peer->send("CSND file files.xml.bz2 0 4096\n");
+				pump([] { return false; }, 60);
+			}
+
+			(void) session;   /* left for ~Core to deal with */
+			printf("  ok a session left running is torn down with the core\n");
+		}
 	}
 
 	/* Connections come and go without leaving anything in the monitor. */

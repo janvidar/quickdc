@@ -62,13 +62,6 @@ DC::ClientSession::ClientSession(std::shared_ptr<Samurai::IO::Net::Socket> sock,
 
 DC::ClientSession::~ClientSession()
 {
-	while (extensions.size())
-	{
-		char* feature = *extensions.begin();
-		extensions.erase(extensions.begin());
-		free(feature);
-	}
-	
 	releaseTransfer();
 
 	free(remote_nickname);
@@ -462,8 +455,19 @@ void DC::ClientSession::requestNextChunk()
 		QDBG("Requesting the file list of '%s'", list->getClientID());
 		list->setActive(true);
 
-		/* No ZL1: there is no inflating counterpart to ZUpload yet. */
-		send(new DC::SendADCGet("list", "/", 0, -1));
+		/*
+		 * The whole share by name, rather than asked for as a list: a list
+		 * request names one directory, and a peer that answers it properly
+		 * sends only that directory's subdirectories, marked Incomplete="1"
+		 * and empty, leaving nothing to browse into. Compressed if the peer
+		 * says it holds a bzip2 encoded list, which "XmlBZList" is what it is
+		 * called in $Supports; onFilelistDownloaded() unpacks whichever turns
+		 * up.
+		 *
+		 * No ZL1: there is no inflating counterpart to ZUpload yet.
+		 */
+		send(new DC::SendADCGet("file",
+			supports("XmlBZList") ? "files.xml.bz2" : "files.xml", 0, -1));
 		return;
 	}
 
@@ -555,17 +559,13 @@ void DC::ClientSession::onNick(const char* nick)
 
 void DC::ClientSession::addSupport(const char* feature)
 {
-	extensions.insert(strdup(feature));
+	if (feature) extensions.insert(feature);
 }
 
 
-// FIXME: does this work?
 bool DC::ClientSession::supports(const char* feature)
 {
-	char* f = strdup(feature);
-	bool found = extensions.count(f);
-	free(f);
-	return found;
+	return feature && extensions.count(feature) != 0;
 }
 
 
@@ -590,10 +590,22 @@ void DC::ClientSession::onFileSize(uint64_t)
 
 }
 
-void DC::ClientSession::onTransferStopped()
+void DC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 {
 	// connection cancelled/closed
 	QDBG("DC::ClientSession::onTransferStopped()");
+
+	/*
+	 * Only ever the transfer that stopped; see PrivateTransferListener. Releasing
+	 * whatever this session happens to be holding would delete an object the socket
+	 * is still feeding, and one we have moved on from is still ours to free.
+	 */
+	if (which && which != transfer)
+	{
+		QDBG("A transfer stopped that this connection has already moved on from");
+		delete which;
+		return;
+	}
 
 	state = StateIdle;
 
@@ -791,6 +803,19 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 		return;
 	}
 
+	/*
+	 * One transfer at a time on a connection. A peer asking for a file while
+	 * something is already moving had the running transfer released underneath it,
+	 * which on a connection we were downloading over killed the download. Answered
+	 * as busy instead, which is what it is.
+	 */
+	if (transfer)
+	{
+		QDBG("A transfer is already running on this connection; refusing");
+		send(new DC::SendMaxedOut());
+		return;
+	}
+
 	releaseTransfer();
 
 	QuickDC::Core* core = QuickDC::Core::getInstance();
@@ -809,7 +834,14 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 	if (type == FOURCC('l','i','s','t'))
 	{
 		kind = "list";
-		file = sharemgr->getFile(supports("BZList") ? "files.xml.bz2" : "files.xml");
+
+		/*
+		 * Plain, whatever the peer says it can read: a list response carries
+		 * the XML itself, and the compressed form is a file that a peer fetches
+		 * by name instead. "BZList" is about the obsolete MyList.bz2 and says
+		 * nothing about this.
+		 */
+		file = sharemgr->getFile("files.xml");
 		slots_full = false;
 	}
 	else if (type == FOURCC('t','t','h','l') || type == FOURCC('t','t','h','1'))
@@ -928,7 +960,12 @@ void DC::ClientSession::onADCSend(const char* filename, uint32_t type, uint64_t 
 	/* There should be nothing running, but make sure before replacing it. */
 	releaseTransfer();
 
-	if (type == FOURCC('l','i','s','t'))
+	/*
+	 * What was asked for decides this, not what the answer calls itself: the
+	 * whole share is fetched as a file, and a peer answering an older style
+	 * list request is sending the same thing under another name.
+	 */
+	if (request->getKind() == QuickDC::PendingRequest::KindFilelist)
 	{
 		QuickDC::FilelistRequest* list = request->getFilelist();
 		if (!list)
@@ -1008,6 +1045,14 @@ void DC::ClientSession::onSend()
 {
 	if (upload_approved && file)
 	{
+		/*
+		 * The transfer only, not the file: this is a second $Send for the file the
+		 * last $Get set up, so the file has to stay open while whatever was running
+		 * on it goes.
+		 */
+		delete transfer;
+		transfer = 0;
+
 		QuickDC::TransferManager* manager = QuickDC::Core::getInstance()->transfers;
 		transfer = new QuickDC::Upload(manager, this, proxy->socket, file, chunk_offset, chunk_length);
 	}
