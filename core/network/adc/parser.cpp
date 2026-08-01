@@ -284,10 +284,22 @@ void ADC::Command::addArgument(const char* name, const char* arg)
 	if (!arg) return;
 	if (!cached.empty()) resetCache();
 	
-	char* tmp = (char*) malloc(strlen(arg) + 3);
-	memset(tmp, 0, strlen(arg) + 2);
+	const size_t length = strlen(arg);
+
+	/*
+	 * Two characters of name, the argument, and a terminator.
+	 *
+	 * The whole allocation is cleared, and the argument copied rather than
+	 * appended. Zeroing one byte less than was allocated left the last byte as it
+	 * came from the allocator, and strcat() then looked for the terminator that
+	 * byte was supposed to be: with an empty argument - an empty description or
+	 * e-mail field in a CINF is enough - it found whatever was there instead and
+	 * wrote past the end of the buffer.
+	 */
+	char* tmp = (char*) malloc(length + 3);
+	memset(tmp, 0, length + 3);
 	strncpy(tmp, name, 2);
-	strcat(tmp, arg);
+	memcpy(&tmp[2], arg, length);
 	arguments.push_back(tmp);
 }
 
@@ -295,10 +307,11 @@ void ADC::Command::addArgument(const char* name, const std::string& arg)
 {
 	if (!cached.empty()) resetCache();
 	
+	/* As above, and for the same reasons. */
 	char* tmp = (char*) malloc(arg.size() + 3);
-	memset(tmp, 0, arg.size() + 2);
+	memset(tmp, 0, arg.size() + 3);
 	strncpy(tmp, name, 2);
-	strcat(tmp, arg.c_str());
+	memcpy(&tmp[2], arg.data(), arg.size());
 	arguments.push_back(tmp);
 }
 
