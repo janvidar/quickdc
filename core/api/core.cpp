@@ -118,10 +118,22 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 QuickDC::Core::~Core()
 {
 	quickdc_core = 0;
-	/* Flush the download queue before anything it might refer to goes away. */
-	delete queue; queue = 0;
-	delete transfers; transfers = 0;
+
+	/*
+	 * The connections first, and this order is not a preference.
+	 *
+	 * A session owns whatever transfer it is running, and ~Transfer unregisters
+	 * itself from the transfer manager - so tearing the manager down first left
+	 * every session's destructor erasing from a vector that no longer existed. A
+	 * session may also hand an unfinished chunk back to the queue on its way out,
+	 * so that has to outlive it too.
+	 */
 	delete connections; connections = 0;
+
+	/* Then the queue, which flushes itself to disk as it goes. */
+	delete queue; queue = 0;
+
+	delete transfers; transfers = 0;
 	delete server; server = 0;
 	delete hubs; hubs = 0;
 	delete securityManager; securityManager = 0;
