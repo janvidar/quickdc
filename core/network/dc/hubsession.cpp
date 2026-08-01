@@ -706,7 +706,7 @@ void DC::HubSession::EventTimeout(const Samurai::IO::Net::Socket*)
 {
 	manager->remove(this);
 	listener->EventNetStatus(QuickDC::HubListener::NetErrorTimeout);
-	hub->onDisconnected();
+	hub->onDisconnected(QuickDC::HubListener::NetErrorTimeout);
 }
 
 void DC::HubSession::EventDisconnected(const Samurai::IO::Net::Socket*)
@@ -718,7 +718,7 @@ void DC::HubSession::EventDisconnected(const Samurai::IO::Net::Socket*)
 
 	manager->remove(this);
 	listener->EventNetStatus(QuickDC::HubListener::NetDisconnected);
-	hub->onDisconnected();
+	hub->onDisconnected(QuickDC::HubListener::NetDisconnected);
 	delete infoTimer; infoTimer = 0;
 }
 
@@ -736,22 +736,33 @@ void DC::HubSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Ne
 {
 	manager->remove(this);
 	
+	QuickDC::HubListener::StatusNetwork why = QuickDC::HubListener::NetErrorIO;
+
 	switch (error)
 	{
 		case Samurai::IO::Net::SocketError::ConnectionTimeout:
-			listener->EventNetStatus(QuickDC::HubListener::NetErrorTimeout);
+			why = QuickDC::HubListener::NetErrorTimeout;
 			break;
 		case Samurai::IO::Net::SocketError::ConnectionRefused:
-			listener->EventNetStatus(QuickDC::HubListener::NetErrorConnectionRefused);
+			why = QuickDC::HubListener::NetErrorConnectionRefused;
 			break;
 		case Samurai::IO::Net::SocketError::HostNotFound:
-			listener->EventNetStatus(QuickDC::HubListener::NetErrorHostNotFound);
+			why = QuickDC::HubListener::NetErrorHostNotFound;
+			break;
+		case Samurai::IO::Net::SocketError::HostUnreachable:
+		case Samurai::IO::Net::SocketError::NetUnreachable:
+		case Samurai::IO::Net::SocketError::HostDown:
+		case Samurai::IO::Net::SocketError::NetDown:
+			/* Apart from the rest, because it is retried differently. */
+			why = QuickDC::HubListener::NetErrorHostUnreachable;
 			break;
 		default:
-			listener->EventNetStatus(QuickDC::HubListener::NetErrorIO);
+			QERR("Network error %d on '%s'", (int) error,
+				hub ? hub->getUrl() : "");
 	}
-	
-	hub->onDisconnected();
+
+	listener->EventNetStatus(why);
+	hub->onDisconnected(why);
 	delete infoTimer; infoTimer = 0;
 }
 

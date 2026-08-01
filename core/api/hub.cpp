@@ -13,6 +13,7 @@
 #include <samurai/io/net/socketevent.h>
 #include <samurai/io/net/socketmonitor.h>
 #include <samurai/io/net/url.h>
+#include <samurai/util/random.h>
 #include "network/user.h"
 #include "network/dc/dccommandparser.h"
 #include "network/dc/dccommandproxy.h"
@@ -32,6 +33,8 @@
 QuickDC::Hub::Hub(HubListener* listener_, Samurai::IO::Net::URL* url_)
 	: session(0)
 	, listener(listener_)
+	, requestedDisconnect(false)
+	, attempts(0)
 	, url(new Samurai::IO::Net::URL(url_))
 	, canonicalUrl(0)
 	, timer(0)
@@ -106,6 +109,11 @@ void QuickDC::Hub::connect()
 void QuickDC::Hub::disconnect()
 {
 	requestedDisconnect = true;
+
+	/* Any attempt still pending is not wanted either. */
+	delete timer;
+	timer = 0;
+
 	if (session)
 	{
 		session->disconnect();
@@ -319,7 +327,36 @@ void QuickDC::Hub::EventTimeout(Samurai::Timer*)
 	connect();
 }
 
-void QuickDC::Hub::onDisconnected()
+int QuickDC::Hub::retryDelay(HubListener::StatusNetwork why, size_t attempts)
+{
+	if (!attempts) return -1;
+
+	/*
+	 * Nothing reachable: one more attempt, soon. On macOS the first connection to
+	 * an address on the local network is spent asking whether this application may
+	 * make it at all, and fails - so the second one is the one that works. A route
+	 * that is genuinely not there will not appear because we asked twice.
+	 */
+	if (why == HubListener::NetErrorHostUnreachable)
+		return (attempts == 1) ? QUICKDC_HUB_RETRY_UNREACHABLE : -1;
+
+	/* Doubling, to the ceiling: 5, 10, 20, 40 ... seconds. */
+	uint64_t wait = QUICKDC_HUB_RETRY_BASE;
+	for (size_t n = 1; n < attempts && wait < QUICKDC_HUB_RETRY_MAX; n++)
+		wait *= 2;
+
+	if (wait > QUICKDC_HUB_RETRY_MAX) wait = QUICKDC_HUB_RETRY_MAX;
+
+	/*
+	 * Somewhere in the upper half of that, rather than exactly on it. A hub that
+	 * drops every client at once would otherwise have all of them back at the same
+	 * instant, which is how it came to drop them.
+	 */
+	const int spread = (int) (wait / 2);
+	return (int) (wait - spread) + Samurai::Util::pseudoRandom(0, spread);
+}
+
+void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 {
 	if (session && session->getUserManager())
 	{
@@ -327,11 +364,31 @@ void QuickDC::Hub::onDisconnected()
 		session->getUserManager()->cleanup();
 	}
 
-	int reconnect_time = (session) ? session->getReconnectTime() : -1;
+	/*
+	 * A connection that was up and has gone starts the backoff again from the
+	 * beginning: whatever the trouble was, it was not that this hub cannot be
+	 * reached at all.
+	 */
+	if (session && session->isLoggedIn()) attempts = 0;
+
+	const int reconnect_time = (session) ? session->getReconnectTime() : -1;
 	session = 0;
-	if (!requestedDisconnect && reconnect_time != -1)
+
+	if (requestedDisconnect || reconnect_time == -1) return;
+
+	attempts++;
+
+	const int wait = retryDelay(why, attempts);
+	if (wait < 0)
 	{
-		timer = new Samurai::Timer(this, reconnect_time, true);
+		QDBG("Not trying '%s' again", canonicalUrl);
+		return;
 	}
+
+	QDBG("Trying '%s' again in %d seconds (attempt %d)",
+		canonicalUrl, wait, (int) attempts);
+
+	delete timer;
+	timer = new Samurai::Timer(this, (time_t) wait, true);
 }
 

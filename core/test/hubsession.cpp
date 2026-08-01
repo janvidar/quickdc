@@ -659,6 +659,79 @@ static void run()
 
 }
 
+/*
+ * When a hub is worth trying again, and how soon.
+ *
+ * The policy is a function of the reason and of how many attempts have failed, so
+ * it can be read here without waiting for any of it.
+ */
+static void test_retry_policy()
+{
+	using L = QuickDC::HubListener;
+
+	/* Nothing has failed yet, so there is nothing to wait for. */
+	CHECK(QuickDC::Hub::retryDelay(L::NetDisconnected, 0) == -1);
+
+	/*
+	 * Unreachable: once, soon. The first connection to a local address on macOS is
+	 * spent asking whether this application may make it, and fails - the second is
+	 * the one that works. A route that is really not there will not appear because
+	 * we asked twice.
+	 */
+	CHECK(QuickDC::Hub::retryDelay(L::NetErrorHostUnreachable, 1)
+		== QUICKDC_HUB_RETRY_UNREACHABLE);
+	CHECK(QuickDC::Hub::retryDelay(L::NetErrorHostUnreachable, 2) == -1);
+	CHECK(QuickDC::Hub::retryDelay(L::NetErrorHostUnreachable, 9) == -1);
+	printf("  ok a host that could not be reached is retried once, soon\n");
+
+	/*
+	 * Everything else backs off, doubling, and every wait lands in the upper half
+	 * of what it doubled to - so a hub that threw every client off at once does not
+	 * get all of them back in the same instant.
+	 */
+	const L::StatusNetwork reasons[] = {
+		L::NetDisconnected,
+		L::NetErrorConnectionRefused,
+		L::NetErrorTimeout,
+		L::NetErrorIO
+	};
+
+	for (size_t r = 0; r < sizeof(reasons) / sizeof(reasons[0]); r++)
+	{
+		int previous = 0;
+
+		for (size_t attempt = 1; attempt <= 12; attempt++)
+		{
+			int lowest = QUICKDC_HUB_RETRY_MAX;
+			int highest = 0;
+
+			/* Sampled, because each answer carries its own spread. */
+			for (int n = 0; n < 200; n++)
+			{
+				const int wait = QuickDC::Hub::retryDelay(reasons[r], attempt);
+
+				CHECK(wait >= 1);
+				CHECK(wait <= QUICKDC_HUB_RETRY_MAX);
+
+				if (wait < lowest) lowest = wait;
+				if (wait > highest) highest = wait;
+			}
+
+			/* Never sooner than the attempt before it asked for. */
+			CHECK(lowest >= previous / 2);
+			previous = lowest;
+
+			/* And spread, rather than the same answer every time. */
+			if (attempt > 2) CHECK(highest > lowest);
+		}
+
+		/* Twelve doublings from five seconds is well past the ceiling. */
+		CHECK(QuickDC::Hub::retryDelay(reasons[r], 12) > QUICKDC_HUB_RETRY_MAX / 2);
+	}
+
+	printf("  ok everything else backs off to a ceiling, spread either side\n");
+}
+
 int main()
 {
 	setbuf(stdout, 0);
@@ -677,6 +750,7 @@ int main()
 		 */
 		QuickDC::Core core(cfg, ses);
 		run();
+		test_retry_policy();
 	}
 
 	Samurai::IO::File(cfg).remove();

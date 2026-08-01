@@ -65,6 +65,16 @@ class HubListener
 			NetErrorTimeout,
 			NetErrorConnectionRefused,
 			NetErrorHostNotFound,
+
+			/**
+			 * Nothing was reachable: no route to the host, or the network is
+			 * down. Distinct from the errors above because it is the one that
+			 * is often a moment old - a route that has not come up yet, or on
+			 * macOS the first attempt at a local address, which is spent
+			 * asking whether this application may make it at all.
+			 */
+			NetErrorHostUnreachable,
+
 			NetErrorIO,
 			NetTlsError
 		};
@@ -239,6 +249,20 @@ class DCServerListener
 		virtual bool EventGotConnection(const char* address, uint16_t port) = 0;
 };
 
+/** How long after a connection ended the first attempt to restore it is made. */
+#define QUICKDC_HUB_RETRY_BASE 5
+
+/** And the longest wait between attempts, however many have failed. */
+#define QUICKDC_HUB_RETRY_MAX 300
+
+/**
+ * A host that could not be reached is retried this soon, and only once.
+ *
+ * Short because the usual cause is a route, or a permission, that was a moment
+ * away from being there - see NetErrorHostUnreachable.
+ */
+#define QUICKDC_HUB_RETRY_UNREACHABLE 1
+
 /**
  * Subclass this to receive hub state information.
  */
@@ -326,7 +350,36 @@ class Hub
 
 
 		/* Internal */
-		void onDisconnected();
+
+		/**
+		 * The session has gone.
+		 *
+		 * @param why what took it away, which is what decides whether and when to
+		 *        try again - see retryDelay().
+		 */
+		void onDisconnected(HubListener::StatusNetwork why =
+		                    HubListener::NetDisconnected);
+
+		/**
+		 * How long to wait before trying again, in seconds, or -1 to give up.
+		 *
+		 * Nothing unreachable is retried more than once: a route that is not there
+		 * is usually either a moment old - and a second is enough for it - or it is
+		 * not coming back, and asking every few seconds for the rest of the session
+		 * would say nothing new. Everything else that ends a connection is worth
+		 * coming back to, so those back off: each attempt waits about twice as long
+		 * as the one before, up to a ceiling.
+		 *
+		 * The wait is spread over a range rather than taken exactly, so that a
+		 * hundred clients thrown off the same hub at the same moment do not all come
+		 * back at the same moment and throw it off again.
+		 *
+		 * @param why the reason the connection ended.
+		 * @param attempts how many have failed in a row, starting at 1 for the first.
+		 *
+		 * Static so that the policy can be read and tested on its own.
+		 */
+		static int retryDelay(HubListener::StatusNetwork why, size_t attempts);
 
 
 	protected:
@@ -334,6 +387,10 @@ class Hub
 		HubListener* listener;
 
 		bool requestedDisconnect;
+
+		/** Failed attempts in a row; zero once a connection has been established. */
+		size_t attempts;
+
 		Samurai::IO::Net::URL* url;
 		char* canonicalUrl;
 		Samurai::Timer* timer;
