@@ -18,18 +18,6 @@ enum DCFileType {
 	FHash = 256
 };
 
-static const int typeLookup[] = {
-	0, 
-	FAny,          // 1
-	FAudio,        // 2
-	FCompressed,   // 3
-	FDocument,     // 4
-	FExecutable,   // 5
-	FPicture,      // 6
-	FVideo,        // 7
-	FDir,          // 8
-	FHash          // 9
-};
 
 #define KNOWN_EXTENSIONS 78
 static const struct {

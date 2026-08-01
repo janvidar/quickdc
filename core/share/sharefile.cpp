@@ -19,9 +19,10 @@ tth(0) {
 	size = file.size();
 	directory->addSize(size);
 
+	/* The table holds the flag itself, and it is what decides a search by type. */
 	for (size_t i = 0; i < KNOWN_EXTENSIONS; i++)
 		if (file.matchExtension(known_ext[i].ext))
-			ftype |= typeLookup[known_ext[i].ftype];
+			ftype |= known_ext[i].ftype;
 
 	QuickDC::Share::Dir* d = directory;
 	while (!d->manager) d = d->parent;
