@@ -21,6 +21,7 @@
 #include <samurai/io/buffer.h>
 #include <samurai/io/compression.h>
 
+#include <algorithm>
 #include <span>
 #include <stdio.h>
 
@@ -344,6 +345,7 @@ QuickDC::PendingRequest::PendingRequest(const char* token_, QueueFile* file_, Fi
 	, file(file_)
 	, source(source_)
 	, filelist(0)
+	, asked(std::chrono::steady_clock::now())
 	, reserved(false)
 	, offset(0)
 	, length(0)
@@ -357,6 +359,7 @@ QuickDC::PendingRequest::PendingRequest(const char* token_, FilelistRequest* fil
 	, file(0)
 	, source(0)
 	, filelist(filelist_)
+	, asked(std::chrono::steady_clock::now())
 	, reserved(false)
 	, offset(0)
 	, length(0)
@@ -367,6 +370,14 @@ QuickDC::PendingRequest::PendingRequest(const char* token_, FilelistRequest* fil
 QuickDC::PendingRequest::~PendingRequest()
 {
 	free(token);
+}
+
+double QuickDC::PendingRequest::elapsedSeconds() const
+{
+	const std::chrono::duration<double> spent =
+		std::chrono::steady_clock::now() - asked;
+
+	return spent.count();
 }
 
 void QuickDC::PendingRequest::setReservation(uint64_t offset_, uint64_t length_)
@@ -1001,7 +1012,7 @@ bool QuickDC::QueueManager::reserveChunk(QueueFile* file, FileSource* source, ui
 	/* Without a known size there is nothing to divide into chunks yet. */
 	if (!file->getSize()) return false;
 
-	uint64_t want = getChunkSize();
+	uint64_t want = chunkSizeFor(source);
 
 	/* Round to whole leaves, so each chunk can be checked on its own. */
 	LeafHashes* leaves = file->getLeaves();
@@ -1101,6 +1112,21 @@ size_t QuickDC::QueueManager::countActiveTransfers() const
 	for (size_t n = 0; n < files.size(); n++)
 		count += files[n]->countActiveSources();
 	return count;
+}
+
+uint64_t QuickDC::QueueManager::chunkSizeFor(const FileSource* source) const
+{
+	const uint64_t configured = getChunkSize();
+
+	/* Nothing measured yet, or a floor already past where we would grow to. */
+	if (!source || configured >= (uint64_t) QUICKDC_CHUNK_SIZE_MAX) return configured;
+
+	const uint64_t rate = source->getThroughput();
+	if (!rate) return configured;
+
+	const uint64_t want = rate * QUICKDC_CHUNK_TARGET_SECONDS;
+
+	return std::clamp(want, configured, (uint64_t) QUICKDC_CHUNK_SIZE_MAX);
 }
 
 uint64_t QuickDC::QueueManager::getChunkSize() const
@@ -1298,6 +1324,18 @@ void QuickDC::QueueManager::onRequestFinished(const char* token)
 		if (source)
 		{
 			source->touch();
+
+			/*
+			 * What that chunk went at, which is what decides the size of the next
+			 * one. Timed from when it was asked for rather than from the first byte,
+			 * so the round trip is part of the figure - see chunkSizeFor().
+			 */
+			if (request->haveReservation())
+			{
+				source->onChunkDone(request->getReservedLength(),
+				                    request->elapsedSeconds());
+			}
+
 			if (file) file->setSourceActive(source, false);
 		}
 	}

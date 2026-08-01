@@ -157,6 +157,28 @@ class FileSource {
 		inline const Samurai::TimeStamp& getLastSeen() const { return lastSeen; }
 
 		/**
+		 * How fast this source has actually been handing chunks over, in bytes per
+		 * second, or zero until one has arrived.
+		 *
+		 * Measured from asking to arriving, so the round trip that each chunk costs
+		 * is counted in it. That is the point of the figure: it decides how much to
+		 * ask for next time, and asking for too little is precisely what makes the
+		 * overhead worth counting.
+		 *
+		 * Not persisted. A source's throughput says as much about the network in
+		 * between as about the peer, and neither is worth assuming a week later.
+		 */
+		uint64_t getThroughput() const;
+
+		/**
+		 * A chunk arrived: this many bytes, this long after it was asked for.
+		 *
+		 * Ignored if either is zero, which is what a request that failed or was
+		 * answered with nothing looks like.
+		 */
+		void onChunkDone(uint64_t bytes, double seconds);
+
+		/**
 		 * @return true if this source has failed too many times, or has not
 		 *         been seen for too long, and should be forgotten.
 		 */
@@ -180,6 +202,7 @@ class FileSource {
 		Samurai::TimeStamp lastSeen; // expire this after ~30 days.
 		Samurai::TimeStamp lastAttempt; // not persisted; a restart may retry at once.
 		char* availability;   // PSR "PI" notation, or 0 if they have it all
+		double throughput;    // bytes per second, smoothed; 0 until a chunk arrives
 };
 
 }

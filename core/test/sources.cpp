@@ -469,12 +469,75 @@ static void test_collect()
 	}
 }
 
+/*
+ * How much a source is asked for at a time.
+ *
+ * A chunk costs a round trip - it is not asked for until the one before it has
+ * arrived and been reported - so a fixed size that suits a slow peer leaves a
+ * fast one idle between chunks, and its rate sawtooths. The size follows what
+ * the source has actually been managing instead.
+ *
+ * There is no Core here, so getChunkSize() answers with the built-in default
+ * rather than with anything configured.
+ */
+static void test_chunk_sizing()
+{
+	Fixture fix;
+
+	/* Nothing measured yet, and nothing to measure. */
+	QuickDC::FileSource unknown(HUB, CID, "/tmp/a.bin");
+	CHECK(unknown.getThroughput() == 0);
+	CHECK(fix.queue->chunkSizeFor(&unknown) == QUICKDC_CHUNK_SIZE);
+	CHECK(fix.queue->chunkSizeFor(0) == QUICKDC_CHUNK_SIZE);
+	printf("  ok a source we know nothing about is asked for the default\n");
+
+	/* Slow: two seconds of it is less than the floor, so the floor stands. */
+	QuickDC::FileSource slow(HUB, CID, "/tmp/b.bin");
+	slow.onChunkDone(64 * 1024, 1.0);
+	CHECK(slow.getThroughput() == 64 * 1024);
+	CHECK(fix.queue->chunkSizeFor(&slow) == QUICKDC_CHUNK_SIZE);
+	printf("  ok a slow source is never asked for less than the default\n");
+
+	/* Quick: about QUICKDC_CHUNK_TARGET_SECONDS of transfer. */
+	QuickDC::FileSource quick(HUB, CID, "/tmp/c.bin");
+	quick.onChunkDone(4 * 1024 * 1024, 1.0);
+	CHECK(quick.getThroughput() == 4u * 1024 * 1024);
+	CHECK(fix.queue->chunkSizeFor(&quick)
+		== 4u * 1024 * 1024 * QUICKDC_CHUNK_TARGET_SECONDS);
+	printf("  ok a quick source is asked for a couple of seconds' worth\n");
+
+	/*
+	 * And a very fast one is held at the ceiling. Twenty five megabytes a second
+	 * is where a megabyte chunk was being asked for twenty five times over.
+	 */
+	QuickDC::FileSource fast(HUB, CID, "/tmp/d.bin");
+	for (int n = 0; n < 20; n++) fast.onChunkDone(25 * 1024 * 1024, 1.0);
+	CHECK(fast.getThroughput() > 20u * 1024 * 1024);
+	CHECK(fix.queue->chunkSizeFor(&fast) == (uint64_t) QUICKDC_CHUNK_SIZE_MAX);
+	printf("  ok however fast the source, a chunk stops at the ceiling\n");
+
+	/* Smoothed, so one slow chunk does not collapse the next request. */
+	const uint64_t settled = fast.getThroughput();
+	fast.onChunkDone(1024, 1.0);
+	CHECK(fast.getThroughput() > settled / 2);
+	printf("  ok one slow chunk does not undo what a source has shown\n");
+
+	/* Nothing arriving, or arriving in no time at all, measures nothing. */
+	QuickDC::FileSource odd(HUB, CID, "/tmp/e.bin");
+	odd.onChunkDone(0, 1.0);
+	odd.onChunkDone(1024, 0.0);
+	odd.onChunkDone(1024, -1.0);
+	CHECK(odd.getThroughput() == 0);
+	printf("  ok a chunk of nothing, or in no time, is not a measurement\n");
+}
+
 int main()
 {
 	setbuf(stdout, 0);
 
 	test_sources();
 	test_collect();
+	test_chunk_sizing();
 
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
 	return failures ? 1 : 0;

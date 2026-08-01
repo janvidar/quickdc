@@ -20,7 +20,7 @@
  * which is the root directory.
  */
 QuickDC::FileSource::FileSource(const char* url_)
-	: hub(0), cid(0), filename(0), retryCount(0), availability(0)
+	: hub(0), cid(0), filename(0), retryCount(0), availability(0), throughput(0.0)
 {
 	if (!url_) return;
 
@@ -50,7 +50,7 @@ QuickDC::FileSource::FileSource(const char* url_)
 }
 
 QuickDC::FileSource::FileSource(const char* hub_, const char* cid_, const char* filename_)
-	: hub(0), cid(0), filename(0), retryCount(0), availability(0)
+	: hub(0), cid(0), filename(0), retryCount(0), availability(0), throughput(0.0)
 {
 	hub = (hub_) ? strdup(hub_) : 0;
 	cid = (cid_) ? strdup(cid_) : 0;
@@ -87,6 +87,27 @@ void QuickDC::FileSource::touch()
 {
 	lastSeen.reset();
 	retryCount = 0;
+}
+
+uint64_t QuickDC::FileSource::getThroughput() const
+{
+	return (throughput > 0.0) ? (uint64_t) throughput : 0;
+}
+
+void QuickDC::FileSource::onChunkDone(uint64_t bytes, double seconds)
+{
+	if (!bytes || seconds <= 0.0) return;
+
+	const double sample = (double) bytes / seconds;
+
+	/*
+	 * Smoothed rather than taken as read. One chunk is a small sample and a
+	 * peer's throughput wanders, so a single slow chunk must not shrink the next
+	 * request to nothing and a single fast one must not ask for the world. The
+	 * weight is light enough to follow a source that really has changed speed
+	 * within a few chunks.
+	 */
+	throughput = (throughput > 0.0) ? (throughput * 0.7 + sample * 0.3) : sample;
 }
 
 void QuickDC::FileSource::onFailure()

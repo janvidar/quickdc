@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <samurai/timestamp.h>
+#include <chrono>
 #include <map>
 #include <set>
 #include <string>
@@ -26,8 +27,25 @@
 /** Default destination for downloads, overridable in [Downloads]/Directory. */
 #define QUICKDC_DOWNLOAD_DIR   "~/.quickdc/downloads"
 
-/** How much we ask a single source for at a time, unless configured otherwise. */
+/** What a source we know nothing about yet is asked for. */
 #define QUICKDC_CHUNK_SIZE (1024*1024)
+
+/**
+ * How much of a transfer one chunk should be worth, in seconds.
+ *
+ * A chunk costs a round trip: it is asked for only once the one before it has
+ * arrived and been reported, so the connection sits idle in between. At a couple
+ * of seconds a chunk that costs a few milliseconds, which is in the noise.
+ */
+#define QUICKDC_CHUNK_TARGET_SECONDS 2
+
+/**
+ * No chunk grows past this, however fast the source.
+ *
+ * A chunk that fails is released whole and fetched again from the start, so the
+ * ceiling is what bounds the work a dropped connection can throw away.
+ */
+#define QUICKDC_CHUNK_SIZE_MAX (16*1024*1024)
 
 /** A partially downloaded file carries this suffix until it is verified. */
 #define QUICKDC_PART_SUFFIX ".part"
@@ -313,6 +331,14 @@ class PendingRequest {
 
 		inline const Samurai::TimeStamp& getTimeAdded() const { return added; }
 
+		/**
+		 * How long ago this was asked for, in seconds.
+		 *
+		 * On its own clock rather than from 'added', which counts in whole seconds
+		 * - and a chunk on a fast source is gone in a fraction of one.
+		 */
+		double elapsedSeconds() const;
+
 		/** The chunk this peer is expected to deliver, if any. */
 		void setReservation(uint64_t offset, uint64_t length);
 		void clearReservation();
@@ -327,6 +353,7 @@ class PendingRequest {
 		FileSource* source;
 		FilelistRequest* filelist;
 		Samurai::TimeStamp added;
+		std::chrono::steady_clock::time_point asked;
 		bool reserved;
 		uint64_t offset;
 		uint64_t length;
@@ -505,6 +532,25 @@ class QueueManager {
 
 		/** The chunk size we hand out, from the configuration. */
 		uint64_t getChunkSize() const;
+
+		/**
+		 * How much this source would be asked for next.
+		 *
+		 * Chunking costs a round trip per chunk, which is nothing on a slow source
+		 * and a great deal on a fast one: at twenty five megabytes a second a
+		 * megabyte is gone in forty milliseconds, so a connection asked for a
+		 * megabyte at a time spends a good part of its life waiting to be told what
+		 * to fetch next, and the rate sawtooths. So the size follows the source -
+		 * about QUICKDC_CHUNK_TARGET_SECONDS of transfer at whatever it has been
+		 * managing - which puts that cost back into the noise.
+		 *
+		 * The configured chunk size is the floor rather than the answer: it is what
+		 * a source is asked for until it has shown what it can do, and it is never
+		 * gone below. QUICKDC_CHUNK_SIZE_MAX is the ceiling.
+		 *
+		 * @param source may be null, which yields the configured size.
+		 */
+		uint64_t chunkSizeFor(const FileSource* source) const;
 
 	public: /* file lists - transient, never stored */
 
