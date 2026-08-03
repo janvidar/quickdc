@@ -7,13 +7,12 @@
 #include "network/keyprint.h"
 
 #include <ctype.h>
-#include <string.h>
-#include <strings.h>
 
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/tlsfactory.h>
 #include <samurai/util/base32.h>
 #include <span>
+#include <string_view>
 
 #define KEYPRINT_HASH   "SHA256/"
 #define KEYPRINT_DIGITS 52 /* base32 of 32 bytes, unpadded */
@@ -27,13 +26,14 @@ bool QuickDC::Keyprint::isValid(const char* keyprint)
 {
 	if (!keyprint) return false;
 
-	const size_t prefix = strlen(KEYPRINT_HASH);
+	constexpr std::string_view hash(KEYPRINT_HASH);
+	const std::string_view kp(keyprint);
 
-	if (strncasecmp(keyprint, KEYPRINT_HASH, prefix) != 0) return false;
-	if (strlen(keyprint) != prefix + KEYPRINT_DIGITS) return false;
+	if (!Samurai::Util::istarts_with(kp, hash)) return false;
+	if (kp.size() != hash.size() + KEYPRINT_DIGITS) return false;
 
-	for (const char* p = &keyprint[prefix]; *p; p++)
-		if (!is_base32((char) toupper((unsigned char) *p))) return false;
+	for (const char c : kp.substr(hash.size()))
+		if (!is_base32((char) toupper((unsigned char) c))) return false;
 
 	return true;
 }
@@ -41,7 +41,7 @@ bool QuickDC::Keyprint::isValid(const char* keyprint)
 bool QuickDC::Keyprint::equals(const char* a, const char* b)
 {
 	if (!isValid(a) || !isValid(b)) return false;
-	return strcasecmp(a, b) == 0;
+	return Samurai::Util::iequals(a, b);
 }
 
 bool QuickDC::Keyprint::fromQuery(const std::string& query, std::string& keyprint)
@@ -55,7 +55,7 @@ bool QuickDC::Keyprint::fromQuery(const std::string& query, std::string& keyprin
 
 		std::string param = query.substr(at, end - at);
 
-		if (param.size() > 3 && param[2] == '=' && strncasecmp(param.c_str(), "kp", 2) == 0)
+		if (param.size() > 3 && param[2] == '=' && Samurai::Util::istarts_with(param, "kp"))
 		{
 			keyprint = param.substr(3);
 			return true;

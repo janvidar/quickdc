@@ -6,6 +6,7 @@
 #include "network/adc/parser.h"
 #include <samurai/io/buffer.h>
 #include <memory>
+#include <string_view>
 
 static bool isAlphaNum(char c) {
 	if (c < 48 || c > 90) return false;
@@ -343,11 +344,24 @@ bool ADC::Command::haveArgument(size_t offset)
 	return (offset < arguments.size());
 }
 
+/*
+ * 'len' is how much of the front of the argument the name occupies, not the
+ * length of either string, so both sides are compared up to that much and no
+ * further. Either one may be shorter than it, and then it only matches a side
+ * that ends in the same place.
+ */
+static bool argumentHasName(const char* argument, const char* name, size_t len)
+{
+	const std::string_view arg(argument ? argument : "");
+	const std::string_view key(name ? name : "");
+	return arg.substr(0, len) == key.substr(0, len);
+}
+
 bool ADC::Command::haveArgument(const char* name, size_t len, size_t after)
 {
 	for (size_t n = after; n < arguments.size(); n++)
 	{
-		if (strncmp(name, arguments[n], len) == 0)
+		if (argumentHasName(arguments[n], name, len))
 			return true;
 	}
 	return false;
@@ -361,7 +375,7 @@ size_t ADC::Command::countArguments()
 char* ADC::Command::getArgument(const char* name, size_t len, size_t after)
 {
 	for (size_t n = after; n < arguments.size(); n++) {
-		if (strncmp(name, arguments[n], len) == 0)
+		if (argumentHasName(arguments[n], name, len))
 			return &arguments[n][len];
 	}
 	return 0;
@@ -377,7 +391,7 @@ bool ADC::Command::removeArgument(const char* name, size_t len, size_t after)
 	{
 		if (n >= after)
 		{
-			if (strncmp(name, arguments[n], len) == 0)
+			if (argumentHasName(arguments[n], name, len))
 			{
 				free(arguments[n]);
 				found = true;

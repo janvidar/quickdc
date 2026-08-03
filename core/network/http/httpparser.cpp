@@ -8,6 +8,7 @@
 #include "network/http/entity.h"
 #include "network/http/pipeline.h"
 #include <samurai/io/buffer.h>
+#include <samurai/stdc.h>
 #include <string>
 
 #define MAX_HEADER_LINE_SIZE 16384
@@ -107,7 +108,7 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 				QDBG("DetectBody");
 				Http::Header* cl = entity->getHeader("Content-Length");
 				Http::Header* te = entity->getHeader("Transfer-Encoding");
-				if (te && te->getValue() && !strcasecmp(te->getValue(), "identity")) te = 0;
+				if (te && te->getValue() && Samurai::Util::iequals(te->getValue(), "identity")) te = 0;
 	
 				if (cl || te)
 				{
@@ -237,18 +238,20 @@ bool Http::Parser::parseRequestLine(const char* line_) {
 
 	if (uri.empty()) return false;
 
-	if      (!strcasecmp(method.c_str(), "GET"))     entity->setMethod(Http::Entity::GET);
-	else if (!strcasecmp(method.c_str(), "HEAD"))    entity->setMethod(Http::Entity::HEAD);
-	else if (!strcasecmp(method.c_str(), "POST"))    entity->setMethod(Http::Entity::POST);
-	else if (!strcasecmp(method.c_str(), "CONNECT")) entity->setMethod(Http::Entity::CONNECT);
-	else if (!strcasecmp(method.c_str(), "DELETE"))  entity->setMethod(Http::Entity::DELETE);
-	else if (!strcasecmp(method.c_str(), "OPTIONS")) entity->setMethod(Http::Entity::OPTIONS);
-	else if (!strcasecmp(method.c_str(), "TRACE"))   entity->setMethod(Http::Entity::TRACE);
-	else if (!strcasecmp(method.c_str(), "PUT"))     entity->setMethod(Http::Entity::PUT);
-	else                                             entity->setMethod(Http::Entity::UNKNOWN);
+	using Samurai::Util::iequals;
 
-	if (!strcasecmp(protocol.c_str(), "HTTP/1.1")) entity->setProtocol(Http::Entity::HTTP_1_1);
-	else                                           entity->setProtocol(Http::Entity::HTTP_1_0);
+	if      (iequals(method, "GET"))     entity->setMethod(Http::Entity::GET);
+	else if (iequals(method, "HEAD"))    entity->setMethod(Http::Entity::HEAD);
+	else if (iequals(method, "POST"))    entity->setMethod(Http::Entity::POST);
+	else if (iequals(method, "CONNECT")) entity->setMethod(Http::Entity::CONNECT);
+	else if (iequals(method, "DELETE"))  entity->setMethod(Http::Entity::DELETE);
+	else if (iequals(method, "OPTIONS")) entity->setMethod(Http::Entity::OPTIONS);
+	else if (iequals(method, "TRACE"))   entity->setMethod(Http::Entity::TRACE);
+	else if (iequals(method, "PUT"))     entity->setMethod(Http::Entity::PUT);
+	else                                 entity->setMethod(Http::Entity::UNKNOWN);
+
+	if (iequals(protocol, "HTTP/1.1")) entity->setProtocol(Http::Entity::HTTP_1_1);
+	else                               entity->setProtocol(Http::Entity::HTTP_1_0);
 
 	entity->setURI(uri.c_str());
 	return true;
@@ -281,8 +284,8 @@ bool Http::Parser::parseStatusLine(const char* line_) {
 	entity->setCode(ncode);
 	entity->setMessage(message.c_str());
 
-	if (!strcasecmp(version.c_str(), "HTTP/1.1")) entity->setProtocol(Http::Entity::HTTP_1_1);
-	else                                          entity->setProtocol(Http::Entity::HTTP_1_0);
+	if (Samurai::Util::iequals(version, "HTTP/1.1")) entity->setProtocol(Http::Entity::HTTP_1_1);
+	else                                             entity->setProtocol(Http::Entity::HTTP_1_0);
 
 	return true;
 }

@@ -13,6 +13,7 @@
 #include <vector>
 #include <string.h>
 #include <string>
+#include <string_view>
 
 #include "config/preferences.h"
 #include "network/adc/server/acl.h"
@@ -705,9 +706,17 @@ ADC::HubUser* ADC::Hub::lookupUser(sid_t sid) {
 	return user;
 }
 
+/*
+ * A user only reaches State_Normal once its INF gave both a nick and a CID, so
+ * the stored side of each of these is there to be compared; the name being
+ * looked for is the side that may be missing, and no logged-in user answers to
+ * nothing.
+ */
 ADC::HubUser* ADC::Hub::lookupUser(const char* nick) {
+	const std::string_view wanted(nick ? nick : "");
+
 	for (size_t n = 0; n < users.size(); n++) {
-		if (users[n]->state == State_Normal && strcasecmp(users[n]->nick, nick) == 0) {
+		if (users[n]->state == State_Normal && Samurai::Util::iequals(users[n]->nick, wanted)) {
 			return users[n];
 		}
 	}
@@ -715,8 +724,10 @@ ADC::HubUser* ADC::Hub::lookupUser(const char* nick) {
 }
 
 ADC::HubUser* ADC::Hub::lookupUserCID(const char* cid) {
+	const std::string_view wanted(cid ? cid : "");
+
 	for (size_t n = 0; n < users.size(); n++) {
-		if (users[n]->state == State_Normal && strcasecmp(users[n]->cid, cid) == 0) {
+		if (users[n]->state == State_Normal && Samurai::Util::iequals(users[n]->cid, wanted)) {
 			return users[n];
 		}
 	}

@@ -8,6 +8,7 @@
 #include "network/adc/adccommands.h"
 #include "network/adc/cid.h"
 #include "network/keyprint.h"
+#include <string_view>
 
 /*****************************************************************************/
 /*****************************************************************************/
@@ -443,7 +444,7 @@ bool ADC::CmdResult::invoke(ADC::Command* cmd) {
  */
 static char* adc_connect_token(ADC::Command* cmd, size_t position) {
 	char* token = cmd->getArgument(position);
-	if (token && strncmp(token, "TO", 2) == 0) return &token[2];
+	if (token && std::string_view(token).starts_with("TO")) return &token[2];
 	if (token) return token;
 	return cmd->getArgument("TO", 2, position);
 }

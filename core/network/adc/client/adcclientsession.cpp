@@ -34,6 +34,7 @@
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
 #include <string>
+#include <string_view>
 
 /* One field: severity digit followed by a two digit code. */
 static std::string adc_status_code(int severity, int code)
@@ -624,7 +625,8 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 		{
 			// NOTE: I think this is wrong from the specification's point of view.
 			//       These should really be fetched as a 'list' type (see above).
-			if (!strcmp(fn, ADC_INDEX_FILE) || !strcmp(fn, ADC_INDEX_FILE_BZ2))
+			const std::string_view name(fn ? fn : "");
+			if (name == ADC_INDEX_FILE || name == ADC_INDEX_FILE_BZ2)
 			{
 				file = sharemgr->getFile(fn);
 				slots_full = false;

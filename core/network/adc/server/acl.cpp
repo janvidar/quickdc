@@ -10,6 +10,7 @@
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
 
+#include <string_view>
 #include <vector>
 
 namespace XML
@@ -18,24 +19,28 @@ namespace XML
 }
 
 
+/* The name is whatever the caller was able to read from the file, and nothing at
+   all is not a credential - no more than any other unrecognised name is. */
 enum ADC::ACL::Authorization::Credential ADC::ACL::Authorization::convertCredential(const char* str)
 {
-	if ( !strcasecmp(str, "banned") )
+	const std::string_view name(str ? str : "");
+
+	if ( Samurai::Util::iequals(name, "banned") )
 		return ADC::ACL::Authorization::Banned;
 
-	if ( !strcasecmp(str, "guest") )
+	if ( Samurai::Util::iequals(name, "guest") )
 		return ADC::ACL::Authorization::Guest;
 
-	if ( !strcasecmp(str, "user") )
+	if ( Samurai::Util::iequals(name, "user") )
 		return ADC::ACL::Authorization::User;
 
-	if ( !strcasecmp(str, "link") )
+	if ( Samurai::Util::iequals(name, "link") )
 		return ADC::ACL::Authorization::Link;
 
-	if ( !strcasecmp(str, "operator") )
+	if ( Samurai::Util::iequals(name, "operator") )
 		return ADC::ACL::Authorization::Operator;
 
-	if ( !strcasecmp(str, "admin") )
+	if ( Samurai::Util::iequals(name, "admin") )
 		return ADC::ACL::Authorization::Admin;
 
 	return ADC::ACL::Authorization::Invalid;
@@ -104,16 +109,18 @@ void ADC::ACL::Authorization::addVerification(ADC::ACL::Verification* verificati
 
 enum ADC::ACL::Identity::IdentityType ADC::ACL::Identity::convertIdentityType(const char* str)
 {
-	if ( !strcasecmp(str, "name") )
+	const std::string_view name(str ? str : "");
+
+	if ( Samurai::Util::iequals(name, "name") )
 		return ADC::ACL::Identity::IdName;
 
-	if ( !strcasecmp(str, "cid") )
+	if ( Samurai::Util::iequals(name, "cid") )
 		return ADC::ACL::Identity::IdCID;
 
-	if ( !strcasecmp(str, "ipv4") )
+	if ( Samurai::Util::iequals(name, "ipv4") )
 		return ADC::ACL::Identity::IdIPv4;
 
-	if ( !strcasecmp(str, "ipv6") )
+	if ( Samurai::Util::iequals(name, "ipv6") )
 		return ADC::ACL::Identity::IdIPv6;
 
 	return ADC::ACL::Identity::Invalid;
@@ -159,13 +166,15 @@ bool ADC::ACL::Identity::matchName(const char*)
 
 enum ADC::ACL::Verification::VerificationType ADC::ACL::Verification::convertVerificationType(const char* str)
 {
-	if ( !strcasecmp(str, "none") )
+	const std::string_view name(str ? str : "");
+
+	if ( Samurai::Util::iequals(name, "none") )
 		return ADC::ACL::Verification::VerifyNone;
 
-	if ( !strcasecmp(str, "password") )
+	if ( Samurai::Util::iequals(name, "password") )
 		return ADC::ACL::Verification::VerifyPassword;
 
-	if ( !strcasecmp(str, "certificate") )
+	if ( Samurai::Util::iequals(name, "certificate") )
 		return ADC::ACL::Verification::VerifyCertificate;
 
 	return ADC::ACL::Verification::Invalid;
@@ -396,7 +405,11 @@ void ADC::ACL::XMLReader::endDocument()
 
 void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const char*, const AttributeList& list)
 {
-	if (strcasecmp(localName, "AccessList") == 0)
+	/* The reader is allowed to name an element with nothing at all, and none of
+	   the elements handled here answers to that. */
+	const std::string_view element(localName ? localName : "");
+
+	if (Samurai::Util::iequals(element, "AccessList"))
 	{
 		if (current)
 		{
@@ -404,7 +417,7 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 			return;
 		}
 	}
-	else if (strcasecmp(localName, "User") == 0)
+	else if (Samurai::Util::iequals(element, "User"))
 	{
 		if (current)
 		{
@@ -419,13 +432,13 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 		
 		for (size_t n = 0; n < list.size(); n++)
 		{
-			if (!strcasecmp(list[n].first.c_str(), "name"))
+			if (Samurai::Util::iequals(list[n].first, "name"))
 				s_name = list[n].second.c_str();
-			else if (!strcasecmp(list[n].first.c_str(), "description"))
+			else if (Samurai::Util::iequals(list[n].first, "description"))
 				s_description = list[n].second.c_str();
-			else if (!strcasecmp(list[n].first.c_str(), "credential"))
+			else if (Samurai::Util::iequals(list[n].first, "credential"))
 				s_credential = list[n].second.c_str();
-			else if (!strcasecmp(list[n].first.c_str(), "expire"))
+			else if (Samurai::Util::iequals(list[n].first, "expire"))
 				s_expire = list[n].second.c_str();
 		}
 		
@@ -451,24 +464,24 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 		current = new Authorization(credential, expire, s_name, s_description);
 		
 	}
-	else if (!strcasecmp(localName, "id") || !strcasecmp(localName, "verify"))
+	else if (Samurai::Util::iequals(element, "id") || Samurai::Util::iequals(element, "verify"))
 	{
 		if (!current)
 		{
 			onProblem();
 			return;
 		}
-	
-		bool is_id = (!strcasecmp(localName, "id"));
+
+		bool is_id = Samurai::Util::iequals(element, "id");
 	
 		const char* s_type = 0;
 		const char* s_data = 0;
 
 		for (size_t n = 0; n < list.size(); n++)
 		{
-			if (!strcasecmp(list[n].first.c_str(), "type"))
+			if (Samurai::Util::iequals(list[n].first, "type"))
 				s_type = list[n].second.c_str();
-			else if (!strcasecmp(list[n].first.c_str(), "data"))
+			else if (Samurai::Util::iequals(list[n].first, "data"))
 				s_data = list[n].second.c_str();
 		}
 		
@@ -506,7 +519,7 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 
 void ADC::ACL::XMLReader::endElement(const char*, const char* localName, const char*)
 {
-	if (!strcasecmp(localName, "User"))
+	if (Samurai::Util::iequals(localName ? localName : "", "User"))
 	{
 		/* A <User> the start tag refused leaves nothing to add, and the table
 		   walks its entries without checking them. */

@@ -56,18 +56,24 @@ void Http::HeaderList::add(Http::Header* header) {
 }
 
 size_t Http::HeaderList::count(const char* name) {
+	/* A valid header has a name, so getName() answers with one; the field being
+	   looked for is the side that may be missing. */
+	const std::string_view wanted(name ? name : "");
+
 	size_t cnt = 0;
 	for (std::vector<Http::Header*>::iterator it = headers.begin(); it != headers.end(); it++) {
 		Http::Header* header = (*it);
-		if (header->isValid() && !strcasecmp(header->getName(), name)) cnt++;
+		if (header->isValid() && Samurai::Util::iequals(header->getName(), wanted)) cnt++;
 	}
 	return cnt;
 }
 
 Http::Header* Http::HeaderList::get(const char* name) {
+	const std::string_view wanted(name ? name : "");
+
 	for (std::vector<Http::Header*>::iterator it = headers.begin(); it != headers.end(); it++) {
 		Http::Header* header = (*it);
-		if (header->isValid() && !strcasecmp(header->getName(), name)) return header;
+		if (header->isValid() && Samurai::Util::iequals(header->getName(), wanted)) return header;
 	}
 	return 0;
 }

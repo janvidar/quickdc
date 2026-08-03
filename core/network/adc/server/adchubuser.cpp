@@ -230,13 +230,15 @@ bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
 			return false;
 		}
 		
-		if (!strlen(nick) || !strcasecmp(nick, hub->hubname)) { /* FIXME: NICK NOT VALID */
+		const std::string_view claimed(nick);
+
+		if (claimed.empty() || Samurai::Util::iequals(claimed, hub->hubname ? hub->hubname : "")) { /* FIXME: NICK NOT VALID */
 			INF_SEND_ERROR(this, hub, "221", "Invalid nick", 0, 0);
 			return false;
 		}
 	
 		if (HubUser* hu = hub->lookupUser(nick)) {
-			if (strcmp(hu->cid, cid) || hu->socket->getAddress()->toString() != socket->getAddress()->toString()) {
+			if (std::string_view(hu->cid) != cid || hu->socket->getAddress()->toString() != socket->getAddress()->toString()) {
 				INF_SEND_ERROR(this, hub, "222", "User already logged in.", 0, 0);
 				return false;
 			} else {

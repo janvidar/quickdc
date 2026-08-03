@@ -32,6 +32,7 @@
 #include "network/filesource.h"
 #include "network/user.h"
 #include <string>
+#include <string_view>
 #include <samurai/crypto/digest/tiger.h>
 #include <samurai/io/buffer.h>
 #include <samurai/io/file.h>
@@ -1314,9 +1315,10 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	 * necessarily the hub's: a plain ADC hub may still broker an ADCS peer
 	 * connection, and vice versa. Anything else we cannot speak.
 	 */
-	bool peerSecure = (proto && !strcmp(proto, ADC_TLS_PROTO));
+	const std::string_view protocol(proto ? proto : "");
+	bool peerSecure = (protocol == ADC_TLS_PROTO);
 
-	if (!peerSecure && (!proto || strcmp(proto, ADC_COMPLIANCE)))
+	if (!peerSecure && protocol != ADC_COMPLIANCE)
 	{
 		QERR("Peer asked for protocol '%s', which is not supported", proto ? proto : "");
 		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),
@@ -1367,11 +1369,12 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	 * one was asked for rather than volunteered, though, so it is honoured
 	 * whenever we are able to - the hub's own protocol has no say in it.
 	 */
-	bool peerSecure = (proto && !strcmp(proto, ADC_TLS_PROTO));
+	const std::string_view requested(proto ? proto : "");
+	bool peerSecure = (requested == ADC_TLS_PROTO);
 
 	/* A protocol left out means plain ADC, which is what it meant here before
 	   ADCS was an option at all. One we do not speak cannot be answered. */
-	if (proto && *proto && !peerSecure && strcmp(proto, ADC_COMPLIANCE))
+	if (!requested.empty() && !peerSecure && requested != ADC_COMPLIANCE)
 	{
 		QERR("Peer asked for protocol '%s', which is not supported", proto);
 		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),

@@ -80,7 +80,7 @@ bool ADC::CID::verifyCIDandPID(const char* cid, const char* pid) {
 	tiger.update(raw_pid, Samurai::Crypto::Digest::TIGER_HASH_SIZE);
 	tiger.digest().getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, x_cid, HASH);
 	
-	return (strcasecmp(x_cid, cid) == 0);
+	return Samurai::Util::iequals(x_cid, cid);
 }
 
 ADC::CID* ADC::global_cid = 0;
