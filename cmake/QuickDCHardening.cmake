@@ -65,16 +65,26 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # a switch that fell through to read an uninitialised pointer - or one that
     # cannot be anything but a mistake. Wholesale -Werror would instead fail on
     # -Wunused-parameter from the event handler stubs, which is not the point.
+    #
+    # suggest-override is here rather than in the pedantic set below because the
+    # tree is clean of it and the cost of letting it back in is silent: QuickDC
+    # implements samurai's SocketEventHandler, TimerListener and friends by
+    # declaring matching signatures, and those base methods are defaulted rather
+    # than pure. A parameter gaining a const on samurai's side therefore produces
+    # a new, non-overriding function, a build that still succeeds, and a session
+    # that quietly stops receiving events. Nothing else in the project would
+    # notice.
     foreach(w format format-security format-nonliteral return-type nonnull
               uninitialized array-bounds sizeof-pointer-memaccess
               memset-transposed-args implicit-fallthrough cast-align
-              delete-non-virtual-dtor vla tautological-bitwise-compare)
+              delete-non-virtual-dtor vla tautological-bitwise-compare
+              suggest-override)
         _qdc_try_compile("-Werror=${w}" QUICKDC_HARDEN_COMPILE)
     endforeach()
 
     if(QUICKDC_PEDANTIC)
         foreach(w pedantic conversion sign-conversion old-style-cast shadow
-                  double-promotion suggest-override)
+                  double-promotion)
             _qdc_try_compile("-W${w}" QUICKDC_HARDEN_COMPILE)
         endforeach()
     endif()
