@@ -17,8 +17,7 @@
 #define TTH_MIN_LEAF_SIZE 1024
 
 QuickDC::LeafHashes::LeafHashes()
-	: leaves(0)
-	, leafCount(0)
+	: leafCount(0)
 	, hashSize(0)
 	, leafSize(0)
 	, fileSize(0)
@@ -27,7 +26,6 @@ QuickDC::LeafHashes::LeafHashes()
 
 QuickDC::LeafHashes::~LeafHashes()
 {
-	free(leaves);
 }
 
 /**
@@ -85,15 +83,7 @@ bool QuickDC::LeafHashes::load(const char* tth, uint64_t fileSize_, const char* 
 		return false;
 	}
 
-	free(leaves);
-	leaves = (char*) malloc(length);
-	if (!leaves)
-	{
-		leafCount = 0;
-		return false;
-	}
-
-	memcpy(leaves, data, length);
+	leaves.assign(data, data + length);
 	leafCount = count;
 	hashSize = size;
 	leafSize = leaf;
@@ -105,7 +95,7 @@ bool QuickDC::LeafHashes::load(const char* tth, uint64_t fileSize_, const char* 
 
 bool QuickDC::LeafHashes::verify(Samurai::IO::File& file, uint64_t offset, uint64_t length) const
 {
-	if (!leaves || !length) return false;
+	if (leaves.empty() || !length) return false;
 	if (offset % leafSize) return false;
 	if (offset + length > fileSize) return false;
 
@@ -153,7 +143,7 @@ bool QuickDC::LeafHashes::verify(Samurai::IO::File& file, uint64_t offset, uint6
 			size_t index = first + (size_t) ((at - offset) / leafSize);
 
 			if (index >= leafCount
-				|| memcmp(value.getData(), &leaves[index * hashSize], hashSize))
+				|| memcmp(value.getData(), leaves.data() + index * hashSize, hashSize))
 			{
 				QDBG("Leaf %d of '%s' does not match", (int) index, file.getName().c_str());
 				ok = false;
@@ -178,12 +168,12 @@ char* QuickDC::LeafHashes::makeFilename(const char* tempFilename)
 
 bool QuickDC::LeafHashes::save(const char* filename) const
 {
-	if (!leaves || !filename) return false;
+	if (leaves.empty() || !filename) return false;
 
 	Samurai::IO::File file(filename);
 	if (!file.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate)) return false;
 
-	bool ok = (file.write(leaves, leafCount * hashSize) == (ssize_t) (leafCount * hashSize));
+	bool ok = (file.write(leaves.data(), leafCount * hashSize) == (ssize_t) (leafCount * hashSize));
 	file.close();
 	return ok;
 }
@@ -202,11 +192,10 @@ bool QuickDC::LeafHashes::load(const char* filename, const char* tth, uint64_t f
 		return false;
 	}
 
-	char* data = (char*) malloc(length);
-	bool ok = data && (file.read(data, length) == (ssize_t) length);
+	std::vector<char> data(length);
+	bool ok = (file.read(data.data(), length) == (ssize_t) length);
 	file.close();
 
-	if (ok) ok = load(tth, fileSize_, data, length);
-	free(data);
+	if (ok) ok = load(tth, fileSize_, data.data(), length);
 	return ok;
 }

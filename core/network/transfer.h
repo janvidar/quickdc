@@ -12,6 +12,7 @@
 #include <time.h>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace Samurai {
 	namespace IO {
@@ -159,8 +160,8 @@ class Upload : public Transfer
 		virtual void close();
 		
 	protected:
-		char* uploadBuffer;
-		size_t uploadBufferSize;
+		/** Holds file bytes on their way to the socket; sized to the send buffer. */
+		std::vector<char> uploadBuffer;
 };
 
 /**
@@ -201,12 +202,14 @@ class ZUpload : public Upload
 		Samurai::IO::GzipCompressor* compressor;
 
 		/** Holds uncompressed bytes read from the file. */
-		char* compressBuffer;
-		size_t compressBufferSize;
+		std::vector<char> compressBuffer;
 
-		/** Holds compressed bytes on their way to the socket. */
-		char* pendingBuffer;
-		size_t pendingCapacity;
+		/**
+		 * Holds compressed bytes on their way to the socket. Its size is the
+		 * room deflate is given, which is not the same as how much of it is in
+		 * use; pendingSize is what the last step actually produced.
+		 */
+		std::vector<char> pendingBuffer;
 		size_t pendingSize;     /* valid bytes in pendingBuffer */
 		size_t pendingOffset;   /* how much of pendingSize has been written */
 
@@ -233,11 +236,10 @@ class Download : public Transfer {
 		virtual void close();
 
 	protected:
-		char* downloadBuffer;
-		size_t downloadBufferSize;
+		std::vector<char> downloadBuffer;
 
-		char* pending;
-		size_t pendingSize;
+		/** Bytes handed over by the command parser, still to be written. */
+		std::vector<char> pending;
 		size_t pendingOffset;
 };
 

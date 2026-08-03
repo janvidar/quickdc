@@ -70,7 +70,6 @@ bool QuickDC::Transfer::exec()
 
 QuickDC::Upload::Upload(TransferManager* mgr, PrivateTransferListener* listener, std::shared_ptr<Samurai::IO::Net::Socket> conn, Samurai::IO::File* file_, off_t offset, off_t length)
 	: QuickDC::Transfer(mgr, listener, std::move(conn), file_, QuickDC::Transfer::Upload, offset, length)
-	, uploadBuffer(0), uploadBufferSize(0)
 {
 	QDBG("QuickDC::Upload::Upload()");
 
@@ -92,18 +91,15 @@ QuickDC::Upload::Upload(TransferManager* mgr, PrivateTransferListener* listener,
 	manager->onTransferStarted(this);
 	socket->toggleWriteNotifier(true);
 	
-	uploadBufferSize = std::min<size_t>(socket->getSendBufferSize(), MAXSENDBUF);
-	uploadBuffer = new char[uploadBufferSize];
+	uploadBuffer.resize(std::min<size_t>(socket->getSendBufferSize(), MAXSENDBUF));
 }
 
 QuickDC::Upload::~Upload()
 {
 	socket->toggleWriteNotifier(false);
-	
+
 	QDBG("QuickDC::Upload::~Upload()");
 	file->close();
-	
-	delete[] uploadBuffer;
 }
 
 void QuickDC::Upload::close()
@@ -125,7 +121,7 @@ void QuickDC::Upload::transfer()
 		return;
 	}
 
-	size_t chunk = (size_t) std::min<uint64_t>(uploadBufferSize, total - offset);
+	size_t chunk = (size_t) std::min<uint64_t>(uploadBuffer.size(), total - offset);
 	if (!chunk) return;
 
 	/*
@@ -133,7 +129,7 @@ void QuickDC::Upload::transfer()
 	 * gigabyte and a half past the buffer; an empty one means the file shrank
 	 * under us, and there is no way to send bytes that are no longer there.
 	 */
-	ssize_t in = file->read(uploadBuffer, chunk);
+	ssize_t in = file->read(uploadBuffer.data(), chunk);
 	if (in <= 0)
 	{
 		QERR("Upload: unable to read from '%s'", file->getName().c_str());
@@ -147,7 +143,7 @@ void QuickDC::Upload::transfer()
 	 * could never complete - and since a dead socket reports 0 from then on,
 	 * nothing else ended it either.
 	 */
-	ssize_t out = socket->write(uploadBuffer, (size_t) in);
+	ssize_t out = socket->write(uploadBuffer.data(), (size_t) in);
 	if (out < 0)
 	{
 		QERR("Upload: unable to write to the peer");
@@ -164,29 +160,24 @@ void QuickDC::Upload::transfer()
 QuickDC::ZUpload::ZUpload(TransferManager* mgr, PrivateTransferListener* listener, std::shared_ptr<Samurai::IO::Net::Socket> conn, Samurai::IO::File* file_, off_t offset, off_t length)
 	: QuickDC::Upload(mgr, listener, std::move(conn), file_, offset, length)
 	, compressor(0)
-	, compressBuffer(0), compressBufferSize(0)
-	, pendingBuffer(0), pendingCapacity(0), pendingSize(0), pendingOffset(0)
+	, pendingSize(0), pendingOffset(0)
 	, finished(false), compressedBytes(0)
 {
 	compressor = new Samurai::IO::GzipCompressor();
 
-	compressBufferSize = (uploadBufferSize << 1);
-	compressBuffer = new char[compressBufferSize];
+	compressBuffer.resize(uploadBuffer.size() << 1);
 
 	/*
 	 * Deflate can momentarily produce more than it consumes on incompressible
 	 * input, so give the output side room rather than losing bytes we would
 	 * have no way to regenerate.
 	 */
-	pendingCapacity = compressBufferSize + (compressBufferSize >> 1) + 1024;
-	pendingBuffer = new char[pendingCapacity];
+	pendingBuffer.resize(compressBuffer.size() + (compressBuffer.size() >> 1) + 1024);
 }
 
 QuickDC::ZUpload::~ZUpload()
 {
 	delete compressor;
-	delete[] compressBuffer;
-	delete[] pendingBuffer;
 }
 
 
@@ -210,7 +201,7 @@ bool QuickDC::ZUpload::flushPending()
 {
 	while (pendingOffset < pendingSize)
 	{
-		ssize_t out = socket->write(&pendingBuffer[pendingOffset], pendingSize - pendingOffset);
+		ssize_t out = socket->write(pendingBuffer.data() + pendingOffset, pendingSize - pendingOffset);
 
 		if (out < 0)
 		{
@@ -249,8 +240,8 @@ void QuickDC::ZUpload::transfer()
 			return;
 		}
 
-		ssize_t chunk = (ssize_t) std::min<uint64_t>(compressBufferSize, total - offset);
-		ssize_t in = file->read(compressBuffer, (size_t) chunk);
+		ssize_t chunk = (ssize_t) std::min<uint64_t>(compressBuffer.size(), total - offset);
+		ssize_t in = file->read(compressBuffer.data(), (size_t) chunk);
 		if (in <= 0)
 		{
 			QERR("ZUpload: unable to read from '%s'", file->getName().c_str());
@@ -262,8 +253,8 @@ void QuickDC::ZUpload::transfer()
 
 	/* An empty input is what tells the codec to flush. */
 	const Samurai::IO::Codec::Progress p = compressor->step(
-		std::span<const char>(compressBuffer, consumed),
-		std::span<char>(pendingBuffer, pendingCapacity));
+		std::span<const char>(compressBuffer.data(), consumed),
+		std::span<char>(pendingBuffer));
 
 	if (p.status == Samurai::IO::Codec::Status::Error)
 	{
@@ -297,8 +288,7 @@ void QuickDC::ZUpload::transfer()
 
 QuickDC::Download::Download(TransferManager* mgr, PrivateTransferListener* listener, std::shared_ptr<Samurai::IO::Net::Socket> conn, Samurai::IO::File* file_, off_t offset, off_t length)
 	: QuickDC::Transfer(mgr, listener, std::move(conn), file_, QuickDC::Transfer::Download, offset, length)
-	, downloadBuffer(0), downloadBufferSize(0)
-	, pending(0), pendingSize(0), pendingOffset(0)
+	, pendingOffset(0)
 {
 	QDBG("QuickDC::Download::Download()");
 
@@ -325,38 +315,26 @@ QuickDC::Download::Download(TransferManager* mgr, PrivateTransferListener* liste
 
 	manager->onTransferStarted(this);
 
-	downloadBufferSize = std::min<size_t>(socket->getReceiveBufferSize(), MAXSENDBUF);
-	if (!downloadBufferSize) downloadBufferSize = 8192;
-	downloadBuffer = new char[downloadBufferSize];
+	size_t want = std::min<size_t>(socket->getReceiveBufferSize(), MAXSENDBUF);
+	if (!want) want = 8192;
+	downloadBuffer.resize(want);
 }
 
 QuickDC::Download::~Download() {
 	QDBG("QuickDC::Download::~Download()");
 	file->close();
-	delete[] downloadBuffer;
-	free(pending);
 }
 
 void QuickDC::Download::pushPending(const char* data, size_t length)
 {
 	if (!data || !length) return;
 
-	size_t left = pendingSize - pendingOffset;
-	char* buf = (char*) malloc(left + length);
-	if (!buf)
-	{
-		QERR("Download: out of memory taking over %d buffered bytes", (int) length);
-		status = IOFail;
-		return;
-	}
-
-	if (left) memcpy(buf, &pending[pendingOffset], left);
-	memcpy(&buf[left], data, length);
-
-	free(pending);
-	pending = buf;
-	pendingSize = left + length;
+	/* Only what has not reached the file yet is carried over, and it stays in
+	   front of what has just arrived: the peer sent them in that order. */
+	pending.erase(pending.begin(), pending.begin() + (std::ptrdiff_t) pendingOffset);
 	pendingOffset = 0;
+
+	pending.insert(pending.end(), data, data + length);
 }
 
 void QuickDC::Download::close()
@@ -368,24 +346,24 @@ void QuickDC::Download::close()
 
 void QuickDC::Download::transfer()
 {
-	if (!downloadBuffer)
+	if (downloadBuffer.empty())
 	{
 		status = IOFail;
 		return;
 	}
 
 	/* Never read past the end of the chunk we asked for. */
-	size_t want = downloadBufferSize;
+	size_t want = downloadBuffer.size();
 	uint64_t remaining = total - offset;
 	if (remaining < (uint64_t) want) want = (size_t) remaining;
 	if (!want) return;
 
-	if (pending)
+	if (!pending.empty())
 	{
-		size_t take = pendingSize - pendingOffset;
+		size_t take = pending.size() - pendingOffset;
 		if ((uint64_t) take > remaining) take = (size_t) remaining;
 
-		ssize_t out = file->write(&pending[pendingOffset], take);
+		ssize_t out = file->write(pending.data() + pendingOffset, take);
 		if (out != (ssize_t) take)
 		{
 			QERR("Download: wrote %d of %d buffered bytes to '%s'",
@@ -398,11 +376,9 @@ void QuickDC::Download::transfer()
 		offset += (uint64_t) out;
 		pendingOffset += take;
 
-		if (pendingOffset >= pendingSize)
+		if (pendingOffset >= pending.size())
 		{
-			free(pending);
-			pending = 0;
-			pendingSize = 0;
+			pending.clear();
 			pendingOffset = 0;
 		}
 
@@ -417,7 +393,7 @@ void QuickDC::Download::transfer()
 	 */
 	size_t in = 0;
 	std::error_code ec;
-	switch (socket->read(downloadBuffer, want, in, ec))
+	switch (socket->read(downloadBuffer.data(), want, in, ec))
 	{
 		case Samurai::IO::ReadResult::Ok:
 			break;
@@ -436,7 +412,7 @@ void QuickDC::Download::transfer()
 			return;
 	}
 
-	ssize_t out = file->write(downloadBuffer, in);
+	ssize_t out = file->write(downloadBuffer.data(), in);
 	if (out != (ssize_t) in)
 	{
 		QERR("Download: wrote %d of %d bytes to '%s'",

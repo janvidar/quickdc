@@ -8,6 +8,7 @@
 
 #include "quickdc.h"
 #include <stdlib.h>
+#include <vector>
 
 namespace Samurai {
 	namespace IO {
@@ -42,7 +43,7 @@ class LeafHashes {
 		bool load(const char* tth, uint64_t fileSize, const char* data, size_t length);
 
 		/** True once load() has succeeded. */
-		inline bool isLoaded() const { return (leaves != 0); }
+		inline bool isLoaded() const { return !leaves.empty(); }
 
 		/** How much of the file one leaf covers. */
 		inline uint64_t getLeafSize() const { return leafSize; }
@@ -57,14 +58,18 @@ class LeafHashes {
 		 */
 		bool verify(Samurai::IO::File& file, uint64_t offset, uint64_t length) const;
 
-		/** Where the leaves are kept for a given download. */
+		/**
+		 * Where the leaves are kept for a given download.
+		 * @return a newly allocated string which the caller must free(), or 0.
+		 */
 		static char* makeFilename(const char* tempFilename);
 
 		bool save(const char* filename) const;
 		bool load(const char* filename, const char* tth, uint64_t fileSize);
 
 	protected:
-		char* leaves;
+		/* The leaf hashes back to back, hashSize bytes each; not a string. */
+		std::vector<char> leaves;
 		size_t leafCount;
 		size_t hashSize;
 		uint64_t leafSize;

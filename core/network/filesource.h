@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <samurai/timestamp.h>
 #include "network/chunkmap.h"
+#include <optional>
+#include <string>
 #include <vector>
 
 /** A source is forgotten after this many consecutive failures. */
@@ -55,8 +57,8 @@ namespace QuickDC {
  *    however with the trailing slash this means download the root
  *    directory.
  *
- * The distinction in 3) is carried by 'filename': a null filename means the
- * file list, while an empty but non-null filename means the root directory.
+ * The distinction in 3) is carried by 'filename': no filename at all means the
+ * file list, while a filename that is present but empty means the root directory.
  */
 class FileSource {
 	public:
@@ -88,17 +90,17 @@ class FileSource {
 		/**
 		 * @return the filename in utf-8, however might be 0 if no filename is known.
 		 */
-		inline const char* getName() const { return filename; }
+		inline const char* getName() const { return filename ? filename->c_str() : 0; }
 
 		/**
 		 * @return the Client/User ID where the file source is detected.
 		 */
-		inline const char* getClientID() const { return cid; }
+		inline const char* getClientID() const { return cid ? cid->c_str() : 0; }
 
 		/**
 		 * @return the URL to the hub where the user is connected to.
 		 */
-		inline const char* getHubUrl() const { return hub; }
+		inline const char* getHubUrl() const { return hub ? hub->c_str() : 0; }
 
 		/**
 		 * @return false if this source could not be decoded, and thus can
@@ -110,7 +112,7 @@ class FileSource {
 		 * @return true if this source refers to a file list rather than to
 		 *         a file or a directory.
 		 */
-		inline bool isFilelist() const { return (filename == 0); }
+		inline bool isFilelist() const { return !filename.has_value(); }
 
 		/**
 		 * Encode this source back into the URL notation described above.
@@ -143,7 +145,7 @@ class FileSource {
 		 */
 		void setAvailability(const char* indexes);
 
-		inline bool isPartial() const { return (availability != 0); }
+		inline bool isPartial() const { return !availability.empty(); }
 
 		bool getAvailability(uint64_t blockSize, uint64_t fileSize, ChunkMap& out) const;
 
@@ -195,13 +197,20 @@ class FileSource {
 		void setLastSeen(const Samurai::TimeStamp& seen);
 
 	protected:
-		char* hub;            // (adcs?|dchub)://(host(:port)?)
-		char* cid;            // clientID (CID on ADC, nick on NMDC).
-		char* filename;       // filename, full path, or NULL (tth is used instead).
+		/*
+		 * Optional rather than empty, because an empty value means something of
+		 * its own in each of the three: a source with no filename at all is the
+		 * file list while one with an empty filename is the root directory (see
+		 * 3 above), and a source we could not decode has no hub and no client ID
+		 * rather than blank ones - which is what isValid() reports on.
+		 */
+		std::optional<std::string> hub;      // (adcs?|dchub)://(host(:port)?)
+		std::optional<std::string> cid;      // clientID (CID on ADC, nick on NMDC).
+		std::optional<std::string> filename; // filename, full path, or nothing (tth is used instead).
 		size_t retryCount;    // expire this after ~50 tries
 		Samurai::TimeStamp lastSeen; // expire this after ~30 days.
 		Samurai::TimeStamp lastAttempt; // not persisted; a restart may retry at once.
-		char* availability;   // PSR "PI" notation, or 0 if they have it all
+		std::string availability; // PSR "PI" notation, empty if they have it all
 		double throughput;    // bytes per second, smoothed; 0 until a chunk arrives
 };
 

@@ -168,13 +168,13 @@ class QueueFile {
 
 	public:
 		/** The file we are downloading to, once it is finished. */
-		inline const char* getLocalFilename() const { return filename; }
+		inline const char* getLocalFilename() const { return filename.c_str(); }
 
 		/** The file we are downloading into while incomplete. */
-		inline const char* getTempFilename() const { return tempname; }
+		inline const char* getTempFilename() const { return tempname.c_str(); }
 
 		/** The TTH root in base32, or 0 if we do not know it. */
-		inline const char* getTTH() const { return tth; }
+		inline const char* getTTH() const { return tth.empty() ? 0 : tth.c_str(); }
 
 		inline uint64_t getSize() const { return size; }
 		void setSize(uint64_t size);
@@ -243,9 +243,15 @@ class QueueFile {
 		bool isPersistent() const;
 
 	protected:
-		char* filename;                     // local filename
-		char* tempname;                     // local filename + ".part"
-		char* tth;                          // tth
+		/*
+		 * An empty tth is one we do not have, which getTTH() reports as none:
+		 * a root is always QUICKDC_TTH_LENGTH base32 characters, so there is no
+		 * empty one for that to be mistaken for. The two filenames have no such
+		 * reading - they are whatever we were asked to download to.
+		 */
+		std::string filename;               // local filename
+		std::string tempname;               // local filename + ".part"
+		std::string tth;                    // tth, empty if not known
 		uint64_t size;                      // size of file (0 if unknown)
 		Samurai::TimeStamp added;           // the time the file was queued
 		std::vector<FileSource*> sources;
@@ -298,10 +304,10 @@ class FilelistRequest {
 		 * filename and there is nothing to download into.
 		 * QueueManager::requestFilelist() never hands one of these out.
 		 */
-		inline bool isValid() const { return filename != 0; }
+		inline bool isValid() const { return !filename.empty(); }
 
-		inline const char* getHubUrl() const { return hub; }
-		inline const char* getClientID() const { return cid; }
+		inline const char* getHubUrl() const { return hub.c_str(); }
+		inline const char* getClientID() const { return cid.c_str(); }
 		inline const Samurai::TimeStamp& getTimeAdded() const { return added; }
 
 		inline bool isActive() const { return active; }
@@ -312,7 +318,7 @@ class FilelistRequest {
 		 * The ".bz2" suffix is appended by the caller if the list arrives
 		 * compressed. 0 if the identifier was refused; see isValid().
 		 */
-		inline const char* getLocalFilename() const { return filename; }
+		inline const char* getLocalFilename() const { return filename.empty() ? 0 : filename.c_str(); }
 
 		/**
 		 * Where the bytes land while the list is arriving. The peer decides
@@ -320,7 +326,7 @@ class FilelistRequest {
 		 * not say which, so the raw download is kept aside and sniffed before
 		 * it becomes getLocalFilename(). 0 if the identifier was refused.
 		 */
-		inline const char* getTempFilename() const { return tempname; }
+		inline const char* getTempFilename() const { return tempname.empty() ? 0 : tempname.c_str(); }
 
 		bool matches(const char* hub, const char* cid) const;
 
@@ -343,10 +349,15 @@ class FilelistRequest {
 		bool isReadyToRetry() const;
 
 	protected:
-		char* hub;
-		char* cid;
-		char* filename;
-		char* tempname;
+		/*
+		 * Both names are left empty when the identifier was refused, which is
+		 * what isValid() reports on. Neither has an empty form of its own: they
+		 * are built from a directory and an identifier that is never empty.
+		 */
+		std::string hub;
+		std::string cid;
+		std::string filename;
+		std::string tempname;
 		Samurai::TimeStamp added;
 		Samurai::TimeStamp lastAttempt;
 		size_t retryCount;
@@ -369,7 +380,7 @@ class PendingRequest {
 		PendingRequest(const char* token, FilelistRequest*);
 		virtual ~PendingRequest();
 
-		inline const char* getToken() const { return token; }
+		inline const char* getToken() const { return token.c_str(); }
 		inline enum Kind getKind() const { return kind; }
 
 		/** Valid for KindFile only. */
@@ -397,7 +408,7 @@ class PendingRequest {
 		inline uint64_t getReservedLength() const { return length; }
 
 	protected:
-		char* token;
+		std::string token;
 		enum Kind kind;
 		QueueFile* file;
 		FileSource* source;

@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <span>
+#include <string_view>
 #include <stdio.h>
 
 /* Defined in xml/writer.cpp, which does not declare it in a header. */
@@ -39,21 +40,14 @@ namespace XML
 /* ------------------------------------------------------------------------- */
 
 QuickDC::QueueFile::QueueFile(const char* filename_, const char* tth_, uint64_t size_)
-	: filename(0)
-	, tempname(0)
-	, tth(0)
+	: filename(filename_ ? filename_ : "")
+	, tempname(filename + QUICKDC_PART_SUFFIX)
+	, tth(tth_ ? tth_ : "")
 	, size(size_)
 	, priority(PrioNormal)
 	, chunks(size_)
 	, leafHashes(0)
 {
-	filename = strdup(filename_ ? filename_ : "");
-
-	size_t length = strlen(filename) + strlen(QUICKDC_PART_SUFFIX) + 1;
-	tempname = (char*) malloc(length);
-	snprintf(tempname, length, "%s%s", filename, QUICKDC_PART_SUFFIX);
-
-	tth = (tth_) ? strdup(tth_) : 0;
 }
 
 QuickDC::QueueFile::~QueueFile()
@@ -66,23 +60,20 @@ QuickDC::QueueFile::~QueueFile()
 	}
 	active.clear();
 
-	free(filename);
-	free(tempname);
-	free(tth);
 	delete leafHashes;
 }
 
 char* QuickDC::QueueFile::makeLeafFilename() const
 {
-	return LeafHashes::makeFilename(tempname);
+	return LeafHashes::makeFilename(tempname.c_str());
 }
 
 bool QuickDC::QueueFile::loadLeaves(const char* data, size_t length)
 {
-	if (!tth || !size) return false;
+	if (tth.empty() || !size) return false;
 
 	LeafHashes* fresh = new LeafHashes();
-	if (!fresh->load(tth, size, data, length))
+	if (!fresh->load(tth.c_str(), size, data, length))
 	{
 		delete fresh;
 		return false;
@@ -103,13 +94,13 @@ bool QuickDC::QueueFile::loadLeaves(const char* data, size_t length)
 
 bool QuickDC::QueueFile::loadLeavesFromDisk()
 {
-	if (leafHashes || !tth || !size) return false;
+	if (leafHashes || tth.empty() || !size) return false;
 
 	char* name = makeLeafFilename();
 	if (!name) return false;
 
 	LeafHashes* fresh = new LeafHashes();
-	bool ok = fresh->load(name, tth, size);
+	bool ok = fresh->load(name, tth.c_str(), size);
 	free(name);
 
 	if (!ok)
@@ -200,7 +191,7 @@ void QuickDC::QueueFile::expireSources()
 
 	for (size_t n = 0; n < dead.size(); n++)
 	{
-		QDBG("Forgetting a stale source for '%s'", filename);
+		QDBG("Forgetting a stale source for '%s'", filename.c_str());
 		removeSource(dead[n]);
 	}
 }
@@ -268,7 +259,7 @@ uint64_t QuickDC::QueueFile::getDoneBytes() const
 
 bool QuickDC::QueueFile::isPersistent() const
 {
-	if (!tth || strlen(tth) != QUICKDC_TTH_LENGTH) return false;
+	if (tth.size() != QUICKDC_TTH_LENGTH) return false;
 	if (!size) return false;
 	return !isComplete();
 }
@@ -281,17 +272,17 @@ bool QuickDC::FilelistRequest::isValidIdentifier(const char* id)
 {
 	if (!id || !*id) return false;
 
-	const size_t length = strlen(id);
-	if (length > QUICKDC_IDENTIFIER_MAX) return false;
+	const std::string_view name(id);
+	if (name.size() > QUICKDC_IDENTIFIER_MAX) return false;
 
 	/* A single dot names the directory itself, and two of them anywhere leave
 	   it - so neither can be part of a name we make up. */
-	if (!strcmp(id, ".")) return false;
-	if (strstr(id, "..")) return false;
+	if (name == ".") return false;
+	if (name.find("..") != std::string_view::npos) return false;
 
-	for (size_t n = 0; n < length; n++)
+	for (const char c : name)
 	{
-		const unsigned char ch = (unsigned char) id[n];
+		const unsigned char ch = (unsigned char) c;
 
 		/* A separator would make the identifier a path of its own, and a
 		   control byte has no business in a nickname whatever it does to a
@@ -304,52 +295,35 @@ bool QuickDC::FilelistRequest::isValidIdentifier(const char* id)
 }
 
 QuickDC::FilelistRequest::FilelistRequest(const char* hub_, const char* cid_, const char* dir_)
-	: hub(0)
-	, cid(0)
-	, filename(0)
-	, tempname(0)
+	: hub(hub_ ? hub_ : "")
+	, cid(cid_ ? cid_ : "")
 	, retryCount(0)
 	, active(false)
 {
-	hub = strdup(hub_ ? hub_ : "");
-	cid = strdup(cid_ ? cid_ : "");
-
 	/*
 	 * Checked here rather than in whoever asked, because this is the only place
 	 * the wire string becomes a path and the callers are protocol code and test
 	 * programs. A refused identifier leaves the request without a filename,
 	 * which isValid() reports and requestFilelist() acts on.
 	 */
-	if (!isValidIdentifier(cid))
+	if (!isValidIdentifier(cid.c_str()))
 	{
-		QERR("Refusing a file list request: '%s' cannot name a file", cid);
+		QERR("Refusing a file list request: '%s' cannot name a file", cid.c_str());
 		return;
 	}
 
-	const char* dir = dir_ ? dir_ : QUICKDC_LIST_DIR;
-
-	/* directory + '/' + cid + ".xml" + '\0' */
-	size_t length = strlen(dir) + strlen(cid) + 6;
-	filename = (char*) malloc(length);
-	snprintf(filename, length, "%s/%s.xml", dir, cid);
-
-	size_t templength = strlen(filename) + strlen(QUICKDC_PART_SUFFIX) + 1;
-	tempname = (char*) malloc(templength);
-	snprintf(tempname, templength, "%s%s", filename, QUICKDC_PART_SUFFIX);
+	filename = std::string(dir_ ? dir_ : QUICKDC_LIST_DIR) + '/' + cid + ".xml";
+	tempname = filename + QUICKDC_PART_SUFFIX;
 }
 
 QuickDC::FilelistRequest::~FilelistRequest()
 {
-	free(hub);
-	free(cid);
-	free(filename);
-	free(tempname);
 }
 
 bool QuickDC::FilelistRequest::matches(const char* hub_, const char* cid_) const
 {
 	if (!hub_ || !cid_) return false;
-	return (!strcmp(hub, hub_) && !strcmp(cid, cid_));
+	return (hub == hub_ && cid == cid_);
 }
 
 void QuickDC::FilelistRequest::onAttempt()
@@ -378,7 +352,7 @@ bool QuickDC::FilelistRequest::isReadyToRetry() const
 /* ------------------------------------------------------------------------- */
 
 QuickDC::PendingRequest::PendingRequest(const char* token_, QueueFile* file_, FileSource* source_)
-	: token(strdup(token_ ? token_ : ""))
+	: token(token_ ? token_ : "")
 	, kind(KindFile)
 	, file(file_)
 	, source(source_)
@@ -392,7 +366,7 @@ QuickDC::PendingRequest::PendingRequest(const char* token_, QueueFile* file_, Fi
 }
 
 QuickDC::PendingRequest::PendingRequest(const char* token_, FilelistRequest* filelist_)
-	: token(strdup(token_ ? token_ : ""))
+	: token(token_ ? token_ : "")
 	, kind(KindFilelist)
 	, file(0)
 	, source(0)
@@ -407,7 +381,6 @@ QuickDC::PendingRequest::PendingRequest(const char* token_, FilelistRequest* fil
 
 QuickDC::PendingRequest::~PendingRequest()
 {
-	free(token);
 }
 
 double QuickDC::PendingRequest::elapsedSeconds() const
@@ -735,14 +708,13 @@ void QuickDC::QueueManager::searchForSources()
 		size_t index = (searchRotation + n) % wanted.size();
 		QueueFile* file = wanted[index];
 
-		const char* tth = file->getTTH();
-		if (!tth || strlen(tth) != QUICKDC_TTH_LENGTH) continue;
+		if (file->tth.size() != QUICKDC_TTH_LENGTH) continue;
 
 		std::string token("src");
 		token += makeToken();
 
 		QuickDC::Share::SearchRequest request(QuickDC::Share::SearchRequest::SizeAny,
-			0, tth, token.c_str(), 0);
+			0, file->tth.c_str(), token.c_str(), 0);
 
 		/* Not logged in anywhere yet; retry rather than lose the interval. */
 		if (!core->hubs->searchAllHubs(&request)) return;
@@ -789,9 +761,9 @@ QuickDC::QueueFile* QuickDC::QueueManager::add(const char* filename, const char*
 		if (!existing->getSize() && size)
 			existing->setSize(size);
 
-		if (!existing->getTTH() && tth)
+		if (existing->tth.empty() && tth)
 		{
-			existing->tth = strdup(tth);
+			existing->tth = tth;
 			dirty = true;
 		}
 
@@ -867,8 +839,7 @@ QuickDC::QueueFile* QuickDC::QueueManager::getFileByTTH(const char* tth) const
 
 	for (size_t n = 0; n < files.size(); n++)
 	{
-		const char* have = files[n]->getTTH();
-		if (have && !strcmp(have, tth)) return files[n];
+		if (!files[n]->tth.empty() && files[n]->tth == tth) return files[n];
 	}
 	return 0;
 }
@@ -879,7 +850,7 @@ QuickDC::QueueFile* QuickDC::QueueManager::getFileByName(const char* localFilena
 
 	for (size_t n = 0; n < files.size(); n++)
 	{
-		if (!strcmp(files[n]->getLocalFilename(), localFilename)) return files[n];
+		if (files[n]->filename == localFilename) return files[n];
 	}
 	return 0;
 }
@@ -1563,7 +1534,7 @@ void QuickDC::QueueManager::onFileComplete(QueueFile* file)
 {
 	if (!file) return;
 
-	if (!file->getTTH())
+	if (file->tth.empty())
 	{
 		/* Nothing to check it against, so take it at face value. */
 		QDBG("Download complete (unverified): %s", file->getLocalFilename());
@@ -1852,8 +1823,7 @@ void QuickDC::QueueManager::processVerifications()
 
 		if (!file) continue;   /* no longer queued */
 
-		const char* expected = file->getTTH();
-		if (expected && work[n].tth == expected)
+		if (!file->tth.empty() && work[n].tth == file->tth)
 		{
 			QDBG("Download verified: %s", file->getLocalFilename());
 
@@ -1884,7 +1854,7 @@ void QuickDC::QueueManager::processVerifications()
 		 * be fetched again.
 		 */
 		QERR("Hash mismatch for '%s': expected '%s' but got '%s'. Starting over.",
-			file->getLocalFilename(), expected ? expected : "", work[n].tth.c_str());
+			file->getLocalFilename(), file->tth.c_str(), work[n].tth.c_str());
 
 		file->getChunks().clear();
 		file->getChunks().clearReservations();

@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <string_view>
 #include <vector>
 
 /*
@@ -20,67 +21,57 @@
  * which is the root directory.
  */
 QuickDC::FileSource::FileSource(const char* url_)
-	: hub(0), cid(0), filename(0), retryCount(0), availability(0), throughput(0.0)
+	: retryCount(0), throughput(0.0)
 {
 	if (!url_) return;
 
-	const char* sep = strstr(url_, "://");
-	if (!sep || sep == url_) return;    /* no protocol */
+	const std::string_view url(url_);
 
-	const char* slash = strchr(sep + 3, '/');
-	if (!slash) return;                 /* no client ID, unusable */
+	const size_t proto = url.find("://");
+	if (proto == std::string_view::npos || !proto) return;   /* no protocol */
 
-	const char* cid_start = slash + 1;
-	const char* cid_end = strchr(cid_start, '/');
+	const size_t slash = url.find('/', proto + 3);
+	if (slash == std::string_view::npos) return;             /* no client ID, unusable */
 
-	if (cid_end)
+	const std::string_view rest = url.substr(slash + 1);
+	const size_t next = rest.find('/');
+
+	if (next != std::string_view::npos)
 	{
-		if (cid_end == cid_start) return;   /* empty client ID */
-		cid = strndup(cid_start, (size_t) (cid_end - cid_start));
-		filename = strdup(cid_end + 1);
+		if (!next) return;                  /* empty client ID */
+		cid = std::string(rest.substr(0, next));
+		filename = std::string(rest.substr(next + 1));
 	}
 	else
 	{
-		if (!*cid_start) return;            /* empty client ID */
-		cid = strdup(cid_start);
-		filename = 0;                       /* this is the file list */
+		if (rest.empty()) return;           /* empty client ID */
+		cid = std::string(rest);
+		/* No filename at all: this is the file list. */
 	}
 
-	hub = strndup(url_, (size_t) (slash - url_));
+	hub = std::string(url.substr(0, slash));
 }
 
 QuickDC::FileSource::FileSource(const char* hub_, const char* cid_, const char* filename_)
-	: hub(0), cid(0), filename(0), retryCount(0), availability(0), throughput(0.0)
+	: retryCount(0), throughput(0.0)
 {
-	hub = (hub_) ? strdup(hub_) : 0;
-	cid = (cid_) ? strdup(cid_) : 0;
-	filename = (filename_) ? strdup(filename_) : 0;
+	if (hub_) hub = hub_;
+	if (cid_) cid = cid_;
+	if (filename_) filename = filename_;
 }
 
 QuickDC::FileSource::~FileSource() {
-	free(hub);
-	free(cid);
-	free(filename);
-	free(availability);
 }
 
 char* QuickDC::FileSource::toURL() const
 {
 	if (!isValid()) return 0;
 
-	/* hub + '/' + cid + '\0', and optionally '/' + filename */
-	size_t length = strlen(hub) + strlen(cid) + 2;
-	if (filename) length += strlen(filename) + 1;
+	std::string url = *hub + '/' + *cid;
+	if (filename) url += '/' + *filename;
 
-	char* out = (char*) malloc(length);
-	if (!out) return 0;
-
-	if (filename)
-		snprintf(out, length, "%s/%s/%s", hub, cid, filename);
-	else
-		snprintf(out, length, "%s/%s", hub, cid);
-
-	return out;
+	/* The caller frees this, so it has to come from the C allocator. */
+	return strdup(url.c_str());
 }
 
 void QuickDC::FileSource::touch()
@@ -122,16 +113,15 @@ void QuickDC::FileSource::onAttempt()
 
 void QuickDC::FileSource::setAvailability(const char* indexes)
 {
-	free(availability);
-	availability = (indexes && *indexes) ? strdup(indexes) : 0;
+	availability = indexes ? indexes : "";
 }
 
 bool QuickDC::FileSource::getAvailability(uint64_t blockSize, uint64_t fileSize, ChunkMap& out) const
 {
-	if (!availability || !blockSize || !fileSize) return false;
+	if (availability.empty() || !blockSize || !fileSize) return false;
 
 	ChunkMap decoded(fileSize);
-	if (!decoded.fromIndexString(availability, blockSize)) return false;
+	if (!decoded.fromIndexString(availability.c_str(), blockSize)) return false;
 
 	out = decoded;
 	return true;
@@ -161,7 +151,7 @@ bool QuickDC::FileSource::isExpired() const
 bool QuickDC::FileSource::matches(const char* hub_, const char* cid_) const
 {
 	if (!isValid() || !hub_ || !cid_) return false;
-	return (!strcmp(hub, hub_) && !strcmp(cid, cid_));
+	return (*hub == hub_ && *cid == cid_);
 }
 
 void QuickDC::FileSource::setRetryCount(size_t count)
