@@ -6,40 +6,37 @@
 #include "quickdc.h"
 #include <stdlib.h>
 #include <string.h>
+#include <string_view>
 #include "network/http/header.h"
 
 Http::Header::Header(const char* line) {
-	name = 0;
-	value = 0;
-	if (line && strlen(line)) {
-		const char* split = strchr(line, ':');
+	const std::string_view text(line ? line : "");
+	const size_t split = text.find(':');
 
-		/* A field value is allowed to be empty, so anything with a name and a
-		   colon is a header; only the name has to be there. */
-		if (split && split != line) {
-			name = strndup(line, &split[0]-&line[0]);
+	/* A field value is allowed to be empty, so anything with a name and a
+	   colon is a header; only the name has to be there. */
+	if (split != std::string_view::npos && split != 0) {
+		name = text.substr(0, split);
 
-			size_t offset = 1;
-			for (; split[offset] == ' '; offset++) { }
-			value = strdup(&split[offset]);
-		}
+		std::string_view rest = text.substr(split + 1);
+		while (!rest.empty() && rest.front() == ' ')
+			rest.remove_prefix(1);
+		value = std::string(rest);
 	}
 
-	QDBG("Http::Header::Header(): {%s} - {%s}", name, value);
+	QDBG("Http::Header::Header(): {%s} - {%s}", getName(), getValue());
 }
 
-Http::Header::Header(const char* name_, const char* value_) {
-	name = strdup(name_);
-	value = strdup(value_);
+Http::Header::Header(const char* name_, const char* value_)
+	: name(name_), value(value_)
+{
 }
 
 Http::Header::~Header() {
-	free(name);
-	free(value);
 }
 
 bool Http::Header::isValid() const {
-	return name && value;
+	return !name.empty() && value.has_value();
 }
 
 Http::HeaderList::HeaderList() {

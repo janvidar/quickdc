@@ -29,8 +29,8 @@ class Response : public Entity {
 
 	protected:
 		uint16_t code;
-		char* message;
-		char* uri; /* raw encoded */
+		std::string message;
+		std::string uri; /* raw encoded */
 		uint8_t* entity_body;
 		size_t entity_body_length;
 };

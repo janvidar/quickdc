@@ -6,6 +6,8 @@
 #ifndef HAVE_QUICKDC_SEARCHRESULT_H
 #define HAVE_QUICKDC_SEARCHRESULT_H
 
+#include <string>
+
 namespace QuickDC {
 class User;
 
@@ -19,23 +21,28 @@ class SearchResult {
 		void setUser(QuickDC::User* user);
 		QuickDC::User* getUser() const;
 		
-		char* getFile() const { return file; }
+		const char* getFile() const { return file.empty() ? 0 : file.c_str(); }
 		uint64_t getSize() const { return size; }
 		size_t getFreeSlots() const { return freeslots; }
-		
-		char* getTTH() const { return tth; }
+
+		const char* getTTH() const { return tth.empty() ? 0 : tth.c_str(); }
 		size_t getTTHDepth() const { return tth_depth; }
-		
-		char* getToken() const { return token; }
+
+		const char* getToken() const { return token.empty() ? 0 : token.c_str(); }
 
 	protected:
+		/*
+		 * A string left empty is a field the result did not carry, which is what
+		 * its getter answers null for. None of the three has an empty value that
+		 * means anything else.
+		 */
 		QuickDC::User* user;
-		char* file;
+		std::string file;
 		uint64_t size;
 		size_t freeslots;
-		char* tth;
+		std::string tth;
 		size_t tth_depth;
-		char* token;
+		std::string token;
 };
 
 }

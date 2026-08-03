@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_SEARCHREQUEST_H
 
 #include "quickdc.h"
+#include <string>
 #include <vector>
 #include "share/sharemanager.h"
 
@@ -73,8 +74,18 @@ class SearchRequest {
 		void addExtension(const char* ext);
 		
 		bool isTTH() const;
-		char* getToken() const { return token; }
-		char* getTTH() const { return tth; }
+
+		/**
+		 * @return the token, or null when the request carries none.
+		 */
+		const char* getToken() const { return token.empty() ? 0 : token.c_str(); }
+
+		/**
+		 * @return the TTH root, or null when the search is not one by hash,
+		 *         which is what isTTH() answers.
+		 */
+		const char* getTTH() const { return tth.empty() ? 0 : tth.c_str(); }
+
 		uint64_t getSize() const { return size; }
 		enum SizePolicy getSizePolicy() const { return size_type; }
 		enum FilePolicy getFileType() const { return file_type; }
@@ -93,8 +104,8 @@ class SearchRequest {
 		std::vector<char*> include;
 		std::vector<char*> exclude;
 		std::vector<char*> extension;
-		char* tth;
-		char* token;
+		std::string tth;
+		std::string token;
 		uint64_t size;
 		enum SizePolicy size_type;
 		enum FilePolicy file_type;

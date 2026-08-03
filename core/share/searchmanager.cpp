@@ -8,6 +8,7 @@
 #include "share/searchrequest.h"
 #include "share/searchresult.h"
 #include <samurai/io/file.h>
+#include <string_view>
 
 QuickDC::Share::SearchManager::SearchManager(Samurai::IO::File* file_)
 {
@@ -71,14 +72,13 @@ void QuickDC::Share::SearchManager::handle(QuickDC::Share::SearchResult* result)
 	if (!result || !active_searches.size()) return;
 	
 	std::vector<SearchContainer*>::iterator it = active_searches.begin();
-	char* token = result->getToken();
+	const char* token = result->getToken();
 	if (token) {
 		for (; it != active_searches.end(); it++) {
 			SearchContainer* container = (*it);
-			if (container->request->getToken()) {
-				if (!strcmp(token, container->request->getToken())) {
-					container->handler->EventSearchResult(result);
-				}
+			const char* wanted = container->request->getToken();
+			if (wanted && std::string_view(token) == wanted) {
+				container->handler->EventSearchResult(result);
 			}
 		}
 	} else {

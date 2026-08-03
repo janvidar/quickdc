@@ -7,6 +7,8 @@
 #define HAVE_QUICKDC_HTTP_HEADER_H
 
 #include "quickdc.h"
+#include <optional>
+#include <string>
 #include <vector>
 #include <samurai/io/buffer.h>
 
@@ -18,14 +20,23 @@ class Header {
 		Header(const char* name, const char* value);
 		virtual ~Header();
 
-		char* getName() const { return name; }
-		char* getValue() const { return value; }
-		
+		/**
+		 * @return the name and the value, or null for either when the line was
+		 *         not a header at all.
+		 */
+		const char* getName() const { return name.empty() ? 0 : name.c_str(); }
+		const char* getValue() const { return value ? value->c_str() : 0; }
+
 		bool isValid() const;
 
 	protected:
-		char* name;
-		char* value;
+		/*
+		 * A field value is allowed to be empty, so having no value and having an
+		 * empty one are different things and the value is optional rather than
+		 * just possibly empty.
+		 */
+		std::string name;
+		std::optional<std::string> value;
 };
 
 class HeaderList {

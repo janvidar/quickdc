@@ -8,22 +8,24 @@
 #include <samurai/io/net/inetaddress.h>
 #include <stdlib.h>
 
-QuickDC::Clearance::Clearance(enum ClearanceType type_, enum ClearanceProtocol protocol_, QuickDC::HubSession* hubsession_, const char* userID_, const char* token_) {
+/*
+ * Nobody has an empty CID, nickname or token, so an identifier that is absent
+ * and one that is present but empty are equally useless for telling one peer or
+ * one connection request from another.
+ */
+static bool identifies(const char* str) {
+	return str && *str;
+}
+
+QuickDC::Clearance::Clearance(enum ClearanceType type_, enum ClearanceProtocol protocol_, QuickDC::HubSession* hubsession_, const char* userID_, const char* token_)
+	: userID(userID_ ? userID_ : ""), token(token_ ? token_ : "")
+{
 	type = type_;
 	protocol = protocol_;
 	hubsession = hubsession_;
-	
-	userID = 0;
-	if (userID_)
-		userID = strdup(userID_);
-
-	token = 0;
-	if (token_)
-		token = strdup(token_);
-
 
 	QNET("Clearance: '%s' on hub '%p' (protocol=%s, authorization=%s, token=%s)",
-		userID,
+		userID.c_str(),
 		hubsession,
 		(protocol == ADC) ?
 			"ADC" :
@@ -31,12 +33,10 @@ QuickDC::Clearance::Clearance(enum ClearanceType type_, enum ClearanceProtocol p
 				"NMDC" :
 				"HTTP",
 		(type == UnknownUser ? "everyone" : type == KnownUser ? "authenticated" : "exclusive"),
-		token);
+		token.c_str());
 }
 
 QuickDC::Clearance::~Clearance() {
-	free(token);
-	free(userID);
 }
 
 QuickDC::SecurityManager::SecurityManager() {
@@ -82,11 +82,10 @@ bool QuickDC::SecurityManager::isAuthorized(enum QuickDC::Clearance::ClearancePr
 
 			if (protocol == QuickDC::Clearance::ADC) {
 				/* Both sides of each comparison, since a clearance granted
-				   without one of them would otherwise reach strcmp as null. */
-				if (!token || !authorization->token) continue;
-				if (!cid || !authorization->userID) continue;
-				if (strcmp(authorization->token, token) == 0 &&
-					strcmp(authorization->userID, cid) == 0)
+				   without one of them names no single connection request. */
+				if (!identifies(token) || authorization->token.empty()) continue;
+				if (!identifies(cid) || authorization->userID.empty()) continue;
+				if (authorization->token == token && authorization->userID == cid)
 					return true;
 			}
 
@@ -100,8 +99,8 @@ bool QuickDC::SecurityManager::isAuthorized(enum QuickDC::Clearance::ClearancePr
 			 * ask for a file.
 			 */
 			if (protocol == QuickDC::Clearance::NMDC) {
-				if (!cid || !authorization->userID) continue;
-				if (strcmp(authorization->userID, cid) == 0)
+				if (!identifies(cid) || authorization->userID.empty()) continue;
+				if (authorization->userID == cid)
 					return true;
 			}
 		}
@@ -128,7 +127,7 @@ void QuickDC::SecurityManager::revoke(Clearance* authorization) {
 bool QuickDC::SecurityManager::revoke(enum QuickDC::Clearance::ClearanceProtocol protocol,
 	QuickDC::HubSession* hubsession, const char* cid, const char* token) {
 
-	if (!cid || !token) return false;
+	if (!identifies(cid) || !identifies(token)) return false;
 
 	std::vector<Clearance*>::iterator it = access_table.begin();
 	for (; it != access_table.end(); it++) {
@@ -141,9 +140,9 @@ bool QuickDC::SecurityManager::revoke(enum QuickDC::Clearance::ClearanceProtocol
 
 		/* Only a clearance naming this user and token; a blanket one is not
 		   tied to a single connection and must survive. */
-		if (!authorization->token || !authorization->userID) continue;
+		if (authorization->token.empty() || authorization->userID.empty()) continue;
 
-		if (!strcmp(authorization->token, token) && !strcmp(authorization->userID, cid)) {
+		if (authorization->token == token && authorization->userID == cid) {
 			QDBG("Revoking clearance for '%s' (token=%s)", cid, token);
 			access_table.erase(it);
 			delete authorization;

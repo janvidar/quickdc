@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_SECURITY_MANAGER_H
 
 #include "quickdc.h"
+#include <string>
 #include <vector>
 
 namespace Samurai {
@@ -38,8 +39,13 @@ class Clearance {
 		enum ClearanceAction action;
 		
 		QuickDC::HubSession* hubsession;
-		char* userID;
-		char* token;
+
+		/*
+		 * Empty means the clearance was granted without one. Neither identifies
+		 * anything, so neither can be matched: see isAuthorized().
+		 */
+		std::string userID;
+		std::string token;
 		Samurai::TimeStamp timestamp;
 
 	friend class SecurityManager;

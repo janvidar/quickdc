@@ -15,9 +15,7 @@ Http::Entity::Entity(bool request_) : request(request_)
 	headers = new Http::HeaderList();
 	protocol = HTTP_1_1;
 	method = UNKNOWN;
-	uri = 0;
 	code = 0;
-	msg = 0;
 	crlf = true;
 	transfer = 0;
 }
@@ -25,8 +23,6 @@ Http::Entity::Entity(bool request_) : request(request_)
 Http::Entity::~Entity()
 {
 	delete headers;
-	free(uri);
-	free(msg);
 }
 
 void Http::Entity::addHeader(Http::Header* header) {
@@ -49,13 +45,11 @@ void Http::Entity::setBodySize(uint64_t sz) {
 void Http::Entity::setMethod(enum Method method_) { method = method_; }
 
 void Http::Entity::setURI(const char* uri_) {
-	if (uri) free(uri);
-	uri = strdup(uri_);
+	uri = uri_ ? uri_ : "";
 }
 
 void Http::Entity::setMessage(const char* msg_) {
-	if (msg) free(msg);
-	msg = strdup(msg_);
+	msg = std::string(msg_ ? msg_ : "");
 }
 
 void Http::Entity::setCode(uint16_t code_) {
@@ -117,7 +111,7 @@ void Http::Entity::compose(Samurai::IO::Buffer* out) {
 		out->append(' ');
 		if (msg)
 		{
-			out->append(msg);
+			out->append(*msg);
 		}
 		else
 		{

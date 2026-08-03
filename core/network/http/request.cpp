@@ -8,15 +8,14 @@
 #include "network/http/entity.h"
 
 Http::Request::Request()
-	: Entity(true), method(UNKNOWN), protocol(HTTP_1_0), uri(0)
+	: Entity(true), method(UNKNOWN), protocol(HTTP_1_0)
 {
 
 }
 
 Http::Request::Request(enum Http::Request::Method method_, const char* uri_, enum Http::Request::Protocol protocol_)
-	: Entity(true), method(method_), protocol(protocol_), uri(0)
+	: Entity(true), method(method_), protocol(protocol_), uri(uri_ ? uri_ : "")
 {
-	uri = strdup(uri_);
 }
 
 

@@ -706,8 +706,8 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 	if (req->isTTH()) {
 
 		/* Search TTH */
-		QSEARCH("tth search for: %s", req->tth);
-		QuickDC::Share::File* found = findByTTH(req->tth);
+		QSEARCH("tth search for: %s", req->getTTH());
+		QuickDC::Share::File* found = findByTTH(req->getTTH());
 		if (found) {
 			hits++;
 			SearchReply reply(req, found);

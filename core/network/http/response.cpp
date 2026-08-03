@@ -5,14 +5,13 @@
 
 #include "network/http/response.h"
 
-Http::Response::Response() : Entity(false), code(0), message(0) { }
-Http::Response::Response(uint16_t code_, const char* message_) : Entity(false), code(code_), message(0)
+Http::Response::Response() : Entity(false), code(0) { }
+Http::Response::Response(uint16_t code_, const char* message_)
+	: Entity(false), code(code_), message(message_ ? message_ : "")
 {
-	message = strdup(message_);
 }
 
 Http::Response::~Response() {
-	free(message);
 }
 
 

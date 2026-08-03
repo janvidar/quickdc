@@ -9,22 +9,16 @@
 
 QuickDC::Share::SearchResult::SearchResult(const char* fn, uint64_t si, size_t sl, const char* tr, size_t td, const char* to) :
 	user(0),
-	file(0),
+	file(fn ? fn : ""),
 	size(si),
 	freeslots(sl),
-	tth(0),
+	tth(tr ? tr : ""),
 	tth_depth(td),
-	token(0)
+	token(to ? to : "")
 {
-	if (fn) file = strdup(fn);
-	if (tr) tth = strdup(tr);
-	if (to) token = strdup(to);
 }
 
 QuickDC::Share::SearchResult::~SearchResult() {
-	free(file);
-	free(tth);
-	free(token);
 }
 
 void QuickDC::Share::SearchResult::setUser(QuickDC::User* u)

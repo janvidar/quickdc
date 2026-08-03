@@ -39,8 +39,8 @@ class Request : public Http::Entity
 		enum Method method;
 		enum Protocol protocol;
 		
-		char* uri; /* raw encoded */
-		
+		std::string uri; /* raw encoded */
+
 
 		uint8_t* entity_body;
 		size_t entity_body_length;

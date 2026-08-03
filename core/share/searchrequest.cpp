@@ -8,56 +8,44 @@
 #include "share/searchrequest.h"
 #include "network/dc/hubsession.h"
 #include "ctype.h"
+#include <string_view>
 
 #define FREE_VECTOR(V) while (V.size()) { char* arg = V.back(); V.pop_back(); free(arg); }
 
 
-QuickDC::Share::SearchRequest::SearchRequest(QuickDC::Share::SearchReplyHandler* eh) : tth(0), token(0), size(0), size_type(SizeAny), file_type(SearchAll), event_handler(eh), user(0)
+QuickDC::Share::SearchRequest::SearchRequest(QuickDC::Share::SearchReplyHandler* eh) : size(0), size_type(SizeAny), file_type(SearchAll), event_handler(eh), user(0)
 {
-	
+
 }
 
 QuickDC::Share::SearchRequest::SearchRequest(enum SizePolicy sp, uint64_t size_, const char* tth_, const char* token_, QuickDC::Share::SearchReplyHandler* eh) :
-	tth(0), token(0), size(size_), size_type(sp), file_type(SearchAll), event_handler(eh), user(0)
+	size(size_), size_type(sp), file_type(SearchAll), event_handler(eh), user(0)
 {
-	/* A TTH root is always 39 base32 characters; anything else is not one and
-	   leaves tth null. The uppercasing has to stay inside that check - it used
-	   to sit outside it and dereference the null. */
-	if (tth_ && strlen(tth_) == 39) {
-		tth = strdup(tth_);
-		for (size_t n = 0; n < 39; n++)
-			tth[n] = toupper(tth[n]);
-	}
-	if (token_) token = strdup(token_);
+	setTTH(tth_);
+	setToken(token_);
 }
 
 QuickDC::Share::SearchRequest::~SearchRequest() {
-	free(tth);
-	free(token);
-
 	FREE_VECTOR(include);
 	FREE_VECTOR(exclude);
 	FREE_VECTOR(extension);
 }
 
 void QuickDC::Share::SearchRequest::setToken(const char* token_) {
-	if (token_) {
-		if (token) free(token);
-		token = strdup(token_);
-	}
+	if (token_) token = token_;
 }
 
 void QuickDC::Share::SearchRequest::setTTH(const char* tth_) {
-	/* Cleared first: what is not a TTH leaves us with none, and leaving the
-	   freed pointer behind means the destructor frees it a second time. */
-	free(tth);
-	tth = 0;
+	const std::string_view root(tth_ ? tth_ : "");
 
-	if (tth_ && strlen(tth_) == 39) {
-		tth = strdup(tth_);
-		for (size_t n = 0; n < 39; n++)
-			tth[n] = toupper(tth[n]);
-	}
+	/* A TTH root is always 39 base32 characters; anything else is not one and
+	   leaves the request without a TTH at all, which is what isTTH() answers. */
+	tth.clear();
+	if (root.size() != 39) return;
+
+	tth = root;
+	for (char& c : tth)
+		c = (char) toupper((unsigned char) c);
 }
 
 void QuickDC::Share::SearchRequest::setSizePolicy(enum SizePolicy sp) { size_type = sp; }
@@ -82,7 +70,7 @@ void QuickDC::Share::SearchRequest::addExtension(const char* ext) {
 }
 
 bool QuickDC::Share::SearchRequest::isTTH() const {
-	return tth != 0;
+	return !tth.empty();
 }
 
 void QuickDC::Share::SearchRequest::setSize(uint64_t size_) {

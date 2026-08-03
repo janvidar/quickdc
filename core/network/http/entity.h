@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_HTTP_ENTITY_H
 
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -54,11 +55,16 @@ class Entity {
 		void setCode(uint16_t);
 
 		enum Method getMethod() const { return method; }
-		const char* getURI() const { return uri; }
+		const char* getURI() const { return uri.empty() ? 0 : uri.c_str(); }
 		enum Protocol getProtocol() const { return protocol; }
 
 		uint16_t getCode() const { return code; }
-		const char* getMessage() const { return msg; }
+
+		/**
+		 * @return the reason phrase, or null when the entity has none. A status
+		 *         line may carry an empty one, which is not the same thing.
+		 */
+		const char* getMessage() const { return msg ? msg->c_str() : 0; }
 
 		bool isRequest() const { return request; }
 		
@@ -97,11 +103,11 @@ class Entity {
 
 		// Request contains these
 		enum Method method;
-		char* uri; /* raw encoded */
+		std::string uri; /* raw encoded */
 
 		// Response contains
 		uint16_t code;
-		char* msg;
+		std::optional<std::string> msg;
 
 		uint64_t bodySize;
 		QuickDC::Transfer* transfer;

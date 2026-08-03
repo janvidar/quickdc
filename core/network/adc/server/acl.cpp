@@ -14,7 +14,7 @@
 
 namespace XML
 {
-	extern void escape(Samurai::IO::Buffer* buffer, const char* str);
+	extern void escape(Samurai::IO::Buffer* buffer, const std::string& str);
 }
 
 
@@ -57,22 +57,16 @@ const char* ADC::ACL::Authorization::convertCredential(enum ADC::ACL::Authorizat
 }
 
 ADC::ACL::Authorization::Authorization(enum Credential cred_, Samurai::TimeStamp expire_, const char* name_, const char* description_)
+	: name(name_ ? name_ : ""), description(description_ ? description_ : "")
 {
 	credential = cred_;
 	expire = expire_;
-	name = 0;
-	if (name_) name = strdup(name_);
-	description = 0;
-	if (description_) description = strdup(description_);
 
-	QDBG("* Creating authorization for user %s (%s). access=%s, expires=%s", name, description, convertCredential(credential), expire.getTime().c_str());
+	QDBG("* Creating authorization for user %s (%s). access=%s, expires=%s", name.c_str(), description.c_str(), convertCredential(credential), expire.getTime().c_str());
 }
 
 ADC::ACL::Authorization::~Authorization()
 {
-	free(name);
-	free(description);
-
 	while (identities.size())
 	{
 		ADC::ACL::Identity* id = identities.back();
@@ -96,13 +90,13 @@ bool ADC::ACL::Authorization::isExpired()
 
 void ADC::ACL::Authorization::addIdentity(ADC::ACL::Identity* id)
 {
-	QDBG("> Identity for user %s: %s (%s)", name, id->data, Identity::convertIdentityType(id->type));
+	QDBG("> Identity for user %s: %s (%s)", name.c_str(), id->data.c_str(), Identity::convertIdentityType(id->type));
 	identities.push_back(id);
 }
 
 void ADC::ACL::Authorization::addVerification(ADC::ACL::Verification* verification)
 {
-	QDBG("> Verification for user %s: %s (%s)", name, verification->data, Verification::convertVerificationType(verification->type));
+	QDBG("> Verification for user %s: %s (%s)", name.c_str(), verification->data.c_str(), Verification::convertVerificationType(verification->type));
 	verifications.push_back(verification);
 }
 
@@ -139,15 +133,13 @@ const char* ADC::ACL::Identity::convertIdentityType(enum ADC::ACL::Identity::Ide
 }
 
 ADC::ACL::Identity::Identity(enum IdentityType type_, const char* data_)
+	: data(data_ ? data_ : "")
 {
 	type = type_;
-	data = 0;
-	if (data_) data = strdup(data_);
 }
 
 ADC::ACL::Identity::~Identity()
 {
-	free(data);
 }
 
 bool ADC::ACL::Identity::matchCID(const char*)
@@ -192,15 +184,13 @@ const char* ADC::ACL::Verification::convertVerificationType(enum ADC::ACL::Verif
 }
 
 ADC::ACL::Verification::Verification(enum ADC::ACL::Verification::VerificationType type_, const char* data_)
+	: data(data_ ? data_ : "")
 {
 	type = type_;
-	data = 0;
-	if (data_) data = strdup(data_);
 }
 
 ADC::ACL::Verification::~Verification()
 {
-	free(data);
 }
 
 /* ------------------------------------------------------------------------- */

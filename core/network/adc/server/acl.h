@@ -51,7 +51,7 @@ class Identity {
 	
 	protected:
 		enum IdentityType type;
-		char* data;
+		std::string data;
 
 	friend class Authorization;
 	friend class Table;
@@ -78,8 +78,8 @@ class Verification {
 		
 	protected:
 		enum VerificationType type;
-		char* data;
-	
+		std::string data;
+
 	friend class Authorization;
 	friend class Table;
 };
@@ -106,8 +106,14 @@ class Authorization {
 		~Authorization();
 		
 		enum Credential getCredential() const { return credential; }
-		const char* getName() const { return name; }
-		const char* getDescription() const { return description; }
+
+		/**
+		 * @return the name, or null when the authorization carries none. An
+		 *         entry without one is refused when the table is read, so an
+		 *         empty name is an absent one.
+		 */
+		const char* getName() const { return name.empty() ? 0 : name.c_str(); }
+		const char* getDescription() const { return description.empty() ? 0 : description.c_str(); }
 		bool isExpired();
 		Samurai::TimeStamp getExpireTime() const { return expire; }
 		
@@ -115,8 +121,8 @@ class Authorization {
 		void addVerification(Verification* verification);
 	
 	protected:
-		char* name;
-		char* description;
+		std::string name;
+		std::string description;
 		Samurai::TimeStamp expire;
 		enum Credential credential;
 		std::vector<Identity*> identities;
