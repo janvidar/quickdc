@@ -11,103 +11,88 @@
 #include "network/dc/tag.h"
 
 
-DC::Tag::Tag(const char* string) {
-	ok = false;
-	client = 0;
-	version = 0;
-	mode = 0;
-	hubcount = 0;
-	slotcount = 0;
-	ua = 0;
-	tag = strdup(string ? string : "");
-	parse();
+DC::Tag::Tag(const char* string) : ok(false) {
+	parse(string ? string : "");
 }
 
 /*virtual*/
 DC::Tag::~Tag() {
-	free(tag);
-	free(client);
-	free(version);
-	free(mode);
-	free(hubcount);
-	free(slotcount);
-	free(ua);
 }
 
 bool DC::Tag::isOK() { return ok; }
 
-void DC::Tag::parse() {
-	/* Checked before anything is read: &tag[1] is past the end of an empty
-	   string, not the terminator of one. */
-	const size_t len = strlen(tag);
-	if (len < 2) return;
+/**
+ * "<client V:1.0,M:A,H:1/0/0,S:2>", out of another user's $MyINFO - so the shape
+ * is whatever they sent, and anything that does not fit leaves the tag not ok.
+ */
+void DC::Tag::parse(std::string_view tag) {
+	/* The two brackets, and something between them. */
+	if (tag.size() < 2) return;
+	tag.remove_prefix(1);
+	tag.remove_suffix(1);
 
-	char* start = &tag[1];
-	char* split = strchr(start, ' ');
-	if (!split) return;
-	tag[len-1] = '\0';
+	const size_t space = tag.find(' ');
+	if (space == std::string_view::npos) return;
 
-	client = strndup(&start[0], &split[0]-&start[0]);
-	start = &split[1];
-	
-	split = strchr(start, ':');
-	while (split) {
-		char* param_name = strndup(start, &split[0]-&start[0]);
-		start = &split[1];
-		char* param_data = 0;
-		
-		split = strchr(start, ',');
-		if (split) {
-			param_data = strndup(start, &split[0]-&start[0]);
-			start = &split[1];
-			split = strchr(start, ':');
-		} else {
-			param_data = strdup(start);
-			split = 0;
+	client = tag.substr(0, space);
+	tag.remove_prefix(space + 1);
+
+	/*
+	 * "name:value" separated by commas. A name we do not know is skipped rather
+	 * than refused: the tag is a convention, and clients add fields to it.
+	 */
+	while (!tag.empty()) {
+		const size_t colon = tag.find(':');
+		if (colon == std::string_view::npos) break;
+
+		const std::string_view name = tag.substr(0, colon);
+		tag.remove_prefix(colon + 1);
+
+		const size_t comma = tag.find(',');
+		if (comma == std::string_view::npos) {
+			parsePair(name, tag);
+			break;
 		}
-		
-		if (!parsePair(param_name, param_data)) {
-			free(param_data);
-		}
-		free(param_name);
+
+		parsePair(name, tag.substr(0, comma));
+		tag.remove_prefix(comma + 1);
 	}
-	
+
 	/* Process client name */
-	if (strlen(client) == 2 && strncmp(client, "++", 2) == 0) {
-		free(client);
-		client = strdup("DC++");
-	}
+	if (client == "++")
+		client = "DC++";
+
 	ok = true;
 }
 
-#define BIND(c, member, value) { case c: free(member); member = value; }
-bool DC::Tag::parsePair(char* name, char* value) {
-	if (!name || !value || strlen(name) != 1) return false;
+bool DC::Tag::parsePair(std::string_view name, std::string_view value) {
+	if (name.size() != 1 || value.empty()) return false;
 
 	switch (name[0]) {
-		BIND('M', mode, value);      return true;
-		BIND('S', slotcount, value); return true;
-		BIND('H', hubcount, value);  return true;
-		BIND('V', version, value);   return true;
+		case 'M': mode = value;      return true;
+		case 'S': slotcount = value; return true;
+		case 'H': hubcount = value;  return true;
+		case 'V': version = value;   return true;
 		default:                     return false;
 	}
 }
 
 const char* DC::Tag::getUserAgent() {
-	if (ua) return ua;
-	if (!client) return 0;
-	if (!version) return client;
-	ua = (char*) malloc(strlen(client) + strlen(version)+2);
-	ua[0] = '\0';
-	strcat(ua, client);
-	strcat(ua, " ");
-	strcat(ua, version);
-	return ua;
+	if (!ua.empty()) return ua.c_str();
+	if (client.empty()) return 0;
+
+	ua = client;
+	if (!version.empty())
+	{
+		ua += ' ';
+		ua += version;
+	}
+	return ua.c_str();
 }
 
 uint32_t DC::Tag::getSlots() {
-	if (!slotcount) return 0;
-	int nslots = Samurai::Util::Convert::to_int32(slotcount);
+	if (slotcount.empty()) return 0;
+	int nslots = Samurai::Util::Convert::to_int32(slotcount.c_str());
 	if (nslots < 0) return 0;
 	return (uint32_t) nslots;
 }
@@ -120,32 +105,26 @@ uint32_t DC::Tag::getSlots() {
  * num3 = hubs where user is none of the above.
  */
 bool DC::Tag::getHubCount(int& op, int& registered, int& regular) {
-	if (!hubcount) return false;
-	char* tmp = strdup(hubcount);
-	char* split1 = strchr(tmp, '/');
-	char* split2 = strrchr(tmp, '/');
-	if (!split1 || !split2 || split1 == split2) { free(tmp); return false; }
-	split1[0] = '\0';
-	split2[0] = '\0';
-	op = Samurai::Util::Convert::to_int32(tmp);
-	registered =  Samurai::Util::Convert::to_int32(&split1[1]);
-	regular = Samurai::Util::Convert::to_int32(&split2[1]);
-	free(tmp);
+	if (hubcount.empty()) return false;
+
+	const size_t first = hubcount.find('/');
+	const size_t last  = hubcount.rfind('/');
+	if (first == std::string::npos || first == last) return false;
+
+	op         = Samurai::Util::Convert::to_int32(hubcount.substr(0, first).c_str());
+	registered = Samurai::Util::Convert::to_int32(hubcount.substr(first + 1, last - first - 1).c_str());
+	regular    = Samurai::Util::Convert::to_int32(hubcount.substr(last + 1).c_str());
 	return true;
 }
 
 bool DC::Tag::isActiveMode() {
-	if (!mode) return false;
-	return (mode[0] == 'A');
+	return !mode.empty() && mode[0] == 'A';
 }
 
 bool DC::Tag::isPassiveMode() {
-	if (!mode) return false;
-	return (mode[0] == 'P');
+	return !mode.empty() && mode[0] == 'P';
 }
 
 bool DC::Tag::haveMode() {
-	if (!mode) return false;
-	return (mode[0] == 'A' || mode[0] == 'P');
+	return isActiveMode() || isPassiveMode();
 }
-
