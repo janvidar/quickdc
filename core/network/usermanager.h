@@ -15,15 +15,6 @@ namespace QuickDC {
 
 class User;
 
-/**
- * Compare the strings
- */
-struct nick_eq {
-	bool operator()(const char* s1, const char* s2) const {
-		return strcmp(s1, s2) == 0;
-	}
-};
-
 class UserEventHandler {
 	public:
 		virtual ~UserEventHandler() {}

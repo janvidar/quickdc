@@ -7,8 +7,8 @@
 #ifndef HAVE_QUICKDC_DCLOCKPICKER_H
 #define HAVE_QUICKDC_DCLOCKPICKER_H
 
-#include <stdio.h>
 #include <string>
+#include <string_view>
 
 namespace DC {
 
@@ -17,22 +17,22 @@ class Lock {
 
 		/**
 		* This algorithm converts a lock into a key.
-		* NOTE: must free() this string.
+		* @return the key, or an empty string for a lock too short to derive
+		*         one from. There is no lock of three characters or more whose
+		*         key is empty, so the two cases do not overlap.
 		*/
-		static char* calculateKey(const char* lock, size_t length);
-		
+		static std::string calculateKey(std::string_view lock);
+
 		/**
 		* Create a lock.
-		* NOTE: must free() this string.
 		*/
-		static char* createLock();
-		
+		static std::string createLock();
+
 		/**
 		* Create pk. Well, we send the client version anyway.
-		* NOTE: must free() this string.
 		*/
-		static char* createPk();
-		
+		static std::string createPk();
+
 };
 
 }

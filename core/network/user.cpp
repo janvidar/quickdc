@@ -3,9 +3,9 @@
  * See the file "COPYING" for licensing details.
  */
 
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string_view>
 #include "user.h"
 
 QuickDC::User::User(const char* id, const char* nick, const char* description, const char* email, uint64_t sharedSize)
@@ -35,18 +35,18 @@ QuickDC::User::~User() {
 }
 
 void QuickDC::User::clean() {
-	memset(id,          0,  64);
-	memset(nick,        0,  64);
-	memset(description, 0, 256);
-	memset(email,       0, 128);
-	memset(speed,       0,  16);
-	memset(userAgent,   0,  64);
-	memset(clientID,    0,  64);
-	memset(privateID,   0,  64);
-	memset(address_ipv4,0,  16);
-	memset(address_ipv6,0,  40);
-	memset(keyprint,    0,  64);
-	
+	id.clear();
+	nick.clear();
+	description.clear();
+	email.clear();
+	speed.clear();
+	userAgent.clear();
+	clientID.clear();
+	privateID.clear();
+	address_ipv4.clear();
+	address_ipv6.clear();
+	keyprint.clear();
+
 	sessionID = 0;
 	shared = 0;
 	numSlots = 0;
@@ -73,15 +73,21 @@ bool QuickDC::User::setOp() {
 	return change;
 }
 
-const char* QuickDC::User::getID() const               { return id; }
-const char* QuickDC::User::getNick() const             { return nick; }
-const char* QuickDC::User::getDescription() const      { return description; }
-const char* QuickDC::User::getEmail() const            { return email; }
-const char* QuickDC::User::getSpeed() const            { return speed; }
-const char* QuickDC::User::getUserAgent() const        { return userAgent; }
+/*
+ * A field nobody has told us about reads as the empty string rather than as
+ * nothing at all: these are asked for in printf arguments and string
+ * comparisons all over the interface and the two session state machines, none
+ * of which has anything to say about a user without a description.
+ */
+const char* QuickDC::User::getID() const               { return id.c_str(); }
+const char* QuickDC::User::getNick() const             { return nick.c_str(); }
+const char* QuickDC::User::getDescription() const      { return description.c_str(); }
+const char* QuickDC::User::getEmail() const            { return email.c_str(); }
+const char* QuickDC::User::getSpeed() const            { return speed.c_str(); }
+const char* QuickDC::User::getUserAgent() const        { return userAgent.c_str(); }
 uint32_t    QuickDC::User::getSessionID() const        { return sessionID; }
-const uint8_t*    QuickDC::User::getPrivateID() const  { return privateID; }
-const uint8_t*    QuickDC::User::getClientID() const   { return clientID; }
+const uint8_t*    QuickDC::User::getPrivateID() const  { return (const uint8_t*) privateID.c_str(); }
+const uint8_t*    QuickDC::User::getClientID() const   { return (const uint8_t*) clientID.c_str(); }
 uint64_t    QuickDC::User::getSharedBytes() const      { return shared; }
 uint32_t    QuickDC::User::getNumSlots() const         { return numSlots; }
 uint32_t    QuickDC::User::getSharedFiles() const      { return sharedFiles; }
@@ -92,31 +98,38 @@ uint32_t    QuickDC::User::getMaxSpeedUpload() const   { return maxSpeedUpload; 
 uint32_t    QuickDC::User::getMaxSpeedDownload() const { return maxSpeedDownload; }
 uint32_t    QuickDC::User::getAutoSlotSpeed() const    { return autoSlotSpeed; }
 uint32_t    QuickDC::User::getAutoSlotLimit() const    { return autoSlotLimit; }
-const char* QuickDC::User::getAddressIPv4() const      { return address_ipv4; }
-const char* QuickDC::User::getAddressIPv6() const      { return address_ipv6; }
-const char* QuickDC::User::getKeyprint() const         { return keyprint; }
+const char* QuickDC::User::getAddressIPv4() const      { return address_ipv4.c_str(); }
+const char* QuickDC::User::getAddressIPv6() const      { return address_ipv6.c_str(); }
+const char* QuickDC::User::getKeyprint() const         { return keyprint.c_str(); }
+bool        QuickDC::User::hasKeyprint() const         { return !keyprint.empty(); }
 uint16_t    QuickDC::User::getPortIPv4() const         { return port_ipv4; }
 uint16_t    QuickDC::User::getPortIPv6() const         { return port_ipv6; }
 
 
 /*
- * Every field here is filled in from what a hub or a peer sent us, so the
- * length is never ours to assume.
+ * Whether the field ended up different, which is what decides whether the
+ * interface is told about this user at all.
  *
- * This used to be strncpy(old, str, max), which does not terminate when the
- * source is at least 'max' long: the buffer was left exactly full with no NUL,
- * and the next strcmp() or printf() of it ran on into whatever member follows.
- * A user agent of 64 characters, for instance, ran straight into clientID and
- * corrupted client ID comparisons. Copy one less and terminate by hand.
+ * Every field is filled in from what a hub or a peer sent us, so none of the
+ * lengths are ours to assume - and each one is bounded, because nothing on the
+ * wire has to be reasonable. Anything longer is kept up to the limit, which is
+ * also as far as two values are compared: two over-long ones that agree that far
+ * are the same value as far as this user is concerned.
+ *
+ * A null value is not the same as an unchanged one. A caller passing it is
+ * saying the field was absent from what arrived, which drops what was there
+ * rather than carrying it over from whatever the user last said.
  */
-#define COPY_STR_IF_CHANGED(str, old, max) { \
-	if (str && strncmp(old, str, (max) - 1) == 0) return false; \
-	if (str) { \
-		strncpy(old, str, (max) - 1); \
-		(old)[(max) - 1] = '\0'; \
-	} \
-	else memset(old, 0, max); \
-	return true; \
+static bool copyIfChanged(std::string& old, const char* str, size_t limit) {
+	if (!str) {
+		old.clear();
+		return true;
+	}
+
+	const std::string_view value = std::string_view(str).substr(0, limit);
+	if (old == value) return false;
+	old = value;
+	return true;
 }
 
 #define COPY_NUM_IF_CHANGED(num, old) { \
@@ -125,35 +138,14 @@ uint16_t    QuickDC::User::getPortIPv6() const         { return port_ipv6; }
 	return true; \
 }
 
-/*
- * The client and private IDs are base32 strings on the wire, and are compared
- * as strings everywhere else, so they are copied as strings too.
- *
- * This used to memcpy a fixed 40 bytes whatever the argument's real length was.
- * A CID is 39 characters plus a terminator, so a well formed one fits exactly -
- * but the length arrives from the network, and anything shorter was read well
- * past its end.
- */
-#define COPY_ID_IF_CHANGED(mem, old, max) { \
-	const char* src = (const char*) (mem); \
-	char* dst = (char*) (old); \
-	if (src && strncmp(dst, src, (max) - 1) == 0) return false; \
-	if (src) { \
-		strncpy(dst, src, (max) - 1); \
-		dst[(max) - 1] = '\0'; \
-	} \
-	else memset(dst, 0, max); \
-	return true; \
-}
-
-bool        QuickDC::User::setID(const char* str)          COPY_STR_IF_CHANGED(str, id, 64);
-bool        QuickDC::User::setNick(const char* str)        COPY_STR_IF_CHANGED(str, nick, 64);
-bool        QuickDC::User::setDescription(const char* str) COPY_STR_IF_CHANGED(str, description, 256);
-bool        QuickDC::User::setEmail(const char* str)       COPY_STR_IF_CHANGED(str, email, 128);
-bool        QuickDC::User::setSpeed(const char* str)       COPY_STR_IF_CHANGED(str, speed, 16);
-bool        QuickDC::User::setUserAgent(const char* str)   COPY_STR_IF_CHANGED(str, userAgent, 64);
-bool        QuickDC::User::setClientID(uint8_t* mem)       COPY_ID_IF_CHANGED(mem, clientID, sizeof(clientID));
-bool        QuickDC::User::setPrivateID(uint8_t* mem)      COPY_ID_IF_CHANGED(mem, privateID, sizeof(privateID));
+bool        QuickDC::User::setID(const char* str)          { return copyIfChanged(id, str, 63); }
+bool        QuickDC::User::setNick(const char* str)        { return copyIfChanged(nick, str, 63); }
+bool        QuickDC::User::setDescription(const char* str) { return copyIfChanged(description, str, 255); }
+bool        QuickDC::User::setEmail(const char* str)       { return copyIfChanged(email, str, 127); }
+bool        QuickDC::User::setSpeed(const char* str)       { return copyIfChanged(speed, str, 15); }
+bool        QuickDC::User::setUserAgent(const char* str)   { return copyIfChanged(userAgent, str, 63); }
+bool        QuickDC::User::setClientID(uint8_t* mem)       { return copyIfChanged(clientID, (const char*) mem, 63); }
+bool        QuickDC::User::setPrivateID(uint8_t* mem)      { return copyIfChanged(privateID, (const char*) mem, 63); }
 bool        QuickDC::User::setSessionID(uint32_t n)        COPY_NUM_IF_CHANGED(n, sessionID);
 bool        QuickDC::User::setSharedBytes(uint64_t n)      COPY_NUM_IF_CHANGED(n, shared);
 bool        QuickDC::User::setNumSlots(uint32_t n)         COPY_NUM_IF_CHANGED(n, numSlots);
@@ -166,9 +158,9 @@ bool        QuickDC::User::setMaxSpeedDownload(uint32_t n) COPY_NUM_IF_CHANGED(n
 bool        QuickDC::User::setAutoSlotSpeed(uint32_t n)    COPY_NUM_IF_CHANGED(n, autoSlotSpeed);
 bool        QuickDC::User::setAutoSlotLimit(uint32_t n)    COPY_NUM_IF_CHANGED(n, autoSlotLimit);
 
-bool        QuickDC::User::setAddressIPv4(const char* str) COPY_STR_IF_CHANGED(str, address_ipv4, 16);
-bool        QuickDC::User::setAddressIPv6(const char* str) COPY_STR_IF_CHANGED(str, address_ipv6, 40);
+bool        QuickDC::User::setAddressIPv4(const char* str) { return copyIfChanged(address_ipv4, str, 15); }
+bool        QuickDC::User::setAddressIPv6(const char* str) { return copyIfChanged(address_ipv6, str, 39); }
 bool        QuickDC::User::setPortIPv4(uint16_t n)         COPY_NUM_IF_CHANGED(n, port_ipv4);
 bool        QuickDC::User::setPortIPv6(uint16_t n)         COPY_NUM_IF_CHANGED(n, port_ipv6);
-bool        QuickDC::User::setKeyprint(const char* str)    COPY_STR_IF_CHANGED(str, keyprint, 64);
+bool        QuickDC::User::setKeyprint(const char* str)    { return copyIfChanged(keyprint, str, 63); }
 

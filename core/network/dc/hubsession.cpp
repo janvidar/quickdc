@@ -6,6 +6,7 @@
 #include "quickdc.h"
 #include <stdio.h>
 #include <string.h>
+#include <string_view>
 #include <time.h>
 
 #include "api/core.h"
@@ -52,18 +53,10 @@
 DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Samurai::IO::Net::URL* url)
 	: QuickDC::HubSession(ui)
 	, QuickDC::Connection(url, "NMDC hub")
-	, nickname(0)
-	, password(0)
-	, description(0)
-	, email(0)
-	, hubname(0)
-	, lock(0)
-	, key(0)
 	, flags(0x1)
 	, extendedProtocol(false)
 	, state(None)
 	, session(0)
-	, address(0)
 	, proxy(0)
 	, listener(listener_)
 	, infoTimer(0)
@@ -77,26 +70,25 @@ DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Sa
 	   Core::session. Not ours to delete, and its group is not ours to leave set. */
 	session = QuickDC::Core::getInstance()->session;
 
-	address = strdup(url->toString().c_str());
+	address = url->toString();
 	config->setGroup("User");
 	session->setGroup(address);
-	
+
 	/*
 	 * Load settings from session file, or defaults if no session is found.
 	 * This will incidentally create such a session.
 	 */
-	nickname = strdup(session->getString("Nickname", config->getString("Nickname", PRODUCT)));
-	description = strdup(session->getString("Description", config->getString("Description", PRODUCT " user")));
-	email = strdup(session->getString("E-mail", config->getString("E-mail", "")));
-	password = strdup(session->getString("Password", config->getString("Password", "")));
+	nickname = session->getString("Nickname", config->getString("Nickname", PRODUCT));
+	description = session->getString("Description", config->getString("Description", PRODUCT " user"));
+	email = session->getString("E-mail", config->getString("E-mail", ""));
+	password = session->getString("Password", config->getString("Password", ""));
 
 	/* A hub will never accept an empty nick, and older versions could store one
 	 * in the session file. Fall back to the configured nick in that case. */
-	if (!*nickname)
+	if (nickname.empty())
 	{
-		free(nickname);
-		const char* fallback = config->getString("Nickname", PRODUCT);
-		nickname = strdup(*fallback ? fallback : PRODUCT);
+		nickname = config->getString("Nickname", PRODUCT);
+		if (nickname.empty()) nickname = PRODUCT;
 		session->setString("Nickname", nickname);
 	}
 
@@ -108,16 +100,6 @@ DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Sa
 
 DC::HubSession::~HubSession()
 {
-	/* erase() invalidates the iterator, so it cannot be the one the loop then
-	   increments - take the first element each time round instead. */
-	while (!extensions.empty())
-	{
-		std::set<char*>::iterator it = extensions.begin();
-		char* feature = *it;
-		extensions.erase(it);
-		free(feature);
-	}
-
 	// save session data.
 	/* The group is shared, and every other hub session moves it, so it is
 	   selected here rather than relied on from the constructor. */
@@ -125,17 +107,7 @@ DC::HubSession::~HubSession()
 	session->setString("Nickname", nickname);
 	session->setString("Password", password);
 	session->write();
-	
-	
-	
-	free(address);
-	free(password);
-	free(email);
-	free(description);
-	free(hubname);
-	free(nickname);
-	free(lock);
-	free(key);
+
 	delete users;
 	delete proxy;
 	delete infoTimer;
@@ -157,10 +129,10 @@ void DC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const cha
 	/* NMDC has no room to say a line is markup, so a caller must not claim it is. */
 	(void) richText;
 
-	if (!msg || !strlen(msg)) return;
+	if (!msg || !*msg) return;
 	if (!user) return;
-	
-	const QuickDC::User* me = users->getUser(nickname);
+
+	const QuickDC::User* me = users->getUser(nickname.c_str());
 
 	DC::Command* cmd = new DC::SendTo(me->getNick(), user->getNick(), msg);
 	send(cmd);
@@ -174,9 +146,9 @@ void DC::HubSession::sendChatMessage(const char* msg, bool richText)
 {
 	(void) richText;
 
-	if (!msg || !strlen(msg)) return;
+	if (!msg || !*msg) return;
 
-	const QuickDC::User* me = users->getUser(nickname);
+	const QuickDC::User* me = users->getUser(nickname.c_str());
 	DC::Command* cmd = new DC::SendMessage(me->getNick(), msg);
 	send(cmd);
 }
@@ -184,7 +156,7 @@ void DC::HubSession::sendChatMessage(const char* msg, bool richText)
 void DC::HubSession::sendAdminUserKick(const QuickDC::User* user)
 {
 	if (!user) return;
-	const QuickDC::User* me = users->getUser(nickname);
+	const QuickDC::User* me = users->getUser(nickname.c_str());
 	if (me && me->isOp() && user)
 	{
 		DC::Command* cmd = new DC::SendKick(user->getNick());
@@ -198,10 +170,10 @@ void DC::HubSession::sendAdminUserKick(const QuickDC::User* user)
 
 void DC::HubSession::sendAdminUserRedirect(const QuickDC::User* user, const char* address, const char* reason)
 {
-	if (!user || !address || !strlen(address) || !reason || !strlen(reason)) return;
-	
-	const QuickDC::User* me = users->getUser(nickname);
-	
+	if (!user || !address || !*address || !reason || !*reason) return;
+
+	const QuickDC::User* me = users->getUser(nickname.c_str());
+
 	if (me && me->isOp() && user)
 	{
 		DC::Command* cmd = new DC::SendRedirect(user->getNick(), address, reason);
@@ -217,19 +189,19 @@ void DC::HubSession::sendAdminUserRedirect(const QuickDC::User* user, const char
 
 void DC::HubSession::addSupport(const char* feature)
 {
-	extensions.insert(strdup(feature));
+	if (feature) extensions.insert(feature);
 }
 
 bool DC::HubSession::supports(const char* feature)
 {
-	return (extendedProtocol && extensions.count((char*) feature));
+	return (extendedProtocol && feature && extensions.count(feature) != 0);
 }
 
 void DC::HubSession::onLock(const char* lock_, const char* /*pk_*/) {
 	/*
 	 * $Lock is the first thing a hub says, so this runs against an unverified
-	 * peer. calculateKey() answers 0 for anything under three characters, and
-	 * the key is handed to strlen() further down.
+	 * peer. calculateKey() has nothing to derive a key from below three
+	 * characters, and a hub we cannot answer is one there is no login on.
 	 */
 	if (!lock_ || strlen(lock_) < 3)
 	{
@@ -238,14 +210,12 @@ void DC::HubSession::onLock(const char* lock_, const char* /*pk_*/) {
 		return;
 	}
 
-	if (lock) free(lock);
-	lock = strdup(lock_);
-	extendedProtocol = (strncmp(lock, "EXTENDEDPROTOCOL", 16) == 0);
+	lock = lock_;
+	extendedProtocol = lock.starts_with("EXTENDEDPROTOCOL");
 
 	/* A hub may send $Lock more than once, and each one derives a new key. */
-	free(key);
-	key = Lock::calculateKey(lock, strlen(lock));
-	if (!key)
+	key = Lock::calculateKey(lock);
+	if (key.empty())
 	{
 		QERR("Unable to derive a key from the hub's lock; dropping the connection");
 		socket->disconnect();
@@ -259,12 +229,12 @@ void DC::HubSession::onLock(const char* lock_, const char* /*pk_*/) {
 	}
 
 	{
-		DC::Command* cmd = new DC::SendKey(key, strlen(key));
+		DC::Command* cmd = new DC::SendKey(key.c_str(), key.size());
 		send(cmd, true);
 	}
-	
+
 	{
-		DC::Command* cmd = new DC::SendValidateNick(nickname);
+		DC::Command* cmd = new DC::SendValidateNick(nickname.c_str());
 		send(cmd, false);
 	}
 	
@@ -274,9 +244,8 @@ void DC::HubSession::onLock(const char* lock_, const char* /*pk_*/) {
 
 void DC::HubSession::onHubName(const char* hubname_)
 {
-	if (hubname) free(hubname);
-	hubname = strdup(hubname_);
-	listener->EventHubName(hubname);
+	hubname = hubname_;
+	listener->EventHubName(hubname.c_str());
 }
 
 void DC::HubSession::onPublicChat(const char* from, const char* message)
@@ -327,8 +296,7 @@ void DC::HubSession::onRedirect(const char* host, uint16_t port)
 
 void DC::HubSession::onBadPassword()
 {
-	free(password);
-	password = strdup("");
+	password.clear();
 
 	/*
 	 * Cleared on disk as well as in memory, and now rather than when the
@@ -445,7 +413,7 @@ void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 	else
 	{
 		QDBG("Requesting passive connection to user: %s", u->getNick());
-		cmd = new DC::SendRevConnectToMe(nickname, u->getID());
+		cmd = new DC::SendRevConnectToMe(nickname.c_str(), u->getID());
 	}
 	send(cmd);
 }
@@ -453,12 +421,11 @@ void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 
 void DC::HubSession::onRequestMyInfo(const char* nick_)
 {
-	if (strcmp(nick_, nickname) != 0)
+	if (nickname != nick_)
 	{
 		// FIXME: change nickname to whatever the hub suggests for us
 		//        this requires change in other layers also.
-		free(nickname);
-		nickname = strdup(nick_);
+		nickname = nick_;
 	}
 	
 	state = Nick;
@@ -486,7 +453,7 @@ void DC::HubSession::onRequestPasword()
 	 * $BadPass, which leaves the session here in the password state, so a
 	 * password supplied then is sent as a second attempt.
 	 */
-	if (!password || !*password)
+	if (password.empty())
 		listener->EventHubAutenticate();
 
 	send(new DC::SendMyPass(getPassword()));
@@ -496,8 +463,7 @@ void DC::HubSession::sendPassword(const char* password_)
 {
 	if (state != Password || !password_) return;
 
-	free(password);
-	password = strdup(password_);
+	password = password_;
 
 	/*
 	 * Written out now rather than left to the destructor, so a password the
@@ -515,14 +481,14 @@ void DC::HubSession::sendPassword(const char* password_)
  * $ValidateDenide: the hub will not have the nickname we asked for. It arrives
  * before anything is authenticated and a hub may send it at any time.
  *
- * The nickname is kept rather than released. Every other reader of it - the
+ * The nickname is kept rather than cleared. Every other reader of it - the
  * destructor writing the session file, the user lookups, $MyNick on a peer
- * connection - takes it as a string, so letting it become null moved the fault
- * from here to whichever of those ran next.
+ * connection - needs a name to work with, and there is no better one to be had
+ * until the interface supplies one.
  */
 void DC::HubSession::onBadNick()
 {
-	QERR("The hub refused the nickname '%s'", nickname ? nickname : "");
+	QERR("The hub refused the nickname '%s'", nickname.c_str());
 	state = None;
 	listener->EventHubStatus(QuickDC::HubListener::HubErrorNickTaken);
 }
@@ -566,9 +532,14 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	if (!queue || !request || !request->getTTH() || !core->server) return;
 
 	/* A PSR is an ADC message, which a passive searcher's hub will not relay,
-	   so only an active one can be answered. */
+	   so only an active one can be answered - which is what a token in
+	   "host:port" form says the searcher is. */
 	const char* replyTo = request->getToken();
-	if (!replyTo || !strchr(replyTo, ':')) return;
+	if (!replyTo) return;
+
+	const std::string_view where(replyTo);
+	const size_t cut = where.find_last_of(':');
+	if (cut == std::string_view::npos) return;
 
 	QuickDC::QueueFile* file = queue->getFileByTTH(request->getTTH());
 	if (!file) return;
@@ -583,11 +554,8 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	std::string indexes = file->getChunks().toIndexString(block);
 	if (indexes.empty()) return;
 
-	std::string host(replyTo);
-	std::string port;
-	size_t cut = host.find_last_of(':');
-	port = host.substr(cut + 1);
-	host = host.substr(0, cut);
+	const std::string host(where.substr(0, cut));
+	const std::string port(where.substr(cut + 1));
 
 	std::string hubIpPort;
 	if (hub && hub->getUrl())
@@ -713,7 +681,7 @@ const QuickDC::User* DC::HubSession::getUser(const char* username)
 
 const QuickDC::User* DC::HubSession::getLocalUser()
 {
-	return users->getUser(nickname);
+	return users->getUser(nickname.c_str());
 }
 
 QuickDC::UserManager* DC::HubSession::getUserManager()

@@ -8,6 +8,7 @@
 
 #include <string.h>
 #include <set>
+#include <string>
 #include "api/hub.h"
 #include "config/preferences.h"
 #include "network/connection.h"
@@ -111,11 +112,11 @@ class HubSession
 
 		bool isExtendedProtocol() const { return extendedProtocol; }
 		
-		const char* getNick() const     { return nickname;    }
-		const char* getPassword() const { return password;    }
+		const char* getNick() const     { return nickname.c_str();    }
+		const char* getPassword() const { return password.c_str();    }
 		void sendPassword(const char* password) override;
-		const char* getDescription()    { return description; }
-		const char* getEmail() const    { return email;       }
+		const char* getDescription()    { return description.c_str(); }
+		const char* getEmail() const    { return email.c_str();       }
 		char getFlags() const            { return flags;       }
 		// enum User::Access getAccess() const { return access; }
 		void sendMyInfo();
@@ -155,21 +156,22 @@ class HubSession
 		void EventTimeout(Samurai::Timer* timer) override;
 		
 	protected:
-		char* nickname;
-		char* password;
-		char* description;
-		char* email;
-		char* hubname;
-		char* lock;
-		char* key;
+		std::string nickname;
+		std::string password;
+		std::string description;
+		std::string email;
+		std::string hubname;
+		std::string lock;
+		std::string key;
 		char flags;
 		bool extendedProtocol;
-		
-		std::set<char*> extensions;
+
+		/* Held by value, so that a lookup compares the name and not a pointer. */
+		std::set<std::string> extensions;
 		enum State state;
 		QuickDC::Preferences* session;
-		char* address;
-		
+		std::string address;
+
 		DC::CommandProxy* proxy;
 		QuickDC::HubListener* listener;
 		Samurai::Timer* infoTimer;

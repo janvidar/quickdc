@@ -6,6 +6,8 @@
 #include "usermanager.h"
 #include "user.h"
 
+#include <string_view>
+
 namespace QuickDC {
 
 
@@ -25,11 +27,8 @@ UserManager::~UserManager() {
 
 const User* UserManager::getUser(const char* id) {
 	if (!id) return 0;
-	if (users.count((char*) id) > 0) {
-		User* u = users[std::string(id)];
-		return u;
-	}
-	return 0;
+	const auto it = users.find(id);
+	return (it != users.end()) ? it->second : 0;
 }
 
 /*
@@ -39,19 +38,20 @@ const User* UserManager::getUser(const char* id) {
  */
 const User* UserManager::getUserByNick(const char* nick) {
 	if (!nick) return 0;
+	const std::string_view want(nick);
 	for (const auto& entry : users) {
 		const User* u = entry.second;
-		if (u->getNick() && strcmp(u->getNick(), nick) == 0) return u;
+		if (want == u->getNick()) return u;
 	}
 	return 0;
 }
 
 const User* UserManager::getUserByClientID(const char* cid) {
 	if (!cid || !*cid) return 0;
+	const std::string_view want(cid);
 	for (const auto& entry : users) {
 		const User* u = entry.second;
-		const char* have = (const char*) u->getClientID();
-		if (have && strcmp(have, cid) == 0) return u;
+		if (want == (const char*) u->getClientID()) return u;
 	}
 	return 0;
 }

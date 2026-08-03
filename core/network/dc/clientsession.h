@@ -110,7 +110,13 @@ class ClientSession :
 		bool supports(const char* feature);
 		bool isExtendedProtocol() const { return extendedProtocol; }
 		
-		const char* getNick() const { return remote_nickname; }
+		/**
+		 * @return the nickname the peer presented in $MyNick, or null before it
+		 *         has presented one. An unnamed peer is what an inbound
+		 *         connection is until it speaks.
+		 */
+		const char* getNick() const
+		{ return remote_nickname.empty() ? 0 : remote_nickname.c_str(); }
 		
 	protected:
 		void EventConnected(const Samurai::IO::Net::Socket*);
@@ -128,11 +134,16 @@ class ClientSession :
 		void onTransferStopped(QuickDC::Transfer* which);
 		
 	protected:
-		char* remote_nickname;
-		char* remote_lock;
-		char* remote_pk;
-		char* remote_key;
-		char* my_key;
+		/*
+		 * Each of these is empty until the peer, or the challenge we send it,
+		 * has supplied it. None of them has an empty value that means anything,
+		 * so the two cases do not need telling apart.
+		 */
+		std::string remote_nickname;
+		std::string remote_lock;
+		std::string remote_pk;
+		std::string remote_key;
+		std::string my_key;
 		size_t my_prio;
 		size_t remote_prio;
 		enum Direction remote_direction;
@@ -182,8 +193,9 @@ class ClientSession :
 		 * NMDC has nowhere to put a token on the wire, so unlike ADC this is
 		 * not exchanged with the peer - it is looked up from the queue by which
 		 * user we are talking to, and then kept for the rest of the session.
+		 * Empty until there is a job.
 		 */
-		char* token;
+		std::string token;
 
 	private:
 		bool challenged;

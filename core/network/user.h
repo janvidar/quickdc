@@ -8,6 +8,8 @@
 
 #include "quickdc.h"
 
+#include <string>
+
 namespace QuickDC {
 
 class User {
@@ -78,6 +80,15 @@ class User {
 		bool           setKeyprint(const char*);
 		const char*    getKeyprint() const;
 
+		/**
+		 * Whether this user published a keyprint at all.
+		 *
+		 * Asked before the value is used, because a peer connection is only
+		 * held to a keyprint when there is one to hold it to - and a user
+		 * without one is the ordinary case, not a failure.
+		 */
+		bool           hasKeyprint() const;
+
 		
 		bool           isOp() const;
 		bool           setOp();
@@ -89,17 +100,23 @@ class User {
 		void clean();
 
 	protected:
-		char            nick[64];
-		char            id[64];
+		/*
+		 * Whatever a hub or a peer sent, each held to the length its setter
+		 * allows. A field nobody has told us about is empty; no empty value
+		 * means anything of its own, so the two cases do not need telling apart.
+		 */
+		std::string     nick;
+		std::string     id;
 		uint64_t        shared;
 		UserAccess      access;
-		char            description[256];
-		char            email[128];
-		char            speed[16];
-		char            userAgent[64];
-		
-		uint8_t         clientID[64];
-		uint8_t         privateID[64];
+		std::string     description;
+		std::string     email;
+		std::string     speed;
+		std::string     userAgent;
+
+		/* Base32 on the wire, and compared as strings everywhere else. */
+		std::string     clientID;
+		std::string     privateID;
 		uint32_t        sessionID;
 		uint32_t        numSlots;
 		uint32_t        sharedFiles;
@@ -111,9 +128,9 @@ class User {
 		uint32_t        autoSlotSpeed;
 		uint32_t        autoSlotLimit;
 		
-		char            address_ipv4[16];
-		char            address_ipv6[40];
-		char            keyprint[64];
+		std::string     address_ipv4;
+		std::string     address_ipv6;
+		std::string     keyprint;
 		uint16_t        port_ipv4;
 		uint16_t        port_ipv6;
 		
