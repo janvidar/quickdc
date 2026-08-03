@@ -104,11 +104,23 @@ QuickDC::Share::File* QuickDC::Share::Dir::getFile(const char* name) {
 }
 
 /*
- *Scan directory for files / directories.
- * FIXME: Add support for symlinks.
+ * A share is published to strangers, so the tree is bounded whatever the disk
+ * holds: this is deep enough for any real collection and shallow enough that
+ * the recursion below cannot exhaust the stack.
+ */
+#define MAX_SHARE_DEPTH 64
+
+/*
+ * Scan directory for files / directories. Symlinks are not followed - see below.
  */
 void QuickDC::Share::Dir::scan() {
 	QDBG("Scanning directory: %s", path.c_str());
+
+	if (getLevel() >= MAX_SHARE_DEPTH) {
+		QERR("Not descending into '%s': a share may not be more than %d levels deep",
+			path.c_str(), MAX_SHARE_DEPTH);
+		return;
+	}
 
 	Samurai::IO::Directory dir(path);
 	if (!dir.open()) {
@@ -118,6 +130,19 @@ void QuickDC::Share::Dir::scan() {
 
 	Samurai::IO::File file;
 	for (bool more = dir.first(file); more; more = dir.next(file)) {
+		/*
+		 * Symlinks first, and skipped. isDirectory() and isRegular() both follow
+		 * a link and answer for its target, so a symlink was always classified
+		 * as whatever it pointed at and this test could never be reached - which
+		 * published files from outside the share root, ~/.ssh/id_rsa among them,
+		 * to any peer that asked for the file list. Only isSymlink() has lstat
+		 * semantics, so only it can tell.
+		 */
+		if (file.isSymlink()) {
+			QDBG("Ignoring symlink: %s", file.getName().c_str());
+			continue;
+		}
+
 		if (!file.isReadable()) {
 			continue;
 		}
@@ -128,9 +153,6 @@ void QuickDC::Share::Dir::scan() {
 		} else if (file.isRegular()) {
 			QDBG("- File %s", file.getName().c_str());
 			files.push_back(new QuickDC::Share::File(file.getName(), this));
-
-		} else if (file.isSymlink()) {
-			QDBG("Ignoring symlink: %s", file.getName().c_str());
 		}
 	}
 }

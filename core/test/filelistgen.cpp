@@ -198,6 +198,23 @@ class Fixture
 			madeDirs.push_back(path);
 		}
 
+		/* A symlink inside the share, aimed at whatever is given. */
+		void symlink_to(const std::string& name, const std::string& target)
+		{
+			const std::string path = dir + "/" + name;
+			::symlink(target.c_str(), path.c_str());
+			madeFiles.push_back(path);
+		}
+
+		/* A file outside the share, standing in for anything private. */
+		std::string outsideFile(const std::string& leaf, const std::string& content)
+		{
+			const std::string path = scratch(leaf.c_str());
+			writeFile(path, content);
+			madeFiles.push_back(path);
+			return path;
+		}
+
 		/* Scans the share and writes both lists. */
 		bool generate()
 		{
@@ -368,6 +385,44 @@ int main()
 		CHECK(again.size() == before);
 		CHECK(unbzip2(f.packed()) == again);
 		printf("  ok regenerating replaces rather than appends\n");
+	}
+
+	/*
+	 * A symlink is not followed. isDirectory() and isRegular() answer for a
+	 * link's target, so the scanner classified one as whatever it aimed at and
+	 * the branch meant to skip it could never run - which is how a link inside a
+	 * shared directory came to publish a file from outside the share root to
+	 * anyone who asked for the list.
+	 */
+	{
+		Fixture f("symlink");
+		const std::string secret = f.outsideFile("private.key", "PRIVATE KEY");
+		f.file("public.bin");
+		f.symlink_to("leaked.key", secret);
+		f.generate();
+
+		const std::string xml = f.plain();
+		const std::string decoded = decode(xml);
+
+		CHECK(decoded.find("(public.bin)") != std::string::npos);
+		CHECK(decoded.find("leaked.key") == std::string::npos);
+		CHECK(xml.find("leaked.key") == std::string::npos);
+		CHECK(xml.find("PRIVATE KEY") == std::string::npos);
+		printf("  ok a symlink out of the share is not published: %s\n", decoded.c_str());
+	}
+
+	/* A symlinked directory is skipped too, so a loop cannot be walked into. */
+	{
+		Fixture f("symlinkdir");
+		f.subdir("real");
+		f.file("real/inside.txt");
+		f.symlink_to("loop", f.dir);
+		f.generate();
+
+		const std::string decoded = decode(f.plain());
+		CHECK(decoded.find("(inside.txt)") != std::string::npos);
+		CHECK(decoded.find("loop") == std::string::npos);
+		printf("  ok a symlinked directory is not descended into: %s\n", decoded.c_str());
 	}
 
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
