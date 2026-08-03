@@ -940,6 +940,8 @@ void ADC::HubSession::onUserInfo(const char* id, QuickDC::User* data, uint64_t o
 			   users->info() below, by which time the state it tests has already
 			   been moved. */
 			listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
+			break;
+
 		case QuickDC::HubSession::StateNormal:
 			break;
 	}

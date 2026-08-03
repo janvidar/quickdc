@@ -48,6 +48,7 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 				if (buffer->size() == 0)
 					return StatusMore;
 			}
+			[[fallthrough]];
 	
 			case Detect:
 			{
@@ -75,6 +76,7 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 				if (!ok)
 					return StatusError;
 			}
+			[[fallthrough]];
 	
 			case Header:
 			{
@@ -98,6 +100,7 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 				if (state != DetectBody)
 					return StatusMore;
 			}
+			[[fallthrough]];
 	
 			case DetectBody:
 			{
@@ -135,6 +138,7 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 				if (state != Body)
 					return StatusMore;
 			}
+			[[fallthrough]];
 	
 			case Body:
 			{
