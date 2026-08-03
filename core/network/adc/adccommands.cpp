@@ -592,6 +592,6 @@ void ADC::addSupportFlags(ADC::Command& command, bool clientMode)
 		 * A peer to peer session has no use for it: a message carrying the RT flag
 		 * only ever travels through a hub.
 		 */
-		command.addArgument("AD", ADC_EXT_RICHTEXT_HUB);
+		command.addArgument("AD", ADC_EXT_RICHTEXT);
 	}
 }

@@ -330,7 +330,7 @@ static void run()
 			CHECK(line.find("AD" ADC_HASH_TIGER) != std::string::npos);
 			CHECK(line.find("AD" ADC_EXT_ADCS) != std::string::npos);
 			CHECK(line.find("AD" ADC_EXT_PFSR) != std::string::npos);
-			CHECK(line.find("AD" ADC_EXT_RICHTEXT_HUB) != std::string::npos);
+			CHECK(line.find("AD" ADC_EXT_RICHTEXT) != std::string::npos);
 
 			printf("  ok it opens with HSUP: %s\n", line.c_str());
 		}

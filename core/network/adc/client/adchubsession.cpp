@@ -1026,7 +1026,7 @@ bool ADC::HubSession::supports(const char* feature) const
 
 bool ADC::HubSession::supportsRichText() const
 {
-	return supports(ADC_EXT_RICHTEXT_HUB);
+	return supports(ADC_EXT_RICHTEXT);
 }
 
 

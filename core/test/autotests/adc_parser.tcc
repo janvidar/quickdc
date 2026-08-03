@@ -214,26 +214,26 @@ EXO_TEST(adc_command_hub, {
  * matters sits in the middle of them.
  */
 EXO_TEST(adc_command_sup_richtext_hub, {
-	const char* buf = "ISUP ADBASE ADTIGR AD" ADC_EXT_RICHTEXT_HUB " ADPING";
+	const char* buf = "ISUP ADBASE ADTIGR AD" ADC_EXT_RICHTEXT " ADPING";
 	ADC::Command cmd;
 	if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
 
 	bool found = false;
 	for (size_t n = 0; cmd.getArgument(n); n++)
-		if (strcmp(cmd.getArgument(n), "AD" ADC_EXT_RICHTEXT_HUB) == 0)
+		if (strcmp(cmd.getArgument(n), "AD" ADC_EXT_RICHTEXT) == 0)
 			found = true;
 
 	return found && cmd.isCommandHubInfo();
 });
 
 EXO_TEST(adc_command_sup_richtext_hub_absent, {
-	/* The p2p extension is a different string, and says nothing about the hub. */
-	const char* buf = "ISUP ADBASE ADTIGR AD" ADC_EXT_RICHTEXT;
+	/* A hub that lists other extensions and not this one says nothing about rich text. */
+	const char* buf = "ISUP ADBASE ADTIGR ADPING";
 	ADC::Command cmd;
 	if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
 
 	for (size_t n = 0; cmd.getArgument(n); n++)
-		if (strcmp(cmd.getArgument(n), "AD" ADC_EXT_RICHTEXT_HUB) == 0)
+		if (strcmp(cmd.getArgument(n), "AD" ADC_EXT_RICHTEXT) == 0)
 			return false;
 
 	return true;
@@ -241,11 +241,11 @@ EXO_TEST(adc_command_sup_richtext_hub_absent, {
 
 EXO_TEST(adc_command_sup_richtext_removed, {
 	/* A hub that drops the extension later says so with RM rather than AD. */
-	const char* buf = "ISUP RM" ADC_EXT_RICHTEXT_HUB;
+	const char* buf = "ISUP RM" ADC_EXT_RICHTEXT;
 	ADC::Command cmd;
 	if (!ADC::Parser::parse(buf, strlen(buf), cmd)) return false;
 
-	return strcmp(cmd.getArgument(0), "RM" ADC_EXT_RICHTEXT_HUB) == 0;
+	return strcmp(cmd.getArgument(0), "RM" ADC_EXT_RICHTEXT) == 0;
 });
 
 EXO_TEST(adc_command_udp, {

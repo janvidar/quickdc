@@ -144,7 +144,7 @@ int main()
 		ADC::addSupportFlags(cmd, false);
 		check("support flags to a hub",
 			"HSUP ADBASE ADBAS0 ADTIGR ADPFSR ADADCS ADPING ADBBS0 AD"
-			ADC_EXT_RICHTEXT_HUB "\n", cmd);
+			ADC_EXT_RICHTEXT "\n", cmd);
 	}
 
 	{
@@ -158,7 +158,7 @@ int main()
 		/* Our own hub answers out of the same branch, so its ISUP carries it too. */
 		ADC::Command cmd(FOURCC('I','S','U','P'));
 		ADC::addSupportFlags(cmd, false);
-		CHECK(written(cmd).find("AD" ADC_EXT_RICHTEXT_HUB) != std::string::npos);
+		CHECK(written(cmd).find("AD" ADC_EXT_RICHTEXT) != std::string::npos);
 		printf("  ok %-34s\n", "support flags from our hub");
 	}
 
