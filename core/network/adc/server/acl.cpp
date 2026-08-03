@@ -229,32 +229,76 @@ void ADC::ACL::Table::add(ADC::ACL::Authorization* auth)
 	acl.push_back(auth);
 }
 
+/*
+ * An access list is a hand-written file of a few entries per registered user,
+ * so anything past this is a corrupt or hostile file rather than a large one,
+ * and allocating from what it claims would be taking its word for it.
+ */
+#define MAX_ACL_SIZE (4 * 1024 * 1024)
+
 bool ADC::ACL::Table::load()
 {
 	QDBG("Loading acl");
 	Samurai::IO::File file(path);
-	
-	size_t size = (size_t) file.size();
+
+	if (!file.exists())
+	{
+		QDBG("No access list on disk yet");
+		return true;
+	}
+
+	/*
+	 * size() before open() answers from a stat that may never have been taken,
+	 * and an empty file then left new[] with nothing to hand Buffer::append(),
+	 * which indexes its first element to find the destination.
+	 */
 	if (!file.open(Samurai::IO::File::Mode::Read))
 	{
 		QERR("Unable to open file");
 		return false;
 	}
 
+	const off_t reported = file.size();
+	if (reported <= 0)
+	{
+		QDBG("The access list on disk is empty");
+		file.close();
+		return true;
+	}
+
+	if (reported > MAX_ACL_SIZE)
+	{
+		QERR("The access list is %ld bytes, which is more than an access list can be",
+			(long) reported);
+		file.close();
+		return false;
+	}
+
 	// Read file into memory
+	const size_t size = (size_t) reported;
 	uint8_t* temp_buffer = new uint8_t[size];
-	file.read((char*) temp_buffer, size);
-	Samurai::IO::Buffer* buffer = new Samurai::IO::Buffer(size);
-	buffer->append((char*) temp_buffer, size);
-	delete[] temp_buffer;
+	const ssize_t got = file.read((char*) temp_buffer, size);
 	file.close();
-	
+
+	/* What was read, not what was asked for: the tail of a short read is
+	   uninitialised, and handing it to the parser reads whatever it holds. */
+	if (got <= 0)
+	{
+		QERR("Unable to read the access list");
+		delete[] temp_buffer;
+		return false;
+	}
+
+	Samurai::IO::Buffer* buffer = new Samurai::IO::Buffer((size_t) got);
+	buffer->append((char*) temp_buffer, (size_t) got);
+	delete[] temp_buffer;
+
 	ADC::ACL::XMLReader* handler = new ADC::ACL::XMLReader(this, buffer);
 	bool ret = handler->parse();
 
 	delete handler;
 	delete buffer;
-	
+
 	return ret;
 }
 
