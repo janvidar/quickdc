@@ -77,19 +77,10 @@ static bool canAcceptTls()
 ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Samurai::IO::Net::URL* url, bool secure_)
 	: QuickDC::HubSession(ui)
 	, QuickDC::Connection(url, secure_ ? "ADCS hub" : "ADC hub")
-	, address(0)
 	, proxy(0)
 	, listener(listener_)
 	, infoTimer(0)
-	, passwordToken(0)
-	, sid(0)
-	, cid(0)
-	, pid(0)
-	, hubname(0)
-	, hubdesc(0)
-	, hubversion(0)
 	, secure(secure_)
-	, expectedKeyprint(0)
 	, keyprintVerified(false)
 {
 	access = QuickDC::HubSession::AccessNormal;
@@ -102,10 +93,7 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	 */
 	std::string keyprint;
 	if (QuickDC::Keyprint::fromQuery(url->getQuery(), keyprint))
-		expectedKeyprint = strdup(keyprint.c_str());
-
-	cid = (char*) malloc(40);
-	pid = (char*) malloc(40);
+		expectedKeyprint = keyprint;
 
 	proxy = new ADC::CommandProxy(socket, this);
 	users = new QuickDC::UserManager(this);
@@ -116,7 +104,7 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	   Core::session. Not ours to delete, and its group is not ours to leave set. */
 	session = QuickDC::Core::getInstance()->session;
 
-	address = strdup(url->toString().c_str());
+	address = url->toString();
 	config->setGroup("User");
 	session->setGroup(address);
 
@@ -124,18 +112,17 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	 * Load settings from session file, or defaults if no session is found.
 	 * This will incidentally create such a session.
 	 */
-	nickname = strdup(session->getString("Nickname", config->getString("Nickname", PRODUCT)));
-	description = strdup(session->getString("Description", config->getString("Description", PRODUCT " user")));
-	email = strdup(session->getString("E-mail", config->getString("E-mail", "")));
-	password = strdup(session->getString("Password", config->getString("Password", "")));
+	nickname = session->getString("Nickname", config->getString("Nickname", PRODUCT));
+	description = session->getString("Description", config->getString("Description", PRODUCT " user"));
+	email = session->getString("E-mail", config->getString("E-mail", ""));
+	password = session->getString("Password", config->getString("Password", ""));
 
 	/* A hub will never accept an empty nick, and older versions could store one
 	 * in the session file. Fall back to the configured nick in that case. */
-	if (!*nickname)
+	if (nickname.empty())
 	{
-		free(nickname);
 		const char* fallback = config->getString("Nickname", PRODUCT);
-		nickname = strdup(*fallback ? fallback : PRODUCT);
+		nickname = *fallback ? fallback : PRODUCT;
 		session->setString("Nickname", nickname);
 	}
 
@@ -157,19 +144,6 @@ ADC::HubSession::~HubSession()
 
 	QDBG("~HubSession()");
 
-	free(hubname);
-	free(passwordToken);
-
-	free(nickname);
-	free(password);
-	free(email);
-	free(description);
-	free(cid);
-	free(pid);
-	free(sid);
-	free(address);
-	free(hubversion);
-	free(expectedKeyprint);
 	delete users;
 	delete infoTimer;
 	delete proxy;
@@ -265,7 +239,7 @@ bool ADC::HubSession::verifyKeyprint()
 	 */
 	if (expectedKeyprint)
 	{
-		trusted = expectedKeyprint;
+		trusted = *expectedKeyprint;
 		source = "the hub address";
 	}
 	else
@@ -344,7 +318,7 @@ bool ADC::HubSession::verifyKeyprint()
 const char* ADC::HubSession::keyprintGroup() const
 {
 	if (hub && hub->getUrl()) return hub->getUrl();
-	return address;
+	return address.c_str();
 }
 
 
@@ -470,9 +444,9 @@ void ADC::HubSession::connect()
 	 * all. That is precisely the case where the user believes the connection is
 	 * authenticated when nothing is checking it.
 	 */
-	if (expectedKeyprint && !QuickDC::Keyprint::isValid(expectedKeyprint))
+	if (expectedKeyprint && !QuickDC::Keyprint::isValid(expectedKeyprint->c_str()))
 	{
-		QERR("The hub address carries a keyprint we cannot use: '%s'", expectedKeyprint);
+		QERR("The hub address carries a keyprint we cannot use: '%s'", expectedKeyprint->c_str());
 		listener->EventSystemError("The 'kp' in the hub address is not a SHA256 keyprint; not connecting");
 		return;
 	}
@@ -522,7 +496,7 @@ void ADC::HubSession::EventUserQuit(const QuickDC::User* data, const char* msg)
 
 void ADC::HubSession::EventUserInfo(const QuickDC::User* data)
 {
-	if (sid && strcmp(data->getID(), sid) == 0)
+	if (!sid.empty() && sid == data->getID())
 	{
 		if (userState != QuickDC::HubSession::StateNormal)
 		{
@@ -592,7 +566,7 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 	else
 	{
 		/* Send result via server */
-		ADC::Command* cmd = new ADC::Command(FOURCC('D','R','E','S'), sid, user->getID());
+		ADC::Command* cmd = new ADC::Command(FOURCC('D','R','E','S'), localSid(), user->getID());
 		cmd->addArgument("FN", file->getPublicName());
 		cmd->addArgument("SI", std::to_string(file->getSize()));
 		cmd->addArgument("TR", file->getTTH());
@@ -669,7 +643,7 @@ const QuickDC::User* ADC::HubSession::getUser(const char* id)
 
 const QuickDC::User* ADC::HubSession::getLocalUser()
 {
-	return users->getUser(sid);
+	return users->getUser(localSid());
 }
 
 
@@ -686,9 +660,9 @@ void ADC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const ch
 #ifdef DATADUMP
 	QDBG("Sending message to '%s', msg='%s'", user->getNick(), msg);
 #endif
-	ADC::Command* cmd = new ADC::Command(FOURCC('E','M','S','G'), sid, user->getID());
+	ADC::Command* cmd = new ADC::Command(FOURCC('E','M','S','G'), localSid(), user->getID());
 	cmd->addArgument(msg);
-	cmd->addArgument("PM", sid);
+	cmd->addArgument("PM", localSid());
 
 	/* Only flagged as markdown if the hub announced the extension in its SUP;
 	   anywhere else the message goes out as plain text, which still reads fine. */
@@ -699,7 +673,7 @@ void ADC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const ch
 
 void ADC::HubSession::sendChatMessage(const char* msg, bool richText)
 {
-	ADC::Command* cmd = new ADC::Command(FOURCC('B','M','S','G'), sid);
+	ADC::Command* cmd = new ADC::Command(FOURCC('B','M','S','G'), localSid());
 	cmd->addArgument(msg);
 
 	/*
@@ -737,7 +711,7 @@ void ADC::HubSession::sendClientInfo()
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	config->setGroup("Network");
 
-	ADC::Command* cmd = new ADC::Command(FOURCC('B','I','N','F'), sid);
+	ADC::Command* cmd = new ADC::Command(FOURCC('B','I','N','F'), localSid());
 	cmd->addArgument("NI", nickname);
 	cmd->addArgument("SL", std::to_string(config->getNumber("Slots", 3)));
 	cmd->addArgument("SS", std::to_string(QuickDC::Core::getInstance()->shares->getSharedSize()));
@@ -789,7 +763,7 @@ void ADC::HubSession::sendSearchRequest(QuickDC::Share::SearchRequest* request)
 {
 	if (!request) return;
 
-	ADC::Command* cmd = new ADC::Command(FOURCC('B','S','C','H'), sid);
+	ADC::Command* cmd = new ADC::Command(FOURCC('B','S','C','H'), localSid());
 
 	if (request->isTTH())
 	{
@@ -842,7 +816,7 @@ void ADC::HubSession::sendSearchRequest(QuickDC::Share::SearchRequest* request)
 		}
 	}
 
-	if (request->token) cmd->addArgument("TO", request->token);
+	if (request->getToken()) cmd->addArgument("TO", request->getToken());
 	send(cmd);
 }
 
@@ -871,7 +845,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
 	{
 		QDBG("Requesting active connection to user: %s", user->getNick());
-		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), sid, user->getID());
+		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), localSid(), user->getID());
 		cmd->addArgument((secure && canAcceptTls()) ? ADC_TLS_PROTO : ADC_COMPLIANCE);
 		cmd->addArgument(std::to_string(config->getNumber("Port")).c_str());
 		cmd->addArgument(token);
@@ -890,7 +864,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	else
 	{
 		QDBG("Requesting passive connection to user: %s", user->getNick());
-		ADC::Command* cmd = new ADC::Command(FOURCC('D','R','C','M'), sid, user->getID());
+		ADC::Command* cmd = new ADC::Command(FOURCC('D','R','C','M'), localSid(), user->getID());
 
 		cmd->addArgument(secure ? ADC_TLS_PROTO : ADC_COMPLIANCE);
 		cmd->addArgument(token);
@@ -916,8 +890,7 @@ void ADC::HubSession::onSID(char* sid_)
 		return;
 	}
 
-	if (sid) free(sid);
-	sid = strdup(sid_);
+	sid = sid_;
 	sendClientInfo();
 	userState = QuickDC::HubSession::StateIdentify;
 }
@@ -961,8 +934,7 @@ void ADC::HubSession::onRequestPasword(char* token)
 
 	if (!token) return;
 
-	free(passwordToken);
-	passwordToken = strdup(token);
+	passwordToken = token;
 
 	/*
 	 * Hashing the token with an empty password produces an answer the hub will
@@ -971,7 +943,7 @@ void ADC::HubSession::onRequestPasword(char* token)
 	 * is kept, so a password supplied while the session is still here is sent
 	 * as a second attempt.
 	 */
-	if (!password || !*password)
+	if (password.empty())
 		listener->EventHubAutenticate();
 
 	sendPasswordResponse();
@@ -981,11 +953,10 @@ void ADC::HubSession::sendPassword(const char* password_)
 {
 	/* Only meaningful in answer to a request, and only derivable while the
 	   token that came with it is still around. */
-	if (userState != QuickDC::HubSession::StateVerify || !passwordToken) return;
+	if (userState != QuickDC::HubSession::StateVerify || passwordToken.empty()) return;
 	if (!password_) return;
 
-	free(password);
-	password = strdup(password_);
+	password = password_;
 
 	/*
 	 * Written out now rather than left to the destructor, so a password the
@@ -1002,19 +973,20 @@ void ADC::HubSession::sendPassword(const char* password_)
 /* HPAS carries the tiger digest of the password followed by the hub's token. */
 void ADC::HubSession::sendPasswordResponse()
 {
-	if (!passwordToken || !password) return;
+	/* An empty password still gets an answer; see onRequestPasword(). */
+	if (passwordToken.empty()) return;
 
 	char password_encoded[40] = { 0, };
 
-	size_t tok_size = (strlen(passwordToken) * 5) >> 3;
-	size_t size = strlen(password) + tok_size;
+	size_t tok_size = (passwordToken.size() * 5) >> 3;
+	size_t size = password.size() + tok_size;
 	uint8_t* tok_decoded = new uint8_t[tok_size ? tok_size : 1];
 	uint8_t* str = new uint8_t[size ? size : 1];
 
 	Samurai::Util::base32_decode(passwordToken, std::span<unsigned char>(tok_decoded, tok_size));
 
-	memcpy(&str[0], password, strlen(password));
-	memcpy(&str[strlen(password)], tok_decoded, tok_size);
+	memcpy(&str[0], password.data(), password.size());
+	memcpy(&str[password.size()], tok_decoded, tok_size);
 
 	Samurai::Crypto::Digest::Tiger tiger;
 	tiger.update(str, size);
@@ -1059,26 +1031,23 @@ bool ADC::HubSession::supportsRichText() const
 
 void ADC::HubSession::onHubName(char* txt)
 {
-	if (hubname) free(hubname);
-	hubname = strdup(txt);
+	hubname = txt;
 
 	/* As the NMDC session does. Without this the name is only ever used as a
 	   label on hub messages, and the interface never learns it. */
-	listener->EventHubName(hubname);
+	listener->EventHubName(hubname.c_str());
 }
 
 
 void ADC::HubSession::onHubDesc(char* txt)
 {
-	if (hubdesc) free(hubdesc);
-	hubdesc = strdup(txt);
+	hubdesc = txt;
 }
 
 
 void ADC::HubSession::onHubVersion(char* txt)
 {
-	if (hubversion) free(hubversion);
-	hubversion = strdup(txt);
+	hubversion = txt;
 }
 
 
@@ -1265,7 +1234,7 @@ void ADC::HubSession::onPublicChat(const char* from, const char* message, bool a
 	}
 	else
 	{
-		listener->EventHubMessage(hubname, message);
+		listener->EventHubMessage(hubname.c_str(), message);
 	}
 }
 
@@ -1288,7 +1257,7 @@ void ADC::HubSession::onPrivateChat(const char* to, const char* from, const char
 		 * there in any case.
 		 */
 		(void) context;
-		const bool mine = sid && strcmp(from, sid) == 0;
+		const bool mine = !sid.empty() && sid == from;
 
 		listener->EventPrivateChat(u, u2, message, mine ? to : from, action, richText);
 	}
@@ -1299,7 +1268,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 {
 	if (userState != QuickDC::HubSession::StateNormal) return;
 
-	if (strcmp(from, sid) == 0) return;
+	if (!sid.empty() && sid == from) return;
 	const QuickDC::User* user = users->getUser(from);
 	if (!user) return;
 
@@ -1363,7 +1332,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	 */
 	const char* peerKeyprint = 0;
 
-	if (peerSecure && *user->getKeyprint())
+	if (peerSecure && user->hasKeyprint())
 	{
 		if (keyprintVerified)
 			peerKeyprint = user->getKeyprint();
@@ -1383,7 +1352,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 {
 	if (userState != QuickDC::HubSession::StateNormal) return;
 
-	if (strcmp(from, sid) == 0) return;
+	if (!sid.empty() && sid == from) return;
 	const QuickDC::User* user = users->getUser(from);
 	if (!user) return;
 
@@ -1422,7 +1391,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server) {
 		QDBG("Requesting active connection to user: %s", user->getNick());
-		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), sid, user->getID());
+		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), localSid(), user->getID());
 		cmd->addArgument(protocol);
 		cmd->addArgument(std::to_string(config->getNumber("Port")).c_str());
 		if (token) cmd->addArgument(token);
@@ -1446,7 +1415,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 
 void ADC::HubSession::sendPeerError(const char* remote_sid, const char* code, const char* msg, const char* token, const char* proto)
 {
-	ADC::Command* cmd = new ADC::Command(FOURCC('D','S','T','A'), sid, remote_sid);
+	ADC::Command* cmd = new ADC::Command(FOURCC('D','S','T','A'), localSid(), remote_sid);
 	cmd->addArgument(code);
 	cmd->addArgument(msg);
 	if (token) cmd->addArgument("TO", token);
@@ -1527,7 +1496,7 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	}
 	else if (user)
 	{
-		ADC::Command* cmd = new ADC::Command(FOURCC('D','P','S','R'), sid, user->getID());
+		ADC::Command* cmd = new ADC::Command(FOURCC('D','P','S','R'), localSid(), user->getID());
 		cmd->addArgument("HI", hubIpPort.c_str());
 		cmd->addArgument("U4", std::to_string(port));
 		cmd->addArgument("TR", request->getTTH());

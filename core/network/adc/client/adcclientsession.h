@@ -8,6 +8,7 @@
 
 #include "quickdc.h"
 #include <string.h>
+#include <optional>
 #include <set>
 #include <string>
 #include "network/clientsession.h"
@@ -142,21 +143,31 @@ class ClientSession :
 		ADC::CommandProxy* proxy;
 		QuickDC::HubSession* hubsession;
 		
-		char* remote_sid;
+		/*
+		 * Empty where nobody named one. Neither a SID nor a token nor a CID has
+		 * an empty value that means anything, so the two cases do not need
+		 * telling apart; what is empty is left out of the command it belongs in.
+		 */
+		std::string remote_sid;
 
 		/**
 		 * The peer's CID, learned from their CINF. Unlike the SID this is
 		 * stable across sessions, so it is what a FileSource records.
 		 */
-		char* remote_cid;
+		std::string remote_cid;
 
-		char* token;
+		std::string token;
 
 		/**
-		 * The keyprint the peer's certificate has to match, or 0 if there is
-		 * nothing trustworthy to check it against.
+		 * The keyprint the peer's certificate has to match, or unset if there
+		 * is nothing trustworthy to check it against.
+		 *
+		 * An optional rather than a string, because absent is the only thing
+		 * that means "check nothing": a keyprint that is there but unreadable
+		 * counts as a mismatch and drops the connection, and confusing the two
+		 * would leave a peer unauthenticated instead.
 		 */
-		char* expected_keyprint;
+		std::optional<std::string> expected_keyprint;
 
 	protected: /* transfer related */
 

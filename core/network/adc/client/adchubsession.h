@@ -16,6 +16,7 @@
 #include "api/hub.h"
 
 #include <samurai/timer.h>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -147,6 +148,13 @@ class HubSession :
 		/** The session group a remembered keyprint is filed under. */
 		const char* keyprintGroup() const;
 
+		/**
+		 * Our own SID as the command constructors take it, which is null until
+		 * the hub has given us one. A command that would name us as its source
+		 * is not written at all while that is the case.
+		 */
+		const char* localSid() const { return sid.empty() ? 0 : sid.c_str(); }
+
 	private:
 		void EventUserJoin(const char* nick) override;
 		void EventUserQuit(const QuickDC::User* nick, const char* msg) override;
@@ -156,32 +164,49 @@ class HubSession :
 	protected:
 		std::set<std::string> extensions;
 		QuickDC::Preferences* session;
-		char* address;
-		
+		std::string address;
+
 		ADC::CommandProxy* proxy;
 		QuickDC::HubListener* listener;
 		Samurai::Timer* infoTimer;
 		enum UserState userState;
 		
 	protected:
-		char* nickname;
-		char* description;
-		char* email;
-		char* password;
+		/*
+		 * All four come from the session or configuration file, so they are
+		 * always a value and never an absence - an empty description or e-mail
+		 * is a field the user left blank, and is sent as one.
+		 */
+		std::string nickname;
+		std::string description;
+		std::string email;
+		std::string password;
 
 		/* The token the hub sent with its request. The answer is derived from
 		   it, so it has to outlive the request while a password is found. */
-		char* passwordToken;
-		char* sid;
-		char* cid;
-		char* pid;
-		char* hubname;
-		char* hubdesc;
-		char* hubversion;
+		std::string passwordToken;
+
+		/*
+		 * Our session ID, as the hub assigned it, and empty before it has. A
+		 * SID is four base32 characters, so an empty one is no SID rather than
+		 * a short one; the same goes for the hub's own name and version.
+		 */
+		std::string sid;
+
+		std::string hubname;
+		std::string hubdesc;
+		std::string hubversion;
 		bool secure;
 
-		/** The keyprint from the 'kp' parameter of the hub address, if any. */
-		char* expectedKeyprint;
+		/**
+		 * The keyprint from the 'kp' parameter of the hub address, if any.
+		 *
+		 * Unset is the only thing that means "check nothing", which is why this
+		 * is an optional rather than a string that happens to be empty: a
+		 * keyprint that is there but unusable stops the connection instead, and
+		 * the difference between the two is the whole of the authentication.
+		 */
+		std::optional<std::string> expectedKeyprint;
 
 		/**
 		 * Set once the hub has presented a certificate matching a keyprint we

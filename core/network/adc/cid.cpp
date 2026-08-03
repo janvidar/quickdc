@@ -45,29 +45,27 @@ const char* ADC::SID::toString(sid_t sid_) {
 }
 
 sid_t ADC::SID::fromString(const char* sid) {
-	if (!sid || strlen(sid) != 4) return 0;
+	if (!sid) return 0;
+
+	const std::string_view text(sid);
+	if (text.size() != 4) return 0;
+
+	static const sid_t factors[] = { 32768, 1024, 32, 1 };
 	sid_t nsid = 0;
-	sid_t n, x;
-	sid_t factors[] = { 32768, 1024, 32, 1};
-	for (n = 0; n < 4; n++) {
-		for (x = 0; x < strlen(ALPHABET); x++)
-			if (sid[n] == ALPHABET[x]) break;
-		if (x == 32) return 0;
-		nsid += x * factors[n];
+	for (size_t n = 0; n < 4; n++) {
+		const size_t x = std::string_view(ALPHABET).find(text[n]);
+		if (x == std::string_view::npos) return 0;
+		nsid += (sid_t) x * factors[n];
 	}
 	return nsid;
 }
 
 bool ADC::CID::verify(const char* cid) {
-	if (!cid || strlen(cid) != (HASH-1)) return false;
-	for (size_t n = 0; n < strlen(cid); n++) {
-		bool hit = false;
-		for (size_t x = 0; x < strlen(ALPHABET); x++) {
-			if (cid[n] == ALPHABET[x]) hit = true;
-		}
-		if (!hit) return false;
-	}
-	return true;
+	if (!cid) return false;
+
+	const std::string_view id(cid);
+	if (id.size() != (HASH-1)) return false;
+	return id.find_first_not_of(ALPHABET) == std::string_view::npos;
 }
 
 bool ADC::CID::verifyCIDandPID(const char* cid, const char* pid) {
@@ -94,7 +92,7 @@ ADC::CID* ADC::CID::getInstance() {
 	return global_cid;
 }
 
-ADC::CID::CID() : cid(0), pid(0) {
+ADC::CID::CID() {
 	if (!load()) {
 		generate();
 		store();
@@ -102,8 +100,6 @@ ADC::CID::CID() : cid(0), pid(0) {
 }
 
 ADC::CID::~CID() {
-	delete[] cid;
-	delete[] pid;
 }
 
 /*
@@ -122,23 +118,31 @@ void ADC::CID::generate() {
 	{
 		/* A guessable identity is worse than refusing to invent one. */
 		QERR("No secure randomness available to generate a client identity");
-		cid = 0;
-		pid = 0;
+		cid.clear();
+		pid.clear();
 		return;
 	}
 
-	cid = new char[HASH];
-	pid = new char[HASH];
+	/* Both encoders write into a plain buffer, and HASH is what either of them
+	   needs for 24 bytes of hash, terminator included. */
+	char pid_encoded[HASH] = { 0, };
+	char cid_encoded[HASH] = { 0, };
 
-	Samurai::Util::base32_encode(std::span<const unsigned char>(raw_pid, sizeof(raw_pid)), std::span<char>(pid, HASH));
+	Samurai::Util::base32_encode(std::span<const unsigned char>(raw_pid, sizeof(raw_pid)), std::span<char>(pid_encoded, HASH));
 
 	Samurai::Crypto::Digest::Tiger tiger;
 	tiger.update(raw_pid, sizeof(raw_pid));
-	tiger.digest().getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, cid, HASH);
+	tiger.digest().getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, cid_encoded, HASH);
 
+	pid = pid_encoded;
+	cid = cid_encoded;
+
+	/* The encoded private ID is the secret in the form it is stored in, so the
+	   scratch copy goes the same way as the raw bytes. */
 	OPENSSL_cleanse(raw_pid, sizeof(raw_pid));
+	OPENSSL_cleanse(pid_encoded, sizeof(pid_encoded));
 
-	QDBG("CID generated: %s", cid);
+	QDBG("CID generated: %s", cid.c_str());
 }
 
 
@@ -148,46 +152,43 @@ bool ADC::CID::load() {
 	config->setGroup("User");
 	
 	/*
-	 * Length checked before copying, rather than strncpy'ing HASH bytes into the
-	 * buffer and hoping: a stored value that long leaves no terminator behind,
-	 * and verify() then takes strlen() of it past the end of the allocation.
+	 * Nothing stored is the ordinary case on a first run and says nothing worth
+	 * reporting. Something stored that is not the length of a CID does: it is an
+	 * identity that is about to be replaced.
 	 */
-	const char* stored = config->getString("Private ID", "");
-	if (strlen(stored) != (size_t) (HASH - 1)) {
-		if (*stored) QERR("The stored private ID is not a valid CID; generating a new identity");
+	const std::string_view stored(config->getString("Private ID", ""));
+	if (stored.size() != (size_t) (HASH - 1)) {
+		if (!stored.empty()) QERR("The stored private ID is not a valid CID; generating a new identity");
 		return false;
 	}
 
-	pid = new char[HASH];
-	cid = new char[HASH];
-	memcpy(pid, stored, HASH);
+	pid = stored;
 
-	if (!verify(pid)) {
-		delete[] pid; pid = 0;
-		delete[] cid; cid = 0;
+	if (!verify(pid.c_str())) {
+		pid.clear();
 		return false;
 	}
-
-	
 
 	uint8_t pid_decoded[Samurai::Crypto::Digest::TIGER_HASH_SIZE] = { 0, };
 	Samurai::Util::base32_decode(pid, std::span<unsigned char>((unsigned char*) pid_decoded, Samurai::Crypto::Digest::TIGER_HASH_SIZE));
-	
+
+	char cid_encoded[HASH] = { 0, };
 	Samurai::Crypto::Digest::Tiger tiger;
 	tiger.update(pid_decoded, Samurai::Crypto::Digest::TIGER_HASH_SIZE);
-	tiger.digest().getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, cid, HASH);
-	
+	tiger.digest().getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, cid_encoded, HASH);
+	cid = cid_encoded;
+
 	/* The CID is public; the PID is the secret behind it and is never logged. */
-	QDBG("CID loaded: %s", cid);
+	QDBG("CID loaded: %s", cid.c_str());
 	store();
 	return true;
 }
 
 bool ADC::CID::store() {
-	if (!cid || !pid) return false;
-	QDBG("Storing the identity for CID %s", cid);
+	if (cid.empty() || pid.empty()) return false;
+	QDBG("Storing the identity for CID %s", cid.c_str());
 
-	if (verifyCIDandPID(cid, pid)) {
+	if (verifyCIDandPID(cid.c_str(), pid.c_str())) {
 		QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 		config->setGroup("User");
 		config->setString("Private ID", pid);
