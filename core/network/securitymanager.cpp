@@ -81,20 +81,29 @@ bool QuickDC::SecurityManager::isAuthorized(enum QuickDC::Clearance::ClearancePr
 			}
 
 			if (protocol == QuickDC::Clearance::ADC) {
+				/* Both sides of each comparison, since a clearance granted
+				   without one of them would otherwise reach strcmp as null. */
 				if (!token || !authorization->token) continue;
+				if (!cid || !authorization->userID) continue;
 				if (strcmp(authorization->token, token) == 0 &&
 					strcmp(authorization->userID, cid) == 0)
 					return true;
 			}
-#if 0
-			if (protocol == QuickDC::Clearance::NMDC) {
-				if (!token) continue;
-			}
 
-			if (authorization->type == QuickDC::Clearance::KnownUsers) {
-				return true;
+			/*
+			 * NMDC names a peer by nickname and carries no token, so the nick is
+			 * the whole of what can be matched. That is weak - the protocol
+			 * neither encrypts nor authenticates it, so anyone who can reach the
+			 * port and knows a nick we are waiting for satisfies this. It is
+			 * still the difference between a connection we asked for and one
+			 * that merely arrived, which is what decides whether a peer gets to
+			 * ask for a file.
+			 */
+			if (protocol == QuickDC::Clearance::NMDC) {
+				if (!cid || !authorization->userID) continue;
+				if (strcmp(authorization->userID, cid) == 0)
+					return true;
 			}
-#endif // 0
 		}
 	}
 	return false;

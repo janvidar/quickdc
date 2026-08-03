@@ -15,6 +15,7 @@
 #include "network/connectionmanager.h"
 #include "network/hubmanager.h"
 #include "network/hubsession.h"
+#include "network/securitymanager.h"
 #include <samurai/io/net/url.h>
 #include "network/usermanager.h"
 #include "network/dc/clientsession.h"
@@ -241,6 +242,8 @@ void DC::HubSession::onLock(const char* lock_, const char* /*pk_*/) {
 	lock = strdup(lock_);
 	extendedProtocol = (strncmp(lock, "EXTENDEDPROTOCOL", 16) == 0);
 
+	/* A hub may send $Lock more than once, and each one derives a new key. */
+	free(key);
 	key = Lock::calculateKey(lock, strlen(lock));
 	if (!key)
 	{
@@ -350,12 +353,41 @@ void DC::HubSession::onLoggedIn()
 	listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
 }
 
+/**
+ * A peer connection is only served once we have said we expect it. NMDC has no
+ * token to name the request by, so the nick is what the clearance records and
+ * what DC::ClientSession matches the peer's $MyNick against.
+ */
+void DC::HubSession::expectPeer(const char* nick)
+{
+	if (!nick || !*nick) return;
+
+	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+	if (!security) return;
+
+	QDBG("Expecting a peer connection from '%s'", nick);
+	security->grant(new QuickDC::Clearance(
+			QuickDC::Clearance::AuthorizedUser,
+			QuickDC::Clearance::NMDC,
+			this,
+			nick,
+			0));
+}
+
 void DC::HubSession::onActiveConnect(const char* address, uint16_t port, const char* user)
 {
 	const QuickDC::User* u = (user) ? users->getUser(user) : 0;
 	if (listener->EventClientConnect(address, port, u))
 	{
 		QDBG("Connecting to %s:%d...", address, port);
+
+		/*
+		 * We are dialling out because this peer asked us to, so the connection
+		 * we are about to make is one we expect - the nick it will present is
+		 * the one that asked.
+		 */
+		if (user) expectPeer(user);
+
 		auto socket = Samurai::IO::Net::Socket::create(nullptr, address, port);
 		DC::ClientSession* connection = new DC::ClientSession(socket, this);
 		socket->setEventHandler(connection);
@@ -364,7 +396,7 @@ void DC::HubSession::onActiveConnect(const char* address, uint16_t port, const c
 }
 
 /**
- * FIXME: Add nick to expected connection list, timeout 45 seconds.
+ * FIXME: Time the expected connection out after 45 seconds.
  */
 void DC::HubSession::onPassiveConnect(const char* user)
 {
@@ -379,7 +411,11 @@ void DC::HubSession::onPassiveConnect(const char* user)
 			{
 				const char* addr = config->getString("Address");
 				uint16_t port = (uint16_t) config->getNumber("Port");
-				
+
+				/* Telling them where to reach us is what makes the inbound
+				   connection an expected one. */
+				expectPeer(user);
+
 				DC::Command* cmd = new DC::SendConnectToMe(user, addr, port);
 				send(cmd);
 			}
@@ -392,14 +428,18 @@ void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	DC::Command* cmd = 0;
 	config->setGroup("Network");
+
+	/* Either branch below ends with this peer connecting to us or us to them. */
+	expectPeer(u->getID());
+
 	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
 	{
 		QDBG("Requesting active connection to user: %s", u->getNick());
 		config->setGroup("Network");
-		
+
 		const char* addr = config->getString("Address");
 		uint16_t port = (uint16_t) config->getNumber("Port");
-		
+
 		cmd = new DC::SendConnectToMe(u->getID(), addr, port);
 	}
 	else
@@ -471,11 +511,20 @@ void DC::HubSession::sendPassword(const char* password_)
 	send(new DC::SendMyPass(getPassword()));
 }
 
+/*
+ * $ValidateDenide: the hub will not have the nickname we asked for. It arrives
+ * before anything is authenticated and a hub may send it at any time.
+ *
+ * The nickname is kept rather than released. Every other reader of it - the
+ * destructor writing the session file, the user lookups, $MyNick on a peer
+ * connection - takes it as a string, so letting it become null moved the fault
+ * from here to whichever of those ran next.
+ */
 void DC::HubSession::onBadNick()
 {
-	free(nickname);
-	QDBG("ERROR: Bad nickname!");
-	nickname = 0;
+	QERR("The hub refused the nickname '%s'", nickname ? nickname : "");
+	state = None;
+	listener->EventHubStatus(QuickDC::HubListener::HubErrorNickTaken);
 }
 
 void DC::HubSession::sendSearchRequest(QuickDC::Share::SearchRequest* request)

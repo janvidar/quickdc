@@ -166,6 +166,69 @@ int main()
 		printf("  ok without a socket the table is what decides\n");
 	}
 
+	/*
+	 * NMDC matches on the nickname alone. The protocol has no token to name a
+	 * connection request by, so the branch that used to be compiled out took
+	 * every NMDC peer as unauthorised - and nothing granted an NMDC clearance
+	 * either, so gating an upload on this would have refused all of them.
+	 */
+	{
+		QuickDC::SecurityManager mgr;
+		grant(mgr, "alice", 0, Clearance::NMDC);
+
+		CHECK(authorized(mgr, "alice", 0, Clearance::NMDC));
+		printf("  ok an NMDC clearance authorises the nick it names\n");
+	}
+
+	{
+		QuickDC::SecurityManager mgr;
+		grant(mgr, "alice", 0, Clearance::NMDC);
+
+		CHECK(!authorized(mgr, "bob", 0, Clearance::NMDC));
+		printf("  ok an NMDC clearance does not authorise a different nick\n");
+	}
+
+	/* A nick we never asked to connect has nothing granted for it at all. */
+	{
+		QuickDC::SecurityManager mgr;
+		CHECK(!authorized(mgr, "stranger", 0, Clearance::NMDC));
+		printf("  ok an unexpected NMDC peer is not authorised\n");
+	}
+
+	/* The protocols do not authorise each other. */
+	{
+		QuickDC::SecurityManager mgr;
+		grant(mgr, "alice", 0, Clearance::NMDC);
+
+		CHECK(!authorized(mgr, "alice", "t1", Clearance::ADC));
+		printf("  ok an NMDC clearance does not authorise an ADC request\n");
+	}
+
+	{
+		QuickDC::SecurityManager mgr;
+		grant(mgr, "CIDA", "t1", Clearance::ADC);
+
+		CHECK(!authorized(mgr, "CIDA", 0, Clearance::NMDC));
+		printf("  ok an ADC clearance does not authorise an NMDC request\n");
+	}
+
+	/* A null ID is refused rather than reaching strcmp. */
+	{
+		QuickDC::SecurityManager mgr;
+		grant(mgr, "alice", 0, Clearance::NMDC);
+
+		CHECK(!authorized(mgr, 0, 0, Clearance::NMDC));
+		printf("  ok an NMDC request with no nick is refused\n");
+	}
+
+	{
+		QuickDC::SecurityManager mgr;
+		grant(mgr, 0, "t1", Clearance::ADC);
+
+		CHECK(!authorized(mgr, 0, "t1", Clearance::ADC));
+		printf("  ok an ADC clearance with no ID does not match a null ID\n");
+	}
+
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
 	return failures ? 1 : 0;
 }

@@ -20,6 +20,7 @@
 #include "hash/hashmanager.h"
 #include "network/connectionmanager.h"
 #include "network/hubmanager.h"
+#include "network/securitymanager.h"
 #include "network/transfer.h"
 #include "network/transfermanager.h"
 #include "network/downloadqueue.h"
@@ -351,7 +352,28 @@ void DC::ClientSession::onKey(const char* /* key_ */)
 	}
 
 	download_approved = weDownload;
-	upload_approved = !weDownload;
+
+	/*
+	 * Winning the direction negotiation is not authorisation to be served. The
+	 * clearance says this nick is one we asked to connect, which is the only
+	 * thing NMDC gives us to check - see SecurityManager::isAuthorized(). Being
+	 * asked to upload by a peer we never invited is refused instead.
+	 */
+	upload_approved = false;
+	if (!weDownload)
+	{
+		QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+		upload_approved = security && security->isAuthorized(QuickDC::Clearance::NMDC,
+			hubsession, proxy->socket.get(), remote_nickname, 0);
+
+		if (!upload_approved)
+		{
+			QERR("Refusing to serve '%s': no connection was requested from them",
+				remote_nickname ? remote_nickname : "(unidentified)");
+			proxy->close();
+			return;
+		}
+	}
 
 	if (weDownload)
 	{

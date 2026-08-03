@@ -94,7 +94,14 @@ class HubSession
 		
 		void onActiveConnect(const char* address, uint16_t port, const char* user);
 		void onPassiveConnect(const char* nick);
-		
+
+		/**
+		 * Record that a peer connection from this nick is one we asked for, so
+		 * that DC::ClientSession will serve it. NMDC carries no token, so the
+		 * nick is all a clearance can name.
+		 */
+		void expectPeer(const char* nick);
+
 		/**
 		 * Add support for a feature a server supports
 		 */
