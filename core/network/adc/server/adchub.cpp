@@ -7,7 +7,9 @@
 
 #include <api/core.h>
 
+#include <algorithm>
 #include <map>
+#include <memory>
 #include <vector>
 #include <string.h>
 #include <string>
@@ -23,6 +25,8 @@
 #include "network/adc/parser.h"
 #include <samurai/io/net/socketevent.h>
 #include <samurai/io/net/socket.h>
+#include <samurai/io/net/inetaddress.h>
+#include <samurai/timer.h>
 #include <samurai/timestamp.h>
 
 #define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
@@ -32,19 +36,21 @@
 	ADC::HubUser* user_sock = lookupUser(cmd->getSocket()); \
 	if (cmd->isCommandHub()) user = user_sock; \
 	if (user_sock && user_sock != user) { \
-		ADC::Command* sta = new ADC::Command(FOURCC('I','S','T','A')); \
-		sta->addArgument("240"); \
-		sta->addArgument("Protocol violation. SID does not match connection."); \
-		send(sta, user_sock); \
-		kick(user_sock); \
-		\
-		if (user_sock && user_sock->state == State_Normal) { \
-			ADC::Command* quit = new ADC::Command(FOURCC('I','Q','U','I')); \
-			quit->addArgument(ADC::SID::toString(user->getSID())); \
-			quit->addArgument("MS", "Protocol violation. SID does not match connection."); \
-			send(quit); \
-		} \
-		\
+		/* \
+		 * The connection is retired by expire(), which names it by its own SID \
+		 * and decides whether it owes anyone a QUIT before kick() moves the \
+		 * state: 'user' is null whenever the claimed SID named nobody at all, \
+		 * and announcing the claim instead would have every other user retire \
+		 * whichever user it did name. \
+		 */ \
+		expire(user_sock, "240", "Protocol violation. SID does not match connection."); \
+		return; \
+	} \
+	if (!user) return; \
+	if (!user->allowCommand()) { \
+		/* One message and out, so answering a flood is not itself amplification. \
+		   Nothing more is read from a kicked connection. */ \
+		expire(user, "212", "Flooding the hub"); \
 		return; \
 	}
 
@@ -69,6 +75,8 @@ ADC::Hub::Hub() {
 	
 	processing = false;
 	nextPendingTicket = 1;
+
+	timer = new Samurai::Timer(this, ADC::HUB_SWEEP_INTERVAL, false);
 }
 
 uint64_t ADC::Hub::deferFor(ADC::HubUser* user)
@@ -99,12 +107,21 @@ void ADC::Hub::forgetPending(const ADC::HubUser* user)
 }
 
 ADC::Hub::~Hub() {
+	delete timer; timer = 0;
 	delete acl;
 	delete services;
 
+	/*
+	 * Deleted, not merely unmapped. A user holds the last reference to its socket
+	 * and the socket's event handler is this hub, so a user left behind here keeps
+	 * a registered socket pointing at a hub that no longer exists - and the next
+	 * readiness event on it is dispatched into freed memory.
+	 */
 	while (users.size()) {
 		ADC::HubUser* user = users.back();
 		userRemove(user);
+		forgetPending(user);
+		delete user;
 	}
 
 	while (history.size()) {
@@ -126,11 +143,28 @@ void ADC::Hub::readConfiguration() {
 	
 	hubname    = strdup(config->getString("Name", "A QuickDC hub"));
 	hubdesc    = strdup(config->getString("Description", "My QuickDC hub"));
-	maxUsers   = config->getNumber("Max users", 128);
-	maxHistory = config->getNumber("Max history", 50);
-	maxSendQ   = config->getNumber("Max send queue bytes", 48 * 1024);
+
+	/*
+	 * Every one of these is clamped, because each is an int from a file the hub
+	 * does not write and is used as an unsigned bound. A configured 0 for the
+	 * history turned 'history.size() > maxHistory-1' into a comparison against
+	 * 0xFFFFFFFF, so the ring never rotated and the chat log grew for as long as
+	 * the hub ran.
+	 */
+	maxUsers   = (uint32_t) std::clamp(config->getNumber("Max users", 128), 1, 65536);
+	maxHistory = (uint32_t) std::clamp(config->getNumber("Max history", 50), 0, 65536);
+	maxSendQ   = (uint32_t) std::clamp(config->getNumber("Max send queue bytes", 48 * 1024),
+	                                   4 * 1024, 16 * 1024 * 1024);
+	maxPerAddress = (uint32_t) std::clamp(config->getNumber("Max connections per address", 8), 1, 65536);
+	maxHandshake  = (uint32_t) std::clamp(config->getNumber("Max connections in handshake", 32), 1, 65536);
+	handshakeTimeout = (uint32_t) std::clamp(config->getNumber("Handshake timeout", 30), 0, 86400);
+	idleTimeout      = (uint32_t) std::clamp(config->getNumber("Idle timeout", 900), 0, 86400);
 	enabled    = config->getBool("Enabled", false);
-	
+
+	/* Choking a user is a hint that it is slow; this is the point at which it is
+	   not reading at all, and holding anything more for it is pointless. */
+	hardSendQ  = maxSendQ * 4;
+
 	if (!enabled) {
 		// FIXME: Kill all connections
 	}
@@ -173,7 +207,15 @@ void ADC::Hub::onINF(ADC::Command* cmd) {
 			c_inf->addArgument("VE", PRODUCT " " VERSION);
 			send(c_inf, user, true);
 			
-			if (users.size() > maxUsers && (user->getCredentials() != Cred_Operator || user->getCredentials() != Cred_Admin)) {
+			/*
+			 * A slot is held by a user that has logged in; this one has not yet,
+			 * so it is not among the ones being counted. The exemption is an
+			 * 'and': written as an 'or' it held for every user, operators
+			 * included, so a full hub turned them away too.
+			 */
+			if (countLoggedIn() >= maxUsers
+				&& user->getCredentials() != Cred_Operator
+				&& user->getCredentials() != Cred_Admin) {
 				ADC::Command* c_sta = new ADC::Command(FOURCC('I','S','T','A'));
 				c_sta->addArgument("211");
 				c_sta->addArgument("This hub is full, please try again later...");
@@ -226,10 +268,19 @@ void ADC::Hub::onMSG(ADC::Command* cmd) {
 			if (target->state == State_Normal)
 				send(cmd, target);
 		} else {
-			if (cmd->getArgument(0) && cmd->getArgument(0)[0] == ADC_HUB_SERVICE_PREFIX)
+			/*
+			 * Held in a local and tested once. 'BMSG <sid>' parses cleanly with
+			 * the only argument consumed as the source ID, which leaves no
+			 * message at all - and the else branch went on to hand that to
+			 * strlen().
+			 */
+			const char* line = cmd->getArgument(0);
+			if (!line) return;
+
+			if (line[0] == ADC_HUB_SERVICE_PREFIX)
 				services->invoke(cmd);
 			else {
-				onPublicChat(user, cmd->getArgument(0));
+				onPublicChat(user, line);
 				send(cmd);
 			}
 		}
@@ -326,10 +377,13 @@ void ADC::Hub::onWelcome(ADC::HubUser* user) {
 	send(c_msg, user, true);
 	
 	/* Send the message of the day (hacked to use the services API) */
-	ADC::Command* fake = new ADC::Command(FOURCC('B','M','S','G'), ADC::SID::toString(user->sid), 0);
+	/* Owned here: a service answers with a command of its own and keeps no
+	   reference to the one it was asked with. */
+	std::unique_ptr<ADC::Command> fake(
+		new ADC::Command(FOURCC('B','M','S','G'), ADC::SID::toString(user->sid), 0));
 	fake->setSocket(user->socket.get());
 	fake->addArgument("+motd");
-	services->invoke(fake);
+	services->invoke(fake.get());
 }
 
 void ADC::Hub::onQuit(ADC::HubUser* user, const char* msg) {
@@ -374,13 +428,22 @@ void ADC::Hub::onQuit(ADC::HubUser* user, const char* msg) {
 }
 
 void ADC::Hub::onPublicChat(ADC::HubUser* user, const char* line) {
+	/* A user in State_Normal has sent its INF and so has a nick, but a service
+	   or a caller reaching here another way need not have. */
+	if (!line || !user->nick) return;
+
+	/* Configured to keep none means nothing is recorded. Read the other way -
+	   as a ring that never rotates - it is the chat log growing for as long as
+	   the hub runs. */
+	if (!maxHistory) return;
+
 	Samurai::TimeStamp timestamp_obj;
 	const std::string timestamp = timestamp_obj.getTime("%H:%M");
 	const size_t chat_size = strlen(line) + timestamp.size() + strlen(user->nick) + 9;
 	char* chat = (char*) malloc(chat_size);
 	snprintf(chat, chat_size, "[%s] <%s> %s", timestamp.c_str(), user->nick, line);
-	
-	if (history.size() > maxHistory-1) {
+
+	if (history.size() >= maxHistory) {
 		char* remove = history.front();
 		history.pop_front();
 		free(remove);
@@ -402,50 +465,82 @@ void ADC::Hub::send(ADC::Command* cmd, HubUser* user, bool more) {
 		}
 	} else {
 		processing = true;
-		
-		if (!cmd->isCommandFeature()) {
-			// Send message to all users
-			for (size_t n = 0; n < users.size(); n++) {
-				if (users[n]->state == State_Normal) {
-					bool send_to_user = true;
-					
-					// Don't send low priority messages to user if send queue is choked.
-					if (users[n]->getSendQueueSize() > maxSendQ && cmd->getPriority() == ADC::Command::Low)
-						send_to_user = false;
-		
-					if (send_to_user)
-						users[n]->send(cmd);
-				}
-			}
-		} else {
-			// Message is a feature broadcast, only send it to the ones that
-			// support the requested feature.
-			for (size_t n = 0; n < users.size(); n++) {
-				if (users[n]->state == State_Normal) {
-					bool send_to_user = true;
-					
-					// Don't send low priority messages to user if send queue is choked.
-					if (users[n]->getSendQueueSize() > maxSendQ && cmd->getPriority() == ADC::Command::Low)
-						send_to_user = false;
-					
-					std::vector<char*>::iterator it;
-					for (it = cmd->features_include.begin();
-						it != cmd->features_include.end() && send_to_user; it++)
-						if (!users[n]->hasFeature((*it))) send_to_user = false;
 
-					for (it = cmd->features_exclude.begin();
-						it != cmd->features_exclude.end() && send_to_user; it++)
-							if (users[n]->hasFeature((*it))) send_to_user = false;
+		/*
+		 * Choked at 'not High' rather than at 'Low'. Per the command table only
+		 * SCH and RES are Low, so a user that had stopped reading was still
+		 * handed every MSG, CTM, RCM and STA on the hub - which is to say a
+		 * broadcast flood grew its queue without bound. High is what a user must
+		 * have to make any sense of the hub at all: INF, SUP, PAS and DSC.
+		 */
+		const bool droppable = (cmd->getPriority() != ADC::Command::High);
+		const bool feature_cast = cmd->isCommandFeature();
 
-					if (send_to_user)
-						users[n]->send(cmd);
-				}
+		/* kick() may be called below, and a deferred userAdd() may append while
+		   this walks, so the recipients are decided up front. */
+		std::vector<HubUser*> recipients;
+		recipients.reserve(users.size());
+
+		for (size_t n = 0; n < users.size(); n++) {
+			if (users[n]->state != State_Normal) continue;
+
+			if (droppable && users[n]->getSendQueueSize() > maxSendQ) continue;
+
+			if (feature_cast) {
+				bool wanted = true;
+				std::vector<char*>::iterator it;
+				for (it = cmd->features_include.begin();
+					it != cmd->features_include.end() && wanted; it++)
+					if (!users[n]->hasFeature((*it))) wanted = false;
+
+				for (it = cmd->features_exclude.begin();
+					it != cmd->features_exclude.end() && wanted; it++)
+						if (users[n]->hasFeature((*it))) wanted = false;
+
+				if (!wanted) continue;
 			}
+
+			recipients.push_back(users[n]);
 		}
-		
+
+		std::vector<HubUser*> overflowed;
+		for (size_t n = 0; n < recipients.size(); n++) {
+			/* Refused outright means the queue is at its ceiling: the user is not
+			   reading, and there is nothing to be gained by holding more for it. */
+			if (!recipients[n]->send(cmd))
+				overflowed.push_back(recipients[n]);
+		}
+
 		processing = false;
+
+		/* Retired after the broadcast rather than during it: expire() broadcasts
+		   in turn, and a broadcast nested inside this one would clear
+		   'processing' halfway through it. */
+		for (size_t n = 0; n < overflowed.size(); n++)
+			expire(overflowed[n], "211", "Send queue exceeded");
 	}
 	cmd->decRef();
+}
+
+
+void ADC::Hub::expire(ADC::HubUser* user, const char* code, const char* reason) {
+	QHUB("%s: Dropping '%s': %s", ADC::SID::toString(user->getSID()),
+		user->nick ? user->nick : "(unidentified)", reason);
+
+	const bool must_send_quit = (user->state == State_Normal);
+
+	ADC::Command* sta = new ADC::Command(FOURCC('I','S','T','A'));
+	sta->addArgument(code);
+	sta->addArgument(reason);
+	send(sta, user);
+	kick(user);
+
+	if (must_send_quit) {
+		ADC::Command* quit = new ADC::Command(FOURCC('I','Q','U','I'));
+		quit->addArgument(ADC::SID::toString(user->getSID()));
+		quit->addArgument("MS", reason);
+		send(quit);
+	}
 }
 
 
@@ -467,7 +562,77 @@ void ADC::Hub::kick(ADC::HubUser* user) {
 }
 
 
+size_t ADC::Hub::countLoggedIn() const {
+	size_t count = 0;
+	for (size_t n = 0; n < users.size(); n++)
+		if (users[n]->state == State_Normal) count++;
+	return count;
+}
+
+size_t ADC::Hub::countHandshaking() const {
+	size_t count = 0;
+	for (size_t n = 0; n < users.size(); n++)
+		if (users[n]->state != State_Normal && users[n]->state != State_WaitDisconnect) count++;
+	return count;
+}
+
+size_t ADC::Hub::countFromAddress(const Samurai::IO::Net::InetAddress& address) const {
+	size_t count = 0;
+	for (size_t n = 0; n < users.size(); n++) {
+		const Samurai::IO::Net::InetAddress* other = users[n]->socket->getAddress();
+		if (other && *other == address) count++;
+	}
+	return count;
+}
+
+bool ADC::Hub::admitConnection(const Samurai::IO::Net::Socket* socket) {
+	if (!socket) return false;
+
+	/*
+	 * Room is left above the user limit for connections still in the login
+	 * exchange, since an operator is only recognised as one after its INF and
+	 * would otherwise never reach a full hub to be let in.
+	 */
+	if (users.size() >= (size_t) maxUsers + maxHandshake) {
+		QHUB("Refusing a connection from %s: %zu connections already",
+			socket->getAddress()->toString().c_str(), users.size());
+		return false;
+	}
+
+	/*
+	 * Holding a slot costs the peer nothing until it has logged in, so the ones
+	 * that have not are counted apart: that is the whole of the slow handshake,
+	 * which otherwise fills the descriptor table for free.
+	 */
+	if (countHandshaking() >= maxHandshake) {
+		QHUB("Refusing a connection from %s: %zu already in the login exchange",
+			socket->getAddress()->toString().c_str(), countHandshaking());
+		return false;
+	}
+
+	const Samurai::IO::Net::InetAddress* address = socket->getAddress();
+	if (address && countFromAddress(*address) >= maxPerAddress) {
+		QHUB("Refusing a connection from %s: %zu connections from that address",
+			address->toString().c_str(), countFromAddress(*address));
+		return false;
+	}
+
+	return true;
+}
+
 void ADC::Hub::onConnected(std::shared_ptr<Samurai::IO::Net::Socket> socket) {
+	if (!admitConnection(socket.get())) {
+		/*
+		 * Written straight to the socket, because refusing means no HubUser and
+		 * so no command proxy to queue it on. The connection is not closed here:
+		 * the caller is still holding it and goes on to use it, and it is dropped
+		 * as soon as that last reference goes.
+		 */
+		static const char refused[] = "ISTA 211 Hub\\sis\\sfull\n";
+		socket->write(refused, sizeof(refused) - 1);
+		return;
+	}
+
 	ADC::HubUser* user = new ADC::HubUser(std::move(socket), this);
 	userAdd(user);
 }
@@ -565,8 +730,21 @@ void ADC::Hub::userAdd(HubUser* user) {
 	}
 
 	socket_map.insert(std::pair<const Samurai::IO::Net::Socket*, HubUser*>(user->socket.get(), user));
-	sid_map.insert(std::pair<sid_t, HubUser*>(user->sid, user));
+
+	/*
+	 * insert() keeps the entry that is already there, so a SID handed out twice
+	 * would leave the second user missing from the map entirely - and since D and
+	 * E messages are routed by target SID alone, its private messages would go to
+	 * the first user instead. generateNextSid() is what makes this impossible;
+	 * this is here so that a mistake there cannot pass silently.
+	 */
+	const bool unique_sid = sid_map.insert(std::pair<sid_t, HubUser*>(user->sid, user)).second;
 	users.push_back(user);
+
+	if (!unique_sid) {
+		QHUB("%s: session ID already in use, dropping the connection.", ADC::SID::toString(user->sid));
+		kick(user);
+	}
 }
 
 void ADC::Hub::userRemove(HubUser* user) {
@@ -580,8 +758,10 @@ void ADC::Hub::userRemove(HubUser* user) {
 		if (socket_it != socket_map.end()) {
 			socket_map.erase(socket_it);
 		}
+		/* Only if the entry is this user's: a SID that ended up shared would
+		   otherwise have one user's departure unmap the other. */
 		std::map<sid_t, HubUser*>::iterator sid_it = sid_map.find(user->sid);
-		if (sid_it != sid_map.end()) {
+		if (sid_it != sid_map.end() && (*sid_it).second == user) {
 			sid_map.erase(sid_it);
 		}
 		/*
@@ -607,11 +787,54 @@ void ADC::Hub::userRemove(HubUser* user) {
 
 sid_t ADC::Hub::generateNextSid()
 {
-	while (lookupUser(availSid++ % 1048576) && availSid != 0) { }
-	return availSid;
+	/*
+	 * The value that is returned is the value that was tested, and it is masked
+	 * to the 20 bits a SID has - the same masking SID::toString() does - so that
+	 * what the user is told its SID is, is what the hub has it under.
+	 *
+	 * Zero is skipped: SID::fromString() answers 0 for anything it cannot read,
+	 * so a user holding it would be the one every malformed target SID resolves
+	 * to.
+	 */
+	for (sid_t attempt = 0; attempt <= ADC::SID_MASK; attempt++) {
+		const sid_t candidate = (++availSid) & ADC::SID_MASK;
+		if (candidate && !lookupUser(candidate)) {
+			availSid = candidate;
+			return candidate;
+		}
+	}
+	return 0;
 }
 
-void ADC::Hub::EventTimeout(Samurai::Timer*) { }
+/*
+ * Nothing else ever looks at how long a connection has been quiet: the timestamp
+ * is kept on every read and write, and this is what reads it. Without it a peer
+ * that connects, says the four bytes the protocol probe needs and then nothing at
+ * all, holds a descriptor for as long as the hub runs.
+ */
+void ADC::Hub::EventTimeout(Samurai::Timer*) {
+	if (processing) return;
+
+	/* Copied: expire() may broadcast, and a deferred userAdd() processed in the
+	   meantime appends to 'users'. */
+	const std::vector<HubUser*> snapshot(users);
+
+	for (size_t n = 0; n < snapshot.size(); n++) {
+		HubUser* user = snapshot[n];
+		if (user->state == State_WaitDisconnect) continue;
+
+		/* Two limits, because the two are not the same wait: a client that has
+		   not finished identifying itself is doing something that takes seconds,
+		   while one that has may legitimately sit and watch. */
+		const bool identified = (user->state == State_Normal);
+		const uint32_t limit = identified ? idleTimeout : handshakeTimeout;
+		if (!limit) continue;
+
+		if (user->getIdleTime() < (time_t) limit) continue;
+
+		expire(user, "213", identified ? "Idle too long" : "Took too long to log in");
+	}
+}
 
 bool ADC::Hub::EventMessage(const Samurai::Message* msg) {
 	if (!processing) {
@@ -647,8 +870,15 @@ bool ADC::Hub::EventMessage(const Samurai::Message* msg) {
 			if (user)
 			{
 				user->disconnecting = false;
-				/* Safe here: nothing up the stack is holding the user. */
-				user->socket->disconnect();
+				/*
+				 * Nothing up the stack is holding the user, so it is safe to let
+				 * it go here - but the socket is held over the call: disconnect()
+				 * reports EventDisconnected synchronously, which retires the
+				 * user, and the user is the last owner of its socket, so the
+				 * socket would be freed underneath the call running on it.
+				 */
+				std::shared_ptr<Samurai::IO::Net::Socket> socket = user->socket;
+				socket->disconnect();
 			}
 			return true;
 		}
@@ -657,11 +887,4 @@ bool ADC::Hub::EventMessage(const Samurai::Message* msg) {
 		QHUB("Parsing messages while processing...");
 	}
 	return false;
-}
-
-void ADC::Hub::ensureUserLimit() {
-	if (users.size() <= maxUsers) {
-		return;
-	}
-	
 }

@@ -4,10 +4,13 @@
  */
 
 #include "quickdc.h"
+#include <algorithm>
+#include <chrono>
 #include <map>
 #include <vector>
 #include <string.h>
 #include <string>
+#include <string_view>
 #include <time.h>
 
 #include "network/adc/server/adchub.h"
@@ -78,7 +81,6 @@
 
 ADC::HubConnection::HubConnection(std::shared_ptr<Samurai::IO::Net::Socket> socket_) {
 	socket = std::move(socket_);
-	last_act = new Samurai::TimeStamp();
 }
 
 ADC::HubConnection::~HubConnection()
@@ -93,7 +95,11 @@ ADC::HubConnection::~HubConnection()
 }
 
 void ADC::HubConnection::resetTimer() {
-	last_act->reset();
+	last_act.reset();
+}
+
+time_t ADC::HubConnection::getIdleTime() {
+	return last_act.elapsed();
 }
 
 ADC::HubUser::HubUser(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC::Hub* hub) :
@@ -103,11 +109,14 @@ ADC::HubUser::HubUser(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC::Hu
 	nick(0),
 	cid(0),
 	locked(false),
+	tokens(ADC::HUB_COMMAND_BURST),
+	tokens_filled(std::chrono::steady_clock::now()),
 	disconnecting(false),
 	quitting(false),
 	announce_quit(false)
 {
 	proxy = new CommandProxy(socket, hub);
+	proxy->setSendQueueLimit(hub->hardSendQ);
 	sid = hub->generateNextSid();
 	state = ADC::State_Protocol;
 	credentials = Cred_User;
@@ -121,12 +130,25 @@ ADC::HubUser::~HubUser() {
 
 	state = State_None;
 	delete proxy; proxy = 0;
-	
-	if (command_inf && command_inf->canDelete())
-		delete command_inf;
-	
-	if (command_sup && command_sup->canDelete())
-		delete command_sup;
+
+	/*
+	 * The reference this user took has to be given back before asking whether
+	 * anyone is left holding the command: while the user held one, canDelete()
+	 * could never be true, so the INF of every user that ever left was leaked.
+	 * A copy still sitting in someone else's send queue keeps its own reference
+	 * and is freed when that queue lets go of it.
+	 */
+	if (command_inf) {
+		command_inf->decRef();
+		if (command_inf->canDelete())
+			delete command_inf;
+	}
+
+	if (command_sup) {
+		command_sup->decRef();
+		if (command_sup->canDelete())
+			delete command_sup;
+	}
 }
 
 bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
@@ -149,20 +171,32 @@ bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
 		INF_STRIP_ARGUMENT(cmd, "NI");
 		INF_CHECK_IP(cmd, socket, hub);
 		
+		/*
+		 * One copy for the whole update, not one per argument.
+		 *
+		 * A copy is still needed: the accumulated INF is what the hub hands to
+		 * every other user, so a copy of it may be sitting in someone's send
+		 * queue with its raw form already partly written out - and mutating an
+		 * argument resets that cache underneath them. The reference this user
+		 * holds moves to the new copy, and the old one is freed here unless a
+		 * queue still holds it.
+		 */
+		ADC::Command* new_command_inf = new ADC::Command(command_inf);
+
 		for (size_t n = 0; cmd->getArgument(n); n++) {
 			char* arg = cmd->getArgument(n);
-			
-			ADC::Command* new_command_inf = new ADC::Command(command_inf);
 			new_command_inf->removeArgument(arg, 2);
 			new_command_inf->addArgument(arg);
-			
-			if (command_inf->canDelete())
-				delete command_inf;
-			
-			command_inf = new_command_inf;
-			command_inf->incRef();
 		}
-		
+
+		command_inf->decRef();
+		if (command_inf->canDelete())
+			delete command_inf;
+
+		command_inf = new_command_inf;
+		command_inf->incRef();
+
+
 		INF_EXTRACT_FEATURE(cmd);
 
 		return cmd->countArguments();
@@ -250,50 +284,63 @@ bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
 	return false;
 }
 
-void ADC::HubUser::addFeature(char* feature) {
-	features.push_back(feature);
+void ADC::HubUser::addFeature(const std::string& feature) {
+	if (features.size() >= ADC::MAX_USER_FEATURES) return;
+	features.insert(feature);
 }
 
-void ADC::HubUser::addFeatures(char* feats) {
+/*
+ * The field is a run of four character names, each followed by a separator, and
+ * the user decides how long it is. Walked as a view rather than by asking for the
+ * remaining length each time around, which was itself quadratic in that length,
+ * and stopped once the ceiling is reached.
+ */
+void ADC::HubUser::addFeatures(const char* feats) {
 	if (!feats) return;
 
-	char* it = &feats[0];
-	while (strlen(it) > 4) {
-		addFeature(strndup(it, 4));
-		it = &it[5];
-	}
-	
-	if (strlen(it) > 0) {
-		addFeature(strdup(it));
+	std::string_view rest(feats);
+	while (!rest.empty() && features.size() < ADC::MAX_USER_FEATURES) {
+		addFeature(std::string(rest.substr(0, std::min<size_t>(4, rest.size()))));
+		rest.remove_prefix(std::min<size_t>(5, rest.size()));
 	}
 }
 
 void ADC::HubUser::clearFeatures() {
-	while (features.size()) {
-		char* feature = features.back();
-		free(feature);
-		features.pop_back();
-	}
+	features.clear();
 }
 
-bool ADC::HubUser::hasFeature(char* feature) {
-	if (!feature && strlen(feature) != 4) return false;
-	for (std::vector<char*>::iterator it = features.begin(); it != features.end(); it++) {
-		if (strncmp(feature, (*it), 4) == 0)
-			return true;
-	}
-	return false;
+bool ADC::HubUser::hasFeature(const char* feature) const {
+	/* Either of these disqualifies it; the test used to be an 'and', which meant
+	   a null feature reached strlen(). */
+	if (!feature || strlen(feature) != 4) return false;
+	return features.count(feature) != 0;
+}
+
+bool ADC::HubUser::allowCommand() {
+	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	const std::chrono::duration<double> elapsed = now - tokens_filled;
+	tokens_filled = now;
+
+	tokens += elapsed.count() * ADC::HUB_COMMAND_RATE;
+	if (tokens > ADC::HUB_COMMAND_BURST)
+		tokens = ADC::HUB_COMMAND_BURST;
+
+	if (tokens < 1.0) return false;
+
+	tokens -= 1.0;
+	return true;
 }
 
 size_t ADC::HubUser::getSendQueueSize() {
 	return proxy->getSendQueueSize();
 }
 
-void ADC::HubUser::send(ADC::Command* cmd, bool more) {
-	proxy->send(cmd);
+bool ADC::HubUser::send(ADC::Command* cmd, bool more) {
+	const bool queued = proxy->send(cmd);
 	if (!more)
 		proxy->write();
 	resetTimer();
+	return queued;
 }
 
 void ADC::HubUser::read() {

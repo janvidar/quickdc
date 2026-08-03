@@ -22,6 +22,7 @@ namespace Samurai {
 	namespace IO {
 		namespace Net {
 			class Socket;
+			class InetAddress;
 			class DatagramSocket;
 			class DatagramPacket;
 		}
@@ -34,6 +35,12 @@ namespace ADC {
 	class Hub;
 	class ServiceMap;
 	class HubUser;
+
+	/** How often the hub looks over its connections for ones that have gone quiet. */
+	inline constexpr time_t HUB_SWEEP_INTERVAL = 10;
+
+	/** A SID is 20 bits, which is what SID::toString() renders and nothing more. */
+	inline constexpr sid_t SID_MASK = 0xFFFFF;
 
 	namespace ACL {
 		class Table;
@@ -86,7 +93,28 @@ namespace ADC {
 			* hub but not yet logged in properly.
 			*/
 			void onConnected(std::shared_ptr<Samurai::IO::Net::Socket> socket);
-			
+
+			/**
+			* Decide whether a newly probed connection may become a user at all.
+			*
+			* The hub does not authenticate, so this is the only thing standing
+			* between an anonymous peer and a HubUser with a send queue, a SID and
+			* a command proxy of its own. Nothing here has read a byte from the
+			* connection yet.
+			*
+			* @return false if the connection is to be dropped.
+			*/
+			bool admitConnection(const Samurai::IO::Net::Socket* socket);
+
+			/** Users that have completed the login exchange. */
+			size_t countLoggedIn() const;
+
+			/** Users that have connected but not yet completed the login exchange. */
+			size_t countHandshaking() const;
+
+			/** Users connected from the given address. */
+			size_t countFromAddress(const Samurai::IO::Net::InetAddress& address) const;
+
 			/**
 			* This method is called when a user is logged in, and will
 			* notify all the other users about this user.
@@ -193,27 +221,37 @@ namespace ADC {
 			void readConfiguration();
 			
 			/**
-			* The purpose of this method is to ensure that the number
-			* of users will not be kept greater than the set maxUsers variable.
-			* This can be used to kick out users when operators entered a full hub,
-			* or to kick out users when configuration changed to a lower maxUsers
-			* variable. One can also set maxUsers to 0, and call this function to kick everybody
-			* out, but only users not in State_Normal mode is affected by this.
-			*
-			* This function will try to kick the users with the longest idle time, and/or
-			* longest message send queue (typically slow connections).
+			* Tell a user it is being dropped, and drop it.
 			*/
-			void ensureUserLimit();
-			
+			void expire(HubUser* user, const char* code, const char* reason);
+
 		public:
 			char* hubname;
 			char* hubdesc;
 			const char* welcome;
 			uint32_t maxUsers;
 			uint32_t maxHistory;
+
+			/** Beyond this a user is skipped for anything but a High priority message. */
 			uint32_t maxSendQ;
+
+			/** And beyond this it is dropped: it is not reading at all. */
+			uint32_t hardSendQ;
+
+			/** Connections allowed from one address at a time. */
+			uint32_t maxPerAddress;
+
+			/** Connections allowed to sit in the login exchange at once. */
+			uint32_t maxHandshake;
+
+			/** Seconds a connection may take over the login exchange, 0 to allow forever. */
+			uint32_t handshakeTimeout;
+
+			/** Seconds a logged in user may be silent for, 0 to allow forever. */
+			uint32_t idleTimeout;
+
 			bool enabled;
-			
+
 			sid_t availSid;
 			
 			/* Quick lookup maps */
@@ -231,6 +269,13 @@ namespace ADC {
 
 			/* ACL */
 			ACL::Table* acl;
+
+			/*
+			 * Sweeps the connections. Owned here rather than one per user: a hub
+			 * with a timer each would put every connection's deadline in the
+			 * manager, and the sweep is the only thing that ever reads them.
+			 */
+			Samurai::Timer* timer;
 			
 	
 		friend class ADC::HubUser;
