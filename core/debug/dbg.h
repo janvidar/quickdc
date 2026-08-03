@@ -8,6 +8,19 @@
 #endif
 
 /*
+ * The format attribute is what makes the compiler check a printf-like function's
+ * callers, and it also tells it that the vsnprintf such a function forwards to is
+ * given a format it has already checked. Defined whether or not tracing is
+ * compiled in, since anything else that wraps vsnprintf wants it too.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define QUICKDC_PRINTF_LIKE(fmt_index, first_arg) \
+	__attribute__((format(printf, fmt_index, first_arg)))
+#else
+#define QUICKDC_PRINTF_LIKE(fmt_index, first_arg)
+#endif
+
+/*
  * NOTE: the macros below are #undef'd before being defined. samurai/debug/dbg.h
  * defines the same names pointing at samurai_debug() and friends, so merely
  * deferring to whoever got there first would make the log a translation unit
@@ -42,20 +55,12 @@
 #define QDBG_FINI do { QuickDC_Debug_Fini(); } while(0)
 
 /*
- * The format attribute is what makes the compiler check these calls, as it
- * already does samurai's. Without it the macros above accept any argument for
- * any conversion: a std::string handed to %s, or a size_t to %d, compiles
- * silently and misreads whatever is on the stack. There are around four hundred
- * and fifty call sites in core/ and nothing covers the logging, so the check
- * has to come from the compiler.
+ * Without the attribute the macros above accept any argument for any conversion:
+ * a std::string handed to %s, or a size_t to %d, compiles silently and misreads
+ * whatever is on the stack. There are around four hundred and fifty call sites
+ * in core/ and nothing covers the logging, so the check has to come from the
+ * compiler.
  */
-#if defined(__GNUC__) || defined(__clang__)
-#define QUICKDC_PRINTF_LIKE(fmt_index, first_arg) \
-	__attribute__((format(printf, fmt_index, first_arg)))
-#else
-#define QUICKDC_PRINTF_LIKE(fmt_index, first_arg)
-#endif
-
 void QuickDC_Debug_Init();
 void QuickDC_Debug_Fini();
 

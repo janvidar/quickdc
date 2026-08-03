@@ -8,6 +8,7 @@
 #include <stdarg.h>
 
 #include "quickdc.h"
+#include "debug/dbg.h"
 #include "api/core.h"
 #include "test/cli/hubconnection.h"
 #include "test/cli/commands.h"
@@ -36,6 +37,7 @@ extern HubConnection* hub;
 extern bool running;
 
 
+void cmd_output(const char* format, ...) QUICKDC_PRINTF_LIKE(1, 2);
 void cmd_output(const char* format, ...)
 {
 	char logmsg[1024];
@@ -46,6 +48,7 @@ void cmd_output(const char* format, ...)
 	printf("*** %s\n", logmsg);
 }
 
+void cmd_error(const char* format, ...) QUICKDC_PRINTF_LIKE(1, 2);
 void cmd_error(const char* format, ...)
 {
 	char logmsg[1024];

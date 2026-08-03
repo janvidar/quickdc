@@ -3,11 +3,21 @@
  * See the file "COPYING" for licensing details.
  */
 
+/*
+ * All of this is the tracing subsystem, and debug/dbg.h only compiles the
+ * macros that reach it when DEBUG is defined. Without it nothing here has a
+ * caller - the QDBG family expands to nothing and QERR goes straight to stderr
+ * - so a build that did not ask for tracing carries neither these functions nor
+ * the log files they open.
+ */
+#include "debug/dbg.h"
+
+#ifdef DEBUG
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "debug/dbg.h"
 #include <samurai/io/file.h>
 
 #define DUMP_FILE_NETWORK "~/.quickdc/debug/network.log"
@@ -197,3 +207,5 @@ void QuickDC_Hub(const char*, const char* , int, const char *format, ...) {
 
 
 
+
+#endif // DEBUG

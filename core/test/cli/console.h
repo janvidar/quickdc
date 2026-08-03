@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_CLI_CONSOLE_H
 
 #include "quickdc.h"
+#include "debug/dbg.h"
 
 #include <memory>
 #include <string>
@@ -140,7 +141,7 @@ extern int console_initialize();
 extern char* console_get_line();
 
 extern void console_puts(const char* line);
-extern void console_printf(const char* format, ...);
+extern void console_printf(const char* format, ...) QUICKDC_PRINTF_LIKE(1, 2);
 
 #endif // HAVE_QUICKDC_CLI_CONSOLE_H
 
