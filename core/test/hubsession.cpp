@@ -92,6 +92,7 @@ class Listener : public QuickDC::HubListener
 		std::vector<std::string> chat;
 		std::vector<std::string> privateChat;
 		std::vector<std::string> hubMessages;
+		std::vector<bool> hubMarkdown;
 		std::vector<std::string> joined;
 		std::vector<std::string> left;
 		std::vector<std::string> errors;
@@ -116,8 +117,12 @@ class Listener : public QuickDC::HubListener
 			const char* message, const char*, bool, bool) override
 		{ privateChat.push_back(message ? message : ""); }
 
-		void EventHubMessage(const char*, const char* message) override
-		{ hubMessages.push_back(message ? message : ""); }
+		void EventHubMessage(const char*, const char* message, bool,
+			bool richText) override
+		{
+			hubMessages.push_back(message ? message : "");
+			hubMarkdown.push_back(richText);
+		}
 
 		void EventUserJoin(const char* user) override
 		{ joined.push_back(user ? user : ""); }
@@ -447,6 +452,33 @@ static void run()
 			CHECK(!s.listener.privateChat.empty()
 				&& s.listener.privateChat[0] == "a private word");
 			printf("  ok a private message is reported separately\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * A hub speaks for itself with IMSG, which carries no SID, so the flags on it have
+	 * to survive a path that has no user to attach them to.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			s.say("IMSG **welcome** RT1");
+			s.say("IMSG plain\\senough");
+
+			CHECK(s.listener.hubMessages.size() == 2);
+			CHECK(s.listener.hubMarkdown.size() == 2);
+
+			if (s.listener.hubMessages.size() == 2 && s.listener.hubMarkdown.size() == 2)
+			{
+				CHECK(s.listener.hubMessages[0] == "**welcome**");
+				CHECK(s.listener.hubMarkdown[0]);
+				CHECK(s.listener.hubMessages[1] == "plain enough");
+				CHECK(!s.listener.hubMarkdown[1]);
+			}
+
+			printf("  ok the hub's own message keeps its RT flag\n");
 		}
 		else failures++;
 	}

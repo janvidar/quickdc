@@ -154,8 +154,13 @@ class HubListener
 	 *
 	 * @param fakeuser The 'user' who wrote the message non-existing.
 	 * @param message The message
+	 * @param action The message is to be considered as a action chat message.
+	 * @param richText The message is markdown; see EventChat(). A hub is as entitled
+	 *                 to formatting as anybody on it, and is the party that decided
+	 *                 rich text is carried at all.
 	 */
-	virtual void EventHubMessage(const char* fakeuser, const char* message) = 0;
+	virtual void EventHubMessage(const char* fakeuser, const char* message,
+	                             bool action = false, bool richText = false) = 0;
 	
 	/**
 	* A user joined the hub. At this point, we don't have any user 

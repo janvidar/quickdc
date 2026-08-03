@@ -116,7 +116,7 @@ class Listener : public QuickDC::HubListener
 			const char* message, const char*, bool, bool) override
 		{ privateChat.push_back(message ? message : ""); }
 
-		void EventHubMessage(const char*, const char* message) override
+		void EventHubMessage(const char*, const char* message, bool, bool) override
 		{ hubMessages.push_back(message ? message : ""); }
 
 		void EventUserJoin(const char* user) override

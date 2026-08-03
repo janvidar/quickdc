@@ -21,7 +21,8 @@ class HubConnection : public QuickDC::Hub, public QuickDC::HubListener {
 		void EventChat(const QuickDC::User* user, const char* message, bool, bool) override;
 		
 		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action, bool richText) override;
-		void EventHubMessage(const char* user, const char* message) override;
+		void EventHubMessage(const char* user, const char* message, bool action,
+		                     bool richText) override;
 		
 		void EventUserJoin(const char* user) override;
 		void EventUserLeave(const QuickDC::User* user, const char* message, bool) override;

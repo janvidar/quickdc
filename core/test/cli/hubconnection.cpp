@@ -122,8 +122,15 @@ void HubConnection::EventPrivateChat(const QuickDC::User* from, const QuickDC::U
 		console_printf("%s * {%s} Message to %s: *%s %s*\n", getTimestamp(), context, to->getNick(), from->getNick(), message);
 }
 
-void HubConnection::EventHubMessage(const char* user, const char* message) {
-	console_printf("%s * HUB: <%s> %s\n", getTimestamp(), user, message);
+void HubConnection::EventHubMessage(const char* user, const char* message, bool action,
+                                    bool richText) {
+	/* A console shows the markers as they arrived; that is markdown degrading. */
+	(void) richText;
+
+	if (!action)
+		console_printf("%s * HUB: <%s> %s\n", getTimestamp(), user, message);
+	else
+		console_printf("%s * HUB: *%s %s*\n", getTimestamp(), user, message);
 }
 
 void HubConnection::EventUserJoin(const char* user)

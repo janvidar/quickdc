@@ -79,7 +79,7 @@ class Listener : public QuickDC::HubListener
 		void EventChat(const QuickDC::User*, const char*, bool, bool) override { }
 		void EventPrivateChat(const QuickDC::User*, const QuickDC::User*,
 			const char*, const char*, bool, bool) override { }
-		void EventHubMessage(const char*, const char*) override { }
+		void EventHubMessage(const char*, const char*, bool, bool) override { }
 		void EventUserJoin(const char*) override { }
 		void EventUserLeave(const QuickDC::User*, const char*, bool) override { }
 		void EventUsersCleanup() override { }

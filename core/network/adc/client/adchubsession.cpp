@@ -1235,7 +1235,7 @@ void ADC::HubSession::onPublicChat(const char* from, const char* message, bool a
 	}
 	else
 	{
-		listener->EventHubMessage(hubname.c_str(), message);
+		listener->EventHubMessage(hubname.c_str(), message, action, richText);
 	}
 }
 
