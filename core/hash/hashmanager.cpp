@@ -155,8 +155,9 @@ bool QuickDC::Hash::Manager::process()
 
 	/* 'running' stays valid without the lock: only this thread deletes jobs,
 	   and a job the worker finishes meanwhile just moves to 'completed' to be
-	   picked up by the next call. */
-	if (running)
+	   picked up by the next call. There may be no listener left to tell -
+	   removeJob() detaches one that is going away. */
+	if (running && running->getListener())
 		running->getListener()->EventFileHashProgress(running, progress_done.load(), progress_total.load());
 
 	while (!done.empty())
@@ -169,7 +170,8 @@ bool QuickDC::Hash::Manager::process()
 			QDBG("Hash job finished, file='%s'", c.job->getFile().getName().c_str());
 			QuickDC::Hash::CacheEntry* entry = QuickDC::Hash::CacheEntry::create(c.job->getFile(), c.job);
 			addCache(c.job->getFile().getName(), entry);
-			c.job->getListener()->EventFileHashed(c.job);
+			if (c.job->getListener())
+				c.job->getListener()->EventFileHashed(c.job);
 		}
 		else
 		{
@@ -229,12 +231,51 @@ void QuickDC::Hash::Manager::addJob(const Samurai::IO::File& jobfile, QuickDC::H
 }
 
 
+/*
+ * Called by ~Share::File for a file that is dropped before its hash arrived -
+ * a share being rebuilt while hashing is still in flight - so once this returns
+ * nothing may call the listener again.
+ *
+ * A job the worker has taken cannot be withdrawn, and interrupting it would
+ * mean reaching into state that belongs to the worker while it is using it. It
+ * is left to finish and told to report to nobody instead: the listener is the
+ * one thing the worker never touches, and it is read and written on this
+ * thread alone. The hash still reaches the cache, which is where the point of
+ * having hashed it lies.
+ */
 void QuickDC::Hash::Manager::removeJob(const Samurai::IO::File& f)
 {
-	(void) f;
-	QERR("QuickDC::Hash::Manager::removeJob -- FIXME FIXME");
-	assert(!"not implemented");
-	dirty = true;
+	const std::string name = f.getName();
+	std::vector<QuickDC::Hash::Job*> dropped;
+
+	{
+		std::lock_guard<std::mutex> guard(lock);
+
+		for (std::deque<QuickDC::Hash::Job*>::iterator it = pending.begin(); it != pending.end(); )
+		{
+			if ((*it)->getFile().getName() == name)
+			{
+				dropped.push_back(*it);
+				it = pending.erase(it);
+			}
+			else
+			{
+				it++;
+			}
+		}
+
+		for (Completion& c : completed)
+			if (c.job->getFile().getName() == name)
+				c.job->detachListener();
+
+		if (inflight && inflight->getFile().getName() == name)
+			inflight->detachListener();
+	}
+
+	/* Outside the lock, and only ever here: a job is deleted on the main thread
+	   alone, and one still queued is one the worker has not seen. */
+	for (QuickDC::Hash::Job* job : dropped)
+		delete job;
 }
 
 

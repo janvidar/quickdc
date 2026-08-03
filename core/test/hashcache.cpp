@@ -74,16 +74,17 @@ static std::string readFile(const std::string& path)
 class Listener : public QuickDC::Hash::JobListener
 {
 	public:
-		Listener() : started(0), queued(0), hashed(0) { }
+		Listener() : started(0), queued(0), hashed(0), progress(0) { }
 
 		void EventFileStarted(const QuickDC::Hash::Job*) { started++; }
 		void EventFileQueued(const QuickDC::Hash::Job*) { queued++; }
 		void EventFileHashed(const QuickDC::Hash::Job*) { hashed++; }
-		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) { }
+		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) { progress++; }
 
 		int started;
 		int queued;
 		int hashed;
+		int progress;
 };
 
 /* Runs the manager until the worker has nothing left, as the main loop does. */
@@ -637,6 +638,67 @@ int main()
 		QuickDC::Hash::CacheEntry* entry = 0;
 		CHECK(mgr.lookup(Samurai::IO::File(a), entry));
 		printf("  ok an unknown record stops the read rather than the process\n");
+	}
+
+	/*
+	 * Taking a job back. ~Share::File does this for a file that is dropped
+	 * before its hash arrived - a share rebuilt while hashing is still going -
+	 * so from here on nothing may be reported about it: the listener is the
+	 * Share::File, and it is on its way out.
+	 *
+	 * Which of the three states the job is in is a matter of timing. It may
+	 * still be queued, it may be the one the worker is on, or it may have
+	 * finished and be waiting to be collected. The listener hears nothing in
+	 * any of them, which is what makes this assertion timing independent.
+	 */
+	{
+		Fixture f;
+		const std::string busy = f.file("busy.bin", std::string(6 * 1024 * 1024, 'j'));
+		const std::string gone = f.file("dropped.bin", std::string(200000, 'k'));
+
+		QuickDC::Hash::Manager mgr(f.cache.c_str());
+		Listener keep, drop;
+
+		mgr.addJob(Samurai::IO::File(busy), &keep);
+		mgr.addJob(Samurai::IO::File(gone), &drop);
+		CHECK(drop.queued == 1);
+
+		mgr.removeJob(Samurai::IO::File(gone));
+
+		CHECK(drain(mgr));
+		CHECK(keep.hashed == 1);
+		CHECK(drop.hashed == 0);
+		CHECK(drop.progress == 0);
+		printf("  ok a job that was taken back is not reported to its listener\n");
+	}
+
+	/*
+	 * And the shape that matters: the listener is freed as soon as it has taken
+	 * its job back, as a Share::File is. A job that kept a pointer to it would
+	 * be calling into freed memory the next time the main loop came round.
+	 */
+	{
+		Fixture f;
+		const std::string path = f.file("orphan.bin", std::string(4 * 1024 * 1024, 'l'));
+
+		QuickDC::Hash::Manager mgr(f.cache.c_str());
+		Listener* leaving = new Listener();
+
+		mgr.addJob(Samurai::IO::File(path), leaving);
+		mgr.removeJob(Samurai::IO::File(path));
+		delete leaving;
+
+		CHECK(drain(mgr));
+		printf("  ok a job whose listener has gone is drained without calling it\n");
+	}
+
+	/* Taking back a job the manager does not have is not an error. */
+	{
+		Fixture f;
+		QuickDC::Hash::Manager mgr(f.cache.c_str());
+		mgr.removeJob(Samurai::IO::File("/nonexistent"));
+		CHECK(!mgr.isBusy());
+		printf("  ok removing a job that was never added does nothing\n");
 	}
 
 	/* Rewriting the cache replaces it rather than growing it. */

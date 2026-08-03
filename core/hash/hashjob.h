@@ -100,6 +100,16 @@ class Job
 		const Samurai::IO::File& getFile() const { return file; }
 		QuickDC::Hash::JobListener* getListener() const { return listener; }
 
+		/**
+		 * Forget the listener, for a job that outlives the object that asked
+		 * for it. Nothing is reported about the job afterwards, so whoever
+		 * reports has to expect no listener at all.
+		 *
+		 * Main thread only, as every other use of the listener is: the worker
+		 * thread touches nothing but the hashing state.
+		 */
+		void detachListener() { listener = 0; }
+
 		virtual const char* getHashSum() const;
 
 		/**
