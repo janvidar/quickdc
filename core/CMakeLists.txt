@@ -107,7 +107,9 @@ set_target_properties(quickdc PROPERTIES
 #
 # _FILE_OFFSET_BITS=64 and DEBUG are deliberately not defined here: samurai
 # already exports them as PUBLIC definitions, and defining them again would risk
-# disagreeing with the library about struct layout.
+# disagreeing with the library about struct layout. DEBUG in particular follows
+# SAMURAI_TRACE, which the top level sets from QUICKDC_TRACE, so asking for
+# tracing once turns it on for both trees.
 target_compile_definitions(quickdc
     PUBLIC
         PRODUCT="${QUICKDC_PRODUCT}"

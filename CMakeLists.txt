@@ -18,15 +18,32 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # Options
 # ---------------------------------------------------------------------------
 
-# Debug is the default for single-config generators, because that is what turns
-# on the QDBG/QERR tracing.
+# RelWithDebInfo is the default for single-config generators. Debug used to be,
+# because it was what turned the QDBG/QERR tracing on - QUICKDC_TRACE does that
+# now, so the build type is free to mean what it says everywhere else. It is
+# also what packagers and CI key off, and Debug leaves NDEBUG undefined, which
+# makes the assert in Hash::Manager::removeJob() a live process abort.
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
+    set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build type" FORCE)
 endif()
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
     Debug Release RelWithDebInfo MinSizeRel)
 
 option(QUICKDC_BUILD_TESTS "Build the test programs and the autotest suite" ON)
+
+# core/debug/dbg.h compiles the QDBG/QNET/QSEARCH/QHUB macros only when DEBUG is
+# defined, and what they write is not fit to leave on a user's disk: hub
+# passwords, peer addresses and every protocol line in both directions. Asking
+# for it is therefore explicit, and separate from the build type.
+option(QUICKDC_TRACE
+    "Compile in the QDBG/QNET/QHUB tracing subsystem (writes secrets to disk)" OFF)
+
+if(QUICKDC_TRACE)
+    message(WARNING
+        "QUICKDC_TRACE is ON: this build writes hub passwords (config/preferences.cpp "
+        "and network/adc/server/acl.cpp), peer addresses and raw protocol payloads to "
+        "files under ~/.quickdc/debug. Do not distribute it.")
+endif()
 
 option(QUICKDC_SANITIZE
     "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
@@ -72,6 +89,13 @@ set(SAMURAI_BUILD_TESTS OFF CACHE BOOL "Build the samurai test programs" FORCE)
 # configured, since it is that project's cache variable. Unconditional, so that
 # turning QUICKDC_SANITIZE back off also turns samurai's off.
 set(SAMURAI_SANITIZE ${QUICKDC_SANITIZE} CACHE BOOL "Build samurai with sanitizers" FORCE)
+
+# Samurai exports DEBUG PUBLIC, since dbg.h is one of its public headers, so its
+# tracing has to be asked for on the same terms as QuickDC's - otherwise the
+# QDBG macros in core/ resolve against a library that did not compile the sinks
+# they call. Forwarded unconditionally, as SAMURAI_SANITIZE is, so that turning
+# QUICKDC_TRACE back off turns samurai's off too.
+set(SAMURAI_TRACE ${QUICKDC_TRACE} CACHE BOOL "Build samurai with tracing" FORCE)
 
 add_subdirectory(samurai)
 
@@ -135,4 +159,5 @@ else()
     message(STATUS "  Sanitizers      : OFF")
 endif()
 message(STATUS "  Build tests     : ${QUICKDC_BUILD_TESTS}")
+message(STATUS "  Tracing         : ${QUICKDC_TRACE}")
 message(STATUS "")
