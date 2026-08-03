@@ -52,7 +52,6 @@ static int failures = 0;
 #define CHECK(x) do { if (!(x)) { \
 	printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
 
-#define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
 
 static const int TIMEOUT_MS = 5000;
 

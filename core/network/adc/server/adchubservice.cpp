@@ -150,10 +150,10 @@ bool ADC::AdcSrvUptime::invoke(Command* cmd) {
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 	Samurai::TimeStamp startup = QuickDC::Core::getInstance()->startup;
 	uint32_t seconds = startup.elapsed();
-	uint32_t days  = (int) seconds / 86400;
+	uint32_t days  = static_cast<int>(seconds) / 86400;
 	uint32_t temp  = (seconds - (days * 86400));
-	uint32_t hours = (int) temp / 3600;
-	uint32_t minutes = (int) (temp % 3600) / 60;
+	uint32_t hours = static_cast<int>(temp) / 3600;
+	uint32_t minutes = static_cast<int>(temp % 3600) / 60;
 	static char buf[100] = { 0, };
 	if (startup.elapsed() < (86400 * 2)) {
 		if (hours > 2) {
@@ -219,7 +219,7 @@ bool ADC::AdcSrvHistory::invoke(Command* cmd) {
 		buffer.append("*** No messages");
 	} else {
 		buffer.append("*** Showing the ");
-		buffer.append((int) hub->history.size());
+		buffer.append(static_cast<int>(hub->history.size()));
 		buffer.append(" most recent message"); 
 		if (hub->history.size() > 1) buffer.append('s');
 		buffer.append(":\n");

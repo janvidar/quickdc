@@ -50,12 +50,12 @@ bool ADC::Parser::parse(const char* buffer, size_t buflen, ADC::Command& command
 	if (buflen > 4 && buffer[4] != ' ') return false;
 
 	/* Unsigned, or a byte with the top bit set sign-extends into the fourcc. */
-	command.fourcc = (((uint32_t) (unsigned char) buffer[0] << 24)
-	                | ((uint32_t) (unsigned char) buffer[1] << 16)
-	                | ((uint32_t) (unsigned char) buffer[2] << 8)
-	                |  (uint32_t) (unsigned char) buffer[3]);
+	command.fourcc = ((static_cast<uint32_t>(static_cast<unsigned char>(buffer[0])) << 24)
+	                | (static_cast<uint32_t>(static_cast<unsigned char>(buffer[1])) << 16)
+	                | (static_cast<uint32_t>(static_cast<unsigned char>(buffer[2])) << 8)
+	                |  static_cast<uint32_t>(static_cast<unsigned char>(buffer[3])));
 
-	char* buf = (char*) malloc(buflen + 1);
+	char* buf = static_cast<char*>(malloc(buflen + 1));
 	if (!buf) return false;
 	memcpy(buf, buffer, buflen);
 	buf[buflen] = 0;
@@ -305,7 +305,7 @@ void ADC::Command::addArgument(const char* name, const char* arg)
 	 * e-mail field in a CINF is enough - it found whatever was there instead and
 	 * wrote past the end of the buffer.
 	 */
-	char* tmp = (char*) malloc(length + 3);
+	char* tmp = static_cast<char*>(malloc(length + 3));
 	memset(tmp, 0, length + 3);
 	strncpy(tmp, name, 2);
 	memcpy(&tmp[2], arg, length);
@@ -317,7 +317,7 @@ void ADC::Command::addArgument(const char* name, const std::string& arg)
 	if (!cached.empty()) resetCache();
 	
 	/* As above, and for the same reasons. */
-	char* tmp = (char*) malloc(arg.size() + 3);
+	char* tmp = static_cast<char*>(malloc(arg.size() + 3));
 	memset(tmp, 0, arg.size() + 3);
 	strncpy(tmp, name, 2);
 	memcpy(&tmp[2], arg.data(), arg.size());
@@ -449,7 +449,7 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 	}
 
 	size_t start = stream->size();
-	switch ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24))
+	switch (static_cast<char>((fourcc & FOURCC(0xff,0,0,0)) >> 24))
 	{
 		case 'C':
 		case 'I':
@@ -518,42 +518,42 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 
 bool ADC::Command::isCommandBroadcast()
 {
-	return ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'B';
+	return (static_cast<char>((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'B';
 }
 
 bool ADC::Command::isCommandClient()
 {
-	return ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'C';
+	return (static_cast<char>((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'C';
 }
 
 bool ADC::Command::isCommandDirect()
 {
-	return ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'D';
+	return (static_cast<char>((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'D';
 }
 
 bool ADC::Command::isCommandEcho()
 {
-	return ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'E';
+	return (static_cast<char>((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'E';
 }
 
 bool ADC::Command::isCommandFeature()
 {
-	return ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'F';
+	return (static_cast<char>((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'F';
 }
 
 bool ADC::Command::isCommandHub()
 {
-	return ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'H';
+	return (static_cast<char>((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'H';
 }
 
 bool ADC::Command::isCommandHubInfo()
 {
-	return ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'I';
+	return (static_cast<char>((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'I';
 }
 
 bool ADC::Command::isCommandUdp()
 {
-	return ((char) ((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'U';
+	return (static_cast<char>((fourcc & FOURCC(0xff,0,0,0)) >> 24)) == 'U';
 }
 
 

@@ -15,11 +15,8 @@
 
 #define READ_BUF_SIZE 65536 * 2
 
-#define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
-
 #define FOURCC_REG(a, b, c, d, cls) \
-	mapper.insert(std::pair<uint32_t, ADC::CommandParser*>( \
-	((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d)), cls));
+	mapper.insert(std::pair<uint32_t, ADC::CommandParser*>(FOURCC(a, b, c, d), cls));
 
 ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::ClientSession* session) : QuickDC::CommandProxy(std::move(socket)), handover(0)
 {
@@ -141,7 +138,7 @@ bool ADC::CommandProxy::write()
 		qcmd->setOffset(offset + sent);
 	
 		// FIXME: toSend
-		if ((size_t) sent < toSend)
+		if (static_cast<size_t>(sent) < toSend)
 		{
 			socket->toggleWriteNotifier(true);
 			more = false;

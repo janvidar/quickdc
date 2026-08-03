@@ -426,7 +426,7 @@ void ADC::HubSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::N
 			why = QuickDC::HubListener::NetErrorHostUnreachable;
 			break;
 		default:
-			QERR("Network error %d on '%s': %s", (int) error,
+			QERR("Network error %d on '%s': %s", static_cast<int>(error),
 				hub ? hub->getUrl() : "", msg ? msg : "");
 	}
 
@@ -596,7 +596,7 @@ void ADC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
 
 	QDBG("Search result: '%s' (%d bytes) from '%s'",
 		result->getFile() ? result->getFile() : "",
-		(int) result->getSize(),
+		static_cast<int>(result->getSize()),
 		result->getUser() ? result->getUser()->getNick() : "");
 
 	/*
@@ -606,7 +606,7 @@ void ADC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
 	if (queue && hubUrl && result->getTTH() && result->getUser())
 	{
 		QuickDC::QueueFile* qfile = queue->getFileByTTH(result->getTTH());
-		const char* cid = (const char*) result->getUser()->getClientID();
+		const char* cid = reinterpret_cast<const char*>(result->getUser()->getClientID());
 
 		if (qfile && cid)
 		{
@@ -857,7 +857,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 				QuickDC::Clearance::AuthorizedUser,
 				QuickDC::Clearance::ADC,
 				this,
-				(const char*) user->getClientID(),
+				reinterpret_cast<const char*>(user->getClientID()),
 				token);
 		QuickDC::Core::getInstance()->securityManager->grant(clearance);
 
@@ -875,7 +875,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 				QuickDC::Clearance::AuthorizedUser,
 				QuickDC::Clearance::ADC,
 				this,
-				(const char*) user->getClientID(),
+				reinterpret_cast<const char*>(user->getClientID()),
 				token);
 		QuickDC::Core::getInstance()->securityManager->grant(clearance);
 		send(cmd);
@@ -1288,7 +1288,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 			QuickDC::Clearance::AuthorizedUser,
 			QuickDC::Clearance::ADC,
 			this,
-			(const char*) user->getClientID(),
+			reinterpret_cast<const char*>(user->getClientID()),
 			token);
 	QuickDC::Core::getInstance()->securityManager->grant(clearance);
 
@@ -1404,7 +1404,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 				QuickDC::Clearance::AuthorizedUser,
 				QuickDC::Clearance::ADC,
 				this,
-				(const char*) user->getClientID(),
+				reinterpret_cast<const char*>(user->getClientID()),
 				token);
 		QuickDC::Core::getInstance()->securityManager->grant(clearance);
 
@@ -1486,7 +1486,7 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 		cmd.addArgument("HI", hubIpPort.c_str());
 		cmd.addArgument("U4", std::to_string(port));
 		cmd.addArgument("TR", request->getTTH());
-		cmd.addArgument("PC", std::to_string((int) runs));
+		cmd.addArgument("PC", std::to_string(static_cast<int>(runs)));
 		cmd.addArgument("PI", indexes.c_str());
 
 		Samurai::IO::Buffer buffer;
@@ -1503,13 +1503,13 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 		cmd->addArgument("HI", hubIpPort.c_str());
 		cmd->addArgument("U4", std::to_string(port));
 		cmd->addArgument("TR", request->getTTH());
-		cmd->addArgument("PC", std::to_string((int) runs));
+		cmd->addArgument("PC", std::to_string(static_cast<int>(runs)));
 		cmd->addArgument("PI", indexes.c_str());
 		send(cmd);
 	}
 
-	QDBG("Offered %d of %d block(s) of '%s'", (int) blocks,
-		(int) ((file->getSize() + block - 1) / block), request->getTTH());
+	QDBG("Offered %d of %d block(s) of '%s'", static_cast<int>(blocks),
+		static_cast<int>((file->getSize() + block - 1) / block), request->getTTH());
 }
 
 void ADC::HubSession::onPartialStatus(const char* cid, const char* tth, const char* indexes)

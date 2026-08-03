@@ -268,15 +268,15 @@ bool ADC::ACL::Table::load()
 	if (reported > MAX_ACL_SIZE)
 	{
 		QERR("The access list is %ld bytes, which is more than an access list can be",
-			(long) reported);
+			static_cast<long>(reported));
 		file.close();
 		return false;
 	}
 
 	// Read file into memory
-	const size_t size = (size_t) reported;
+	const size_t size = static_cast<size_t>(reported);
 	uint8_t* temp_buffer = new uint8_t[size];
-	const ssize_t got = file.read((char*) temp_buffer, size);
+	const ssize_t got = file.read(reinterpret_cast<char*>(temp_buffer), size);
 	file.close();
 
 	/* What was read, not what was asked for: the tail of a short read is
@@ -288,8 +288,8 @@ bool ADC::ACL::Table::load()
 		return false;
 	}
 
-	Samurai::IO::Buffer* buffer = new Samurai::IO::Buffer((size_t) got);
-	buffer->append((char*) temp_buffer, (size_t) got);
+	Samurai::IO::Buffer* buffer = new Samurai::IO::Buffer(static_cast<size_t>(got));
+	buffer->append(reinterpret_cast<char*>(temp_buffer), static_cast<size_t>(got));
 	delete[] temp_buffer;
 
 	ADC::ACL::XMLReader* handler = new ADC::ACL::XMLReader(this, buffer);

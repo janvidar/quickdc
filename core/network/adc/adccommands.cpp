@@ -63,7 +63,8 @@ bool ADC::CCmdGET::invoke(ADC::Command* cmd) {
 	 */
 	if (!ttyp || strlen(ttyp) != 4 || !file || !toff || !tlen) return false;
 
-	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
+	uint32_t type = FOURCC(static_cast<uint32_t>(ttyp[0]), static_cast<uint32_t>(ttyp[1]),
+	                       static_cast<uint32_t>(ttyp[2]), static_cast<uint32_t>(ttyp[3]));
 	uint64_t offset = Samurai::Util::Convert::to_uint64(toff);
 	int64_t len = Samurai::Util::Convert::to_int64(tlen);
 	bool zl = (t_zl && t_zl[0] == '1');
@@ -89,7 +90,8 @@ bool ADC::CCmdSND::invoke(ADC::Command* cmd) {
 	 */
 	if (!ttyp || strlen(ttyp) != 4 || !file || !toff || !tlen) return false;
 
-	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
+	uint32_t type = FOURCC(static_cast<uint32_t>(ttyp[0]), static_cast<uint32_t>(ttyp[1]),
+	                       static_cast<uint32_t>(ttyp[2]), static_cast<uint32_t>(ttyp[3]));
 	uint64_t offset = Samurai::Util::Convert::to_uint64(toff);
 	int64_t len = Samurai::Util::Convert::to_int64(tlen);
 	bool zl = (t_zl && t_zl[0] == '1');
@@ -111,7 +113,8 @@ bool ADC::CCmdGFI::invoke(ADC::Command* cmd) {
 	 */
 	if (!ttyp || strlen(ttyp) != 4 || !file) return false;
 
-	uint32_t type = FOURCC(ttyp[0], ttyp[1], ttyp[2], ttyp[3]);
+	uint32_t type = FOURCC(static_cast<uint32_t>(ttyp[0]), static_cast<uint32_t>(ttyp[1]),
+	                       static_cast<uint32_t>(ttyp[2]), static_cast<uint32_t>(ttyp[3]));
 	session->onGFI(file, type);
 	return true;
 }
@@ -195,7 +198,9 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 		char* id = cmd->getSourceID();
 		char* cid = cmd->getArgument("ID", 2);
 
-		QuickDC::User* u = (QuickDC::User*) session->users->getUser(id);
+		/* The user manager owns the user and hands out a const pointer; the
+		   fields below are updated in place. */
+		QuickDC::User* u = const_cast<QuickDC::User*>(session->users->getUser(id));
 		if (!u) {
 			u = new QuickDC::User(id,
 				cmd->getArgument("NI", 2),
@@ -211,7 +216,7 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 			 * something that is not a client ID.
 			 */
 			if (ADC::CID::verify(cid))
-				u->setClientID((uint8_t*) cid);
+				u->setClientID(reinterpret_cast<uint8_t*>(cid));
 		}
 
 		uint64_t oldSize = u->getSharedBytes();
@@ -420,8 +425,8 @@ bool ADC::CmdResult::invoke(ADC::Command* cmd) {
 	}
 
 	uint64_t size = (s_size) ? Samurai::Util::Convert::to_uint64(s_size) : 0;
-	size_t depth  = (s_depth) ? (size_t) Samurai::Util::Convert::to_int32(s_depth) : 0;
-	size_t slots  = (s_slots) ? (size_t) Samurai::Util::Convert::to_int32(s_slots) : 0;
+	size_t depth  = (s_depth) ? static_cast<size_t>(Samurai::Util::Convert::to_int32(s_depth)) : 0;
+	size_t slots  = (s_slots) ? static_cast<size_t>(Samurai::Util::Convert::to_int32(s_slots)) : 0;
 
 	QuickDC::Share::SearchResult* result =
 		new QuickDC::Share::SearchResult(filename, size, slots, tth, depth, token);
@@ -460,7 +465,7 @@ bool ADC::CmdPartialStatus::invoke(ADC::Command* cmd) {
 	const QuickDC::User* user = session->getUser(cmd->getSourceID());
 	if (!user) return false;
 
-	session->onPartialStatus((const char*) user->getClientID(), tth, pi);
+	session->onPartialStatus(reinterpret_cast<const char*>(user->getClientID()), tth, pi);
 	return true;
 }
 

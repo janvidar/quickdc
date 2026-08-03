@@ -30,8 +30,6 @@
 #include <samurai/timer.h>
 #include <samurai/timestamp.h>
 
-#define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
-
 #define CHECK_SID_OK() \
 	ADC::HubUser* user  = lookupUser(ADC::SID::fromString(cmd->getSourceID())); \
 	ADC::HubUser* user_sock = lookupUser(cmd->getSocket()); \
@@ -152,14 +150,14 @@ void ADC::Hub::readConfiguration() {
 	 * 0xFFFFFFFF, so the ring never rotated and the chat log grew for as long as
 	 * the hub ran.
 	 */
-	maxUsers   = (uint32_t) std::clamp(config->getNumber("Max users", 128), 1, 65536);
-	maxHistory = (uint32_t) std::clamp(config->getNumber("Max history", 50), 0, 65536);
-	maxSendQ   = (uint32_t) std::clamp(config->getNumber("Max send queue bytes", 48 * 1024),
-	                                   4 * 1024, 16 * 1024 * 1024);
-	maxPerAddress = (uint32_t) std::clamp(config->getNumber("Max connections per address", 8), 1, 65536);
-	maxHandshake  = (uint32_t) std::clamp(config->getNumber("Max connections in handshake", 32), 1, 65536);
-	handshakeTimeout = (uint32_t) std::clamp(config->getNumber("Handshake timeout", 30), 0, 86400);
-	idleTimeout      = (uint32_t) std::clamp(config->getNumber("Idle timeout", 900), 0, 86400);
+	maxUsers   = static_cast<uint32_t>(std::clamp(config->getNumber("Max users", 128), 1, 65536));
+	maxHistory = static_cast<uint32_t>(std::clamp(config->getNumber("Max history", 50), 0, 65536));
+	maxSendQ   = static_cast<uint32_t>(std::clamp(config->getNumber("Max send queue bytes", 48 * 1024),
+	                                              4 * 1024, 16 * 1024 * 1024));
+	maxPerAddress = static_cast<uint32_t>(std::clamp(config->getNumber("Max connections per address", 8), 1, 65536));
+	maxHandshake  = static_cast<uint32_t>(std::clamp(config->getNumber("Max connections in handshake", 32), 1, 65536));
+	handshakeTimeout = static_cast<uint32_t>(std::clamp(config->getNumber("Handshake timeout", 30), 0, 86400));
+	idleTimeout      = static_cast<uint32_t>(std::clamp(config->getNumber("Idle timeout", 900), 0, 86400));
 	enabled    = config->getBool("Enabled", false);
 
 	/* Choking a user is a hint that it is slow; this is the point at which it is
@@ -408,7 +406,7 @@ void ADC::Hub::onQuit(ADC::HubUser* user, const char* msg) {
 		 * nothing queued to ever take it out again.
 		 */
 		user->state = State_WaitDisconnect;
-		Samurai::postMessage(QuickDC::MsgHubUserDelayedQuit, 0, (size_t) deferFor(user), 0);
+		Samurai::postMessage(QuickDC::MsgHubUserDelayedQuit, 0, static_cast<size_t>(deferFor(user)), 0);
 		return;
 	}
 
@@ -441,7 +439,7 @@ void ADC::Hub::onPublicChat(ADC::HubUser* user, const char* line) {
 	Samurai::TimeStamp timestamp_obj;
 	const std::string timestamp = timestamp_obj.getTime("%H:%M");
 	const size_t chat_size = strlen(line) + timestamp.size() + strlen(user->nick) + 9;
-	char* chat = (char*) malloc(chat_size);
+	char* chat = static_cast<char*>(malloc(chat_size));
 	snprintf(chat, chat_size, "[%s] <%s> %s", timestamp.c_str(), user->nick, line);
 
 	if (history.size() >= maxHistory) {
@@ -558,7 +556,7 @@ void ADC::Hub::kick(ADC::HubUser* user) {
 		 * still reaches the user.
 		 */
 		user->disconnecting = true;
-		Samurai::postMessage(QuickDC::MsgHubUserDisconnect, 0, (size_t) deferFor(user), 0);
+		Samurai::postMessage(QuickDC::MsgHubUserDisconnect, 0, static_cast<size_t>(deferFor(user)), 0);
 	}
 }
 
@@ -594,7 +592,7 @@ bool ADC::Hub::admitConnection(const Samurai::IO::Net::Socket* socket) {
 	 * exchange, since an operator is only recognised as one after its INF and
 	 * would otherwise never reach a full hub to be let in.
 	 */
-	if (users.size() >= (size_t) maxUsers + maxHandshake) {
+	if (users.size() >= static_cast<size_t>(maxUsers) + maxHandshake) {
 		QHUB("Refusing a connection from %s: %zu connections already",
 			socket->getAddress()->toString().c_str(), users.size());
 		return false;
@@ -736,7 +734,7 @@ ADC::HubUser* ADC::Hub::lookupUserCID(const char* cid) {
 
 void ADC::Hub::userAdd(HubUser* user) {
 	if (processing) {
-		Samurai::postMessage(QuickDC::MsgHubUserAppendUser, 0, (size_t) deferFor(user), 0);
+		Samurai::postMessage(QuickDC::MsgHubUserAppendUser, 0, static_cast<size_t>(deferFor(user)), 0);
 		return;
 	}
 
@@ -760,7 +758,7 @@ void ADC::Hub::userAdd(HubUser* user) {
 
 void ADC::Hub::userRemove(HubUser* user) {
 	if (processing) {
-		Samurai::postMessage(QuickDC::MsgHubUserRemoveUser, 0, (size_t) deferFor(user), 0);
+		Samurai::postMessage(QuickDC::MsgHubUserRemoveUser, 0, static_cast<size_t>(deferFor(user)), 0);
 		return;
 	}
 
@@ -841,7 +839,7 @@ void ADC::Hub::EventTimeout(Samurai::Timer*) {
 		const uint32_t limit = identified ? idleTimeout : handshakeTimeout;
 		if (!limit) continue;
 
-		if (user->getIdleTime() < (time_t) limit) continue;
+		if (user->getIdleTime() < static_cast<time_t>(limit)) continue;
 
 		expire(user, "213", identified ? "Idle too long" : "Took too long to log in");
 	}
@@ -856,28 +854,28 @@ bool ADC::Hub::EventMessage(const Samurai::Message* msg) {
 		 */
 		if (msg->getID() == QuickDC::MsgHubUserRemoveUser)
 		{
-			ADC::HubUser* user = takePending((uint64_t) msg->getArg1());
+			ADC::HubUser* user = takePending(static_cast<uint64_t>(msg->getArg1()));
 			if (user) userRemove(user);
 			return true;
 		}
 
 		if (msg->getID() == QuickDC::MsgHubUserAppendUser)
 		{
-			ADC::HubUser* user = takePending((uint64_t) msg->getArg1());
+			ADC::HubUser* user = takePending(static_cast<uint64_t>(msg->getArg1()));
 			if (user) userAdd(user);
 			return true;
 		}
 
 		if (msg->getID() == QuickDC::MsgHubUserDelayedQuit)
 		{
-			ADC::HubUser* user = takePending((uint64_t) msg->getArg1());
+			ADC::HubUser* user = takePending(static_cast<uint64_t>(msg->getArg1()));
 			if (user) onQuit(user, "Delayed quit");
 			return true;
 		}
 
 		if (msg->getID() == QuickDC::MsgHubUserDisconnect)
 		{
-			ADC::HubUser* user = takePending((uint64_t) msg->getArg1());
+			ADC::HubUser* user = takePending(static_cast<uint64_t>(msg->getArg1()));
 			if (user)
 			{
 				user->disconnecting = false;

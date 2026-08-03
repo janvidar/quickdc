@@ -151,7 +151,7 @@ void ADC::ClientSession::onSUP()
 
 void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 {
-	QDBG("ADC::ClientSession::onINF(): client=%d. got cid='%s', token='%s'", (int) isClient, cid, remote_token);
+	QDBG("ADC::ClientSession::onINF(): client=%d. got cid='%s', token='%s'", static_cast<int>(isClient), cid, remote_token);
 
 	/* Remember who this is; a FileSource is keyed on the CID, not the SID. */
 	if (cid) remote_cid = cid;
@@ -299,12 +299,12 @@ void ADC::ClientSession::requestNextChunk()
 
 	request->setReservation(offset, length);
 	chunk_offset = offset;
-	chunk_length = (int64_t) length;
+	chunk_length = static_cast<int64_t>(length);
 
 	const std::string tthpath = "TTH/" + std::string(qfile->getTTH());
 
 	QDBG("Requesting %d bytes at offset %d of '%s'",
-		(int) length, (int) offset, qfile->getLocalFilename());
+		static_cast<int>(length), static_cast<int>(offset), qfile->getLocalFilename());
 
 	ADC::Command* cmd = new ADC::Command(FOURCC('C','G','E','T'));
 	cmd->addArgument("file");
@@ -417,7 +417,7 @@ void ADC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 	bool wasFetchingLeaves = fetchingLeaves;
 	fetchingLeaves = false;
 	uint64_t offset = chunk_offset;
-	uint64_t length = (chunk_length > 0) ? (uint64_t) chunk_length : 0;
+	uint64_t length = (chunk_length > 0) ? static_cast<uint64_t>(chunk_length) : 0;
 
 	QuickDC::PendingRequest* request = (queue && !token.empty()) ? queue->lookupRequest(token.c_str()) : 0;
 
@@ -473,7 +473,7 @@ void ADC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 		 * having the leaves.
 		 */
 		QERR("The chunk at %d of '%s' failed verification; discarding it",
-			(int) offset, qfile ? qfile->getLocalFilename() : "");
+			static_cast<int>(offset), qfile ? qfile->getLocalFilename() : "");
 
 		queue->releaseChunk(qfile, offset, length);
 		request->clearReservation();
@@ -503,14 +503,12 @@ void ADC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 		return;
 	}
 
-	QDBG("The chunk at %d did not complete; handing it back", (int) offset);
+	QDBG("The chunk at %d did not complete; handing it back", static_cast<int>(offset));
 	if (length) queue->releaseChunk(qfile, offset, length);
 	request->clearReservation();
 	queue->onRequestFailed(token.c_str());
 	socket->disconnect();
 }
-
-#define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
 
 Samurai::IO::File* ADC::ClientSession::openQueuedLeaves(const char* tth, uint64_t& length)
 {
@@ -528,7 +526,7 @@ Samurai::IO::File* ADC::ClientSession::openQueuedFile(const char* tth, uint64_t 
 
 void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, int64_t length, bool compress)
 {
-	QDBG("Requested file: '%s' (type=%d), offset=%d, length=%d", fn, (int) type, (int) offset, (int) length);
+	QDBG("Requested file: '%s' (type=%d), offset=%d, length=%d", fn, static_cast<int>(type), static_cast<int>(offset), static_cast<int>(length));
 	if (!upload_approved)
 	{
 		QDBG("Client requested a file to be sent, however no upload is approved. Ignoring request...");
@@ -568,7 +566,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	config->setGroup("Network");
 	int slots = config->getNumber("Slots", 3);
-	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= (size_t) slots);
+	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= static_cast<size_t>(slots));
 
 	if (type == FOURCC('l','i','s','t'))
 	{
@@ -586,7 +584,8 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	}
 	else if (type == FOURCC('t','t','h','l'))
 	{
-		if (strlen(fn) == 43 && FOURCC(fn[0],fn[1],fn[2],fn[3]) == FOURCC('T','T','H','/'))
+		if (strlen(fn) == 43 && FOURCC(static_cast<uint32_t>(fn[0]), static_cast<uint32_t>(fn[1]),
+			static_cast<uint32_t>(fn[2]), static_cast<uint32_t>(fn[3])) == FOURCC('T','T','H','/'))
 		{
 			/* Leaves for a shared file live inside the hash cache, which the
 			   hash manager owns; ours are a file of their own. */
@@ -607,7 +606,8 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	else if (type == FOURCC('f','i','l','e'))
 	{
 		QDBG("looking up file: %s", fn);
-		if (strlen(fn) == 43 && FOURCC(fn[0],fn[1],fn[2],fn[3]) == FOURCC('T','T','H','/'))
+		if (strlen(fn) == 43 && FOURCC(static_cast<uint32_t>(fn[0]), static_cast<uint32_t>(fn[1]),
+			static_cast<uint32_t>(fn[2]), static_cast<uint32_t>(fn[3])) == FOURCC('T','T','H','/'))
 		{
 			file = sharemgr->getFileByTTH(&fn[4]);
 
@@ -679,7 +679,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 		
 		cmd->addArgument(fn);
 		cmd->addArgument(std::to_string(offset).c_str());
-		cmd->addArgument(std::to_string((uint64_t) chunk_length).c_str());
+		cmd->addArgument(std::to_string(static_cast<uint64_t>(chunk_length)).c_str());
 		if (compress)
 		{
 			cmd->addArgument("ZL", "1");
@@ -704,7 +704,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 
 void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t offset, int64_t length, bool compressed)
 {
-	QDBG("Receiving file (ADCSND): '%s', offset=%d, length=%d", filename, (int) offset, (int) length);
+	QDBG("Receiving file (ADCSND): '%s', offset=%d, length=%d", filename, static_cast<int>(offset), static_cast<int>(length));
 	(void) filename;
 
 	QuickDC::Core* core = QuickDC::Core::getInstance();
@@ -740,7 +740,7 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 
 	if (length <= 0)
 	{
-		QERR("The peer offered a nonsensical length (%d)", (int) length);
+		QERR("The peer offered a nonsensical length (%d)", static_cast<int>(length));
 		queue->onRequestFailed(token.c_str());
 		socket->disconnect();
 		return;
@@ -773,7 +773,7 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 
 		chunk_offset = 0;
 		chunk_length = length;
-		request->setReservation(0, (uint64_t) length);
+		request->setReservation(0, static_cast<uint64_t>(length));
 
 		QuickDC::Download* download = new QuickDC::Download(xfrmgr, this, proxy->socket, file, 0, length);
 		transfer = download;
@@ -832,10 +832,10 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 	 */
 	if (!request->haveReservation()
 		|| offset != request->getReservedOffset()
-		|| (uint64_t) length > request->getReservedLength())
+		|| static_cast<uint64_t>(length) > request->getReservedLength())
 	{
 		QERR("The peer answered with %d bytes at %d, which is not the chunk we reserved",
-			(int) length, (int) offset);
+			static_cast<int>(length), static_cast<int>(offset));
 		queue->onRequestFailed(token.c_str());
 		socket->disconnect();
 		return;
@@ -852,7 +852,7 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 	 * than we reserved. The reservation in the chunk map still covers the
 	 * larger range; committing the shorter one hands the remainder back.
 	 */
-	request->setReservation(offset, (uint64_t) length);
+	request->setReservation(offset, static_cast<uint64_t>(length));
 
 	QuickDC::Download* download = new QuickDC::Download(xfrmgr, this, proxy->socket, file, offset, length);
 	transfer = download;

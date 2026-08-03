@@ -22,8 +22,6 @@
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/timestamp.h>
 
-#define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
-
 #define INF_STRIP_ARGUMENT(CMD, PREFIX) if (CMD->haveArgument(PREFIX, 2)) CMD->removeArgument(PREFIX, 2);
 /*
  * NOTE: these commands are heap allocated, where they used to be locals. Hub::send()

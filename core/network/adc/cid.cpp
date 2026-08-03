@@ -55,7 +55,7 @@ sid_t ADC::SID::fromString(const char* sid) {
 	for (size_t n = 0; n < 4; n++) {
 		const size_t x = std::string_view(ALPHABET).find(text[n]);
 		if (x == std::string_view::npos) return 0;
-		nsid += (sid_t) x * factors[n];
+		nsid += static_cast<sid_t>(x) * factors[n];
 	}
 	return nsid;
 }
@@ -74,7 +74,7 @@ bool ADC::CID::verifyCIDandPID(const char* cid, const char* pid) {
 	char x_cid[HASH];
 	uint8_t raw_pid[Samurai::Crypto::Digest::TIGER_HASH_SIZE];
 	
-	Samurai::Util::base32_decode(pid, std::span<unsigned char>((unsigned char*) raw_pid, Samurai::Crypto::Digest::TIGER_HASH_SIZE));
+	Samurai::Util::base32_decode(pid, std::span<unsigned char>(raw_pid, Samurai::Crypto::Digest::TIGER_HASH_SIZE));
 	
 	Samurai::Crypto::Digest::Tiger tiger;
 	tiger.update(raw_pid, Samurai::Crypto::Digest::TIGER_HASH_SIZE);
@@ -157,7 +157,7 @@ bool ADC::CID::load() {
 	 * identity that is about to be replaced.
 	 */
 	const std::string_view stored(config->getString("Private ID", ""));
-	if (stored.size() != (size_t) (HASH - 1)) {
+	if (stored.size() != static_cast<size_t>(HASH - 1)) {
 		if (!stored.empty()) QERR("The stored private ID is not a valid CID; generating a new identity");
 		return false;
 	}
@@ -170,7 +170,7 @@ bool ADC::CID::load() {
 	}
 
 	uint8_t pid_decoded[Samurai::Crypto::Digest::TIGER_HASH_SIZE] = { 0, };
-	Samurai::Util::base32_decode(pid, std::span<unsigned char>((unsigned char*) pid_decoded, Samurai::Crypto::Digest::TIGER_HASH_SIZE));
+	Samurai::Util::base32_decode(pid, std::span<unsigned char>(pid_decoded, Samurai::Crypto::Digest::TIGER_HASH_SIZE));
 
 	char cid_encoded[HASH] = { 0, };
 	Samurai::Crypto::Digest::Tiger tiger;
