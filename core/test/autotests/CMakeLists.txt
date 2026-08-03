@@ -4,15 +4,31 @@
 ## These are real automated tests, but they have to be run through the
 ## "exotic" generator (https://github.com/janvidar/exotic) to become
 ## compilable C++. If the generator is not installed, skip them rather than
-## fail the build.
+## fail the build - a developer without it should still get a working tree.
+##
+## The skip is a WARNING rather than a STATUS because it silently removes 194
+## assertions and ctest still reports every remaining test green, so a build
+## that skipped them looks exactly like one that ran them. Anything that gates
+## on the suite should set QUICKDC_REQUIRE_AUTOTESTS so the absence is fatal
+## instead of quiet; the CI workflow does.
 #
+
+option(QUICKDC_REQUIRE_AUTOTESTS
+    "Fail the configure if the 'exotic' generator is missing, rather than skipping the suite" OFF)
 
 find_program(QUICKDC_EXOTIC_EXECUTABLE exotic
     DOC "Path to the exotic test generator")
 
 if(NOT QUICKDC_EXOTIC_EXECUTABLE)
-    message(STATUS
-        "QuickDC: 'exotic' generator not found - skipping the autotest suite.")
+    if(QUICKDC_REQUIRE_AUTOTESTS)
+        message(FATAL_ERROR
+            "QuickDC: 'exotic' generator not found and QUICKDC_REQUIRE_AUTOTESTS is ON. "
+            "Build it from samurai/third_party/exotic and install it, or put it on PATH.")
+    endif()
+    message(WARNING
+        "QuickDC: 'exotic' generator not found - SKIPPING the autotest suite. "
+        "194 assertions will not run, and ctest will still report success. "
+        "Build it from samurai/third_party/exotic to enable them.")
     return()
 endif()
 
@@ -76,5 +92,14 @@ set_target_properties(quickdc_autotest PROPERTIES
     CXX_EXTENSIONS OFF)
 
 quickdc_harden(quickdc_autotest)
+
+# The .tcc bodies are ours and worth checking, but exotic emits its own runtime
+# into the same translation unit - and that includes a vsnprintf() forwarder,
+# which is exactly what -Wformat-nonliteral exists to complain about. The
+# generator's output is not ours to correct, so the one warning it trips is
+# relaxed here rather than the whole hardening set being dropped.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(quickdc_autotest PRIVATE -Wno-format-nonliteral)
+endif()
 
 add_test(NAME autotest COMMAND quickdc_autotest)
