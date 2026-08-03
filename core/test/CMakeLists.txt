@@ -65,9 +65,7 @@ foreach(app IN LISTS QUICKDC_TEST_APPS)
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF)
 
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(${app} PRIVATE -Wall -Wextra)
-    endif()
+    quickdc_harden(${app})
 endforeach()
 
 # Unlike their neighbours these are self-contained, so they do get to run.

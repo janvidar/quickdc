@@ -48,6 +48,11 @@ endif()
 option(QUICKDC_SANITIZE
     "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
+# Defines quickdc_harden(), and probes what this toolchain supports. Included
+# here rather than in core/ so that the probe results are reported once and the
+# test targets can use the same function.
+include(QuickDCHardening)
+
 # ---------------------------------------------------------------------------
 # TLS
 #
@@ -160,4 +165,8 @@ else()
 endif()
 message(STATUS "  Build tests     : ${QUICKDC_BUILD_TESTS}")
 message(STATUS "  Tracing         : ${QUICKDC_TRACE}")
+list(LENGTH QUICKDC_HARDEN_COMPILE _qdc_harden_count)
+message(STATUS "  Hardening       : ${_qdc_harden_count} compile flag(s), "
+                                   "${QUICKDC_HARDEN_DEFINES}")
+message(STATUS "  Pedantic        : ${QUICKDC_PEDANTIC}")
 message(STATUS "")

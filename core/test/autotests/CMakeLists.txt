@@ -75,4 +75,6 @@ set_target_properties(quickdc_autotest PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF)
 
+quickdc_harden(quickdc_autotest)
+
 add_test(NAME autotest COMMAND quickdc_autotest)

@@ -131,9 +131,9 @@ target_compile_definitions(quickdc PRIVATE ZLIB BZIP2)
 # so consumers need all of it as well.
 target_link_libraries(quickdc PUBLIC samurai::samurai_static)
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(quickdc PRIVATE -Wall -Wextra)
-endif()
+# -Wall -Wextra, the curated -Werror set, and the stack, bounds and branch
+# protections. See cmake/QuickDCHardening.cmake.
+quickdc_harden(quickdc)
 
 if(QUICKDC_BUILD_TESTS)
     add_subdirectory(test)
