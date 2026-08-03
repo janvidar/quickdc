@@ -142,6 +142,9 @@ class Core {
 		     const std::string& queue_file = std::string());
 
 		virtual ~Core();
+
+		Core(const Core&) = delete;
+		Core& operator=(const Core&) = delete;
 };
 
 }

@@ -22,6 +22,9 @@ class Response : public Entity {
 		Response(uint16_t code, const char* message);
 		virtual ~Response();
 
+		Response(const Response&) = delete;
+		Response& operator=(const Response&) = delete;
+
 		/**
 		 * Write the request to an IOBuffer.
 		 */

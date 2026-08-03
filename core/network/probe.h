@@ -64,6 +64,9 @@ class ProtocolProbe : public Connection, public Samurai::TimerListener {
 		ProtocolProbe(std::shared_ptr<Samurai::IO::Net::Socket> sock);
 		virtual ~ProtocolProbe();
 
+		ProtocolProbe(const ProtocolProbe&) = delete;
+		ProtocolProbe& operator=(const ProtocolProbe&) = delete;
+
 		static void probeDatagram(Samurai::IO::Net::DatagramSocket* socket, Samurai::IO::Net::DatagramPacket* packet);
 		void probe();
 		void close();

@@ -40,6 +40,9 @@ class CommandProxy : public QuickDC::CommandProxy
 		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::HubSession* session);
 		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::Hub* hub);
 		virtual ~CommandProxy();
+
+		CommandProxy(const CommandProxy&) = delete;
+		CommandProxy& operator=(const CommandProxy&) = delete;
 		
 		/**
 		 * Parse and process the available data.

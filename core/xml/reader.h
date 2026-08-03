@@ -100,6 +100,9 @@ class XMLReader {
 		XMLReader(Samurai::IO::Buffer* in, ContentHandler* handler);
 		virtual ~XMLReader();
 
+		XMLReader(const XMLReader&) = delete;
+		XMLReader& operator=(const XMLReader&) = delete;
+
 	public:
 		/**
 		 * This will actually parse the XML and return a Document.

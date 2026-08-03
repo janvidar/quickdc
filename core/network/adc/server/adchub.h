@@ -54,6 +54,9 @@ namespace ADC {
 		public:
 			Hub();
 			virtual ~Hub();
+
+			Hub(const Hub&) = delete;
+			Hub& operator=(const Hub&) = delete;
 	
 			void onINF(ADC::Command* cmd);
 			void onRES(ADC::Command* cmd);

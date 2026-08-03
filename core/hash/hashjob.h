@@ -75,6 +75,9 @@ class Job
 		Job(QuickDC::Hash::Manager* mgr, enum QuickDC::Hash::HashType type, QuickDC::Hash::JobListener* listener, const Samurai::IO::File& file);
 		virtual ~Job();
 
+		Job(const Job&) = delete;
+		Job& operator=(const Job&) = delete;
+
 		
 		enum QuickDC::Hash::HashType getAlgorithm() const { return algorithm; }
 

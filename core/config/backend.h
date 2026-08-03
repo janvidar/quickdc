@@ -21,6 +21,9 @@ class Backend {
 	public:
 		Backend(const std::string& file);
 		virtual ~Backend();
+
+		Backend(const Backend&) = delete;
+		Backend& operator=(const Backend&) = delete;
 	
 
 	protected:

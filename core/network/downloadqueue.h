@@ -163,6 +163,9 @@ class QueueFile {
 		QueueFile(const char* filename, const char* tth, uint64_t size = 0);
 		virtual ~QueueFile();
 
+		QueueFile(const QueueFile&) = delete;
+		QueueFile& operator=(const QueueFile&) = delete;
+
 		static const char* convertPriority(enum Priority);
 		static enum Priority convertPriority(const char*);
 
@@ -380,6 +383,9 @@ class PendingRequest {
 		PendingRequest(const char* token, FilelistRequest*);
 		virtual ~PendingRequest();
 
+		PendingRequest(const PendingRequest&) = delete;
+		PendingRequest& operator=(const PendingRequest&) = delete;
+
 		inline const char* getToken() const { return token.c_str(); }
 		inline enum Kind getKind() const { return kind; }
 
@@ -484,6 +490,9 @@ class QueueManager {
 		 */
 		QueueManager(const char* path_ = QUICKDC_QUEUE_FILE);
 		virtual ~QueueManager();
+
+		QueueManager(const QueueManager&) = delete;
+		QueueManager& operator=(const QueueManager&) = delete;
 
 	public:
 		/** Listeners are not owned; remove them before they are destroyed. */

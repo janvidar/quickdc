@@ -18,6 +18,9 @@ class Pipeline
 		Pipeline();
 		virtual ~Pipeline();
 
+		Pipeline(const Pipeline&) = delete;
+		Pipeline& operator=(const Pipeline&) = delete;
+
 		/**
 		 * Handle the request
 		 * @return true if the request was successfully handled,

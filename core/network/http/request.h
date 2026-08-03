@@ -24,6 +24,9 @@ class Request : public Http::Entity
 		Request(enum Method, const char* uri, enum Protocol);
 		virtual ~Request() { }
 
+		Request(const Request&) = delete;
+		Request& operator=(const Request&) = delete;
+
 		enum Method getMethod() const;
 		void setMethod(enum Method method);
 		void setURI(const char* uri);

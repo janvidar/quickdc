@@ -18,6 +18,9 @@ class SearchResult {
 		SearchResult(const char* name, uint64_t size, size_t freeslots, const char* tth = 0, size_t tth_depth = 0, const char* token = 0);
 		~SearchResult();
 
+		SearchResult(const SearchResult&) = delete;
+		SearchResult& operator=(const SearchResult&) = delete;
+
 		void setUser(QuickDC::User* user);
 		QuickDC::User* getUser() const;
 		

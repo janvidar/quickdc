@@ -38,6 +38,9 @@ class Connection :
 	public:
 		Connection(std::shared_ptr<Samurai::IO::Net::Socket> sock, bool client);
 		virtual ~Connection();
+
+		Connection(const Connection&) = delete;
+		Connection& operator=(const Connection&) = delete;
 		
 		enum ParseMode { None, Header, Body };
 

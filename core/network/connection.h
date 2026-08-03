@@ -27,6 +27,9 @@ class Connection : public Samurai::IO::Net::SocketEventHandler
 		Connection(std::shared_ptr<Samurai::IO::Net::Socket> sock, const char* protocol);
 		Connection(Samurai::IO::Net::URL* url, const char* protocol);
 		virtual ~Connection();
+
+		Connection(const Connection&) = delete;
+		Connection& operator=(const Connection&) = delete;
 		
 		void setManager(ConnectionManager* mgr) { manager = mgr; }
 

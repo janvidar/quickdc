@@ -22,6 +22,9 @@ class Service {
 	public:
 		Service(ServiceMap* map, const char* name, const char* description);
 		virtual ~Service();
+
+		Service(const Service&) = delete;
+		Service& operator=(const Service&) = delete;
 		virtual bool invoke(Command* cmd) = 0;
 		
 		const char* getName() const;
@@ -39,6 +42,9 @@ class ServiceMap {
 	public:
 		ServiceMap(ADC::Hub* hub);
 		virtual ~ServiceMap();
+
+		ServiceMap(const ServiceMap&) = delete;
+		ServiceMap& operator=(const ServiceMap&) = delete;
 		
 		void add(Service*);
 		void remove(Service*);

@@ -17,6 +17,9 @@ class XMLWriter {
 	public:
 		XMLWriter(IOBuffer* out);
 		virtual ~XMLWriter();
+
+		XMLWriter(const XMLWriter&) = delete;
+		XMLWriter& operator=(const XMLWriter&) = delete;
 		
 	public:
 		void addNode(const Node* node);

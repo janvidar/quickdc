@@ -23,6 +23,9 @@ class XMLWriter {
 	public:
 		XMLWriter(DOM::Document* doc, Samurai::IO::Buffer* out);
 		virtual ~XMLWriter();
+
+		XMLWriter(const XMLWriter&) = delete;
+		XMLWriter& operator=(const XMLWriter&) = delete;
 		
 	public:
 		/**

@@ -42,6 +42,9 @@ class CommandProxy {
 		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket);
 		virtual ~CommandProxy();
 
+		CommandProxy(const CommandProxy&) = delete;
+		CommandProxy& operator=(const CommandProxy&) = delete;
+
 		/**
 		 * Parse and process the available data.
 		 */
@@ -113,6 +116,9 @@ class QueuedCommand
 	public:
 		QueuedCommand(CommandBase* cmd);
 		virtual ~QueuedCommand();
+
+		QueuedCommand(const QueuedCommand&) = delete;
+		QueuedCommand& operator=(const QueuedCommand&) = delete;
 		
 		CommandBase* getCommand() { return command; }
 		virtual const char* getRawCommand();
@@ -131,6 +137,9 @@ class CommandFIFO
 	public:
 		CommandFIFO();
 		virtual ~CommandFIFO();
+
+		CommandFIFO(const CommandFIFO&) = delete;
+		CommandFIFO& operator=(const CommandFIFO&) = delete;
 		
 		virtual void lock();
 		virtual void unlock();

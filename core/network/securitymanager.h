@@ -31,6 +31,9 @@ class Clearance {
 
 		Clearance(enum ClearanceType, enum ClearanceProtocol, QuickDC::HubSession*, const char* userID, const char* token);
 		virtual ~Clearance();
+
+		Clearance(const Clearance&) = delete;
+		Clearance& operator=(const Clearance&) = delete;
 		
 	protected:
 
@@ -56,6 +59,9 @@ class SecurityManager
 	public:
 		SecurityManager();
 		~SecurityManager();
+
+		SecurityManager(const SecurityManager&) = delete;
+		SecurityManager& operator=(const SecurityManager&) = delete;
 
 		void grant(Clearance* authorization);
 		void revoke(Clearance* authorization);

@@ -63,6 +63,9 @@ class Transfer {
 		 */
 		Transfer(TransferManager*, PrivateTransferListener*, std::shared_ptr<Samurai::IO::Net::Socket>, Samurai::IO::File*, Direction, off_t offset, off_t length);
 		virtual ~Transfer();
+
+		Transfer(const Transfer&) = delete;
+		Transfer& operator=(const Transfer&) = delete;
 		
 		/**
 		 * Transfer one chunk of data, for upload we will send
@@ -183,6 +186,9 @@ class ZUpload : public Upload
 	public:
 		ZUpload(TransferManager*, PrivateTransferListener*, std::shared_ptr<Samurai::IO::Net::Socket>, Samurai::IO::File*, off_t offset, off_t length);
 		virtual ~ZUpload();
+
+		ZUpload(const ZUpload&) = delete;
+		ZUpload& operator=(const ZUpload&) = delete;
 
 	protected:
 		virtual void transfer() override;

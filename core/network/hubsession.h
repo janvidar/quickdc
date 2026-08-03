@@ -26,6 +26,9 @@ class HubSession {
 		HubSession(Hub* ui) : hub(ui), reconnect_time(-1) { }
 		virtual ~HubSession() { }
 
+		HubSession(const HubSession&) = delete;
+		HubSession& operator=(const HubSession&) = delete;
+
 		enum UserState {
 			StateNone,
 			StateProtocol,

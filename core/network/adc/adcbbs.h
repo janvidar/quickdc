@@ -17,6 +17,9 @@ namespace ADC {
 		public:
 			BBS_Message(bbs_message_t id, bbs_message_t parentId, char* cid, char* nick);
 			virtual ~BBS_Message();
+
+			BBS_Message(const BBS_Message&) = delete;
+			BBS_Message& operator=(const BBS_Message&) = delete;
 			
 			void setBody(ADC::Command* command);
 			Samurai::TimeStamp getTimeStamp();
@@ -43,6 +46,9 @@ namespace ADC {
 		public:
 			BBS_Storage();
 			virtual ~BBS_Storage();
+
+			BBS_Storage(const BBS_Storage&) = delete;
+			BBS_Storage& operator=(const BBS_Storage&) = delete;
 			
 			BBS_Message* getMessage(bbs_message_t id);
 			

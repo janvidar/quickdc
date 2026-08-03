@@ -32,6 +32,9 @@ class RemoteFile {
 		RemoteFile(const char* name_, uint64_t size_, const char* tth_, RemoteDir* parent_);
 		virtual ~RemoteFile();
 
+		RemoteFile(const RemoteFile&) = delete;
+		RemoteFile& operator=(const RemoteFile&) = delete;
+
 		size_t getSize() const { return size; }
 
 		/** @return the base name, never 0. */
@@ -51,6 +54,9 @@ class RemoteDir {
 	public:
 		RemoteDir(const char* name_, RemoteDir* parent_ = 0);
 		virtual ~RemoteDir();
+
+		RemoteDir(const RemoteDir&) = delete;
+		RemoteDir& operator=(const RemoteDir&) = delete;
 		
 		uint64_t getSize()  const { return size; }
 		uint64_t getFiles() const { return filecount; }
@@ -85,6 +91,9 @@ class XMLFileListHandler : public XML::SAX::ContentHandler {
 	public:
 		XMLFileListHandler(RemoteDir* root_, Samurai::IO::Buffer* buffer);
 		virtual ~XMLFileListHandler();
+
+		XMLFileListHandler(const XMLFileListHandler&) = delete;
+		XMLFileListHandler& operator=(const XMLFileListHandler&) = delete;
 		
 		bool parse();
 	
@@ -116,6 +125,9 @@ class RemoteFileList {
 	public:
 		RemoteFileList(Samurai::IO::File* file_);
 		virtual ~RemoteFileList();
+
+		RemoteFileList(const RemoteFileList&) = delete;
+		RemoteFileList& operator=(const RemoteFileList&) = delete;
 	
 		bool decode();
 

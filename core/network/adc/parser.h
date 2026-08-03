@@ -68,6 +68,9 @@ class Command : public QuickDC::CommandBase
 		Command(uint32_t fourcc, const char* source_id = 0, const char* target_id = 0);
 		
 		virtual ~Command();
+
+		Command(const Command&) = delete;
+		Command& operator=(const Command&) = delete;
 		
 		/**
 		 * @return the command fourcc.

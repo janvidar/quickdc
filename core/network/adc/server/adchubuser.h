@@ -76,6 +76,9 @@ class HubUser : public HubConnection {
 	public:
 		HubUser(std::shared_ptr<Samurai::IO::Net::Socket>, Hub*);
 		virtual ~HubUser();
+
+		HubUser(const HubUser&) = delete;
+		HubUser& operator=(const HubUser&) = delete;
 		
 		bool setINF(ADC::Command* cmd, Hub* hub);
 

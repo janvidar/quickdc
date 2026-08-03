@@ -61,6 +61,9 @@ class TransferManager
 	public:
 		TransferManager();
 		virtual ~TransferManager();
+
+		TransferManager(const TransferManager&) = delete;
+		TransferManager& operator=(const TransferManager&) = delete;
 		
 	public:
 		void add(Transfer*);

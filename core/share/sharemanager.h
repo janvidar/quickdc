@@ -49,6 +49,9 @@ class Manager : public QuickDC::Hash::JobListener {
 		        const char* dir = "~/.quickdc");
 		virtual ~Manager();
 
+		Manager(const Manager&) = delete;
+		Manager& operator=(const Manager&) = delete;
+
 		/**
 		 * Read configuration and initialize.
 		 */

@@ -274,6 +274,9 @@ class Hub
 		Hub(HubListener*, Samurai::IO::Net::URL* url);
 		virtual ~Hub();
 
+		Hub(const Hub&) = delete;
+		Hub& operator=(const Hub&) = delete;
+
 		void connect();
 		void disconnect();
 

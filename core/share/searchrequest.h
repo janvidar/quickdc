@@ -46,6 +46,9 @@ class SearchReply {
 	public:
 		SearchReply(SearchRequest* request_, QuickDC::Share::File* file_) : request(request_), file(file_) { }
 		virtual ~SearchReply() { }
+
+		SearchReply(const SearchReply&) = delete;
+		SearchReply& operator=(const SearchReply&) = delete;
 		
 		SearchRequest* getRequest() const { return request; }
 		QuickDC::Share::File* getFile() const { return file; }

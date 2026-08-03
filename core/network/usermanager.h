@@ -41,6 +41,9 @@ class UserManager {
 		UserManager(UserEventHandler* eventhandler);
 		virtual ~UserManager();
 
+		UserManager(const UserManager&) = delete;
+		UserManager& operator=(const UserManager&) = delete;
+
 		/**
 		 * Returns a user based on the given ID.
 		 * On NMDC this is the nickname, on ADC this is a 4-byte handle.

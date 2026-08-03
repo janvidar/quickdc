@@ -40,6 +40,9 @@ class Entity {
 
 		Entity(bool request);
 		virtual ~Entity();
+
+		Entity(const Entity&) = delete;
+		Entity& operator=(const Entity&) = delete;
 	
 
 	public:

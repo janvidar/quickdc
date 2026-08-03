@@ -14,6 +14,9 @@ class ParsedCommand {
 	public:
 		ParsedCommand();
 		virtual ~ParsedCommand();
+
+		ParsedCommand(const ParsedCommand&) = delete;
+		ParsedCommand& operator=(const ParsedCommand&) = delete;
 		
 	protected:
 		std::vector<char*> arguments;

@@ -26,6 +26,9 @@ class File : public QuickDC::Hash::JobListener {
 		File(const std::string& name, QuickDC::Share::Dir*);
 		virtual ~File();
 
+		File(const File&) = delete;
+		File& operator=(const File&) = delete;
+
 		/**
 		 * Do extended checks on a potential search result to
 		 * determine if it matches the search criterias.

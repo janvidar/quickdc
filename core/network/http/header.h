@@ -44,6 +44,9 @@ class HeaderList {
 		HeaderList();
 		virtual ~HeaderList();
 
+		HeaderList(const HeaderList&) = delete;
+		HeaderList& operator=(const HeaderList&) = delete;
+
 		/**
 		 * Add a header to the request/response.
 		 */

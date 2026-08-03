@@ -104,6 +104,9 @@ class Authorization {
 	public:
 		Authorization(enum Credential cred, Samurai::TimeStamp expire, const char* name, const char* description);
 		~Authorization();
+
+		Authorization(const Authorization&) = delete;
+		Authorization& operator=(const Authorization&) = delete;
 		
 		enum Credential getCredential() const { return credential; }
 
@@ -141,6 +144,9 @@ class Table {
 		Table(const char* path_ = "~/.quickdc/hub/acl.xml");
 		virtual ~Table();
 
+		Table(const Table&) = delete;
+		Table& operator=(const Table&) = delete;
+
 		void add(Authorization*);
 
 		bool load();
@@ -158,6 +164,9 @@ class XMLReader : public XML::SAX::ContentHandler {
 	public:
 		XMLReader(Table* acl, Samurai::IO::Buffer* buffer);
 		virtual ~XMLReader();
+
+		XMLReader(const XMLReader&) = delete;
+		XMLReader& operator=(const XMLReader&) = delete;
 		
 		bool parse();
 	
