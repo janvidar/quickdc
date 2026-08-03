@@ -8,6 +8,7 @@
 #endif
 
 #include "quickdc.h"
+#include <algorithm>
 #include <stdio.h>
 #include <span>
 #include <string>
@@ -25,6 +26,9 @@
 #include "hash/hashjob.h"
 #include "hash/hashmanager.h"
 #include "network/adc/cid.h"
+
+/* An upper bound on "Total shares", which is read from the configuration file. */
+#define MAX_SHARES 1024
 
 #ifdef SEARCH_DEBUG
 #include <sys/time.h>
@@ -51,7 +55,17 @@ void QuickDC::Share::Manager::initialize() {
 	QDBG("QuickDC::Share::Manager::initialize()");
 	
 	config->setGroup("Shares");
-	int num = config->getNumber("Total shares", 0);
+
+	/*
+	 * Clamped, because the count comes from a file: shares are directories
+	 * someone chose by hand, so anything past this is a typo or a corrupt
+	 * configuration, and a negative value walked the loop nowhere useful.
+	 */
+	const int configured = config->getNumber("Total shares", 0);
+	const int num = std::clamp(configured, 0, MAX_SHARES);
+
+	if (num != configured)
+		QERR("'Total shares' is %d, which is not a number of shares; using %d", configured, num);
 
 	QDBG("Shares found: %d", num);
 
@@ -60,8 +74,10 @@ void QuickDC::Share::Manager::initialize() {
 	 * "fakename:/real/path/name"
 	 */
 	for (int i = 0; i < num; i++) {
-		char key[16];
-		sprintf(key, "Share %d", i);
+		/* Wide enough for the longest key the loop above can reach, and
+		   snprintf so that a wider one truncates rather than overflows. */
+		char key[32];
+		snprintf(key, sizeof(key), "Share %d", i);
 		char* data = strdup(config->getString(key, ""));
 		
 		QDBG("Share %d='%s' (%s)", i, data, key);
@@ -153,27 +169,30 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 	} else if (strncasecmp("TTHL/", pubname, 5)) {
 		return 0;
 	} else {
-		
-		char* path = strdup(pubname);
-		char* iter = path;
+		/*
+		 * The walk cuts the name into components in place, so it needs a copy it
+		 * may write to - held by value, because every exit below used to leave
+		 * the strdup()'d one behind, and a peer chooses both the name and how
+		 * many times it asks.
+		 */
+		std::string path(pubname);
+		char* iter = path.data();
 		char* npos = 0;
-		size_t part = 0;
-		
+
 		npos = strchr(iter, '/');
 		if (!npos) return 0; // Must have at least one / unless file is a file list
 		npos[0] = 0;
-		
+
 		QuickDC::Share::Dir* root = 0;
 		for (size_t i = 0; i < dirs.size(); i++) {
 			if (dirs[i]->getBaseName() == iter) {
-				part++;
 				iter = &npos[1];
 				npos = strchr(iter, '/');
 				root = dirs[i];
 				break;
 			}
 		}
-		
+
 		QuickDC::Share::Dir* dir = root;
 		while (dir) {
 			QDBG("*** lookup: str='%s'", iter);
@@ -181,7 +200,6 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 				dir = dir->getDir(iter);
 				iter = &npos[1];
 				npos = strchr(iter, '/');
-				part++;
 			} else {
 				QDBG("*** looking for file in dir='%s', file='%s'", dir->getPath().c_str(), iter);
 				QuickDC::Share::File* shf = dir->getFile(iter);
