@@ -576,6 +576,7 @@ bool DC::ClientSession::supports(const char* feature)
 void DC::ClientSession::onError(const char* msg)
 {
 	QDBG("Remote error: '%s'", msg);
+	(void) msg;
 
 	/* Typically "File Not Available"; the source cannot serve what we queued. */
 	abandonDownload();
@@ -776,6 +777,9 @@ void DC::ClientSession::onGetZBlock(const char* file, uint64_t offset, int64_t l
 {
 	QDBG("Requested file (ZBLOCK): '%s', offset=%llu, length=%llu", file,
 		(unsigned long long) offset, (unsigned long long) length);
+	(void) file;
+	(void) offset;
+	(void) length;
 	if (upload_approved && state == StateIdle)
 	{
 		
@@ -921,6 +925,7 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 void DC::ClientSession::onADCSend(const char* filename, uint32_t type, uint64_t offset, int64_t length, bool compressed)
 {
 	QDBG("Receiving file (ADCSND): '%s', offset=%d, length=%d", filename, (int) offset, (int) length);
+	(void) filename;
 
 	QuickDC::Core* core = QuickDC::Core::getInstance();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;

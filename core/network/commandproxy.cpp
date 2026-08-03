@@ -11,9 +11,21 @@
 
 void Log_Network_Traffic(const char* event, int socketFD, const char* command, size_t length)
 {
+	/*
+	 * The copy exists only to terminate what QNET prints, and this runs once per
+	 * command in each direction - so with the tracing subsystem not compiled in
+	 * there is an allocation and a free per packet to no end.
+	 */
+#ifdef DEBUG
 	char* command_str = strndup(command, length);
 	QNET("%s[%d]: '%s'", event, socketFD, command_str);
-	free(command_str); // FIXME: Remove this!
+	free(command_str);
+#else
+	(void) event;
+	(void) socketFD;
+	(void) command;
+	(void) length;
+#endif
 }
 
 

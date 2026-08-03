@@ -73,6 +73,8 @@ static bool probe_tcp_tls(const char* buffer, size_t length) {
 
 	if (is_ssl) {
 		QDBG("Probed SSL/TLS version %d.%d", protocol_version_maj, protocol_version_min);
+		/* The minor version decides nothing above; it is only reported. */
+		(void) protocol_version_min;
 		return true;
 	}
 

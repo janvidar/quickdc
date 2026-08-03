@@ -351,6 +351,7 @@ void ADC::ClientSession::onGFI(const char*, uint32_t)
 void ADC::ClientSession::onSTA(const char* code, const char* message)
 {
 	QDBG("The peer says '%s' (%s)", message ? message : "", code ? code : "");
+	(void) message;
 
 	/* Severity 0 is informational and says nothing about our request. */
 	if (!code || code[0] == '0') return;
@@ -729,6 +730,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t offset, int64_t length, bool compressed)
 {
 	QDBG("Receiving file (ADCSND): '%s', offset=%d, length=%d", filename, (int) offset, (int) length);
+	(void) filename;
 
 	QuickDC::Core* core = QuickDC::Core::getInstance();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
@@ -889,6 +891,7 @@ void ADC::ClientSession::EventHostFound(const Samurai::IO::Net::Socket*) { }
 void ADC::ClientSession::EventConnecting(const Samurai::IO::Net::Socket* sock)
 {
 	QDBG("Connecting to %s", sock->getAddress()->toString().c_str());
+	(void) sock;
 }
 
 void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)

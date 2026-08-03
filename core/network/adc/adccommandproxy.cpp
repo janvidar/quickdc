@@ -252,6 +252,7 @@ void ADC::CommandProxy::connect()
 void ADC::CommandProxy::defaultHandler(const char* command)
 {
 	QDBG("Unhandled input '%s', length=%zu", command, strlen(command));
+	(void) command;
 }
 
 size_t ADC::CommandProxy::getSendQueueSize() const

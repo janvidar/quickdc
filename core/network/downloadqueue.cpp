@@ -470,7 +470,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 		void characters(const char*, size_t, size_t) { }
 		void ignorableWhitespace(const char*, size_t, size_t) { }
 
-		void warning(const char* str) { QDBG("queue.xml: %s", str); }
+		void warning(const char* str) { QDBG("queue.xml: %s", str); (void) str; }
 		void error(const char* str) { QERR("queue.xml: %s", str); }
 		void fatalError(const char* str) { QERR("queue.xml: %s", str); broken = true; }
 
@@ -1942,6 +1942,7 @@ bool QuickDC::QueueManager::save()
 	if (ret)
 	{
 		QDBG("Saved %d file(s) to the download queue", (int) stored);
+		(void) stored;
 		dirty = false;
 		lastSaved.reset();
 	}

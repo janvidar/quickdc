@@ -761,6 +761,7 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 	gettimeofday(&after, 0);
 	long ms = (((after.tv_usec - before.tv_usec) / 1000) + ((after.tv_sec - before.tv_sec) * 1000));
 	QSEARCH("Search '%p', returned %d hits in %d ms", req, hits, (int) ms);
+	(void) ms;
 #endif
 }
 

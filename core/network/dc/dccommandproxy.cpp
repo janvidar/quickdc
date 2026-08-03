@@ -230,6 +230,7 @@ void DC::CommandProxy::connect() {
 
 void DC::CommandProxy::defaultHandler(const char* command) {
 	QDBG("UNHANDLED: '%s'", command);
+	(void) command;
 }
 
 
