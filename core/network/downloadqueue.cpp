@@ -422,11 +422,11 @@ class QueueVerifier : public QuickDC::Hash::JobListener
 		virtual ~QueueVerifier() { }
 
 	public:
-		void EventFileStarted(const QuickDC::Hash::Job*) { }
-		void EventFileQueued(const QuickDC::Hash::Job*) { }
-		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) { }
+		void EventFileStarted(const QuickDC::Hash::Job*) override { }
+		void EventFileQueued(const QuickDC::Hash::Job*) override { }
+		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) override { }
 
-		void EventFileHashed(const QuickDC::Hash::Job* job)
+		void EventFileHashed(const QuickDC::Hash::Job* job) override
 		{
 			if (!job) return;
 
@@ -480,16 +480,16 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 		}
 
 	public:
-		void startDocument() { }
-		void endDocument() { }
-		void characters(const char*, size_t, size_t) { }
-		void ignorableWhitespace(const char*, size_t, size_t) { }
+		void startDocument() override { }
+		void endDocument() override { }
+		void characters(const char*, size_t, size_t) override { }
+		void ignorableWhitespace(const char*, size_t, size_t) override { }
 
-		void warning(const char* str) { QDBG("queue.xml: %s", str); (void) str; }
-		void error(const char* str) { QERR("queue.xml: %s", str); }
-		void fatalError(const char* str) { QERR("queue.xml: %s", str); broken = true; }
+		void warning(const char* str) override { QDBG("queue.xml: %s", str); (void) str; }
+		void error(const char* str) override { QERR("queue.xml: %s", str); }
+		void fatalError(const char* str) override { QERR("queue.xml: %s", str); broken = true; }
 
-		void startElement(const char*, const char* localName, const char*, const AttributeList& list)
+		void startElement(const char*, const char* localName, const char*, const AttributeList& list) override
 		{
 			const std::string_view element = elementName(localName);
 
@@ -501,7 +501,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 				startChunk(list);
 		}
 
-		void endElement(const char*, const char* localName, const char*)
+		void endElement(const char*, const char* localName, const char*) override
 		{
 			if (!Samurai::Util::iequals(elementName(localName), "File")) return;
 

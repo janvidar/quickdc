@@ -45,7 +45,7 @@ class CommandProxy : public QuickDC::CommandProxy {
 		/**
 		 * Parse and process the available data.
 		 */
-		virtual void invoke(const char* command, size_t length);
+		virtual void invoke(const char* command, size_t length) override;
 		
 		/**
 		 * The default command parser (if no valid ones are found).
@@ -59,9 +59,9 @@ class CommandProxy : public QuickDC::CommandProxy {
 		/**
 		 * Processors
 		 */
-		virtual bool read();
+		virtual bool read() override;
 		virtual bool write(); /* flush? */
-		virtual void close();
+		virtual void close() override;
 		virtual void connect();
 
 		/**

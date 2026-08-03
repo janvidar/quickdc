@@ -197,14 +197,14 @@ class Command : public QuickDC::CommandBase
 		 */
 		void setPriority(enum Priority prio) { priority = prio; }
 
-		const char* getRawCommand();
+		const char* getRawCommand() override;
 
-		size_t getSize();
+		size_t getSize() override;
 		
 		/**
 		 * Writes the command to the given buffer.
 		 */
-		void write(Samurai::IO::Buffer* stream);
+		void write(Samurai::IO::Buffer* stream) override;
 		
 		/**
 		 * Writes the command to the given buffer.

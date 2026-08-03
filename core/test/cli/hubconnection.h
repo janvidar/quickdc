@@ -14,28 +14,28 @@ class HubConnection : public QuickDC::Hub, public QuickDC::HubListener {
 		
 		void status(const char* string, const char* string2);
 
-		void EventNetStatus(enum StatusNetwork netstate);
-		void EventHubStatus(enum StatusHub);
-		void EventSystemError(const char*);
+		void EventNetStatus(enum StatusNetwork netstate) override;
+		void EventHubStatus(enum StatusHub) override;
+		void EventSystemError(const char*) override;
 
-		void EventChat(const QuickDC::User* user, const char* message, bool, bool);
+		void EventChat(const QuickDC::User* user, const char* message, bool, bool) override;
 		
-		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action, bool richText);
-		void EventHubMessage(const char* user, const char* message);
+		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action, bool richText) override;
+		void EventHubMessage(const char* user, const char* message) override;
 		
-		void EventUserJoin(const char* user);
-		void EventUserLeave(const QuickDC::User* user, const char* message, bool);
+		void EventUserJoin(const char* user) override;
+		void EventUserLeave(const QuickDC::User* user, const char* message, bool) override;
 
-		void EventUserUpdate(const QuickDC::User*);
-		void EventUsersCleanup();
-		void EventSearchResult(void*);
-		void EventHubName(const char* hubname);
-		bool EventHubRedirect(const char*, uint16_t);
-		void EventHubAutenticate();
+		void EventUserUpdate(const QuickDC::User*) override;
+		void EventUsersCleanup() override;
+		void EventSearchResult(void*) override;
+		void EventHubName(const char* hubname) override;
+		bool EventHubRedirect(const char*, uint16_t) override;
+		void EventHubAutenticate() override;
 
-		bool EventClientConnect(const char* addr, uint16_t port, const QuickDC::User* u);
+		bool EventClientConnect(const char* addr, uint16_t port, const QuickDC::User* u) override;
 
-		bool EventClientConnect(const QuickDC::User* u);
+		bool EventClientConnect(const QuickDC::User* u) override;
 
 	public:
 		bool showjoins;

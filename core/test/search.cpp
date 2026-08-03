@@ -86,7 +86,7 @@ static bool writeFile(const std::string& path, const std::string& content)
 class Replies : public QuickDC::Share::SearchReplyHandler
 {
 	public:
-		void EventSearchReply(QuickDC::Share::SearchReply* reply)
+		void EventSearchReply(QuickDC::Share::SearchReply* reply) override
 		{
 			if (reply && reply->getFile())
 			{
@@ -124,7 +124,7 @@ class Results : public QuickDC::Share::SearchResultHandler
 {
 	public:
 		Results() : received(0) { }
-		void EventSearchResult(QuickDC::Share::SearchResult*) { received++; }
+		void EventSearchResult(QuickDC::Share::SearchResult*) override { received++; }
 		int received;
 };
 

@@ -41,7 +41,7 @@ class Connection :
 		
 		enum ParseMode { None, Header, Body };
 
-		void close();
+		void close() override;
 
 		/**
 		 * Make sure the pipeline is being processed,
@@ -60,19 +60,19 @@ class Connection :
 		bool isServer() const { return !client; }
 
 	protected:
-		bool read();
+		bool read() override;
 		bool write();
 
 	protected:
-		virtual void EventHostLookup(const Samurai::IO::Net::Socket*);
-		virtual void EventHostFound(const Samurai::IO::Net::Socket*);
-		virtual void EventConnecting(const Samurai::IO::Net::Socket*);
-		virtual void EventConnected(const Samurai::IO::Net::Socket*);
-		virtual void EventTimeout(const Samurai::IO::Net::Socket*);
-		virtual void EventDisconnected(const Samurai::IO::Net::Socket*);
-		virtual void EventDataAvailable(const Samurai::IO::Net::Socket*);
-		virtual void EventCanWrite(const Samurai::IO::Net::Socket*);
-		virtual void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg);
+		virtual void EventHostLookup(const Samurai::IO::Net::Socket*) override;
+		virtual void EventHostFound(const Samurai::IO::Net::Socket*) override;
+		virtual void EventConnecting(const Samurai::IO::Net::Socket*) override;
+		virtual void EventConnected(const Samurai::IO::Net::Socket*) override;
+		virtual void EventTimeout(const Samurai::IO::Net::Socket*) override;
+		virtual void EventDisconnected(const Samurai::IO::Net::Socket*) override;
+		virtual void EventDataAvailable(const Samurai::IO::Net::Socket*) override;
+		virtual void EventCanWrite(const Samurai::IO::Net::Socket*) override;
+		virtual void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg) override;
 
 		void generateErrorPage(Samurai::IO::Buffer* buffer, const char* title, const char* message);
 

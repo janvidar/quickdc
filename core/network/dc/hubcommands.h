@@ -51,7 +51,7 @@ class Tag;
 		public: \
 			name(DC::CommandProxy* proxy, DC::HubSession* session) : \
 				DC::HubCommandParser(proxy, session, cmd) { }; \
-			bool invoke(const char* line, size_t length); \
+			bool invoke(const char* line, size_t length) override; \
 	}
 	
 	DC_HCMD_CLASS(BadPass,        "$BadPass");

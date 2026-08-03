@@ -51,7 +51,7 @@ class ConnectionManager
 		Connection* next();
 
 	protected:
-		bool EventMessage(const Samurai::Message*);
+		bool EventMessage(const Samurai::Message*) override;
 
 	protected:
 		std::vector<Connection*> connections;

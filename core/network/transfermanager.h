@@ -89,7 +89,7 @@ class TransferManager
 		Transfer* next();
 	
 	protected:
-		bool EventMessage(const Samurai::Message*);
+		bool EventMessage(const Samurai::Message*) override;
 	
 	protected:
 		std::vector<Transfer*> transfers;

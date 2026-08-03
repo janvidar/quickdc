@@ -76,10 +76,10 @@ class Listener : public QuickDC::Hash::JobListener
 	public:
 		Listener() : started(0), queued(0), hashed(0), progress(0) { }
 
-		void EventFileStarted(const QuickDC::Hash::Job*) { started++; }
-		void EventFileQueued(const QuickDC::Hash::Job*) { queued++; }
-		void EventFileHashed(const QuickDC::Hash::Job*) { hashed++; }
-		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) { progress++; }
+		void EventFileStarted(const QuickDC::Hash::Job*) override { started++; }
+		void EventFileQueued(const QuickDC::Hash::Job*) override { queued++; }
+		void EventFileHashed(const QuickDC::Hash::Job*) override { hashed++; }
+		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) override { progress++; }
 
 		int started;
 		int queued;

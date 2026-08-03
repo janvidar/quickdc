@@ -44,15 +44,15 @@ class Connection : public Samurai::IO::Net::SocketEventHandler
 		const char* getProtocol() const { return protocol; }
 		
 	protected:
-		virtual void EventHostLookup(const Samurai::IO::Net::Socket*) { };
-		virtual void EventHostFound(const Samurai::IO::Net::Socket*) { };
-		virtual void EventConnecting(const Samurai::IO::Net::Socket*) { };
-		virtual void EventConnected(const Samurai::IO::Net::Socket*) = 0;
-		virtual void EventTimeout(const Samurai::IO::Net::Socket*) = 0;
-		virtual void EventDisconnected(const Samurai::IO::Net::Socket*) = 0;
-		virtual void EventDataAvailable(const Samurai::IO::Net::Socket*) = 0;
-		virtual void EventCanWrite(const Samurai::IO::Net::Socket*) = 0;
-		virtual void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError error, const char*) = 0;
+		virtual void EventHostLookup(const Samurai::IO::Net::Socket*) override { };
+		virtual void EventHostFound(const Samurai::IO::Net::Socket*) override { };
+		virtual void EventConnecting(const Samurai::IO::Net::Socket*) override { };
+		virtual void EventConnected(const Samurai::IO::Net::Socket*) override = 0;
+		virtual void EventTimeout(const Samurai::IO::Net::Socket*) override = 0;
+		virtual void EventDisconnected(const Samurai::IO::Net::Socket*) override = 0;
+		virtual void EventDataAvailable(const Samurai::IO::Net::Socket*) override = 0;
+		virtual void EventCanWrite(const Samurai::IO::Net::Socket*) override = 0;
+		virtual void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError error, const char*) override = 0;
 	
 	protected:
 		std::shared_ptr<Samurai::IO::Net::Socket> socket;

@@ -80,8 +80,8 @@ class ConsoleInputUnix : public ConsoleInput
 		ConsoleInputUnix();
 		~ConsoleInputUnix();
 		
-		bool isOK();
-		bool getByte(char& byte);
+		bool isOK() override;
+		bool getByte(char& byte) override;
 
 		/** The terminal descriptor, for the reader thread to poll on. */
 		int getFD() const { return fd; }
@@ -165,7 +165,7 @@ class ConsoleWakeHandler : public Samurai::IO::Net::SocketEventHandler
 		ConsoleWakeHandler(Console* console_) : console(console_) { }
 
 	protected:
-		void EventDataAvailable(const Samurai::IO::Net::Socket*)
+		void EventDataAvailable(const Samurai::IO::Net::Socket*) override
 		{
 			console->drainWakeup();
 		}

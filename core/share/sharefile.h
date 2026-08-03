@@ -75,10 +75,10 @@ class File : public QuickDC::Hash::JobListener {
 		int getLevel();
 		
 	protected:
-		void EventFileStarted(const QuickDC::Hash::Job*);
-		void EventFileQueued(const QuickDC::Hash::Job*);
-		void EventFileHashed(const QuickDC::Hash::Job*);
-		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t);
+		void EventFileStarted(const QuickDC::Hash::Job*) override;
+		void EventFileQueued(const QuickDC::Hash::Job*) override;
+		void EventFileHashed(const QuickDC::Hash::Job*) override;
+		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) override;
 		
 	protected:
 		QuickDC::Share::Dir* directory;

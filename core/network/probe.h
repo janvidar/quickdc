@@ -69,17 +69,17 @@ class ProtocolProbe : public Connection, public Samurai::TimerListener {
 		void close();
 
 	protected:
-		void EventTimeout(Samurai::Timer* timer);
-		void EventHostLookup(const Samurai::IO::Net::Socket*);
-		void EventHostFound(const Samurai::IO::Net::Socket*);
-		void EventConnecting(const Samurai::IO::Net::Socket*);
-		void EventConnected(const Samurai::IO::Net::Socket*);
-		void EventTimeout(const Samurai::IO::Net::Socket*);
-		void EventDisconnected(const Samurai::IO::Net::Socket*);
-		void EventDataAvailable(const Samurai::IO::Net::Socket*);
-		void EventCanWrite(const Samurai::IO::Net::Socket*);
-		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char*);
-		void EventTLSConnected(const Samurai::IO::Net::Socket*);
+		void EventTimeout(Samurai::Timer* timer) override;
+		void EventHostLookup(const Samurai::IO::Net::Socket*) override;
+		void EventHostFound(const Samurai::IO::Net::Socket*) override;
+		void EventConnecting(const Samurai::IO::Net::Socket*) override;
+		void EventConnected(const Samurai::IO::Net::Socket*) override;
+		void EventTimeout(const Samurai::IO::Net::Socket*) override;
+		void EventDisconnected(const Samurai::IO::Net::Socket*) override;
+		void EventDataAvailable(const Samurai::IO::Net::Socket*) override;
+		void EventCanWrite(const Samurai::IO::Net::Socket*) override;
+		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char*) override;
+		void EventTLSConnected(const Samurai::IO::Net::Socket*) override;
 
 	protected:
 		Samurai::Timer* timer;

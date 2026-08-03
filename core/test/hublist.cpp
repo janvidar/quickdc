@@ -53,19 +53,19 @@ class Connection : public Samurai::IO::Net::SocketEventHandler {
 			printf("*** %s\n", msg);
 		}
 		
-		void EventHostLookup(const Samurai::IO::Net::Socket*) {
+		void EventHostLookup(const Samurai::IO::Net::Socket*) override {
 			status("Looking up host...");
 		}
 		
-		void EventHostFound(const Samurai::IO::Net::Socket*) {
+		void EventHostFound(const Samurai::IO::Net::Socket*) override {
 			status("Host found.");
 		}
 		
-		void EventConnecting(const Samurai::IO::Net::Socket*) {
+		void EventConnecting(const Samurai::IO::Net::Socket*) override {
 			status("Connecting ...");
 		}
 		
-		void EventConnected(const Samurai::IO::Net::Socket*) {
+		void EventConnected(const Samurai::IO::Net::Socket*) override {
 			status("Connected.");
 			if (socket->TLSInitialize(false)) {
 				socket->TLSsendHandshake();
@@ -75,27 +75,27 @@ class Connection : public Samurai::IO::Net::SocketEventHandler {
 			}
 		}
 		
-		void EventTLSConnected(const Samurai::IO::Net::Socket*) {
+		void EventTLSConnected(const Samurai::IO::Net::Socket*) override {
 			status("TLS Connected -- Secure connection established.");
 			socket->write("HEAD / HTTP/1.0\r\n\r\n", 20);
 		}
 	
-		void EventTLSDisconnected(const Samurai::IO::Net::Socket*) {
+		void EventTLSDisconnected(const Samurai::IO::Net::Socket*) override {
 			status("TLS disconnect -- No longer secure connection.");
 		}
 
 		
-		void EventTimeout(const Samurai::IO::Net::Socket*) {
+		void EventTimeout(const Samurai::IO::Net::Socket*) override {
 			status("Connection timed out...");
 			running = false;
 		}
 		
-		void EventDisconnected(const Samurai::IO::Net::Socket*) {
+		void EventDisconnected(const Samurai::IO::Net::Socket*) override {
 			status("Disconnected...");
 			running = false;
 		}
 		
-		void EventDataAvailable(const Samurai::IO::Net::Socket*) {
+		void EventDataAvailable(const Samurai::IO::Net::Socket*) override {
 			char* buffer = new char[1024];
 			size_t bytes = socket->read(buffer, 1024);
 			buffer[bytes] = 0;
@@ -108,11 +108,11 @@ class Connection : public Samurai::IO::Net::SocketEventHandler {
 			delete[] buffer;
 		}
 
-		void EventCanWrite(const Samurai::IO::Net::Socket*) {
+		void EventCanWrite(const Samurai::IO::Net::Socket*) override {
 			/* can write */
 		}
 		
-		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError /*error*/, const char* msg) {
+		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError /*error*/, const char* msg) override {
 			printf(" ERROR: %s\n", msg);
 			running = false;
 		}

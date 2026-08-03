@@ -136,17 +136,17 @@ namespace ADC {
 			void onQuit(HubUser* user, const char* msg = 0);
 			
 		protected:
-			void EventHostLookup(const Samurai::IO::Net::Socket*);
-			void EventHostFound(const Samurai::IO::Net::Socket*);
-			void EventConnecting(const Samurai::IO::Net::Socket*);
-			void EventConnected(const Samurai::IO::Net::Socket*);
-			void EventTimeout(const Samurai::IO::Net::Socket*);
-			void EventTimeout(Samurai::Timer*);
-			void EventDisconnected(const Samurai::IO::Net::Socket*);
-			void EventDataAvailable(const Samurai::IO::Net::Socket*);
-			void EventCanWrite(const Samurai::IO::Net::Socket*);
-			void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg);
-			bool EventMessage(const Samurai::Message*);
+			void EventHostLookup(const Samurai::IO::Net::Socket*) override;
+			void EventHostFound(const Samurai::IO::Net::Socket*) override;
+			void EventConnecting(const Samurai::IO::Net::Socket*) override;
+			void EventConnected(const Samurai::IO::Net::Socket*) override;
+			void EventTimeout(const Samurai::IO::Net::Socket*) override;
+			void EventTimeout(Samurai::Timer*) override;
+			void EventDisconnected(const Samurai::IO::Net::Socket*) override;
+			void EventDataAvailable(const Samurai::IO::Net::Socket*) override;
+			void EventCanWrite(const Samurai::IO::Net::Socket*) override;
+			void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg) override;
+			bool EventMessage(const Samurai::Message*) override;
 	
 		public:
 			/**

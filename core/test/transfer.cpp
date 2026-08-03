@@ -54,7 +54,7 @@ class Listener : public QuickDC::PrivateTransferListener
 {
 	public:
 		Listener() : stopped(false), last(0) { }
-		void onTransferStopped(QuickDC::Transfer* which) { stopped = true; last = which; }
+		void onTransferStopped(QuickDC::Transfer* which) override { stopped = true; last = which; }
 		bool stopped;
 
 		/** Which transfer the manager named, so a test can check it is the right one. */

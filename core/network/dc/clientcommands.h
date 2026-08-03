@@ -17,7 +17,7 @@
 			name(DC::CommandProxy* proxy, DC::ClientSession* session) : \
 				DC::ClientCommandParser(proxy, session, cmd) { }; \
 				\
-				bool invoke(const char* line, size_t length); \
+				bool invoke(const char* line, size_t length) override; \
 	};
 
 namespace DC {

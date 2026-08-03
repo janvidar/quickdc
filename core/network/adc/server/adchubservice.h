@@ -61,7 +61,7 @@ class ServiceMap {
 	class N : public ADC::Service { \
 		public: \
 			N(ADC::ServiceMap* map) : ADC::Service(map, NAME, DESC) { }; \
-			bool invoke(ADC::Command*); \
+			bool invoke(ADC::Command*) override; \
 };
 
 	ADC_HUB_SERVICE_CLASS(AdcSrvVersion, "version", "Show server version");

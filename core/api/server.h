@@ -31,10 +31,10 @@ class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samur
 		void send(Samurai::IO::Net::DatagramPacket*);
 		
 	protected:
-		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char* msg);
-		void EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, std::shared_ptr<Samurai::IO::Net::Socket> socket);
-		void EventGotDatagram(Samurai::IO::Net::DatagramSocket*, Samurai::IO::Net::DatagramPacket*);
-		void EventDatagramError(const Samurai::IO::Net::DatagramSocket*, const char* msg);
+		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char* msg) override;
+		void EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, std::shared_ptr<Samurai::IO::Net::Socket> socket) override;
+		void EventGotDatagram(Samurai::IO::Net::DatagramSocket*, Samurai::IO::Net::DatagramPacket*) override;
+		void EventDatagramError(const Samurai::IO::Net::DatagramSocket*, const char* msg) override;
 
 	protected:
 		std::shared_ptr<Samurai::IO::Net::ServerSocket> socket;

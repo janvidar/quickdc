@@ -162,15 +162,15 @@ class XMLReader : public XML::SAX::ContentHandler {
 		bool parse();
 	
 	public:
-		void startDocument();
-		void endDocument();
-		void startElement(const char*, const char* localName, const char*, const AttributeList& list);
-		void endElement(const char*, const char* localName, const char*);
-		void characters(const char* ch, size_t, size_t);
-		void ignorableWhitespace(const char*, size_t, size_t);
-		void warning(const char* str);
-		void error(const char* str);
-		void fatalError(const char*);
+		void startDocument() override;
+		void endDocument() override;
+		void startElement(const char*, const char* localName, const char*, const AttributeList& list) override;
+		void endElement(const char*, const char* localName, const char*) override;
+		void characters(const char* ch, size_t, size_t) override;
+		void ignorableWhitespace(const char*, size_t, size_t) override;
+		void warning(const char* str) override;
+		void error(const char* str) override;
+		void fatalError(const char*) override;
 		
 	protected:
 		void onProblem();

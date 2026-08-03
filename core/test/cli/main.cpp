@@ -59,7 +59,7 @@ static void onTerminate(int)
 class TransferReporter : public QuickDC::TransferListener
 {
 	public:
-		void EventTransferStarted(QuickDC::Transfer* xfer)
+		void EventTransferStarted(QuickDC::Transfer* xfer) override
 		{
 			if (!xfer) return;
 
@@ -70,7 +70,7 @@ class TransferReporter : public QuickDC::TransferListener
 				Samurai::Util::formatSize(xfer->getLength()).c_str());
 		}
 
-		void EventTransferFinished(QuickDC::Transfer* xfer)
+		void EventTransferFinished(QuickDC::Transfer* xfer) override
 		{
 			if (!xfer) return;
 
@@ -84,12 +84,12 @@ class TransferReporter : public QuickDC::TransferListener
 				moved.c_str(), rate.c_str());
 		}
 
-		void EventTransferStopped(QuickDC::Transfer* xfer)
+		void EventTransferStopped(QuickDC::Transfer* xfer) override
 		{
 			report(xfer, "stopped");
 		}
 
-		void EventTransferError(QuickDC::Transfer* xfer)
+		void EventTransferError(QuickDC::Transfer* xfer) override
 		{
 			report(xfer, "failed");
 		}
@@ -128,7 +128,7 @@ static TransferReporter transferReporter;
 class CoreListener : public QuickDC::DCServerListener
 {
 	public:
-		bool EventGotConnection(const char* address, uint16_t port)
+		bool EventGotConnection(const char* address, uint16_t port) override
 		{
 			console_printf(" * NET: Got connection from %s:%d\n", address, port);
 			return true;

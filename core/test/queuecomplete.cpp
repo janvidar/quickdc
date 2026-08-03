@@ -104,10 +104,10 @@ static std::string readFile(const std::string& path)
 class Watcher : public QuickDC::QueueListener
 {
 	public:
-		void EventQueueFileAdded(const QuickDC::QueueFile*) { added++; }
-		void EventQueueFileRemoved(const QuickDC::QueueFile*) { removed++; }
+		void EventQueueFileAdded(const QuickDC::QueueFile*) override { added++; }
+		void EventQueueFileRemoved(const QuickDC::QueueFile*) override { removed++; }
 
-		void EventQueueFileVerified(const QuickDC::QueueFile* file)
+		void EventQueueFileVerified(const QuickDC::QueueFile* file) override
 		{
 			verified++;
 			if (file) name = file->getLocalFilename();
@@ -123,11 +123,11 @@ class Watcher : public QuickDC::QueueListener
 class Hasher : public QuickDC::Hash::JobListener
 {
 	public:
-		void EventFileStarted(const QuickDC::Hash::Job*) { }
-		void EventFileQueued(const QuickDC::Hash::Job*) { }
-		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) { }
+		void EventFileStarted(const QuickDC::Hash::Job*) override { }
+		void EventFileQueued(const QuickDC::Hash::Job*) override { }
+		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) override { }
 
-		void EventFileHashed(const QuickDC::Hash::Job* job)
+		void EventFileHashed(const QuickDC::Hash::Job* job) override
 		{
 			/* getHashSum() hands back a static buffer, so copy it. */
 			if (job) tth = job->getHashSum();

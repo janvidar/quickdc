@@ -153,7 +153,7 @@ class SimpleJob : public Job
 		virtual ~SimpleJob();
 
 		/* The leaves come from the cache, so there is nothing left to hash. */
-		virtual bool runToCompletion(std::atomic<uint64_t>& done, std::atomic<uint64_t>& total);
+		virtual bool runToCompletion(std::atomic<uint64_t>& done, std::atomic<uint64_t>& total) override;
 
 	private:
 };

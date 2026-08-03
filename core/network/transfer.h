@@ -156,8 +156,8 @@ class Upload : public Transfer
 		virtual ~Upload();
 
 	protected:
-		virtual void transfer();
-		virtual void close();
+		virtual void transfer() override;
+		virtual void close() override;
 		
 	protected:
 		/** Holds file bytes on their way to the socket; sized to the send buffer. */
@@ -185,11 +185,11 @@ class ZUpload : public Upload
 		virtual ~ZUpload();
 
 	protected:
-		virtual void transfer();
-		virtual void close();
+		virtual void transfer() override;
+		virtual void close() override;
 
 		/** Also requires the codec to be flushed and the buffer drained. */
-		virtual bool isTransferComplete() const;
+		virtual bool isTransferComplete() const override;
 
 	private:
 		/**
@@ -232,8 +232,8 @@ class Download : public Transfer {
 		void pushPending(const char* data, size_t length);
 
 	protected:
-		virtual void transfer();
-		virtual void close();
+		virtual void transfer() override;
+		virtual void close() override;
 
 	protected:
 		std::vector<char> downloadBuffer;

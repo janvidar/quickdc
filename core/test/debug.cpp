@@ -69,33 +69,33 @@ class Telnet : public SocketEventHandler {
 			printf("*** %s\n", msg);
 		}
 		
-		void EventHostLookup(const Socket*) {
+		void EventHostLookup(const Socket*) override {
 			status("Looking up host...");
 		}
 		
-		void EventHostFound(const Socket*) {
+		void EventHostFound(const Socket*) override {
 			status("Host found.");
 		}
 		
-		void EventConnecting(const Socket*) {
+		void EventConnecting(const Socket*) override {
 			status("Connecting ...");
 		}
 		
-		void EventConnected(const Socket*) {
+		void EventConnected(const Socket*) override {
 			status("Connected.");
 		}
 		
-		void EventTimeout(const Socket*) {
+		void EventTimeout(const Socket*) override {
 			status("Connection timed out...");
 		}
 		
-		void EventDisconnected(const Socket*) {
+		void EventDisconnected(const Socket*) override {
 			status("Disconnected...");
 			disconnect();
 			exit((int) 0);
 		}
 		
-		void EventDataAvailable(const Socket*) {
+		void EventDataAvailable(const Socket*) override {
 			char* buffer = new char[1024];
 			size_t bytes = socket->read(buffer, 1024);
 			buffer[bytes] = 0;
@@ -107,11 +107,11 @@ class Telnet : public SocketEventHandler {
 			delete[] buffer;
 		}
 
-		void EventCanWrite(const Socket*) {
+		void EventCanWrite(const Socket*) override {
 			/* can write */
 		}
 		
-		void EventError(const Socket*, SocketError error, const char* msg) { 
+		void EventError(const Socket*, SocketError error, const char* msg) override { 
 			printf(" ERROR: %s\n", msg);
 			disconnect();
 			exit((int) error);

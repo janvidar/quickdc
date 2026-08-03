@@ -26,9 +26,9 @@ class Command : public QuickDC::CommandBase
 		Command();
 		virtual ~Command();
 		
-		size_t getSize();
-		void write(Samurai::IO::Buffer* stream);
-		const char* getRawCommand();
+		size_t getSize() override;
+		void write(Samurai::IO::Buffer* stream) override;
+		const char* getRawCommand() override;
 		
 	protected:
 		Samurai::IO::Buffer* buffer;
@@ -48,7 +48,7 @@ class HubCommandParser : public DC::CommandParser
 		HubCommandParser(DC::CommandProxy* proxy, DC::HubSession* session, const char* cmd);
 		virtual ~HubCommandParser();
 		
-		virtual bool invoke(const char* line, size_t length) = 0;
+		virtual bool invoke(const char* line, size_t length) override = 0;
 	
 	protected:
 		DC::CommandProxy* proxy;
@@ -61,7 +61,7 @@ class ClientCommandParser : public DC::CommandParser
 		ClientCommandParser(DC::CommandProxy* proxy, DC::ClientSession* session, const char* cmd);
 		virtual ~ClientCommandParser();
 		
-		virtual bool invoke(const char* line, size_t length) = 0;
+		virtual bool invoke(const char* line, size_t length) override = 0;
 	
 	protected:
 		DC::CommandProxy* proxy;

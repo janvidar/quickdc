@@ -395,7 +395,7 @@ class Hub
 		char* canonicalUrl;
 		Samurai::Timer* timer;
 		
-		void EventTimeout(Samurai::Timer*);
+		void EventTimeout(Samurai::Timer*) override;
 
 	friend class HubManager;
 	friend class ClientSession;

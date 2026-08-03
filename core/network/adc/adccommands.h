@@ -24,7 +24,7 @@ void addSupportFlags(ADC::Command& command, bool client);
 	class N : public ADC::HubCommandParser { \
 		public: \
 			N(ADC::CommandProxy* proxy, ADC::HubSession* session) : ADC::HubCommandParser(proxy, session) { }; \
-			bool invoke(ADC::Command*); \
+			bool invoke(ADC::Command*) override; \
 	};
 
 
@@ -32,7 +32,7 @@ void addSupportFlags(ADC::Command& command, bool client);
 	class N : public ADC::ClientCommandParser { \
 		public: \
 			N(ADC::CommandProxy* proxy, ADC::ClientSession* session) : ADC::ClientCommandParser(proxy, session) { }; \
-			bool invoke(ADC::Command*); \
+			bool invoke(ADC::Command*) override; \
 	};
 
 
@@ -40,7 +40,7 @@ void addSupportFlags(ADC::Command& command, bool client);
 	class N : public ADC::LocalHubParser { \
 		public: \
 			N(ADC::CommandProxy* proxy, ADC::Hub* hub) : ADC::LocalHubParser(proxy, hub) { }; \
-			bool invoke(ADC::Command*); \
+			bool invoke(ADC::Command*) override; \
 	};
 
 	ADC_HUB_CMD_CLASS(CmdGetPass);

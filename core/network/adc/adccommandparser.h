@@ -33,7 +33,7 @@ class HubCommandParser : public ADC::CommandParser
 		HubCommandParser(CommandProxy* proxy, HubSession* session);
 		virtual ~HubCommandParser();
 		
-		virtual bool invoke(Command*) = 0;
+		virtual bool invoke(Command*) override = 0;
 		
 	protected:
 		HubSession* session;
@@ -46,7 +46,7 @@ class ClientCommandParser : public ADC::CommandParser
 		ClientCommandParser(CommandProxy* proxy, ClientSession* session);
 		virtual ~ClientCommandParser();
 		
-		virtual bool invoke(Command*) = 0;
+		virtual bool invoke(Command*) override = 0;
 		
 	protected:
 		ClientSession* session;
@@ -59,7 +59,7 @@ class LocalHubParser : public ADC::CommandParser
 		LocalHubParser(CommandProxy* proxy, Hub* hub);
 		virtual ~LocalHubParser();
 		
-		virtual bool invoke(Command*) = 0;
+		virtual bool invoke(Command*) override = 0;
 		
 	protected:
 		Hub* hub;

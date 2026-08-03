@@ -33,10 +33,10 @@ class Recorder : public XML::SAX::ContentHandler
 	public:
 		std::string log;
 
-		void startDocument() { log += "[doc]"; }
-		void endDocument() { log += "[/doc]"; }
+		void startDocument() override { log += "[doc]"; }
+		void endDocument() override { log += "[/doc]"; }
 
-		void startElement(const char*, const char* localName, const char*, const AttributeList& list)
+		void startElement(const char*, const char* localName, const char*, const AttributeList& list) override
 		{
 			log += "<";
 			log += localName;
@@ -50,25 +50,25 @@ class Recorder : public XML::SAX::ContentHandler
 			log += ">";
 		}
 
-		void endElement(const char*, const char* localName, const char*)
+		void endElement(const char*, const char* localName, const char*) override
 		{
 			log += "</";
 			log += localName;
 			log += ">";
 		}
 
-		void characters(const char* ch, size_t start, size_t length)
+		void characters(const char* ch, size_t start, size_t length) override
 		{
 			log += "'";
 			log += std::string(&ch[start], length);
 			log += "'";
 		}
 
-		void ignorableWhitespace(const char*, size_t, size_t) { }
+		void ignorableWhitespace(const char*, size_t, size_t) override { }
 
-		void warning(const char* str) { log += "[warn:"; log += str; log += "]"; }
-		void error(const char* str) { log += "[err:"; log += str; log += "]"; }
-		void fatalError(const char* str) { log += "[fatal:"; log += str; log += "]"; }
+		void warning(const char* str) override { log += "[warn:"; log += str; log += "]"; }
+		void error(const char* str) override { log += "[err:"; log += str; log += "]"; }
+		void fatalError(const char* str) override { log += "[fatal:"; log += str; log += "]"; }
 };
 
 namespace XML {

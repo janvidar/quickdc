@@ -79,8 +79,8 @@ class ClientSession :
 		void setHubSession(QuickDC::HubSession* hubsession) { this->hubsession = hubsession; }
 		void initialize();
 		
-		void onStartServer();
-		void onStartClient();
+		void onStartServer() override;
+		void onStartClient() override;
 		
 		void onINF(const char* cid, const char* token);
 		
@@ -119,22 +119,22 @@ class ClientSession :
 		bool supports(const char* feature);
 
 	protected:
-		void EventHostLookup(const Samurai::IO::Net::Socket*);
-		void EventHostFound(const Samurai::IO::Net::Socket*);
-		void EventConnecting(const Samurai::IO::Net::Socket*);
-		void EventConnected(const Samurai::IO::Net::Socket*);
-		void EventTLSConnected(const Samurai::IO::Net::Socket*);
-		void EventTLSDisconnected(const Samurai::IO::Net::Socket*);
-		void EventTimeout(const Samurai::IO::Net::Socket*);
-		void EventDisconnected(const Samurai::IO::Net::Socket*);
-		void EventDataAvailable(const Samurai::IO::Net::Socket*);
-		void EventCanWrite(const Samurai::IO::Net::Socket*);
-		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg);
+		void EventHostLookup(const Samurai::IO::Net::Socket*) override;
+		void EventHostFound(const Samurai::IO::Net::Socket*) override;
+		void EventConnecting(const Samurai::IO::Net::Socket*) override;
+		void EventConnected(const Samurai::IO::Net::Socket*) override;
+		void EventTLSConnected(const Samurai::IO::Net::Socket*) override;
+		void EventTLSDisconnected(const Samurai::IO::Net::Socket*) override;
+		void EventTimeout(const Samurai::IO::Net::Socket*) override;
+		void EventDisconnected(const Samurai::IO::Net::Socket*) override;
+		void EventDataAvailable(const Samurai::IO::Net::Socket*) override;
+		void EventCanWrite(const Samurai::IO::Net::Socket*) override;
+		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg) override;
 
 		void send(ADC::Command* cmd, bool more = false);
 
 	public:
-		void onTransferStopped(QuickDC::Transfer* which);
+		void onTransferStopped(QuickDC::Transfer* which) override;
 		
 	protected:
 		/* Held by value, so that a lookup compares the name and not a pointer. */

@@ -34,13 +34,13 @@ class Preferences : public IniParser {
 		void remove(const std::string& key);
 		bool haveSetting(const std::string& key);
 
-		virtual bool write();
-		virtual bool read();
+		virtual bool write() override;
+		virtual bool read() override;
 
 	protected:
-		void readSectionStart(const std::string& group);
-		void readSectionEnd(const std::string& group);
-		void readSetting(const std::string& name, const std::string& value);
+		void readSectionStart(const std::string& group) override;
+		void readSectionEnd(const std::string& group) override;
+		void readSetting(const std::string& name, const std::string& value) override;
 
 	protected:
 		bool dirty;

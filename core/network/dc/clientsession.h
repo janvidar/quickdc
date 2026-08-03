@@ -89,8 +89,8 @@ class ClientSession :
 		void onADCSend(const char* filename, uint32_t type, uint64_t offset, int64_t length, bool zlib);
 		void onSend();
 
-		void onStartServer();
-		void onStartClient();
+		void onStartServer() override;
+		void onStartClient() override;
 		
 		void sendChallenge();
 		void sendDirection();
@@ -119,19 +119,19 @@ class ClientSession :
 		{ return remote_nickname.empty() ? 0 : remote_nickname.c_str(); }
 		
 	protected:
-		void EventConnected(const Samurai::IO::Net::Socket*);
-		void EventTimeout(const Samurai::IO::Net::Socket*);
-		void EventDisconnected(const Samurai::IO::Net::Socket*);
-		void EventDataAvailable(const Samurai::IO::Net::Socket*);
-		void EventCanWrite(const Samurai::IO::Net::Socket*);
-		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg);
+		void EventConnected(const Samurai::IO::Net::Socket*) override;
+		void EventTimeout(const Samurai::IO::Net::Socket*) override;
+		void EventDisconnected(const Samurai::IO::Net::Socket*) override;
+		void EventDataAvailable(const Samurai::IO::Net::Socket*) override;
+		void EventCanWrite(const Samurai::IO::Net::Socket*) override;
+		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg) override;
 
 	protected:
 		void send(DC::Command* cmd, bool more = false);
 		void resetIdleTimer();
 		
 	public:
-		void onTransferStopped(QuickDC::Transfer* which);
+		void onTransferStopped(QuickDC::Transfer* which) override;
 		
 	protected:
 		/*
