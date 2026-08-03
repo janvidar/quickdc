@@ -136,7 +136,16 @@ bool DC::ConnectToMe::invoke(const char* data, size_t length) {
 	const std::string address(host);
 	const std::string port(endpoint.rest());
 
-	session->onActiveConnect(address.c_str(), static_cast<uint16_t>(atoi(port.c_str())),
+	/*
+	 * to_uint16 answers 0 for anything that is not entirely digits within range,
+	 * and there is nothing to dial on port 0 either - so one number covers both.
+	 * atoi truncated instead, which turned a request naming port 70000 into a
+	 * connection to 4464, on a field the hub chooses.
+	 */
+	const uint16_t number = Samurai::Util::Convert::to_uint16(port);
+	if (!number) return false;
+
+	session->onActiveConnect(address.c_str(), number,
 		sendernick.empty() ? 0 : sendernick.c_str());
 
 	return true;
@@ -175,11 +184,13 @@ bool DC::ForceMove::invoke(const char* data, size_t length) {
 	Reader line(data, length);
 	if (!line.skip("$ForceMove ")) return false;
 
+	/* The port is optional here, so an absent one is the default rather than a
+	   refusal - but one that was given and cannot be read is a broken command. */
 	uint16_t port = 411;
 	std::string_view host;
 	if (line.field(':', host)) {
-		const std::string number(line.rest());
-		port = static_cast<uint16_t>(atoi(number.c_str()));
+		port = Samurai::Util::Convert::to_uint16(std::string(line.rest()));
+		if (!port) return false;
 	} else {
 		host = line.rest();
 	}

@@ -841,7 +841,26 @@ static void run()
 			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4"));
 			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick :411"));
 			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4:"));
+
+			/*
+			 * A port is sixteen bits and the hub picks the number. Truncating
+			 * one that does not fit dials somewhere else entirely - 70000 lands
+			 * on 4464 - so a port that cannot be read refuses the command.
+			 */
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4:70000"));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4:65536"));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4:0"));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4:-1"));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4:411x"));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4:abc"));
 			CHECK(s.listener.connectTo.empty());
+
+			/* The largest one that does fit is still accepted. */
+			CHECK(h.call("$ConnectToMe", "$ConnectToMe " + s.nick + " 127.0.0.1:65535"));
+			CHECK(s.listener.connectTo.size() == 1
+				&& s.listener.connectTo[0] == "127.0.0.1:65535");
+			s.listener.connectTo.clear();
+			s.listener.connectToKnown = 0;
 
 			/* One nick is ours, and the hub is not saying who is calling. */
 			CHECK(h.call("$ConnectToMe", "$ConnectToMe " + s.nick + " 127.0.0.1:411"));
@@ -1032,6 +1051,13 @@ static void run()
 			CHECK(s.listener.redirects.size() == 1);
 			CHECK(!s.listener.redirects.empty()
 				&& s.listener.redirects[0] == "otherhub:412");
+
+			/* Given but unreadable is a broken command, where absent is not. */
+			CHECK(!h.call("$ForceMove", "$ForceMove otherhub:70000"));
+			CHECK(!h.call("$ForceMove", "$ForceMove otherhub:0"));
+			CHECK(!h.call("$ForceMove", "$ForceMove otherhub:abc"));
+			CHECK(!h.call("$ForceMove", "$ForceMove otherhub:"));
+			CHECK(s.listener.redirects.size() == 1);
 
 			/* No port named, and 411 is the default in DC. */
 			CHECK(h.call("$ForceMove", "$ForceMove otherhub"));
