@@ -4,6 +4,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "quickdc.h"
@@ -21,9 +22,88 @@
 #include "share/searchresult.h"
 #include "share/filetypes.h"
 #include <string>
+#include <string_view>
 #include <vector>
 #include "network/dc/lock.h"
 #include "network/dc/textescape.h"
+
+namespace {
+
+/**
+ * A bounded view of the line a handler was given.
+ *
+ * Everything here decodes a line a hub sent, and a hub has authenticated
+ * nothing at the point it can send one, so the length the handler is handed is
+ * the only thing that says where that line stops: a fixed offset into it is
+ * only there if the hub chose to send that much. Reader keeps the two
+ * together - a prefix is skipped only when it is really present, and a field is
+ * taken only when the separator that ends it is - so a handler built on it
+ * cannot read beyond the line at all, whatever arrives.
+ */
+class Reader
+{
+	public:
+		Reader(const char* data, size_t length)
+			: text(data ? std::string_view(data, length) : std::string_view()) { }
+
+		explicit Reader(std::string_view view) : text(view) { }
+
+		bool empty() const { return text.empty(); }
+
+		/** Whatever has not been taken yet. */
+		std::string_view rest() const { return text; }
+
+		/** Consume 'prefix', or leave the line untouched and say it is absent. */
+		bool skip(std::string_view prefix)
+		{
+			if (text.size() < prefix.size()) return false;
+			if (text.compare(0, prefix.size(), prefix) != 0) return false;
+			text.remove_prefix(prefix.size());
+			return true;
+		}
+
+		/** Take everything up to the first 'sep', and the separator with it. */
+		bool field(std::string_view sep, std::string_view& out)
+		{
+			const size_t at = text.find(sep);
+			if (at == std::string_view::npos) return false;
+			out = text.substr(0, at);
+			text.remove_prefix(at + sep.size());
+			return true;
+		}
+
+		bool field(char sep, std::string_view& out)
+		{
+			return field(std::string_view(&sep, 1), out);
+		}
+
+		/** The same, but splitting at the last 'sep' rather than the first. */
+		bool lastField(char sep, std::string_view& out)
+		{
+			const size_t at = text.rfind(sep);
+			if (at == std::string_view::npos) return false;
+			out = text.substr(0, at);
+			text.remove_prefix(at + 1);
+			return true;
+		}
+
+	private:
+		std::string_view text;
+};
+
+/**
+ * TextEscape::unescape() rewrites the string it is given in place, so it needs
+ * a buffer of its own rather than a view into the line. It only ever shortens,
+ * hence the resize afterwards.
+ */
+std::string unescaped(std::string_view text)
+{
+	std::string copy(text);
+	copy.resize(strlen(DC::TextEscape::unescape(&copy[0])));
+	return copy;
+}
+
+}
 
 /**
  * Parse the $ConnectToMe command
@@ -32,37 +112,33 @@
  * Syntax: $ConnectToMe <RemoteNick> <SenderIp>:<SenderPort> 
  *         $ConnectToMe <SenderNick> <RemoteNick> <SenderIp>:<SenderPort> (alternative, who use this?)
  */
-bool DC::ConnectToMe::invoke(const char* data, size_t) {
-	char* address = 0;
-	char* remotenick = 0;
-	char* sendernick = 0;
-	
+bool DC::ConnectToMe::invoke(const char* data, size_t length) {
+	Reader line(data, length);
+	if (!line.skip("$ConnectToMe ")) return false;
+
 	// isolate senderip:port from last space
-	const char* req = strrchr(data, ' ');
-	if (!req) return false;
-	
+	std::string_view nicks;
+	if (!line.lastField(' ', nicks)) return false;
+
 	// detect address:port.
-	const char* port_split = strchr(&req[1], ':');
-	if (!port_split) return false;
-	
-	// detect if one or two nicks are present
-	const char* usplit = strchr(&data[13], ' ');
-	if (usplit != req) {
-		sendernick = strndup(&data[13], &usplit[0]-&data[13]);
-		remotenick = strndup(&usplit[1], &req[0]-&usplit[1]);
-	} else {
-		remotenick = strndup(&data[13], &usplit[0]-&data[13]);
-	}
-	
-	address = strndup(&req[1], &port_split[0]-&req[1]);
-	uint16_t port = (uint16_t) atoi(&port_split[1]);
-	
-	session->onActiveConnect(address, port, sendernick);
-	
-	free(address);
-	free(remotenick);
-	free(sendernick);
-	
+	Reader endpoint(line.rest());
+	std::string_view host;
+	if (!endpoint.field(':', host)) return false;
+	if (host.empty() || endpoint.empty()) return false;
+
+	/* One nick is ours, and only the hub knows it. Two means the sender named
+	   itself first, and that is the nick the connection can be expected from. */
+	std::string sendernick;
+	Reader who(nicks);
+	std::string_view first;
+	if (who.field(' ', first)) sendernick.assign(first);
+
+	const std::string address(host);
+	const std::string port(endpoint.rest());
+
+	session->onActiveConnect(address.c_str(), (uint16_t) atoi(port.c_str()),
+		sendernick.empty() ? 0 : sendernick.c_str());
+
 	return true;
 }
 
@@ -75,12 +151,15 @@ bool DC::ConnectToMe::invoke(const char* data, size_t) {
  * "$RevConnectToMe a b"
  */
 bool DC::RevConnectToMe::invoke(const char* data, size_t length) {
-	if (length < 19) return false;
-	const char* split = strrchr(data, ' ');
-	if (!split) return false;
-	char* user = strndup(&data[16], &split[0]-&data[16]);
-	session->onPassiveConnect(user);
-	free(user);
+	Reader line(data, length);
+	if (!line.skip("$RevConnectToMe ")) return false;
+
+	std::string_view from;
+	if (!line.lastField(' ', from)) return false;
+	if (from.empty() || line.empty()) return false;
+
+	const std::string user(from);
+	session->onPassiveConnect(user.c_str());
 	return true;
 }
 
@@ -93,20 +172,22 @@ bool DC::RevConnectToMe::invoke(const char* data, size_t length) {
  * Default port is 411 in DC.
  */
 bool DC::ForceMove::invoke(const char* data, size_t length) {
-	if (length < 13) return false;
+	Reader line(data, length);
+	if (!line.skip("$ForceMove ")) return false;
 
 	uint16_t port = 411;
-	char* addr = 0;
-	const char* split = strchr(data, ':');
-	if (!split) {
-		addr = strdup(&data[11]);
+	std::string_view host;
+	if (line.field(':', host)) {
+		const std::string number(line.rest());
+		port = (uint16_t) atoi(number.c_str());
 	} else {
-		port = (uint16_t) atoi(&split[1]);
-		addr = strndup(&data[11], &split[0]-&data[11]);
+		host = line.rest();
 	}
-	
-	session->onRedirect(addr, port);
-	free(addr);
+
+	if (host.empty()) return false;
+
+	const std::string addr(host);
+	session->onRedirect(addr.c_str(), port);
 	return true;
 }
 
@@ -139,16 +220,19 @@ bool DC::BadPass::invoke(const char*, size_t) {
  */
 bool DC::Hello::invoke(const char* data, size_t length)
 {
-	if (length < 8) return false;
-	const char* nick = &data[7];
-	
-	if (strcmp(nick, session->getNick()) == 0)
+	Reader line(data, length);
+	if (!line.skip("$Hello ")) return false;
+	if (line.empty()) return false;
+
+	const std::string nick(line.rest());
+
+	if (strcmp(nick.c_str(), session->getNick()) == 0)
 	{
-		session->onRequestMyInfo(nick);
+		session->onRequestMyInfo(nick.c_str());
 	}
 	else
 	{
-		session->users->join(nick);
+		session->users->join(nick.c_str());
 	}
 	return true;
 }
@@ -170,9 +254,12 @@ bool DC::HubIsFull::invoke(const char*, size_t) {
  * "$HubName a" 10 bytes.
  */
 bool DC::HubName::invoke(const char* data, size_t length) {
-	if (length < 10) return false;
-	const char* name = &data[9];
-	session->onHubName(name);
+	Reader line(data, length);
+	if (!line.skip("$HubName ")) return false;
+	if (line.empty()) return false;
+
+	const std::string name(line.rest());
+	session->onHubName(name.c_str());
 	return true;
 }
 
@@ -186,13 +273,16 @@ bool DC::HubName::invoke(const char* data, size_t length) {
  * Shortest lock: "$Lock a Pk=b", 12 bytes
  */
 bool DC::LockParser::invoke(const char* data, size_t length) {
-	if (length < 12) return false;
-	const char* split = strstr(data, " Pk=");
-	if (!split) return false;
-	const char* pk = &split[4];
-	char* lock = strndup(&data[6], &split[0]-&data[6]);
-	session->onLock(lock, pk);
-	free(lock);
+	Reader line(data, length);
+	if (!line.skip("$Lock ")) return false;
+
+	std::string_view lockdata;
+	if (!line.field(" Pk=", lockdata)) return false;
+	if (lockdata.empty() || line.empty()) return false;
+
+	const std::string lock(lockdata);
+	const std::string pk(line.rest());
+	session->onLock(lock.c_str(), pk.c_str());
 	return true;
 }
 
@@ -224,88 +314,70 @@ bool DC::LoggedIn::invoke(const char*, size_t) {
  * TODO: Add active/passive mode checks here.
  *       Add flags parser here.
  */
-bool DC::MyINFO::invoke(const char* data_, size_t) {
-	char* data = strdup(&data_[13]);
-	char* start = &data[0];
-	char* split = 0;
-
-	const char* nickname = 0;
-	char* description = 0;
-	const char* email = 0;
-	const char* sharesize = 0;
-	DC::Tag* tag = 0;
-	char* speed = 0;
-	uint64_t shared = 0ULL;
+bool DC::MyINFO::invoke(const char* data, size_t length) {
+	Reader line(data, length);
+	if (!line.skip("$MyINFO $ALL ")) return false;
 
 	// find and extract nickname
-	split = strchr(start, ' ');
-	if (!split) { free(data); return false; }
-	nickname = start;
-	split[0] = '\0';
-	start = &split[1];
+	std::string_view nick;
+	if (!line.field(' ', nick)) return false;
+	if (nick.empty()) return false;
 
 	// find description
-	split = strchr(start, '$');
-	if (!split && split != data) { free(data); return false; }
-	description = start;
-	split[0] = '\0';
-	if (split[2] != '$') { free(data); return false; };
+	std::string_view descdata;
+	if (!line.field('$', descdata)) return false;
+
+	/* Exactly one byte between the description and the speed: the mode flag a
+	   PtokaX hub puts there. A hub with nothing to say still sends the '$' on
+	   either side of it, so the field is there but empty. */
+	std::string_view mode;
+	if (!line.field('$', mode) || mode.size() != 1) return false;
 #if 0
-	if (split[1] == 'A');      /* PtokaX: Active mode user */
-	else if (split[1] == 'P'); /* PtokaX: Passive mode user */
+	if (mode[0] == 'A');      /* PtokaX: Active mode user */
+	else if (mode[0] == 'P'); /* PtokaX: Passive mode user */
 #endif //0
-	start = &split[3];
-	
-	// find and extract speed
-	split = strchr(start, '$');
-	if (!split) { free(data); return false; }
-	speed = start;
-	split[0] = '\0';
-	start = &split[1];
+
+	/* find and extract speed. Its last byte is the status flag described above;
+	   nothing reads either of them yet. */
+	std::string_view speed;
+	if (!line.field('$', speed)) return false;
 
 	// find and extract email
-	split = strchr(start, '$');
-	if (!split) { free(data); return false; }
-	email = start;
-	split[0] = '\0';
-	start = &split[1];
+	std::string_view emaildata;
+	if (!line.field('$', emaildata)) return false;
 
 	// find and extract share size
-	split = strchr(start, '$');
-	if (!split) { free(data); return false; }
-	sharesize = start;
-	split[0] = '\0';
-	shared = Samurai::Util::Convert::to_int64(sharesize);
-	
-	/* The speed field carries the status byte as its last character. Strip it:
-	   nothing reads it yet, but leaving it on corrupts the speed string. */
-	if (strlen(speed) > 1) {
-		size_t pos = strlen(speed)-1;
-		speed[pos] = '\0';
-	}
-	
+	std::string_view sharesize;
+	if (!line.field('$', sharesize)) return false;
+
+	const std::string nickname(nick);
+	const std::string email(emaildata);
+	const std::string shares(sharesize);
+	std::string description(descdata);
+	DC::Tag* tag = 0;
+
+	const uint64_t shared = Samurai::Util::Convert::to_int64(shares.c_str());
+
 	// extract tag from description string
-	split = strrchr(description, '<');
-	if (split) {
-		char* split2 = strrchr(split, '>');
-		if (split2) {
-			tag = new Tag(split);
-			split[0] = '\0';
-		}
+	const size_t open = description.rfind('<');
+	if (open != std::string::npos && description.find('>', open) != std::string::npos) {
+		tag = new Tag(description.substr(open).c_str());
+		description.erase(open);
 	}
 
-	QuickDC::User* u = (QuickDC::User*) session->users->getUser(nickname);
+	QuickDC::User* u = (QuickDC::User*) session->users->getUser(nickname.c_str());
 	bool changed = false;
 	uint64_t oldSize = 0;
 
 	if (!u) {
-		u = new QuickDC::User(nickname, nickname, description, email, shared);
+		u = new QuickDC::User(nickname.c_str(), nickname.c_str(),
+			description.c_str(), email.c_str(), shared);
 		changed = true;
 	}
 
 	oldSize = u->getSharedBytes();
-	if (u->setDescription(description)) changed = true;
-	if (u->setEmail(email)) changed = true;
+	if (u->setDescription(description.c_str())) changed = true;
+	if (u->setEmail(email.c_str())) changed = true;
 	if (u->setSharedBytes(shared)) changed = true;
 	if (tag && tag->isOK()) {
 		if (u->setUserAgent(tag->getUserAgent())) changed = true;
@@ -317,12 +389,10 @@ bool DC::MyINFO::invoke(const char* data_, size_t) {
 		if (u->setHubsRegular(hub_cnt_user)) changed = true;
 		// TODO: Add active/passive mode.
 	}
-	session->users->info(nickname, u, oldSize, changed);
-	
+	session->users->info(nickname.c_str(), u, oldSize, changed);
+
 	if (!session->isLoggedIn()) session->onLoggedIn();
-	
-	
-	free(data);
+
 	delete tag;
 	return true;
 }
@@ -336,25 +406,22 @@ bool DC::MyINFO::invoke(const char* data_, size_t) {
  * and these users are usually bots.
  */
 bool DC::NickList::invoke(const char* data, size_t length) {
-	if (length < 11) return true;
+	Reader line(data, length);
+	if (!line.skip("$NickList ")) return true;
+
 	bool info = !session->supports("NoGetINFO");
-	char* nicklist = strdup(&data[10]);
-	
-	char* start = &nicklist[0];
-	char* end;
-	while ((end = strstr(&start[0], "$$"))) {
-		end[0] = '\0';
-		const char* nick = &start[0];
-		if (info /* && strcmp(nick, session->getNick()) != 0 */)
+
+	std::string_view nick;
+	while (line.field("$$", nick)) {
+		if (nick.empty()) continue;
+		if (info /* && nick != session->getNick() */)
 		{
-			session->send(new DC::SendGetInfo(nick, session->getNick()));
+			const std::string name(nick);
+			session->send(new DC::SendGetInfo(name.c_str(), session->getNick()));
 		}
-		start = &end[2];
 	}
 	if (info) proxy->write();
 
-	free(nicklist);
-	
 	return true;
 }
 
@@ -363,17 +430,15 @@ bool DC::NickList::invoke(const char* data, size_t length) {
  * Syntax: $OpList nickA$$nickB$$...$$
  */
 bool DC::OpList::invoke(const char* data, size_t length) {
-	if (length < 9) return true;
-	char* oplist = strdup(&data[8]);
-	char* start = &oplist[0];
-	char* end;
-	while ((end = strstr(&start[0], "$$"))) {
-		end[0] = '\0';
-		const char* op = &start[0];
-		session->users->op(op);
-		start = &end[2];
+	Reader line(data, length);
+	if (!line.skip("$OpList ")) return true;
+
+	std::string_view nick;
+	while (line.field("$$", nick)) {
+		if (nick.empty()) continue;
+		const std::string op(nick);
+		session->users->op(op.c_str());
 	}
-	free(oplist);
 	return true;
 }
 
@@ -389,19 +454,17 @@ bool DC::OpList::invoke(const char* data, size_t length) {
  * Smallest valid message: 4 bytes
  */
 bool DC::PublicChat::invoke(const char* data, size_t length) {
-	if (length < 4) return false;
-	
-	const char* split = strstr(data, "> ");
-	if (!split) return false;
+	Reader line(data, length);
+	if (!line.skip("<")) return false;
 
-	char* nick = strndup(&data[1], &split[0]-&data[1]);
-	char* msg  = strdup(&split[2]);
+	std::string_view nick;
+	if (!line.field("> ", nick)) return false;
+	if (nick.empty()) return false;
 
-	msg = DC::TextEscape::unescape(msg);
-	session->onPublicChat(nick, msg);
+	const std::string from(nick);
+	const std::string msg = unescaped(line.rest());
 
-	free(nick);
-	free(msg);
+	session->onPublicChat(from.c_str(), msg.c_str());
 
 	return true;
 }
@@ -414,19 +477,17 @@ bool DC::PublicChat::invoke(const char* data, size_t length) {
  * Smallest valid message: 5 bytes
  */
 bool DC::ActionChat::invoke(const char* data, size_t length) {
-	if (length < 5) return false;
+	Reader line(data, length);
+	if (!line.skip("* ")) return false;
 
-	const char* split = strchr(&data[2], ' ');
-	if (!split) return false;
+	std::string_view nick;
+	if (!line.field(' ', nick)) return false;
+	if (nick.empty()) return false;
 
-	char* nick = strndup(&data[2], &split[0]-&data[2]);
-	char* msg  = strdup(&split[1]);
+	const std::string from(nick);
+	const std::string msg = unescaped(line.rest());
 
-	msg = DC::TextEscape::unescape(msg);
-	session->onActionChat(nick, msg);
-
-	free(nick);
-	free(msg);
+	session->onActionChat(from.c_str(), msg.c_str());
 	return true;
 }
 
@@ -436,8 +497,12 @@ bool DC::ActionChat::invoke(const char* data, size_t length) {
  * Smallest possible string: "$Quit a" 7 bytes.
  */
 bool DC::Quit::invoke(const char* data, size_t length) {
-	if (length < 7) return false;
-	session->users->quit(&data[6]);
+	Reader line(data, length);
+	if (!line.skip("$Quit ")) return false;
+	if (line.empty()) return false;
+
+	const std::string nick(line.rest());
+	session->users->quit(nick.c_str());
 	return true;
 }
 
@@ -451,38 +516,45 @@ bool DC::Quit::invoke(const char* data, size_t length) {
  * Name minimal: "Hub:a" 5 bytes
  */
 bool DC::Search::invoke(const char* data, size_t length) {
-	if (length < 20) return false;
-	
-	const char* req = strchr(&data[8], ' ');
-	if (!req) return false;
+	Reader line(data, length);
+	if (!line.skip("$Search ")) return false;
 
-	if (&req[0] - &data[8] < 5) return false;
-	
+	std::string_view addr;
+	if (!line.field(' ', addr)) return false;
+
+	/* "a.b.c.d:e" is the shortest address and "Hub:a" the shortest nick, so
+	   nothing shorter than either can be replied to. */
+	if (addr.size() < 5) return false;
+
 	enum QuickDC::Share::SearchRequest::SizePolicy s_policy;
-	
-	// check that pattern is valid
-	if (req[2] != '?' || req[4] != '?') return false;
+
+	/* check that pattern is valid: each of the three flags is a single
+	   character, and the size between them is whatever the sender wrote. */
+	std::string_view sizeflag;
+	std::string_view limitflag;
+	std::string_view sizedata;
+	std::string_view typeflag;
+	if (!line.field('?', sizeflag) || sizeflag.size() != 1) return false;
+	if (!line.field('?', limitflag) || limitflag.size() != 1) return false;
+	if (!line.field('?', sizedata)) return false;
+	if (!line.field('?', typeflag) || typeflag.size() != 1) return false;
 
 	// figure out search type
-	if ((req[1] == 'F' && req[3] == 'F') || (req[1] == 'F' && req[3] == 'T')) {
-		s_policy = QuickDC::Share::SearchRequest::SizeAny; // any size	
-	} else if (req[1] == 'T' && req[3] == 'T') {
+	if ((sizeflag[0] == 'F' && limitflag[0] == 'F') || (sizeflag[0] == 'F' && limitflag[0] == 'T')) {
+		s_policy = QuickDC::Share::SearchRequest::SizeAny; // any size
+	} else if (sizeflag[0] == 'T' && limitflag[0] == 'T') {
 		s_policy = QuickDC::Share::SearchRequest::SizeMax; // size is max
-	} else if (req[1] == 'T' && req[3] == 'F') {
+	} else if (sizeflag[0] == 'T' && limitflag[0] == 'F') {
 		s_policy = QuickDC::Share::SearchRequest::SizeMin; // size is min
 	} else {
 		s_policy = QuickDC::Share::SearchRequest::SizeExact; // size is exact
 	}
 
-	// split the search type from size given
-	const char* typeoffset = strchr(&req[6], '?');
-	if (!typeoffset) return false;
-
 	int type = 0;
-	if (typeoffset[1] > '0' && typeoffset[1] <= '9') {
-		type = (typeoffset[1] - 48);
+	if (typeflag[0] > '0' && typeflag[0] <= '9') {
+		type = (typeflag[0] - 48);
 	}
-	
+
 	QuickDC::Share::SearchRequest* request = new QuickDC::Share::SearchRequest(session);
 
 	if (type > 0 && type < 8) {
@@ -493,50 +565,50 @@ bool DC::Search::invoke(const char* data, size_t length) {
 	} else if (type == 8) {
 		request->setType(QuickDC::Share::SearchRequest::SearchDirectories);
 	}
-	
-	char* size_str = strndup(&req[5], &typeoffset[0] - &req[5]);
-	uint64_t size = Samurai::Util::Convert::to_uint64(size_str);
+
+	const std::string size_str(sizedata);
+	uint64_t size = Samurai::Util::Convert::to_uint64(size_str.c_str());
 	request->setSize(size);
-	
+
 	if (size == 0) s_policy = QuickDC::Share::SearchRequest::SizeAny; // any size
 
 	/* After the adjustment above, or a search naming no size would still be
 	   asked for with whatever policy the line happened to carry. */
 	request->setSizePolicy(s_policy);
 
-	char* replyaddr = strndup(&data[8], &req[0] - &data[8]);
-	char* query = strdup(&typeoffset[3]);
-	
+	const std::string replyaddr(addr);
+	const std::string query(line.rest());
+
 	if (type != 9) {
-		char* last = query;
-		char* jump = strchr(last, '$');
-		while (jump) {
-			jump[0] = '\0';
-			request->addInclusion(DC::TextEscape::unescape(last));
-			last = &jump[1];
-			jump = strchr(last, '$');
+		/* '$' separated terms. An empty one selects the whole share rather than
+		   narrowing it, so it is no term at all. */
+		Reader terms(query);
+		for (;;) {
+			std::string_view term;
+			const bool more = terms.field('$', term);
+			if (!more) term = terms.rest();
+
+			if (!term.empty()) {
+				std::string text = unescaped(term);
+				request->addInclusion(text.c_str());
+			}
+			if (!more) break;
 		}
-		if (strlen(last))
-			request->addInclusion(DC::TextEscape::unescape(last));
 	} else {
-		if (strncasecmp(query, "TTH:", 4) == 0 && strlen(query) > 40)
-			request->setTTH(&query[4]);
+		if (strncasecmp(query.c_str(), "TTH:", 4) == 0 && query.size() > 40)
+			request->setTTH(&query.c_str()[4]);
 	}
 
 	const QuickDC::User* user = 0;
-	if (strncmp(replyaddr, "Hub:", 4) == 0) {
-		user = session->getUser(&replyaddr[4]);
+	if (strncmp(replyaddr.c_str(), "Hub:", 4) == 0) {
+		user = session->getUser(&replyaddr.c_str()[4]);
 		if (user) request->setUser(user);
 	} else {
-		request->setToken(replyaddr);
+		request->setToken(replyaddr.c_str());
 	}
-	
+
 	session->onSearch(request);
 
-	// NOTE: Do NOT free query -> managed by SearchRequest.
-	free(size_str);
-	free(replyaddr);
-	free(query);
 	delete request;
 
 	return true;
@@ -595,15 +667,16 @@ bool DC::parseSearchResult(const char* data, size_t length,
 	path.clear();
 	tth.clear();
 
-	if (!data || length < 21) return false;
-	if (strncmp(data, "$SR ", 4)) return false;
+	if (length < 21) return false;
 
-	const char* nickStart = &data[4];
-	const char* nickEnd = strchr(nickStart, ' ');
-	if (!nickEnd || nickEnd == nickStart) return false;
+	Reader line(data, length);
+	if (!line.skip("$SR ")) return false;
 
-	nick.assign(nickStart, nickEnd - nickStart);
-	std::string rest(nickEnd + 1);
+	std::string_view sender;
+	if (!line.field(' ', sender) || sender.empty()) return false;
+
+	nick.assign(sender);
+	std::string rest(line.rest());
 
 	/* Split on the 0x05 separators. */
 	std::vector<std::string> fields;
@@ -710,16 +783,22 @@ bool DC::SearchResultParser::invoke(const char* data, size_t length)
  * "$Supports", 9 bytes.
  */
 bool DC::Supports::invoke(const char* data, size_t length) {
-	if (length < 9) return false;
-	std::string support(data, length);
-	support = support.substr(10);
-	if (support[support.length()-1] != ' ') support += ' ';
+	Reader line(data, length);
+	if (!line.skip("$Supports ")) return false;
 
-	size_t offset = 0;
-	while ((offset = support.find(' ')) != std::string::npos) {
-		std::string feature = support.substr(0, offset);
-		support = support.substr(offset+1);
-		session->addSupport(feature.c_str());
+	for (;;) {
+		std::string_view feature;
+		const bool more = line.field(' ', feature);
+
+		/* The last feature has no space after it, and a hub that leaves a
+		   trailing one has nothing after that. */
+		if (!more) feature = line.rest();
+
+		if (!feature.empty()) {
+			const std::string name(feature);
+			session->addSupport(name.c_str());
+		}
+		if (!more) break;
 	}
 
 	return true;
@@ -732,37 +811,32 @@ bool DC::Supports::invoke(const char* data, size_t length) {
  * "$To: a From: b $c", 17 bytes
  */
 bool DC::To::invoke(const char* data, size_t length) {
-	if (length < 17) return false;
-	const char* msgdata = 0;
+	Reader line(data, length);
+	if (!line.skip("$To: ")) return false;
 
 	// split 'to' and 'from'
-	const char* split1 = strstr(&data[5], " From: ");
-	if (!split1) return false;
+	std::string_view todata;
+	if (!line.field(" From: ", todata)) return false;
 
-	const char* split2 = strstr(&split1[6], " $");
-	if (!split2) return false;
-	
-	char* to = strndup(&data[5], &split1[0]-&data[5]);
-	char* from = strndup(&split1[7], &split2[0]-&split1[7]);
-	const char* message = &split2[2];
+	std::string_view fromdata;
+	if (!line.field(" $", fromdata)) return false;
+
+	if (todata.empty() || fromdata.empty()) return false;
+
+	std::string_view message = line.rest();
 
 	// Workaround for faulty bots and hubs
-	if (message[0] == '<') {
-		msgdata = strstr(&message[1], "> ");
-		if (msgdata) msgdata = &msgdata[2];
-		else msgdata = message;
-	} else {
-		msgdata = message;
+	if (!message.empty() && message[0] == '<') {
+		Reader body(message.substr(1));
+		std::string_view repeated;
+		if (body.field("> ", repeated)) message = body.rest();
 	}
 
-	char* msg = strdup(msgdata);
-	msg = DC::TextEscape::unescape(msg);
+	const std::string to(todata);
+	const std::string from(fromdata);
+	const std::string msg = unescaped(message);
 
-	session->onPrivateChat(to, from, msg);
-
-	free(msg);
-	free(to);
-	free(from);
+	session->onPrivateChat(to.c_str(), from.c_str(), msg.c_str());
 
 	return true;
 }
@@ -781,27 +855,25 @@ bool DC::UserCommand::invoke(const char*, size_t) {
  * case the string will end with '$$'.
  */
 bool DC::UserIP::invoke(const char* data, size_t length) {
-	std::string userip(data, length);
-	userip = userip.substr(8);
-	size_t offset = 0;
-	
-	// UserIP for one user
-	if (userip.rfind("$$") == std::string::npos) {
-		offset = userip.rfind(' ');
-		std::string nick = userip.substr(0, offset);
-		std::string ip = userip.substr(offset+1);
-		session->users->ip(nick.c_str(), ip.c_str());
-		return true;
-	}
-	
-	// List of multiple user ips
-	while ((offset = userip.find("$$")) != std::string::npos) {
-		std::string pair = userip.substr(0, offset);
-		userip = userip.substr(offset+2);
-		offset = pair.rfind(' ');
-		std::string nick = pair.substr(0, offset);
-		std::string ip = pair.substr(offset+1);
-		session->users->ip(nick.c_str(), ip.c_str());
+	Reader line(data, length);
+	if (!line.skip("$UserIP ")) return false;
+
+	/* One "{nick} {ip}", or a list of them: the same loop reads either, since
+	   the single form is a list of one that does not end with a separator. */
+	for (;;) {
+		std::string_view entry;
+		const bool more = line.field("$$", entry);
+		if (!more) entry = line.rest();
+
+		Reader pair(entry);
+		std::string_view nick;
+		if (pair.lastField(' ', nick) && !nick.empty() && !pair.empty()) {
+			const std::string user(nick);
+			const std::string ip(pair.rest());
+			session->users->ip(user.c_str(), ip.c_str());
+		}
+
+		if (!more) break;
 	}
 	return true;
 }

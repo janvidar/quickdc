@@ -16,6 +16,8 @@
 #include "quickdc.h"
 #include "api/core.h"
 #include "api/hub.h"
+#include "network/dc/dccommandparser.h"
+#include "network/dc/dccommandproxy.h"
 #include "network/dc/hubsession.h"
 #include "network/user.h"
 #include "network/usermanager.h"
@@ -92,6 +94,13 @@ class Listener : public QuickDC::HubListener
 		int netConnected = 0;
 		bool authRequested = false;
 
+		/* What a $ConnectToMe, a $ForceMove and a $UserIP asked for. */
+		std::vector<std::string> connectTo;
+		std::vector<std::string> redirects;
+		int connectToKnown = 0;
+		int passiveConnect = 0;
+		int userUpdates = 0;
+
 		void EventNetStatus(enum StatusNetwork state) override
 		{ if (state == NetConnected) netConnected++; }
 
@@ -117,18 +126,36 @@ class Listener : public QuickDC::HubListener
 		{ left.push_back(user && user->getNick() ? user->getNick() : ""); }
 
 		void EventUsersCleanup() override { }
-		void EventUserUpdate(const QuickDC::User*) override { }
+		void EventUserUpdate(const QuickDC::User*) override { userUpdates++; }
 		void EventSearchResult(void*) override { }
 
 		void EventHubName(const char* name) override
 		{ hubName = name ? name : ""; }
 
-		bool EventHubRedirect(const char*, uint16_t) override { return false; }
+		bool EventHubRedirect(const char* host, uint16_t port) override
+		{
+			redirects.push_back(std::string(host ? host : "")
+				+ ":" + std::to_string(port));
+			return false;
+		}
+
 		void EventHubAutenticate() override { authRequested = true; }
 
-		bool EventClientConnect(const char*, uint16_t, const QuickDC::User*) override
-		{ return false; }
-		bool EventClientConnect(const QuickDC::User*) override { return false; }
+		/*
+		 * Refusing both keeps every case here off the network: the session only
+		 * dials out when the interface agrees to it.
+		 */
+		bool EventClientConnect(const char* address, uint16_t port,
+			const QuickDC::User* user) override
+		{
+			connectTo.push_back(std::string(address ? address : "")
+				+ ":" + std::to_string(port));
+			if (user) connectToKnown++;
+			return false;
+		}
+
+		bool EventClientConnect(const QuickDC::User*) override
+		{ passiveConnect++; return false; }
 };
 
 /* The other end: a listening socket and whatever the client sent. */
@@ -291,6 +318,40 @@ class Session
 			/* The hub broadcasts it back, which is what completes the login. */
 			say("$MyINFO $ALL " + nick + " $ $DSL\x01$$0$");
 			return true;
+		}
+};
+
+/*
+ * One command handler, called with a line and the length of it and nothing
+ * else.
+ *
+ * The handlers are what a hub reaches before it has authenticated anything, and
+ * they are handed the length of the line precisely so that they need not guess
+ * where it ends. Calling one directly is what makes that boundary visible: the
+ * buffer below is exactly as long as the length says and carries no terminator,
+ * so a handler that indexes a fixed offset into it reads memory that is not
+ * part of the line rather than a stray byte that happens to be there.
+ *
+ * A proxy owns one handler per command name and is the only way to reach them,
+ * so it is subclassed rather than driven.
+ */
+class Handlers : public DC::CommandProxy
+{
+	public:
+		explicit Handlers(Session& s) : DC::CommandProxy(s.hub.peer, s.session) { }
+
+		bool call(const char* name, const std::string& line)
+		{
+			const auto it = mapper.find(name);
+			if (it == mapper.end())
+			{
+				printf("FAIL %s:%d no handler for %s\n", __FILE__, __LINE__, name);
+				failures++;
+				return false;
+			}
+
+			const std::vector<char> exact(line.begin(), line.end());
+			return it->second->invoke(exact.data(), exact.size());
 		}
 };
 
@@ -689,6 +750,365 @@ static void run()
 			s.hub.peer.reset();
 			CHECK(pump([&] { return !s.session->isLoggedIn(); }));
 			printf("  ok the session notices the hub going away\n");
+		}
+		else failures++;
+	}
+
+	/* ---- lines a hub sent, at the length the hub chose to send them ---- */
+
+	/*
+	 * $MyINFO read its nickname from a fixed offset without consulting the
+	 * length at all, so a line this short was made from whatever followed it,
+	 * and the mode flag and the '$' after the description were read from beyond
+	 * the end of the line as well.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+
+			CHECK(!h.call("$MyINFO", "$MyINFO"));
+			CHECK(!h.call("$MyINFO", "$MyINFO "));
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL"));
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL "));
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL alice"));
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL alice x$"));
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL alice x$ "));
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL alice x$ $"));
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL alice x$ $DSL"));
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL alice x$ $DSL$m@e"));
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL alice x$ $DSL$m@e$1024"));
+
+			/* A mode field longer than the one byte the syntax allows for it. */
+			CHECK(!h.call("$MyINFO", "$MyINFO $ALL alice x$AP$DSL$m@e$1024$"));
+
+			QuickDC::UserManager* users = s.session->getUserManager();
+			CHECK(users && users->getUser("alice") == 0);
+			printf("  ok a $MyINFO that stops early is refused\n");
+		}
+		else failures++;
+	}
+
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+			QuickDC::UserManager* users = s.session->getUserManager();
+
+			CHECK(h.call("$MyINFO",
+				"$MyINFO $ALL alice a description$ $DSL\x01$mail@example$1024$"));
+
+			const QuickDC::User* alice = users ? users->getUser("alice") : 0;
+			CHECK(alice != 0);
+			CHECK(alice && alice->getDescription()
+				&& std::string(alice->getDescription()) == "a description");
+			CHECK(alice && alice->getEmail()
+				&& std::string(alice->getEmail()) == "mail@example");
+			CHECK(alice && alice->getSharedBytes() == 1024);
+
+			/* The tag is the last "<...>" of the description, and not part of it. */
+			CHECK(h.call("$MyINFO",
+				"$MyINFO $ALL bob shared<++ V:0.1,M:A,H:1/0/0,S:2>$ $DSL\x01$b@e$2048$"));
+
+			const QuickDC::User* bob = users ? users->getUser("bob") : 0;
+			CHECK(bob && bob->getDescription()
+				&& std::string(bob->getDescription()) == "shared");
+			CHECK(bob && bob->getNumSlots() == 2);
+			CHECK(bob && bob->getUserAgent()
+				&& std::string(bob->getUserAgent()) == "DC++ 0.1");
+			printf("  ok a whole $MyINFO is read as it was\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * $ConnectToMe with nothing in front of the address: the nick was taken from
+	 * a fixed offset to a separator that was never found, so its length was
+	 * measured from address zero.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+			s.say("$Hello alice");
+
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe 1.2.3.4:411"));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe"));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe "));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4"));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick :411"));
+			CHECK(!h.call("$ConnectToMe", "$ConnectToMe nick 1.2.3.4:"));
+			CHECK(s.listener.connectTo.empty());
+
+			/* One nick is ours, and the hub is not saying who is calling. */
+			CHECK(h.call("$ConnectToMe", "$ConnectToMe " + s.nick + " 127.0.0.1:411"));
+			CHECK(s.listener.connectTo.size() == 1);
+			CHECK(!s.listener.connectTo.empty()
+				&& s.listener.connectTo[0] == "127.0.0.1:411");
+			CHECK(s.listener.connectToKnown == 0);
+
+			/* Two, and the first of them is the peer that asked. */
+			CHECK(h.call("$ConnectToMe", "$ConnectToMe alice " + s.nick + " 127.0.0.1:412"));
+			CHECK(s.listener.connectTo.size() == 2);
+			CHECK(s.listener.connectTo.size() == 2
+				&& s.listener.connectTo[1] == "127.0.0.1:412");
+			CHECK(s.listener.connectToKnown == 1);
+			printf("  ok $ConnectToMe needs a nick as well as an address\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * $Search stopping inside its pattern. The size, the type and the query were
+	 * all read from fixed offsets past the end, and the query that came out of
+	 * it was then matched against the share.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+
+			CHECK(!h.call("$Search", "$Search 1.2.3.4:1 T?T?"));
+			CHECK(!h.call("$Search", "$Search 1.2.3.4:1 T?T?0?"));
+			CHECK(!h.call("$Search", "$Search 1.2.3.4:1 T?T"));
+			CHECK(!h.call("$Search", "$Search 1.2.3.4:1"));
+			CHECK(!h.call("$Search", "$Search"));
+
+			/* Too short to be either an address or a "Hub:{nick}". */
+			CHECK(!h.call("$Search", "$Search abc F?F?0?1?x"));
+
+			/* A flag of more than the single character it is. */
+			CHECK(!h.call("$Search", "$Search 1.2.3.4:1 TT?T?0?1?x"));
+
+			CHECK(h.call("$Search", "$Search 1.2.3.4:1 F?T?0?1?word"));
+			CHECK(h.call("$Search", "$Search 1.2.3.4:1 T?F?1024?1?two$terms"));
+			CHECK(h.call("$Search",
+				"$Search Hub:alice F?F?0?9?TTH:2ZROV7YW7RTOKFJDF62WDMM2XGGC55Q3VF7WODI"));
+			printf("  ok a $Search stopping short of its query is refused\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * $Supports of exactly ten bytes: the prefix was taken off by length
+	 * without checking there was one, leaving nothing, and the last character
+	 * of nothing was then looked at.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+
+			CHECK(!h.call("$Supports", "$Supports"));
+			CHECK(h.call("$Supports", "$Supports "));
+			CHECK(h.call("$Supports", "$Supports NoGetINFO UserIP2 "));
+			CHECK(h.call("$Supports", "$Supports OpPlus"));
+			printf("  ok a $Supports naming nothing is not an empty string read\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * $UserIP had no length check whatever, and took its prefix off with
+	 * substr(), which throws rather than returning anything - and nothing on the
+	 * way here catches.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+			s.say("$MyINFO $ALL alice x$ $DSL\x01$m@e$100$");
+			s.say("$MyINFO $ALL bob y$ $DSL\x01$m@e$200$");
+
+			CHECK(!h.call("$UserIP", "$UserIP"));
+			CHECK(!h.call("$UserIP", "$UserI"));
+			CHECK(!h.call("$UserIP", ""));
+
+			const int before = s.listener.userUpdates;
+			CHECK(h.call("$UserIP", "$UserIP alice 10.0.0.1"));
+			CHECK(s.listener.userUpdates == before + 1);
+
+			CHECK(h.call("$UserIP", "$UserIP alice 10.0.0.1$$bob 10.0.0.2$$"));
+			CHECK(s.listener.userUpdates == before + 3);
+			printf("  ok $UserIP needs the prefix it takes off\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * $To: where the " $" that ends the sender's nick is inside the " From: "
+	 * that was just matched, so the nick was a field of negative length.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+			s.say("$Hello alice");
+
+			CHECK(!h.call("$To:", "$To: aaa From: $x"));
+			CHECK(!h.call("$To:", "$To:"));
+			CHECK(!h.call("$To:", "$To: me From: alice"));
+			CHECK(!h.call("$To:", "$To: me From: "));
+			CHECK(s.listener.privateChat.empty());
+
+			CHECK(h.call("$To:", "$To: " + s.nick + " From: alice $hello there"));
+			CHECK(s.listener.privateChat.size() == 1);
+			CHECK(!s.listener.privateChat.empty()
+				&& s.listener.privateChat[0] == "hello there");
+
+			/* A bot that repeats the sender's nick in the message body. */
+			CHECK(h.call("$To:", "$To: " + s.nick + " From: alice $<alice> hi"));
+			CHECK(s.listener.privateChat.size() == 2);
+			CHECK(s.listener.privateChat.size() == 2
+				&& s.listener.privateChat[1] == "hi");
+			printf("  ok a $To: with no message is refused\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * $Lock with the "Pk=" immediately after the keyword: the lock ran from
+	 * after the prefix to before it, a negative length. $RevConnectToMe naming
+	 * one nick where the syntax has two does the same.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+			s.say("$Hello alice");
+
+			CHECK(!h.call("$Lock", "$Lock Pk=abcdef"));
+			CHECK(!h.call("$Lock", "$Lock"));
+			CHECK(!h.call("$Lock", "$Lock abc"));
+			CHECK(!h.call("$Lock", "$Lock abc Pk="));
+			CHECK(h.call("$Lock", "$Lock " HUB_LOCK " Pk=TESTHUB"));
+
+			CHECK(!h.call("$RevConnectToMe", "$RevConnectToMe alice"));
+			CHECK(!h.call("$RevConnectToMe", "$RevConnectToMe"));
+			CHECK(!h.call("$RevConnectToMe", "$RevConnectToMe  alice"));
+
+			const int before = s.listener.passiveConnect;
+			CHECK(h.call("$RevConnectToMe", "$RevConnectToMe alice " + s.nick));
+			CHECK(s.listener.passiveConnect == before + 1);
+			printf("  ok a $Lock and a $RevConnectToMe with a field missing are refused\n");
+		}
+		else failures++;
+	}
+
+	/* The rest of what a hub can say, with and without its arguments. */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+			QuickDC::UserManager* users = s.session->getUserManager();
+
+			CHECK(!h.call("$Hello", "$Hello"));
+			CHECK(!h.call("$Hello", "$Hello "));
+			CHECK(h.call("$Hello", "$Hello carol"));
+			CHECK(users && users->getUser("carol") != 0);
+
+			CHECK(!h.call("$HubName", "$HubName"));
+			CHECK(!h.call("$HubName", "$HubName "));
+			CHECK(h.call("$HubName", "$HubName Some Hub"));
+			CHECK(s.listener.hubName == "Some Hub");
+
+			CHECK(!h.call("$Quit", "$Quit"));
+			CHECK(!h.call("$Quit", "$Quit "));
+			CHECK(h.call("$Quit", "$Quit carol"));
+			CHECK(users && users->getUser("carol") == 0);
+
+			CHECK(!h.call("$ForceMove", "$ForceMove"));
+			CHECK(!h.call("$ForceMove", "$ForceMove "));
+			CHECK(h.call("$ForceMove", "$ForceMove otherhub:412"));
+			CHECK(s.listener.redirects.size() == 1);
+			CHECK(!s.listener.redirects.empty()
+				&& s.listener.redirects[0] == "otherhub:412");
+
+			/* No port named, and 411 is the default in DC. */
+			CHECK(h.call("$ForceMove", "$ForceMove otherhub"));
+			CHECK(s.listener.redirects.size() == 2);
+			CHECK(s.listener.redirects.size() == 2
+				&& s.listener.redirects[1] == "otherhub:411");
+
+			/* A list of nicks is nothing to refuse over, so these say so. */
+			CHECK(h.call("$NickList", "$NickList"));
+			CHECK(h.call("$NickList", "$NickList a$$b$$"));
+			CHECK(h.call("$OpList", "$OpList"));
+			CHECK(h.call("$OpList", "$OpList alice$$"));
+
+			CHECK(!h.call("PublicChat", "<"));
+			CHECK(!h.call("PublicChat", "<alice>"));
+			CHECK(!h.call("PublicChat", "<> hello"));
+			CHECK(h.call("PublicChat", "<alice> hello"));
+
+			CHECK(!h.call("ActionChat", "*"));
+			CHECK(!h.call("ActionChat", "* alice"));
+			CHECK(h.call("ActionChat", "* alice waves"));
+			printf("  ok every other command needs the arguments it reads\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * Every prefix of a well formed line of each kind, which is the general
+	 * case of all of the above: a handler that indexes a fixed offset reads past
+	 * the end of the line for some length of every one of these.
+	 */
+	{
+		static const struct { const char* name; const char* line; } lines[] = {
+			{ "$Hello",          "$Hello alice" },
+			{ "$HubName",        "$HubName A Hub" },
+			{ "$Lock",           "$Lock " HUB_LOCK " Pk=TESTHUB" },
+			{ "$MyINFO",         "$MyINFO $ALL alice a desc<++ V:0.1,M:A,H:1/0/0,S:2>$ "
+			                     "$DSL\x01$m@e$1024$" },
+			{ "$NickList",       "$NickList alice$$bob$$" },
+			{ "$OpList",         "$OpList alice$$" },
+			{ "$Quit",           "$Quit alice" },
+			{ "$To:",            "$To: me From: alice $<alice> hello" },
+			{ "$Search",         "$Search 1.2.3.4:412 F?T?0?9?"
+			                     "TTH:2ZROV7YW7RTOKFJDF62WDMM2XGGC55Q3VF7WODI" },
+			{ "$SR",             "$SR alice path\\file\x05" "1024 2/4\x05" "A Hub (1.2.3.4:411)" },
+			{ "$Supports",       "$Supports NoGetINFO NoHello UserIP2" },
+			{ "$UserIP",         "$UserIP alice 10.0.0.1$$bob 10.0.0.2$$" },
+			{ "$UserCommand",    "$UserCommand 1 3 Name$Command" },
+			{ "$ForceMove",      "$ForceMove otherhub:412" },
+			{ "$ConnectToMe",    "$ConnectToMe alice me 127.0.0.1:412" },
+			{ "$RevConnectToMe", "$RevConnectToMe alice me" },
+			{ "$GetPass",        "$GetPass" },
+			{ "$HubIsFull",      "$HubIsFull" },
+			{ "$LogedIn",        "$LogedIn" },
+			/*
+			 * These two take no arguments, so there is no length for them to
+			 * disagree with - but they are in the sweep because it repeats each
+			 * line, and a refusal that released the nickname left every later
+			 * reader of it, the destructor included, with a null pointer.
+			 */
+			{ "$ValidateDenide", "$ValidateDenide" },
+			{ "$BadPass",        "$BadPass" },
+			{ "PublicChat",      "<alice> hello there" },
+			{ "ActionChat",      "* alice waves" },
+		};
+
+		Session s;
+		if (s.ready && s.login())
+		{
+			Handlers h(s);
+			s.say("$Hello alice");
+
+			for (size_t n = 0; n < sizeof(lines)/sizeof(lines[0]); n++)
+				for (size_t len = 0; len <= strlen(lines[n].line); len++)
+					h.call(lines[n].name, std::string(lines[n].line, len));
+
+			printf("  ok no handler reads past the length it was given\n");
 		}
 		else failures++;
 	}
