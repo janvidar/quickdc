@@ -37,7 +37,6 @@ add_executable(testtransfer transfer.cpp)
 add_executable(testchunkmap chunkmap.cpp)
 add_executable(testadcparser adcparser.cpp)
 add_executable(testhashcache hashcache.cpp)
-add_executable(testhttpparser httpparser.cpp)
 add_executable(testsearch search.cpp)
 add_executable(testdctext dctext.cpp)
 add_executable(testconfig config.cpp)
@@ -53,7 +52,7 @@ set(QUICKDC_TEST_APPS
     testleafhashes testxml testadccommand testfilelist testacl testqueue
     testqueuecomplete testsources testusers testhubsession testdchubsession
     testsecurity testclientsession testdcclientsession testfilelistgen testtransfer
-    testchunkmap testadcparser testhashcache testhttpparser
+    testchunkmap testadcparser testhashcache
     testsearch testdctext testconfig testprobe testcid testadchub)
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
@@ -90,7 +89,6 @@ add_test(NAME transfer COMMAND testtransfer)
 add_test(NAME chunkmap COMMAND testchunkmap)
 add_test(NAME adcparser COMMAND testadcparser)
 add_test(NAME hashcache COMMAND testhashcache)
-add_test(NAME httpparser COMMAND testhttpparser)
 add_test(NAME search COMMAND testsearch)
 add_test(NAME dctext COMMAND testdctext)
 add_test(NAME config COMMAND testconfig)

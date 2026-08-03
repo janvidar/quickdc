@@ -52,15 +52,6 @@ set(QUICKDC_SOURCES
     network/adc/server/adchubservice.cpp
     network/adc/server/adchubuser.cpp
     network/adc/parser.cpp
-    network/http/client.cpp
-    network/http/entity.cpp
-    network/http/header.cpp
-    network/http/httpconnection.cpp
-    network/http/httpparser.cpp
-    network/http/pipeline.cpp
-    network/http/request.cpp
-    network/http/response.cpp
-    network/http/server.cpp
     share/dcfilelist.cpp
     share/sharedir.cpp
     share/sharefile.cpp

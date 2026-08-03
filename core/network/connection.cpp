@@ -9,8 +9,8 @@
 
 #include "api/core.h"
 #include "network/connection.h"
+#include "network/connectionmanager.h"
 #include "network/dc/dcconnection.h"
-#include "network/http/httpconnection.h"
 
 QuickDC::Connection::Connection(std::shared_ptr<Samurai::IO::Net::Socket> sock, const char* proto)
 	: socket(std::move(sock)), protocol(proto)

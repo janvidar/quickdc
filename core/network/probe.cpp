@@ -11,7 +11,6 @@
 #include "network/adc/client/adcclientsession.h"
 #include "network/adc/adcudp.h"
 #include "network/adc/server/adchub.h"
-#include "network/http/httpconnection.h"
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/datagram.h>
 #include <samurai/io/buffer.h>
@@ -331,21 +330,15 @@ void QuickDC::ProtocolProbe::probe() {
 		}
 
 		case Protocol::HTTP:
-		{
-#ifdef DATADUMP
-			QDBG("HTTP connection");
-#endif // DATADUMP
-			QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
-			config->setGroup("HTTP server");
-			if (config->getBool("Enabled", false)) {
-				Http::Connection* connection = new Http::Connection(socket, false);
-				socket->setEventHandler(connection);
-				socket.reset();
-			} else {
-				QERR("HTTP server is disabled -- closing connection");
-			}
+			/*
+			 * Recognised and refused. QuickDC serves nothing over HTTP - it is a
+			 * peer-to-peer client, and the only HTTP it needs is outbound, which
+			 * samurai's client does. Naming the protocol is still worth doing
+			 * here so that a browser pointed at the peer port gets a log line
+			 * saying why nothing happened.
+			 */
+			QERR("An HTTP request arrived on the peer port; QuickDC serves no HTTP");
 			break;
-		}
 
 		case Protocol::TLS:
 		{
