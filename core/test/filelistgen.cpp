@@ -44,10 +44,13 @@ static int failures = 0;
 #define CHECK(x) do { if (!(x)) { \
 	printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
 
+/* The pid is in the name because two runs at once would otherwise share a
+   share directory, and each cleans up after itself at the end. */
 static std::string scratch(const char* leaf)
 {
 	static int counter = 0;
-	return "/tmp/quickdc_listgen_" + std::to_string(counter++) + "_" + leaf;
+	return "/tmp/quickdc_listgen_" + std::to_string((int) getpid())
+		+ "_" + std::to_string(counter++) + "_" + leaf;
 }
 
 static bool writeFile(const std::string& path, const std::string& content)

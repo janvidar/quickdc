@@ -42,18 +42,20 @@ QuickDC::Share::File::~File() {
 
 /**
  * This will return the public name as perceived by other users.
+ *
+ * From the directory's public name, which is relative to the share root: this
+ * string is the FN field of a search result, and the directory's getName() is
+ * the path the share has on this machine.
  */
 const std::string& QuickDC::Share::File::getPublicName() {
 	if (publicName != "")
 		return publicName;
-	
-	publicName += directory->getName();
+
+	publicName = "/";
+	publicName += directory->getPublicName();
 	publicName += "/";
 	publicName += file.getBaseName();
-	
-	if (publicName[0] != '/')
-		publicName = '/' + publicName;
-	
+
 	return publicName;
 }
 

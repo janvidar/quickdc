@@ -43,6 +43,18 @@ class Dir
 		virtual ~Dir();
 
 		const std::string& getBaseName() const { return basename; }
+
+		/**
+		 * The name this directory is published under: the base names from the
+		 * share root down, separated by '/', and never the path it has on this
+		 * machine.
+		 *
+		 * A subdirectory is constructed from its full path, so getName() below
+		 * is an absolute local one - the OS user's home directory name and all.
+		 * That is for our own use only; this is what a stranger may be told.
+		 */
+		const std::string& getPublicName() const { return publicName; }
+
 		const std::string& getName() const { return name; }
 		const std::string& getPath() const { return path; }
 
@@ -55,6 +67,11 @@ class Dir
 	protected:
 		void scan();
 
+		/**
+		 * Compose getPublicName() from the base names up the parent chain.
+		 */
+		void buildPublicName();
+
 		void addSize(uint64_t size);
 	
 		QuickDC::Share::Dir* parent;
@@ -65,6 +82,7 @@ class Dir
 		std::string path;
 		std::string name;
 		std::string basename;
+		std::string publicName;
 
 		uint64_t size;
 		size_t filecount;

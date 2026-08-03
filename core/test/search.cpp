@@ -141,6 +141,7 @@ class Share
 		std::string ses;
 		std::string hashcache;
 		std::vector<std::string> madeFiles;
+		std::vector<std::string> madeDirs;
 		std::unique_ptr<QuickDC::Core> core;
 		std::unique_ptr<QuickDC::Hash::Manager> hashes;
 		QuickDC::Share::Manager* shares = 0;
@@ -165,6 +166,11 @@ class Share
 			for (size_t n = 0; n < madeFiles.size(); n++)
 				Samurai::IO::File(madeFiles[n]).remove();
 
+			/* Deepest first, and with rmdir: remove() unlinks, which never
+			   takes a directory away. */
+			for (size_t n = madeDirs.size(); n-- > 0; )
+				Samurai::IO::File::rmdir(madeDirs[n].c_str());
+
 			Samurai::IO::File(out + "/files.xml").remove();
 			Samurai::IO::File(out + "/files.xml.bz2").remove();
 			Samurai::IO::File::rmdir(out.c_str());
@@ -182,6 +188,13 @@ class Share
 			/* Distinct contents, so every file gets a TTH of its own. */
 			writeFile(path, name + std::string(size, 'x'));
 			madeFiles.push_back(path);
+		}
+
+		void subdir(const std::string& name)
+		{
+			const std::string path = dir + "/" + name;
+			Samurai::IO::File::mkdir(path.c_str());
+			madeDirs.push_back(path);
 		}
 
 		bool scan()
@@ -519,6 +532,59 @@ int main()
 		share.shares->search(&req);
 		CHECK(r.count() == 0);
 		printf("  ok a hash nothing matches returns nothing\n");
+	}
+
+	/*
+	 * What a hit is called. The name goes out in the FN field of a search
+	 * result - by UDP straight to whoever searched, or through the hub - so it
+	 * has to be the name the file has inside the share.
+	 *
+	 * A subdirectory is constructed from its full path on disk, and the public
+	 * name was composed from that, so every hit below the top level of a share
+	 * used to hand out an absolute local path: the account name in the home
+	 * directory, and the layout of the machine, to anyone who searched for a
+	 * common word.
+	 */
+	{
+		Share nested;
+		nested.subdir("albums");
+		nested.subdir("albums/1999");
+		nested.file("readme.txt", 10);
+		nested.file("albums/1999/single.mp3", 20);
+		CHECK(nested.scan());
+
+		Replies top;
+		Request wanted(&top);
+		wanted.addInclusion("readme");
+		nested.shares->search(&wanted);
+
+		CHECK(top.count() == 1);
+		if (top.count() == 1)
+			CHECK(top.names[0] == "/shared/readme.txt");
+
+		Replies deep;
+		Request req(&deep);
+		req.addInclusion("single.mp3");
+		nested.shares->search(&req);
+
+		CHECK(deep.count() == 1);
+		if (deep.count() == 1)
+		{
+			const std::string fn = deep.names[0];
+
+			CHECK(fn == "/shared/albums/1999/single.mp3");
+			CHECK(fn.find(nested.dir) == std::string::npos);
+			CHECK(fn.find("/tmp") == std::string::npos);
+
+			/* And the name handed out is the one a $Get for it resolves, since
+			   that is all a peer has to ask by. */
+			Samurai::IO::File* served = nested.shares->getFile(fn.c_str());
+			CHECK(served != 0);
+			if (served)
+				CHECK(served->getName() == deep.files[0]->getFile().getName());
+
+			printf("  ok a hit below the top level is named '%s'\n", fn.c_str());
+		}
 	}
 
 	/* No more than the request asks for. */

@@ -166,7 +166,10 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 			}
 			return file;
 		}
-	} else if (strncasecmp("TTHL/", pubname, 5)) {
+	} else if (strncasecmp("TTHL/", pubname, 5) == 0) {
+		/* Leaf hashes, which are not a file in the share at all: they live
+		   inside the hash cache, and getLeafData() is what serves them. Any
+		   other name is a file the walk below has to look for. */
 		return 0;
 	} else {
 		/*
@@ -178,6 +181,11 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 		std::string path(pubname);
 		char* iter = path.data();
 		char* npos = 0;
+
+		/* A public name is rooted, and a peer asks for the name it was given.
+		   The first component is the share's own name, not the empty one in
+		   front of a leading separator. */
+		if (*iter == '/') iter++;
 
 		npos = strchr(iter, '/');
 		if (!npos) return 0; // Must have at least one / unless file is a file list
@@ -197,6 +205,10 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 		while (dir) {
 			QDBG("*** lookup: str='%s'", iter);
 			if (npos) {
+				/* Cut here as well, the way the first component is cut above:
+				   getDir() compares against a directory's base name, and what
+				   is left of the path is not one. */
+				npos[0] = 0;
 				dir = dir->getDir(iter);
 				iter = &npos[1];
 				npos = strchr(iter, '/');

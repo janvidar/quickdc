@@ -20,6 +20,7 @@
 
 QuickDC::Share::Dir::Dir(const std::string& path_, const std::string& name_, QuickDC::Share::Manager* manager_) : parent(0), manager(manager_), path(path_), name(name_), size(0), filecount(0) {
 	basename = name;
+	buildPublicName();
 	scan();
 }
 
@@ -36,8 +37,22 @@ QuickDC::Share::Dir::Dir(const std::string& name_, QuickDC::Share::Dir* parent_)
 		basename = name.substr(split+1);
 	else
 		basename = name;
-	
+
+	buildPublicName();
 	scan();
+}
+
+/*
+ * From the base names alone, so that what a stranger is told stays inside the
+ * share: 'name' is the whole path on this machine for anything below the top
+ * level, and the top level's is the alias the user chose to publish it under.
+ * Done here rather than on demand because scan() builds the children, and each
+ * of them composes its own from this one.
+ */
+void QuickDC::Share::Dir::buildPublicName() {
+	publicName = basename;
+	for (const QuickDC::Share::Dir* up = parent; up; up = up->parent)
+		publicName = up->basename + "/" + publicName;
 }
 
 QuickDC::Share::Dir::~Dir() {
