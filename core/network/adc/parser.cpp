@@ -64,6 +64,10 @@ bool ADC::Parser::parse(const char* buffer, size_t buflen, ADC::Command& command
 		char* offset = strchr(last, ' ');
 		
 		while (offset) {
+			if (command.arguments.size() >= ADC::MAX_COMMAND_ARGUMENTS) {
+				free(buf);
+				return false;
+			}
 			size_t len = &offset[0]-&last[0];
 			char* argument = strndup(&last[0], len);
 			command.arguments.push_back(unescape(&argument, len));
@@ -74,8 +78,12 @@ bool ADC::Parser::parse(const char* buffer, size_t buflen, ADC::Command& command
 				offset = 0;
 			}
 		}
-		
+
 		if (last) {
+			if (command.arguments.size() >= ADC::MAX_COMMAND_ARGUMENTS) {
+				free(buf);
+				return false;
+			}
 			char* argument = strdup(last);
 			command.arguments.push_back(unescape(&argument, strlen(argument)));
 		}

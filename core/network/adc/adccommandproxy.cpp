@@ -167,6 +167,20 @@ bool ADC::CommandProxy::write()
 	return ok;
 }
 
+/*
+ * Neither ADC nor the buffer holding it bounds a line, and the buffer doubles as
+ * it grows - so without a ceiling a peer decides how much memory we hold on its
+ * behalf simply by never sending a newline.
+ */
+bool ADC::CommandProxy::dropOverlongLine()
+{
+	QERR("ADC command line longer than %zu bytes; closing connection",
+		QuickDC::MAX_COMMAND_LINE);
+	readbuffer->clear();
+	close();
+	return false;
+}
+
 bool ADC::CommandProxy::read()
 {
 	static char buf[READ_BUF_SIZE+1] = {0,};
@@ -195,6 +209,11 @@ bool ADC::CommandProxy::read()
 			split = readbuffer->find('\n');
 			continue;
 		}
+
+		/* Refused before it is parsed, so the offending bytes are never acted on. */
+		if (split > QuickDC::MAX_COMMAND_LINE)
+			return dropOverlongLine();
+
 		std::string command = readbuffer->copyRange(0, split+1);
 		readbuffer->remove(split+1);
 		invoke(command.c_str(), split);
@@ -203,6 +222,11 @@ bool ADC::CommandProxy::read()
 
 		split = readbuffer->find('\n');
 	}
+
+	/* Nothing has terminated the line that is still buffered, and it is already
+	   longer than one may be. */
+	if (!handover && readbuffer->size() > QuickDC::MAX_COMMAND_LINE)
+		return dropOverlongLine();
 
 	if (handover)
 	{
@@ -231,9 +255,14 @@ void ADC::CommandProxy::handOverTo(QuickDC::Download* download)
 	handover = download;
 }
 
-void ADC::CommandProxy::send(Command* cmd)
+bool ADC::CommandProxy::send(Command* cmd)
 {
-	queue.push(cmd);
+	return queue.push(cmd);
+}
+
+void ADC::CommandProxy::setSendQueueLimit(size_t bytes)
+{
+	queue.setMaxQueueSize(bytes);
 }
 
 void ADC::CommandProxy::close()

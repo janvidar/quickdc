@@ -28,6 +28,15 @@ namespace QuickDC {
 class CommandParser;
 class CommandBase;
 
+/**
+ * The longest a single protocol line may grow before the connection is dropped.
+ *
+ * Neither ADC nor NMDC bounds a line, so without this a peer that never sends a
+ * terminator has the receive buffer doubled for it until the allocation fails.
+ * Nothing either protocol carries comes close to this.
+ */
+inline constexpr size_t MAX_COMMAND_LINE = 16 * 1024;
+
 class CommandProxy {
 	public:
 		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket);
@@ -130,7 +139,23 @@ class CommandFIFO
 		virtual size_t getWaitQueueSize() const;
 		virtual QueuedCommand* first();
 		virtual void pop();
-		virtual void push(CommandBase*);
+
+		/**
+		 * Queue a command.
+		 *
+		 * @return false when the ceiling set by setMaxQueueSize() would be
+		 *         exceeded, in which case the command is not queued. A peer that
+		 *         never reads must not be able to make us hold an unbounded
+		 *         amount of data on its behalf.
+		 */
+		virtual bool push(CommandBase*);
+
+		/**
+		 * The most this queue may hold, counting what waits behind a lock.
+		 * 0 for no ceiling, which is the default.
+		 */
+		virtual void setMaxQueueSize(size_t bytes) { max_queue_size = bytes; }
+		virtual size_t getMaxQueueSize() const { return max_queue_size; }
 		
 		/**
 		 * Flush wait queue into queue.
@@ -142,6 +167,7 @@ class CommandFIFO
 		std::list<QueuedCommand*> wait_queue;
 		size_t queue_size;
 		size_t wait_queue_size;
+		size_t max_queue_size;
 		bool locked;
 };
 

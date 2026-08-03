@@ -60,9 +60,18 @@ class CommandProxy : public QuickDC::CommandProxy
 		virtual bool write();
 		virtual void close();
 		virtual void connect();
-		void send(ADC::Command* cmd);
+
+		/**
+		 * Queue a command for sending.
+		 * @return false if the send queue ceiling was reached and the command
+		 *         was dropped.
+		 */
+		bool send(ADC::Command* cmd);
 
 		size_t getSendQueueSize() const;
+
+		/** The most the send queue may hold; 0 for no ceiling. */
+		void setSendQueueLimit(size_t bytes);
 
 		/**
 		 * Give the rest of the connection over to a download; what is still
@@ -71,6 +80,12 @@ class CommandProxy : public QuickDC::CommandProxy
 		void handOverTo(QuickDC::Download* download);
 
 	protected:
+		/**
+		 * Close the connection over a line that exceeds
+		 * QuickDC::MAX_COMMAND_LINE, and answer read()'s failure.
+		 */
+		bool dropOverlongLine();
+
 		std::map<uint32_t, ADC::CommandParser*> mapper;
 		void clearParsers();
 		QuickDC::CommandFIFO queue;

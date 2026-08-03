@@ -28,6 +28,16 @@ namespace Samurai {
 
 namespace ADC {
 
+/**
+ * The most arguments one command may carry.
+ *
+ * Every argument is an allocation, and the receivers of an INF then do work per
+ * argument on a structure that grows with it - so without a ceiling the cost of
+ * one line is whatever the sender cares to make it. No command the protocol
+ * defines comes near this.
+ */
+inline constexpr size_t MAX_COMMAND_ARGUMENTS = 128;
+
 class Parser;
 class CommandProxy;
 class QueuedCommand;

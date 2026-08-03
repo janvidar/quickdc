@@ -80,8 +80,14 @@ class CommandProxy : public QuickDC::CommandProxy {
 		 */
 		bool closed;
 
+		/**
+		 * Close the connection over a command that exceeds
+		 * QuickDC::MAX_COMMAND_LINE, and answer read()'s failure.
+		 */
+		bool dropOverlongLine();
+
 		void clearParsers();
-		
+
 		QuickDC::CommandFIFO queue;
 };
 

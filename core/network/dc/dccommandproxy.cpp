@@ -202,6 +202,10 @@ bool DC::CommandProxy::read()
 			continue;
 		}
 
+		/* Refused before it is parsed, so the offending bytes are never acted on. */
+		if (split > QuickDC::MAX_COMMAND_LINE)
+			return dropOverlongLine();
+
 		const std::string command = readbuffer->copyRange(0, split); // excludes the pipe
 		readbuffer->remove(split+1);
 		invoke(command.c_str(), split);
@@ -212,7 +216,27 @@ bool DC::CommandProxy::read()
 
 		split = readbuffer->find('|');
 	}
+
+	/* Nothing has terminated the command that is still buffered, and it is
+	   already longer than one may be. */
+	if (!closed && readbuffer->size() > QuickDC::MAX_COMMAND_LINE)
+		return dropOverlongLine();
+
 	return !closed;
+}
+
+/*
+ * Neither NMDC nor the buffer holding it bounds a command, and the buffer doubles
+ * as it grows - so without a ceiling a peer decides how much memory we hold on
+ * its behalf simply by never sending a pipe.
+ */
+bool DC::CommandProxy::dropOverlongLine()
+{
+	QERR("NMDC command longer than %zu bytes; closing connection",
+		QuickDC::MAX_COMMAND_LINE);
+	readbuffer->clear();
+	close();
+	return false;
 }
 
 

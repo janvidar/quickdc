@@ -85,6 +85,7 @@ void QuickDC::QueuedCommand::setOffset(size_t offset_)
 QuickDC::CommandFIFO::CommandFIFO()
 	: queue_size(0)
 	, wait_queue_size(0)
+	, max_queue_size(0)
 	, locked(false)
 {
 }
@@ -150,10 +151,17 @@ QuickDC::QueuedCommand* QuickDC::CommandFIFO::first()
 	return qcmd;
 }
 
-void QuickDC::CommandFIFO::push(QuickDC::CommandBase* cmd)
+bool QuickDC::CommandFIFO::push(QuickDC::CommandBase* cmd)
 {
+	/*
+	 * Measured before the command is taken over, so that a refusal leaves the
+	 * caller's reference count exactly as it found it.
+	 */
+	if (max_queue_size && queue_size + wait_queue_size + cmd->getSize() > max_queue_size)
+		return false;
+
 	QuickDC::QueuedCommand* qcmd = new QuickDC::QueuedCommand(cmd);
-	
+
 	if (!locked)
 	{
 		queue.push_back(qcmd);
@@ -164,6 +172,7 @@ void QuickDC::CommandFIFO::push(QuickDC::CommandBase* cmd)
 		wait_queue.push_back(qcmd);
 		wait_queue_size += qcmd->getSize();
 	}
+	return true;
 }
 
 size_t QuickDC::CommandFIFO::getQueueSize() const
