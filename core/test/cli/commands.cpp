@@ -563,7 +563,15 @@ static void cmd_browse(const std::vector<std::string>& args)
 	 * the next tick of the message loop. Note this never lands in queue.xml -
 	 * a file list has no TTH and nothing to resume.
 	 */
-	core->queue->requestFilelist(hubUrl, cid);
+	if (!core->queue->requestFilelist(hubUrl, cid))
+	{
+		/* The identifier is what the downloaded list is named after, and this
+		   one is a nickname the hub chose - see FilelistRequest. */
+		cmd_error("Cannot browse `%s': the hub gave them an identifier we will not "
+			"name a file after", args[0].c_str());
+		return;
+	}
+
 	core->queue->process();
 
 	cmd_output("Queued a file list request for '%s'. Use /queue to watch it.",

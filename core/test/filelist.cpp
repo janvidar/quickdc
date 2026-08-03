@@ -114,6 +114,10 @@ static void check(const char* label, const char* xml, const char* expect)
 
 int main()
 {
+	/* Unbuffered, so that what has already passed is on the terminal if a case
+	   below takes the process down rather than failing. */
+	setbuf(stdout, 0);
+
 	check("empty list", LIST(""), "");
 
 	check("one file",
@@ -327,6 +331,93 @@ int main()
 		{
 			printf("  ok decoding and deleting balances\n");
 		}
+	}
+
+	/*
+	 * Nesting. A list arrives bzip2 compressed, so a few kilobytes of it is as
+	 * many levels as the peer cared to write, and a level is a directory that is
+	 * held on to and later walked.
+	 *
+	 * Ordinary depth is followed as before.
+	 */
+	{
+		const int depth = 100;
+
+		std::string xml = "<FileListing Version=\"1\" Base=\"/\">";
+		for (int n = 0; n < depth; n++) xml += "<Directory Name=\"d\">";
+		xml += "<File Name=\"bottom\" Size=\"5\" TTH=\"T\"/>";
+		for (int n = 0; n < depth; n++) xml += "</Directory>";
+		xml += "</FileListing>";
+
+		bool ok = false;
+		Share::RemoteDir* root = decode(xml.c_str(), ok);
+
+		CHECK(ok);
+		CHECK(root->getSize() == 5);
+
+		size_t levels = 0;
+		for (const Share::RemoteDir* dir = root; dir; dir = dir->countSubdirs() ? dir->getSubdir(0) : 0)
+			levels++;
+		CHECK(levels == (size_t) depth + 1);
+
+		delete root;
+		printf("  ok a list nested %d deep is followed all the way down\n", depth);
+	}
+
+	/*
+	 * Deeper than that is not a collection, and the list is refused rather than
+	 * followed. Both the reader and the handler stop at 128, so the assertion is
+	 * on the bound and not on which of the two got there first.
+	 */
+	{
+		const int depth = 4000;
+
+		std::string xml = "<FileListing Version=\"1\" Base=\"/\">";
+		for (int n = 0; n < depth; n++) xml += "<Directory Name=\"d\">";
+		xml += "<File Name=\"bottom\" Size=\"5\" TTH=\"T\"/>";
+		for (int n = 0; n < depth; n++) xml += "</Directory>";
+		xml += "</FileListing>";
+
+		bool ok = true;
+		Share::RemoteDir* root = decode(xml.c_str(), ok);
+
+		CHECK(!ok);
+
+		size_t levels = 0;
+		for (const Share::RemoteDir* dir = root; dir; dir = dir->countSubdirs() ? dir->getSubdir(0) : 0)
+			levels++;
+		CHECK(levels <= 128);
+
+		/* Nothing inside the part that was refused, either. */
+		CHECK(root->getSize() == 0);
+		CHECK(root->getFiles() == 0);
+
+		delete root;
+		printf("  ok a list nested %d deep is refused and followed %zu levels\n",
+			depth, levels);
+	}
+
+	/*
+	 * And the tree itself, built by hand as deep as a list without a cap could
+	 * have made it. Carrying a file's size up to the root and taking the tree
+	 * apart again both used to recurse once per level.
+	 */
+	{
+		const size_t depth = 400000;
+
+		Share::RemoteDir* root = new Share::RemoteDir("", 0);
+		Share::RemoteDir* leaf = root;
+		for (size_t n = 0; n < depth; n++)
+			leaf = new Share::RemoteDir("d", leaf);
+
+		new Share::RemoteFile("bottom", 7, "T", leaf);
+
+		CHECK(leaf->getSize() == 7);
+		CHECK(root->getSize() == 7);
+		CHECK(root->getFiles() == 1);
+
+		delete root;
+		printf("  ok a %zu level tree carries a size to the root and is deleted\n", depth);
 	}
 
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);

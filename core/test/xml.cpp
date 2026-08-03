@@ -127,6 +127,41 @@ static void checkRoundTrip(const char* payload)
 	failures++;
 }
 
+/*
+ * Nesting, which a peer decides: a file list is parsed with this, and a handler
+ * that follows the nesting recursively runs out of stack long before a hostile
+ * document runs out of open tags. Anything past the limit is refused where it is
+ * reached, so nothing downstream ever sees a tree it cannot walk.
+ */
+static void checkNesting(const char* label, size_t depth, bool expectRefused)
+{
+	std::string doc;
+	for (size_t n = 0; n < depth; n++) doc += "<a>";
+	for (size_t n = 0; n < depth; n++) doc += "</a>";
+
+	Samurai::IO::Buffer buf;
+	buf.append(doc.c_str(), doc.size());
+
+	Recorder rec;
+	XML::SAX::XMLReader reader(&buf, &rec);
+	reader.parse();
+
+	const bool refused = rec.log.find("[fatal:") != std::string::npos;
+
+	/* A refused document stops where it was: no endDocument() follows it. */
+	const bool completed = rec.log.find("[/doc]") != std::string::npos;
+
+	if (refused == expectRefused && completed == !expectRefused)
+	{
+		printf("  ok %s\n", label);
+		return;
+	}
+
+	printf("FAIL %s\n    depth:    %d\n    expected: %s\n    actual:   %s\n",
+		label, (int) depth, expectRefused ? "refused" : "accepted", rec.log.c_str());
+	failures++;
+}
+
 int main()
 {
 	check("empty document", "", "");
@@ -428,6 +463,52 @@ int main()
 	check("reference inside cdata is literal",
 		"<a><![CDATA[&#65;&amp;]]></a>",
 		"[doc]<a>'&#65;&amp;'</a>[/doc]");
+
+	checkNesting("nesting at the limit is accepted",
+		XML::SAX::XMLReader::maxNestingDepth, false);
+
+	checkNesting("nesting one past the limit is refused",
+		XML::SAX::XMLReader::maxNestingDepth + 1, true);
+
+	checkNesting("deeply nested document is refused",
+		XML::SAX::XMLReader::maxNestingDepth * 100, true);
+
+	/* Depth is what is bounded, not how many elements there are. */
+	{
+		std::string doc;
+		for (size_t n = 0; n < XML::SAX::XMLReader::maxNestingDepth * 10; n++)
+			doc += "<a/>";
+
+		std::string expect = "[doc]";
+		for (size_t n = 0; n < XML::SAX::XMLReader::maxNestingDepth * 10; n++)
+			expect += "<a></a>";
+		expect += "[/doc]";
+
+		check("many siblings are not nesting", doc.c_str(), expect.c_str());
+	}
+
+	/* Nor may an end tag with nothing open buy any extra depth. */
+	{
+		std::string doc;
+		for (size_t n = 0; n < 200; n++) doc += "</a>";
+		for (size_t n = 0; n < XML::SAX::XMLReader::maxNestingDepth; n++) doc += "<a>";
+		for (size_t n = 0; n < XML::SAX::XMLReader::maxNestingDepth; n++) doc += "</a>";
+
+		Samurai::IO::Buffer buf;
+		buf.append(doc.c_str(), doc.size());
+
+		Recorder rec;
+		XML::SAX::XMLReader reader(&buf, &rec);
+		reader.parse();
+
+		if (rec.log.find("[fatal:") == std::string::npos)
+			printf("  ok stray end tags do not buy extra depth\n");
+		else
+		{
+			printf("FAIL stray end tags do not buy extra depth\n");
+			failures++;
+		}
+	}
 
 	checkRoundTrip("&");
 	checkRoundTrip("<");

@@ -49,6 +49,9 @@ void XML::SAX::XMLReader::parse() {
 	bool emptyBody    = false;
 	bool endTag       = false;
 
+	size_t depth      = 0;     // elements currently open
+	bool tooDeep      = false; // depth ran past maxNestingDepth
+
 	ContentHandler::AttributeList attributes;
 
 	/* isspace() is only defined for EOF and unsigned char values, and a byte
@@ -85,11 +88,19 @@ void XML::SAX::XMLReader::parse() {
 	auto emitTag = [&]() {
 		const std::string tagname = in->copyRange(name_start, name_end);
 		if (!endTag) {
+			/* An empty element opens nothing, so it cannot deepen anything. */
+			if (!emptyBody && ++depth > maxNestingDepth) {
+				tooDeep = true;
+				return;
+			}
 			handler->startElement(0, tagname.c_str(), 0, attributes);
 			if (emptyBody)
 				handler->endElement(0, tagname.c_str(), 0);
 		} else {
 			handler->endElement(0, tagname.c_str(), 0);
+			/* An end tag with nothing open is reported, so the count would
+			   otherwise wrap. */
+			if (depth) depth--;
 		}
 		balance--;
 	};
@@ -307,6 +318,14 @@ void XML::SAX::XMLReader::parse() {
 			}
 		}
 
+		if (tooDeep) break;
+	}
+
+	if (tooDeep) {
+		/* Fatal: what has been reported so far describes only part of the
+		   document, and there is no telling what the rest of it says. */
+		handler->fatalError("Element nesting is too deep");
+		return;
 	}
 
 	/* Character data is delivered when the next '<' arrives, so whatever

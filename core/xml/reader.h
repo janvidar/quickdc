@@ -87,16 +87,30 @@ class ContentHandler {
 
 class XMLReader {
 	public:
+		/**
+		 * How deeply elements may nest before the document is refused.
+		 *
+		 * Documents come from peers - a file list is one - and a handler that
+		 * follows the nesting recursively runs out of stack long before a
+		 * hostile document runs out of open tags. No real document is anywhere
+		 * near this deep.
+		 */
+		static constexpr size_t maxNestingDepth = 128;
+
 		XMLReader(Samurai::IO::Buffer* in, ContentHandler* handler);
 		virtual ~XMLReader();
-		
+
 	public:
 		/**
 		 * This will actually parse the XML and return a Document.
 		 * NOTE: The Document must be freed.
+		 *
+		 * A document nested deeper than maxNestingDepth is abandoned where the
+		 * limit is reached: fatalError() is reported and neither endDocument()
+		 * nor any further event follows.
 		 */
 		void parse();
-		
+
 
 	protected:
 		Samurai::IO::Buffer* in;

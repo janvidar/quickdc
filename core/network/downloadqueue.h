@@ -74,6 +74,33 @@
 /** A TTH root in base32 is always this long. */
 #define QUICKDC_TTH_LENGTH 39
 
+/**
+ * The longest identifier we will name a downloaded file list after.
+ *
+ * An ADC CID is 39 base32 characters and User::setNick() keeps at most 63
+ * bytes of a nickname, so nothing legitimate comes anywhere near this.
+ */
+#define QUICKDC_IDENTIFIER_MAX 64
+
+/**
+ * The largest compressed file list we accept, and the largest it may unpack to.
+ *
+ * Both are needed: the first bounds what one download can make us read, and the
+ * second is what stops a bzip2 bomb, which reaches about a million to one on
+ * input crafted for it. A share of a quarter of a million files makes a list of
+ * some tens of megabytes, so neither of these is within sight of a real one.
+ */
+#define QUICKDC_FILELIST_MAX_PACKED (16*1024*1024)
+#define QUICKDC_FILELIST_MAX_PLAIN  (256*1024*1024)
+
+/**
+ * How deeply a peer's file list may nest before we stop believing it.
+ *
+ * The walk over the decoded tree is recursive, and nothing in the format stops
+ * a peer nesting a directory inside itself until our stack runs out.
+ */
+#define QUICKDC_FILELIST_MAX_DEPTH 128
+
 namespace Samurai {
 	namespace IO {
 		class Buffer;
@@ -250,6 +277,29 @@ class FilelistRequest {
 		                const char* dir = QUICKDC_LIST_DIR);
 		virtual ~FilelistRequest();
 
+		/**
+		 * Whether an identifier is one we are willing to name a file after.
+		 *
+		 * The identifier is only a CID when the hub gave us one and it verified:
+		 * on NMDC it is always the nickname, and on ADC it is the nickname
+		 * whenever verification failed. A nickname is arbitrary bytes chosen by
+		 * whoever is on the hub, and it ends up inside a path, so a user called
+		 * "../../../../home/user/.config/autostart/x" would otherwise be a write
+		 * wherever the hub cares to point us.
+		 *
+		 * Accepts what a CID or an ordinary nickname contains and nothing that
+		 * can leave the list directory: no path separator, no "..", no control
+		 * byte, and not empty.
+		 */
+		static bool isValidIdentifier(const char* id);
+
+		/**
+		 * False when the identifier was refused, in which case there is no
+		 * filename and there is nothing to download into.
+		 * QueueManager::requestFilelist() never hands one of these out.
+		 */
+		inline bool isValid() const { return filename != 0; }
+
 		inline const char* getHubUrl() const { return hub; }
 		inline const char* getClientID() const { return cid; }
 		inline const Samurai::TimeStamp& getTimeAdded() const { return added; }
@@ -260,7 +310,7 @@ class FilelistRequest {
 		/**
 		 * Where the fetched list is written; ~/.quickdc/lists/{cid}.xml
 		 * The ".bz2" suffix is appended by the caller if the list arrives
-		 * compressed.
+		 * compressed. 0 if the identifier was refused; see isValid().
 		 */
 		inline const char* getLocalFilename() const { return filename; }
 
@@ -268,7 +318,7 @@ class FilelistRequest {
 		 * Where the bytes land while the list is arriving. The peer decides
 		 * whether it sends files.xml or files.xml.bz2 and the protocol does
 		 * not say which, so the raw download is kept aside and sniffed before
-		 * it becomes getLocalFilename().
+		 * it becomes getLocalFilename(). 0 if the identifier was refused.
 		 */
 		inline const char* getTempFilename() const { return tempname; }
 
@@ -564,6 +614,9 @@ class QueueManager {
 		 *
 		 * Only queues it; process() makes the connection, so a request that
 		 * cannot be served right now is retried rather than lost.
+		 *
+		 * @return 0 if the identifier is not one we can name a file after; see
+		 *         FilelistRequest::isValidIdentifier().
 		 */
 		FilelistRequest* requestFilelist(const char* hub, const char* cid);
 		FilelistRequest* getFilelistRequest(const char* hub, const char* cid) const;
@@ -659,8 +712,12 @@ class QueueManager {
 		 * Recursively turn file list entries into sources for queued files.
 		 * Note the leading '::': the file list types live in a top level
 		 * 'Share' namespace, not in QuickDC::Share.
+		 *
+		 * @param depth how far down the peer's tree this call already is;
+		 *        the walk stops at QUICKDC_FILELIST_MAX_DEPTH.
 		 */
-		size_t collectSources(::Share::RemoteDir* dir, const char* hub, const char* cid);
+		size_t collectSources(::Share::RemoteDir* dir, const char* hub, const char* cid,
+		                      size_t depth = 0);
 
 		/** A token unique to this client, safe to put on the wire. */
 		std::string makeToken();

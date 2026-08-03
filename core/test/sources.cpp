@@ -79,6 +79,48 @@ static std::string bzip2(const std::string& plain)
 	return out;
 }
 
+/*
+ * A bzip2 stream of 'block' repeated, built without ever holding the plaintext.
+ * The bomb cases need a stream that unpacks to far more than anything anyone
+ * would want in memory, which is the whole point of them.
+ */
+static std::string bzip2_repeated(const std::string& block, size_t times)
+{
+	Samurai::IO::BZip2Compressor codec;
+	std::string out;
+	char buf[65536];
+
+	std::span<const char> in;
+	size_t fed = 0;
+	bool flushing = false;
+
+	while (true)
+	{
+		if (in.empty() && !flushing)
+		{
+			if (fed < times)
+			{
+				in = std::span<const char>(block);
+				fed++;
+			}
+			else
+			{
+				flushing = true;   /* an empty input asks it to flush */
+			}
+		}
+
+		const Samurai::IO::Codec::Progress p = codec.step(in, buf);
+		if (p.status == Samurai::IO::Codec::Status::Error) return std::string();
+
+		out.append(buf, p.produced);
+		in = in.subspan(p.consumed);
+
+		if (p.status == Samurai::IO::Codec::Status::StreamEnd) break;
+		if (flushing && !p.produced) return std::string();
+	}
+	return out;
+}
+
 /* ------------------------------------------------------------------------- */
 /* What a QueueFile does with the sources it is offered                      */
 /* ------------------------------------------------------------------------- */
@@ -241,6 +283,41 @@ static void test_sources()
 #define LIST(body) \
 	"<?xml version=\"1.1\" encoding=\"utf-8\"?>\r\n" \
 	"<FileListing Version=\"1\" Base=\"/\">\r\n" body "</FileListing>\r\n"
+
+/* The same document as LIST(), for a body that is not a literal. */
+static std::string wrap_list(const std::string& body)
+{
+	return std::string("<?xml version=\"1.1\" encoding=\"utf-8\"?>\r\n"
+		"<FileListing Version=\"1\" Base=\"/\">\r\n") + body + "</FileListing>\r\n";
+}
+
+/* A file list with one wanted file at the bottom of 'depth' directories. */
+static std::string nested_list(size_t depth)
+{
+	std::string body;
+	for (size_t n = 0; n < depth; n++) body += "<Directory Name=\"d\">";
+	body += "<File Name=\"a\" Size=\"1000\" TTH=\"" TTH1 "\"/>";
+	for (size_t n = 0; n < depth; n++) body += "</Directory>";
+
+	return wrap_list(body);
+}
+
+/*
+ * A file list of 'entries' files, all of them the one we want. Long enough that
+ * bzip2 splits it across several blocks, which is what makes a truncated copy
+ * of it decode into a list that reads as complete and is not.
+ */
+static std::string big_list(size_t entries)
+{
+	std::string body;
+	for (size_t n = 0; n < entries; n++)
+	{
+		body += "<File Name=\"f";
+		body += std::to_string(n);
+		body += "\" Size=\"1000\" TTH=\"" TTH1 "\"/>";
+	}
+	return wrap_list(body);
+}
 
 /*
  * Puts 'content' where a finished download would have left it and mines it,
@@ -469,6 +546,193 @@ static void test_collect()
 	}
 }
 
+/* ------------------------------------------------------------------------- */
+/* What a file list request is allowed to name                               */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * The identifier a list is named after is a CID only when the hub published one
+ * and it verified. On NMDC it is always the nickname, which is 63 arbitrary
+ * bytes chosen by whoever is on the hub - so it decides a path, and a hub that
+ * names a user "../../../.config/autostart/x" would otherwise get a file
+ * written wherever it likes with content of its choosing.
+ */
+static void test_filelist_naming()
+{
+	const std::string dir = scratch("lists");
+	const std::string prefix = dir + "/";
+
+	/* An ADC CID and an ordinary nickname both still name a file in there. */
+	{
+		QuickDC::FilelistRequest byCid(HUB, CID, dir.c_str());
+		CHECK(byCid.isValid());
+		CHECK(byCid.getLocalFilename()
+			&& byCid.getLocalFilename() == prefix + CID + ".xml");
+		CHECK(byCid.getTempFilename()
+			&& byCid.getTempFilename() == prefix + CID + ".xml" QUICKDC_PART_SUFFIX);
+
+		QuickDC::FilelistRequest byNick("dchub://hub.example:411", "[NL]alice", dir.c_str());
+		CHECK(byNick.isValid());
+		CHECK(byNick.getLocalFilename()
+			&& byNick.getLocalFilename() == prefix + "[NL]alice.xml");
+		printf("  ok a cid and a nickname both name a file in the list directory\n");
+	}
+
+	/* None of these may become a path. */
+	static const char* hostile[] = {
+		"../../../../tmp/quickdc_traversal",
+		"..",
+		".",
+		"a/b",
+		"a\\b",
+		"/etc/passwd",
+		"",
+		0
+	};
+
+	for (size_t n = 0; hostile[n]; n++)
+	{
+		QuickDC::FilelistRequest request(HUB, hostile[n], dir.c_str());
+
+		CHECK(!request.isValid());
+		CHECK(request.getLocalFilename() == 0);
+		CHECK(request.getTempFilename() == 0);
+
+		/*
+		 * And if one were ever accepted, what it names still has to sit inside
+		 * the directory it was given - which is the property that matters
+		 * whatever the identifier turns out to contain.
+		 */
+		if (request.getLocalFilename())
+		{
+			const std::string resolved =
+				Samurai::IO::File::resolvePath(request.getLocalFilename());
+			CHECK(resolved.compare(0, prefix.size(), prefix) == 0);
+		}
+	}
+	printf("  ok an identifier that would name a path is refused\n");
+
+	/* The queue refuses to hold one, so no download is ever started for it. */
+	{
+		Fixture fix;
+
+		CHECK(fix.queue->requestFilelist(HUB, "../../../../tmp/quickdc_traversal") == 0);
+		CHECK(fix.queue->requestFilelist(HUB, "a/b") == 0);
+		CHECK(fix.queue->countFilelistRequests() == 0);
+
+		CHECK(fix.queue->requestFilelist(HUB, CID) != 0);
+		CHECK(fix.queue->countFilelistRequests() == 1);
+		printf("  ok the queue refuses a request it cannot name a file for\n");
+	}
+}
+
+/* ------------------------------------------------------------------------- */
+/* What a downloaded file list is allowed to cost us                         */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Everything here arrives from a peer, so both what turns up and what it
+ * unpacks to are bounded. bzip2 reaches about a million to one on input crafted
+ * for it, and a list is unpacked before anything has looked at it.
+ */
+static void test_filelist_limits()
+{
+	/*
+	 * Far more than any share could account for, and refused on its size before
+	 * anything unpacks it - so the perfectly good list at the front of it is
+	 * never reached either.
+	 */
+	{
+		Fixture fix;
+		fix.want("/tmp/a.bin", TTH1);
+
+		std::string oversized = bzip2(LIST(
+			"<File Name=\"a\" Size=\"1000\" TTH=\"" TTH1 "\"/>"));
+		CHECK(!oversized.empty());
+		oversized.append((size_t) QUICKDC_FILELIST_MAX_PACKED, '\0');
+
+		CHECK(fix.mineList(oversized) == 0);
+		CHECK(fix.queue->getFileByTTH(TTH1)->countSources() == 0);
+		printf("  ok an oversized compressed file list is refused\n");
+	}
+
+	/* A bomb: a small stream that unpacks to more than the limit. */
+	{
+		Fixture fix;
+		fix.want("/tmp/a.bin", TTH1);
+
+		const std::string block(1024 * 1024, '\0');
+		const size_t blocks = (QUICKDC_FILELIST_MAX_PLAIN / (1024 * 1024)) + 16;
+
+		const std::string bomb = bzip2_repeated(block, blocks);
+		CHECK(!bomb.empty());
+		CHECK(bomb.size() < 64 * 1024);   /* which is what makes it a bomb */
+
+		QuickDC::FilelistRequest request(HUB, CID, fix.dir.c_str());
+		CHECK(write_file(request.getTempFilename(), bomb));
+
+		CHECK(fix.queue->onFilelistDownloaded(&request, HUB, CID) == 0);
+
+		/*
+		 * And nothing of it is left behind: a list that is short of entries but
+		 * reads as complete would have us decide a peer holds nothing we want.
+		 */
+		CHECK(!Samurai::IO::File(std::string(request.getLocalFilename())).exists());
+
+		Samurai::IO::File(std::string(request.getTempFilename())).remove();
+		printf("  ok a decompression bomb is refused and leaves nothing behind\n");
+	}
+
+	/*
+	 * A stream that stops short. The blocks before the cut unpack perfectly well
+	 * and the reader is forgiving about the tag that never closes, so what comes
+	 * out reads as a complete list of a peer who holds less than they do - which
+	 * is worse than no list at all, and so is refused.
+	 */
+	{
+		Fixture fix;
+		fix.want("/tmp/a.bin", TTH1);
+
+		const std::string packed = bzip2(big_list(40000));
+		CHECK(packed.size() > 1000);
+
+		const std::string truncated = packed.substr(0, packed.size() - packed.size() / 8);
+
+		QuickDC::FilelistRequest request(HUB, CID, fix.dir.c_str());
+		CHECK(write_file(request.getTempFilename(), truncated));
+
+		CHECK(fix.queue->onFilelistDownloaded(&request, HUB, CID) == 0);
+		CHECK(fix.queue->getFileByTTH(TTH1)->countSources() == 0);
+		CHECK(!Samurai::IO::File(std::string(request.getLocalFilename())).exists());
+
+		Samurai::IO::File(std::string(request.getTempFilename())).remove();
+		printf("  ok a truncated compressed file list is refused\n");
+	}
+
+	/*
+	 * Nesting. The tree is built and then walked recursively, and nothing in the
+	 * format stops a peer nesting a directory inside itself until our stack runs
+	 * out, so a document past the limit is refused rather than followed.
+	 */
+	{
+		Fixture fix;
+		fix.want("/tmp/a.bin", TTH1);
+
+		/* Well within the limit: still walked to the bottom. */
+		CHECK(fix.mineList(nested_list(100)) == 1);
+		printf("  ok ordinary nesting is walked to the bottom\n");
+	}
+
+	{
+		Fixture fix;
+		fix.want("/tmp/a.bin", TTH1);
+
+		CHECK(fix.mineList(nested_list(QUICKDC_FILELIST_MAX_DEPTH + 64)) == 0);
+		CHECK(fix.queue->getFileByTTH(TTH1)->countSources() == 0);
+		printf("  ok a file list nested past the limit is refused\n");
+	}
+}
+
 /*
  * How much a source is asked for at a time.
  *
@@ -537,6 +801,8 @@ int main()
 
 	test_sources();
 	test_collect();
+	test_filelist_naming();
+	test_filelist_limits();
 	test_chunk_sizing();
 
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);

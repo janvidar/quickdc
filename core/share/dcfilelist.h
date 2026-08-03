@@ -105,6 +105,9 @@ class XMLFileListHandler : public XML::SAX::ContentHandler {
 		XML::SAX::XMLReader* reader;
 		RemoteDir* root;
 		RemoteDir* currentDir;
+		/* Open <Directory> elements inside a subtree refused for its depth,
+		   waiting for their end tags. Nothing in them is built. */
+		size_t skipped;
 		bool problem;
 };
 

@@ -277,6 +277,32 @@ bool QuickDC::QueueFile::isPersistent() const
 /* FilelistRequest                                                           */
 /* ------------------------------------------------------------------------- */
 
+bool QuickDC::FilelistRequest::isValidIdentifier(const char* id)
+{
+	if (!id || !*id) return false;
+
+	const size_t length = strlen(id);
+	if (length > QUICKDC_IDENTIFIER_MAX) return false;
+
+	/* A single dot names the directory itself, and two of them anywhere leave
+	   it - so neither can be part of a name we make up. */
+	if (!strcmp(id, ".")) return false;
+	if (strstr(id, "..")) return false;
+
+	for (size_t n = 0; n < length; n++)
+	{
+		const unsigned char ch = (unsigned char) id[n];
+
+		/* A separator would make the identifier a path of its own, and a
+		   control byte has no business in a nickname whatever it does to a
+		   file system. ':' names a drive or an alternate stream elsewhere. */
+		if (ch == '/' || ch == '\\' || ch == ':') return false;
+		if (ch < 0x20 || ch == 0x7f) return false;
+	}
+
+	return true;
+}
+
 QuickDC::FilelistRequest::FilelistRequest(const char* hub_, const char* cid_, const char* dir_)
 	: hub(0)
 	, cid(0)
@@ -287,6 +313,18 @@ QuickDC::FilelistRequest::FilelistRequest(const char* hub_, const char* cid_, co
 {
 	hub = strdup(hub_ ? hub_ : "");
 	cid = strdup(cid_ ? cid_ : "");
+
+	/*
+	 * Checked here rather than in whoever asked, because this is the only place
+	 * the wire string becomes a path and the callers are protocol code and test
+	 * programs. A refused identifier leaves the request without a filename,
+	 * which isValid() reports and requestFilelist() acts on.
+	 */
+	if (!isValidIdentifier(cid))
+	{
+		QERR("Refusing a file list request: '%s' cannot name a file", cid);
+		return;
+	}
 
 	const char* dir = dir_ ? dir_ : QUICKDC_LIST_DIR;
 
@@ -1160,9 +1198,16 @@ QuickDC::FilelistRequest* QuickDC::QueueManager::requestFilelist(const char* hub
 	FilelistRequest* existing = getFilelistRequest(hub, cid);
 	if (existing) return existing;
 
+	FilelistRequest* request = new FilelistRequest(hub, cid);
+	if (!request->isValid())
+	{
+		/* The identifier could not name a file; the request has said why. */
+		delete request;
+		return 0;
+	}
+
 	QDBG("Requesting the file list of '%s' on '%s'", cid ? cid : "", hub ? hub : "");
 
-	FilelistRequest* request = new FilelistRequest(hub, cid);
 	filelists.push_back(request);
 	return request;
 }
@@ -1543,9 +1588,24 @@ void QuickDC::QueueManager::onFileComplete(QueueFile* file)
 	core->hash->addJob(Samurai::IO::File(file->getTempFilename()), verifier);
 }
 
-size_t QuickDC::QueueManager::collectSources(::Share::RemoteDir* dir, const char* hub, const char* cid)
+size_t QuickDC::QueueManager::collectSources(::Share::RemoteDir* dir, const char* hub, const char* cid,
+                                             size_t depth)
 {
 	if (!dir || !hub || !cid) return 0;
+
+	/*
+	 * The tree came off the wire, and a directory nested inside itself often
+	 * enough is a stack overflow rather than a bad file list, so the descent is
+	 * bounded here as well as in the parser that built it. Anything below the
+	 * bound is left alone: a peer with a share that deep is not one we can
+	 * safely walk, and refusing part of it costs us nothing but sources.
+	 */
+	if (depth >= QUICKDC_FILELIST_MAX_DEPTH)
+	{
+		QERR("The file list of '%s' nests deeper than %d directories; not descending further",
+			cid, (int) QUICKDC_FILELIST_MAX_DEPTH);
+		return 0;
+	}
 
 	size_t added = 0;
 
@@ -1567,14 +1627,14 @@ size_t QuickDC::QueueManager::collectSources(::Share::RemoteDir* dir, const char
 	}
 
 	for (size_t n = 0; n < dir->countSubdirs(); n++)
-		added += collectSources(dir->getSubdir(n), hub, cid);
+		added += collectSources(dir->getSubdir(n), hub, cid, depth + 1);
 
 	return added;
 }
 
 size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, const char* hub, const char* cid)
 {
-	if (!request) return 0;
+	if (!request || !request->isValid()) return 0;
 
 	Samurai::IO::File raw(request->getTempFilename());
 	if (!raw.exists())
@@ -1596,6 +1656,25 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 		char magic[3];
 		compressed = (raw.read(magic, 3) == 3 && !memcmp(magic, "BZh", 3));
 		raw.close();
+	}
+
+	/*
+	 * What arrived is bounded before any of it is believed. The compressed limit
+	 * is the smaller of the two because the decoder has to be fed from it, and
+	 * the plain limit applies here too: an uncompressed list is read into memory
+	 * whole by the decoder further down.
+	 */
+	const size_t limit = compressed
+		? (size_t) QUICKDC_FILELIST_MAX_PACKED
+		: (size_t) QUICKDC_FILELIST_MAX_PLAIN;
+
+	if (size > limit)
+	{
+		QERR("Refusing the %s file list of '%s': %lu bytes, and the limit is %lu",
+			compressed ? "compressed" : "plain", request->getClientID(),
+			(unsigned long) size, (unsigned long) limit);
+		raw.remove();
+		return 0;
 	}
 
 	if (!compressed)
@@ -1620,57 +1699,93 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 			return 0;
 		}
 
-		char* packed = new char[size];
-		ssize_t got = raw.read(packed, size);
-		raw.close();
-
-		if (got <= 0)
-		{
-			QERR("Unable to read the downloaded file list");
-			delete[] packed;
-			return 0;
-		}
-
-		Samurai::IO::BZip2Decompressor codec;
-		Samurai::IO::Buffer plain;
-
-		char out[65536];
-		std::span<const char> in(packed, (size_t) got);
-
-		while (true)
-		{
-			const Samurai::IO::Codec::Progress p = codec.step(in, out);
-
-			if (p.status == Samurai::IO::Codec::Status::Error)
-			{
-				QERR("The file list is not valid bzip2 data");
-				delete[] packed;
-				return 0;
-			}
-
-			plain.append(out, p.produced);
-			in = in.subspan(p.consumed);
-
-			if (p.status == Samurai::IO::Codec::Status::StreamEnd) break;
-
-			/* No forward progress means the stream is truncated. */
-			if (!p.consumed && !p.produced) break;
-		}
-		delete[] packed;
-
 		Samurai::IO::File target(request->getLocalFilename());
 		if (!target.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate))
 		{
 			QERR("Unable to write the unpacked file list");
+			raw.close();
 			return 0;
 		}
 
-		size_t length = plain.size();
-		char* data = new char[length ? length : 1];
-		plain.pop(data, length);
-		target.write(data, length);
+		/*
+		 * Both sides are streamed through fixed buffers and the plaintext goes
+		 * straight to the file, so neither the download nor what it unpacks to
+		 * is ever held in memory whole - and what it unpacks to is what a bomb
+		 * makes enormous.
+		 */
+		Samurai::IO::BZip2Decompressor codec;
+
+		char packed[65536];
+		char out[65536];
+
+		std::span<const char> in;
+		uint64_t produced = 0;
+		bool drained = false;   /* the download has been read to the end */
+		const char* problem = 0;
+
+		while (true)
+		{
+			if (in.empty() && !drained)
+			{
+				const ssize_t got = raw.read(packed, sizeof(packed));
+				if (got < 0)
+				{
+					problem = "it could not be read";
+					break;
+				}
+				if (!got) drained = true;
+				in = std::span<const char>(packed, (size_t) got);
+			}
+
+			const Samurai::IO::Codec::Progress p = codec.step(in, out);
+
+			if (p.status == Samurai::IO::Codec::Status::Error)
+			{
+				problem = "it is not valid bzip2 data";
+				break;
+			}
+
+			produced += p.produced;
+			if (produced > (uint64_t) QUICKDC_FILELIST_MAX_PLAIN)
+			{
+				problem = "it unpacks to more than we are willing to read";
+				break;
+			}
+
+			if (p.produced && target.write(out, p.produced) != (ssize_t) p.produced)
+			{
+				problem = "it could not be written out";
+				break;
+			}
+
+			in = in.subspan(p.consumed);
+
+			if (p.status == Samurai::IO::Codec::Status::StreamEnd) break;
+
+			/* Nothing moved, and there is nothing left to feed it: the stream
+			   stops short of its end. */
+			if (!p.consumed && !p.produced)
+			{
+				problem = "it is truncated";
+				break;
+			}
+		}
+
 		target.close();
-		delete[] data;
+		raw.close();
+
+		if (problem)
+		{
+			/*
+			 * Whatever was unpacked is thrown away rather than read: a file list
+			 * that is short of entries but looks complete would have us decide a
+			 * peer does not hold what we are after.
+			 */
+			QERR("Discarding the file list of '%s': %s", request->getClientID(), problem);
+			target.remove();
+			raw.remove();
+			return 0;
+		}
 
 		raw.remove();
 #else

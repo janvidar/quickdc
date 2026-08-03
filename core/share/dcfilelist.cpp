@@ -36,10 +36,25 @@ Share::RemoteDir::RemoteDir(const char* name_, Share::RemoteDir* parent_)
 		parent->subdirs.push_back(this);
 }
 
+/*
+ * The shape of this tree came out of a remote peer's file list, so it is as
+ * deep as that peer cared to make it: deleting a subdirectory by letting its
+ * own destructor run would be one stack frame per level. Every descendant is
+ * collected first, and each is emptied before it is deleted, so no destructor
+ * below this one has anything left to descend into.
+ */
 Share::RemoteDir::~RemoteDir() {
-	while (subdirs.size()) {
-		Share::RemoteDir* dir = subdirs.back();
-		subdirs.pop_back();
+	std::vector<Share::RemoteDir*> stack;
+	stack.swap(subdirs);
+
+	while (stack.size()) {
+		Share::RemoteDir* dir = stack.back();
+		stack.pop_back();
+
+		for (size_t n = 0; n < dir->subdirs.size(); n++)
+			stack.push_back(dir->subdirs[n]);
+		dir->subdirs.clear();
+
 		delete dir;
 	}
 
@@ -50,13 +65,14 @@ Share::RemoteDir::~RemoteDir() {
 	}
 	free(name);
 }
-		
+
+/* Up the chain by walking it, for the same reason: this is called once per file
+   the list holds, and the chain is as long as the list says. */
 void Share::RemoteDir::addSize(uint64_t size_) {
-	size += size_;
-	filecount++;
-		
-	if (parent)
-		parent->addSize(size_);
+	for (Share::RemoteDir* dir = this; dir; dir = dir->parent) {
+		dir->size += size_;
+		dir->filecount++;
+	}
 }
 
 
@@ -71,6 +87,7 @@ Share::XMLFileListHandler::XMLFileListHandler(RemoteDir* root_, Samurai::IO::Buf
 	: reader(new XML::SAX::XMLReader(buffer, this))
 	, root(root_)
 	, currentDir(0)
+	, skipped(0)
 	, problem(false)
 {
 }
@@ -91,21 +108,55 @@ void Share::XMLFileListHandler::startDocument() {
 void Share::XMLFileListHandler::endDocument() {
 }
 
+/*
+ * How deeply a file list may nest. A list arrives bzip2 compressed and is
+ * whatever the peer chose to send, so a few kilobytes of it expands to as many
+ * levels as they like - and every level is a directory this holds on to and
+ * later walks. Deeper than this is not a collection, it is the shape being used
+ * as the payload.
+ */
+#define MAX_FILELIST_DEPTH 128
+
+static size_t depthOf(const Share::RemoteDir* dir)
+{
+	size_t depth = 0;
+	for (; dir; dir = dir->getParent())
+		depth++;
+	return depth;
+}
+
 void Share::XMLFileListHandler::startElement(const char*, const char* localName, const char*, const AttributeList& list) {
+	const bool directory = (strcasecmp(localName, "Directory") == 0);
+
+	/* Inside a subtree refused for its depth. Nothing in it is built, and the
+	   directories in it are counted so that their end tags close them rather
+	   than the one the list was cut off at. */
+	if (skipped) {
+		if (directory) skipped++;
+		return;
+	}
+
 	if (strcasecmp(localName, "FileListing") == 0) {
 		if (currentDir) onProblem();
 		currentDir = root;
-	} else if (strcasecmp(localName, "Directory") == 0) {
+	} else if (directory) {
 		if (!currentDir) { onProblem(); return; }
 		// Add Directory to the currentDir.
-		
+
 		const char* name = 0;
 		for (size_t n = 0; n < list.size(); n++) {
 			if (strcasecmp(list[n].first.c_str(), "Name") == 0)
 				name = list[n].second.c_str();
 		}
-		
+
 		if (name && *name) {
+			if (depthOf(currentDir) >= MAX_FILELIST_DEPTH) {
+				QERR("File list nests deeper than %d directories; refusing it", MAX_FILELIST_DEPTH);
+				onProblem();
+				skipped = 1;
+				return;
+			}
+
 			RemoteDir* dir = new RemoteDir(name, currentDir);
 			currentDir = dir;
 		}
@@ -130,6 +181,7 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 
 void Share::XMLFileListHandler::endElement(const char*, const char* localName, const char*) {
 	if (strcasecmp(localName, "Directory") == 0) {
+		if (skipped) { skipped--; return; }
 		if (!currentDir) { onProblem(); return; }
 		currentDir = currentDir->getParent();
 	}

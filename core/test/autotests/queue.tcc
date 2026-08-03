@@ -49,6 +49,27 @@ static const char* queue_test_urls[] = {
 	0
 };
 
+/**
+ * Identifiers that must never be allowed to name a downloaded file list. Every
+ * one of them is a nickname a hub is free to advertise.
+ */
+static const char* queue_test_bad_identifiers[] = {
+	"",
+	"..",
+	".",
+	"../../../../home/user/.config/autostart/x",
+	"a/b",
+	"a\\b",
+	"/etc/passwd",
+	"x..y",        /* two dots anywhere at all */
+	"a\nb",        /* control bytes */
+	"a\x7f",
+	"C:name",
+	/* Longer than any CID or nickname can be: 80 characters. */
+	QUEUE_TEST_CID_A QUEUE_TEST_CID_B "AA",
+	0
+};
+
 /** Source URLs that carry no usable hub and client ID. */
 static const char* queue_test_bad_urls[] = {
 	"",
@@ -1024,6 +1045,65 @@ EXO_TEST(queue_filelists_are_transient, {
 	/* Only the real file came back; the list request did not. */
 	QuickDC::QueueManager queue;
 	return queue.size() == 1 && queue.countFilelistRequests() == 0;
+});
+
+/* ------------------------------------------------------------------------- *
+ * What may name a downloaded file list
+ *
+ * The identifier is a CID only when the hub published one and it verified.
+ * Otherwise it is the nickname, which is 63 arbitrary bytes off the wire, and
+ * it is what the list is named after - so it decides a path.
+ * ------------------------------------------------------------------------- */
+
+EXO_TEST(filelist_identifier_accepts_cid_and_nick, {
+	if (!QuickDC::FilelistRequest::isValidIdentifier(QUEUE_TEST_CID_A)) return false;
+	if (!QuickDC::FilelistRequest::isValidIdentifier("alice")) return false;
+	if (!QuickDC::FilelistRequest::isValidIdentifier("[NL]Bj\xc3\xb8rn_1")) return false;
+
+	/* A dot is ordinary in a nickname; only "." alone and ".." are not. */
+	return QuickDC::FilelistRequest::isValidIdentifier("some.one");
+});
+
+EXO_TEST(filelist_identifier_rejects_paths, {
+	for (size_t n = 0; queue_test_bad_identifiers[n]; n++)
+		if (QuickDC::FilelistRequest::isValidIdentifier(queue_test_bad_identifiers[n]))
+			return false;
+
+	return !QuickDC::FilelistRequest::isValidIdentifier(0);
+});
+
+EXO_TEST(filelist_request_refuses_to_name_a_path, {
+	/*
+	 * The request is what turns the identifier into a file name, so it has to
+	 * refuse one by itself - the callers are protocol code and this program.
+	 */
+	QuickDC::FilelistRequest bad("adc://h:1", "../../../../tmp/quickdc_traversal");
+	if (bad.isValid()) return false;
+	if (bad.getLocalFilename() != 0 || bad.getTempFilename() != 0) return false;
+
+	QuickDC::FilelistRequest good("adc://h:1", QUEUE_TEST_CID_A, "/tmp");
+	return good.isValid()
+		&& !strcmp(good.getLocalFilename(), "/tmp/" QUEUE_TEST_CID_A ".xml")
+		&& !strcmp(good.getTempFilename(), "/tmp/" QUEUE_TEST_CID_A ".xml" QUICKDC_PART_SUFFIX);
+});
+
+EXO_TEST(queue_refuses_a_filelist_that_would_escape_the_list_directory, {
+	if (!queue_test_setup()) return false;
+
+	QuickDC::QueueManager queue;
+
+	/* A hub advertising this nickname plus one /browse used to be a write to
+	   wherever it pointed. */
+	if (queue.requestFilelist("dchub://h:411", "../../../../tmp/quickdc_traversal") != 0)
+		return false;
+	if (queue.requestFilelist("dchub://h:411", "a/b") != 0) return false;
+	if (queue.countFilelistRequests() != 0) return false;
+
+	/* And an ordinary nickname is still perfectly askable. */
+	QuickDC::FilelistRequest* list = queue.requestFilelist("dchub://h:411", "alice");
+	if (!list || !list->isValid()) return false;
+	if (!strstr(list->getLocalFilename(), "/alice.xml")) return false;
+	return queue.countFilelistRequests() == 1;
 });
 
 /* ------------------------------------------------------------------------- *
