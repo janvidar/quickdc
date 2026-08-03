@@ -59,7 +59,7 @@ QuickDC::Hash::SimpleJob::SimpleJob(QuickDC::Hash::Manager* mgr, QuickDC::Hash::
 	Samurai::Crypto::Digest::MerkleTree* merkle = dynamic_cast<Samurai::Crypto::Digest::MerkleTree*>(hasher);
 	assert(merkle != NULL);
 	
-	merkle->setLeavesLTR(cache->getLeafdata(), cache->getLeaves(), (uint64_t) cache->getSize());
+	merkle->setLeavesLTR(cache->getLeafdata(), cache->getLeaves(), static_cast<uint64_t>(cache->getSize()));
 	hashValue = merkle->digest();
 }
 
@@ -105,18 +105,18 @@ bool QuickDC::Hash::Job::runToCompletion(std::atomic<uint64_t>& done, std::atomi
 		return false;
 	}
 
-	total.store((uint64_t) file.size());
+	total.store(static_cast<uint64_t>(file.size()));
 	buffer = new uint8_t[chunk_size];
 
 	for (;;)
 	{
-		ssize_t sz = file.read((char*) buffer, chunk_size);
+		ssize_t sz = file.read(reinterpret_cast<char*>(buffer), chunk_size);
 
 		if (sz > 0)
 		{
-			hasher->update((uint8_t*) buffer, sz);
+			hasher->update(buffer, sz);
 			offset += sz;
-			done.store((uint64_t) offset);
+			done.store(static_cast<uint64_t>(offset));
 		}
 		else if (sz == 0)
 		{

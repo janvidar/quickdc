@@ -165,7 +165,7 @@ enum Http::Parser::Status Http::Parser::addEntity(Samurai::IO::Buffer* input, Ht
 				}
 
 				const size_t have = buffer->size();
-				const size_t take = (have > want) ? (size_t) want : have;
+				const size_t take = (have > want) ? static_cast<size_t>(want) : have;
 				buffer->remove(take);
 				entity->setBodySize(want - take);
 
@@ -278,7 +278,7 @@ bool Http::Parser::parseStatusLine(const char* line_) {
 	const std::string code    = line.substr(first + 1, second - first - 1);
 	const std::string message = line.substr(second + 1);
 
-	const uint16_t ncode = (uint16_t) Samurai::Util::Convert::to_int32(code.c_str());
+	const uint16_t ncode = static_cast<uint16_t>(Samurai::Util::Convert::to_int32(code.c_str()));
 	if (!ncode) return false;
 
 	entity->setCode(ncode);

@@ -136,7 +136,7 @@ bool DC::ConnectToMe::invoke(const char* data, size_t length) {
 	const std::string address(host);
 	const std::string port(endpoint.rest());
 
-	session->onActiveConnect(address.c_str(), (uint16_t) atoi(port.c_str()),
+	session->onActiveConnect(address.c_str(), static_cast<uint16_t>(atoi(port.c_str())),
 		sendernick.empty() ? 0 : sendernick.c_str());
 
 	return true;
@@ -179,7 +179,7 @@ bool DC::ForceMove::invoke(const char* data, size_t length) {
 	std::string_view host;
 	if (line.field(':', host)) {
 		const std::string number(line.rest());
-		port = (uint16_t) atoi(number.c_str());
+		port = static_cast<uint16_t>(atoi(number.c_str()));
 	} else {
 		host = line.rest();
 	}
@@ -365,7 +365,7 @@ bool DC::MyINFO::invoke(const char* data, size_t length) {
 		description.erase(open);
 	}
 
-	QuickDC::User* u = (QuickDC::User*) session->users->getUser(nickname.c_str());
+	QuickDC::User* u = const_cast<QuickDC::User*>(session->users->getUser(nickname.c_str()));
 	bool changed = false;
 	uint64_t oldSize = 0;
 
@@ -638,7 +638,7 @@ static bool dc_sr_number(const std::string& text, uint64_t& out)
 	for (size_t n = 0; n < text.size(); n++)
 	{
 		if (text[n] < '0' || text[n] > '9') return false;
-		out = out * 10 + (uint64_t) (text[n] - '0');
+		out = out * 10 + static_cast<uint64_t>(text[n] - '0');
 	}
 	return true;
 }
@@ -683,7 +683,7 @@ bool DC::parseSearchResult(const char* data, size_t length,
 	size_t at = 0;
 	for (;;)
 	{
-		size_t next = rest.find((char) 0x05, at);
+		size_t next = rest.find(static_cast<char>(0x05), at);
 		if (next == std::string::npos)
 		{
 			fields.push_back(rest.substr(at));
@@ -746,7 +746,7 @@ bool DC::parseSearchResult(const char* data, size_t length,
 	uint64_t total_slots = 0;
 	if (!dc_sr_number(slots.substr(slash + 1), total_slots)) return false;
 
-	freeslots = (size_t) free_slots;
+	freeslots = static_cast<size_t>(free_slots);
 	return true;
 }
 

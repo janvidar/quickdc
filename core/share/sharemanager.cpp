@@ -226,7 +226,7 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 				if (shf)
 				{
 					QDBG("Found shared file");
-					return (Samurai::IO::File*) &shf->getFile();
+					return const_cast<Samurai::IO::File*>(&shf->getFile());
 				} else {
 					QDBG("Did not find this shared file");
 				}
@@ -260,7 +260,7 @@ QuickDC::Share::File* QuickDC::Share::Manager::findByTTH(const char* tth) const 
 Samurai::IO::File* QuickDC::Share::Manager::getFileByTTH(const char* tth) {
 	QuickDC::Share::File* shf = findByTTH(tth);
 	if (!shf) return 0;
-	return (Samurai::IO::File*) &shf->getFile();
+	return const_cast<Samurai::IO::File*>(&shf->getFile());
 }
 
 
@@ -303,7 +303,7 @@ void QuickDC::Share::Manager::createFileLists(bool incomplete) {
 	
 	{
 #ifdef DATADUMP
-		QDBG("XML file list will be %i bytes long", (int) xmlout->size());
+		QDBG("XML file list will be %i bytes long", static_cast<int>(xmlout->size()));
 #endif
 		Samurai::IO::File xmllist(listdir + "/files.xml");
 		if (xmllist.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate)) {
@@ -453,7 +453,7 @@ bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::Attachmen
 	std::unique_ptr<Attachment> record = std::make_unique<Attachment>();
 	record->path = path;
 	record->name = file.getName();
-	record->size = (uint64_t) file.size();
+	record->size = static_cast<uint64_t>(file.size());
 	record->listeners.push_back(listener);
 	attachments.push_back(std::move(record));
 
@@ -653,7 +653,7 @@ bool QuickDC::Share::Manager::adoptAttachment(const std::string& tth, const std:
 	record->path = path;
 	record->name = file.getName();
 	record->tth = tth;
-	record->size = (uint64_t) file.size();
+	record->size = static_cast<uint64_t>(file.size());
 	attachments.push_back(std::move(record));
 
 	/* The same registration attach() ends in, so the two cannot drift apart. */
@@ -780,7 +780,7 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 	struct timeval after;
 	gettimeofday(&after, 0);
 	long ms = (((after.tv_usec - before.tv_usec) / 1000) + ((after.tv_sec - before.tv_sec) * 1000));
-	QSEARCH("Search '%p', returned %d hits in %d ms", req, hits, (int) ms);
+	QSEARCH("Search '%p', returned %d hits in %d ms", req, hits, static_cast<int>(ms));
 	(void) ms;
 #endif
 }

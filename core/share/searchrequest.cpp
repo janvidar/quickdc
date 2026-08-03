@@ -40,7 +40,7 @@ void QuickDC::Share::SearchRequest::setTTH(const char* tth_) {
 
 	tth = root;
 	for (char& c : tth)
-		c = (char) toupper((unsigned char) c);
+		c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
 }
 
 void QuickDC::Share::SearchRequest::setSizePolicy(enum SizePolicy sp) { size_type = sp; }

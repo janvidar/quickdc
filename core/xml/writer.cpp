@@ -66,11 +66,11 @@ void escape(Samurai::IO::Buffer* buffer, const std::string& str)
 static int digitValue(char c, unsigned base)
 {
 	unsigned v;
-	if (c >= '0' && c <= '9') v = (unsigned) (c - '0');
-	else if (c >= 'a' && c <= 'f') v = (unsigned) (c - 'a') + 10;
-	else if (c >= 'A' && c <= 'F') v = (unsigned) (c - 'A') + 10;
+	if (c >= '0' && c <= '9') v = static_cast<unsigned>(c - '0');
+	else if (c >= 'a' && c <= 'f') v = static_cast<unsigned>(c - 'a') + 10;
+	else if (c >= 'A' && c <= 'F') v = static_cast<unsigned>(c - 'A') + 10;
 	else return -1;
-	return (v < base) ? (int) v : -1;
+	return (v < base) ? static_cast<int>(v) : -1;
 }
 
 /* XML 1.0 section 2.2: everything else is not a character a document may name. */
@@ -86,19 +86,19 @@ static bool isCharacter(uint32_t cp)
 static void appendUTF8(std::string& out, uint32_t cp)
 {
 	if (cp < 0x80) {
-		out += (char) cp;
+		out += static_cast<char>(cp);
 	} else if (cp < 0x800) {
-		out += (char) (0xc0 | (cp >> 6));
-		out += (char) (0x80 | (cp & 0x3f));
+		out += static_cast<char>(0xc0 | (cp >> 6));
+		out += static_cast<char>(0x80 | (cp & 0x3f));
 	} else if (cp < 0x10000) {
-		out += (char) (0xe0 | (cp >> 12));
-		out += (char) (0x80 | ((cp >> 6) & 0x3f));
-		out += (char) (0x80 | (cp & 0x3f));
+		out += static_cast<char>(0xe0 | (cp >> 12));
+		out += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
+		out += static_cast<char>(0x80 | (cp & 0x3f));
 	} else {
-		out += (char) (0xf0 | (cp >> 18));
-		out += (char) (0x80 | ((cp >> 12) & 0x3f));
-		out += (char) (0x80 | ((cp >> 6) & 0x3f));
-		out += (char) (0x80 | (cp & 0x3f));
+		out += static_cast<char>(0xf0 | (cp >> 18));
+		out += static_cast<char>(0x80 | ((cp >> 12) & 0x3f));
+		out += static_cast<char>(0x80 | ((cp >> 6) & 0x3f));
+		out += static_cast<char>(0x80 | (cp & 0x3f));
 	}
 }
 
@@ -134,7 +134,7 @@ std::string unescape(std::string str)
 			for (; d < end && ok; d++) {
 				const int v = digitValue(str[d], base);
 				if (v < 0 || cp > 0x10ffff) ok = false;
-				else cp = cp * base + (uint32_t) v;
+				else cp = cp * base + static_cast<uint32_t>(v);
 			}
 
 			if (ok && isCharacter(cp)) {

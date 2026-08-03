@@ -33,7 +33,7 @@ bool QuickDC::Keyprint::isValid(const char* keyprint)
 	if (kp.size() != hash.size() + KEYPRINT_DIGITS) return false;
 
 	for (const char c : kp.substr(hash.size()))
-		if (!is_base32((char) toupper((unsigned char) c))) return false;
+		if (!is_base32(static_cast<char>(toupper(static_cast<unsigned char>(c))))) return false;
 
 	return true;
 }

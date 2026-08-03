@@ -57,7 +57,7 @@ void XML::SAX::XMLReader::parse() {
 	/* isspace() is only defined for EOF and unsigned char values, and a byte
 	   over 127 - which any UTF-8 name or value has - is negative where char is
 	   signed. */
-	auto isSpace = [](char ch) { return isspace((unsigned char) ch) != 0; };
+	auto isSpace = [](char ch) { return isspace(static_cast<unsigned char>(ch)) != 0; };
 
 	auto matches = [&](size_t pos, std::string_view text) {
 		if (pos + text.size() > in->size()) return false;
@@ -113,7 +113,7 @@ void XML::SAX::XMLReader::parse() {
 	};
 
 	for (size_t n = 0; n < in->size(); n++) {
-		char c = (char) in->at(n);
+		char c = in->at(n);
 		if (state == CData) {
 			if (c == '<') {
 				if (!document) {

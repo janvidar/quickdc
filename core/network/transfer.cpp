@@ -20,7 +20,7 @@ QuickDC::Transfer::Transfer(TransferManager* mgr, PrivateTransferListener* liste
 	manager->add(this);
 
 	total = offset + length;
-	QDBG("===> Transfer, offset=%d, length=%d (total=%d)", (int) offset, (int) length, (int) total);
+	QDBG("===> Transfer, offset=%d, length=%d (total=%d)", static_cast<int>(offset), static_cast<int>(length), static_cast<int>(total));
 }
 
 QuickDC::Transfer::~Transfer()
@@ -80,10 +80,10 @@ QuickDC::Upload::Upload(TransferManager* mgr, PrivateTransferListener* listener,
 		return;
 	}
 
-	QDBG("Upload-ctor: Seek to %d\n", (int) offset);
+	QDBG("Upload-ctor: Seek to %d\n", static_cast<int>(offset));
 	if (!file->seek(offset))
 	{
-		QERR("Unable to seek to %d in '%s'", (int) offset, file->getName().c_str());
+		QERR("Unable to seek to %d in '%s'", static_cast<int>(offset), file->getName().c_str());
 		status = IOFail;
 		return;
 	}
@@ -113,15 +113,15 @@ void QuickDC::Upload::close()
 
 void QuickDC::Upload::transfer()
 {
-	QDBG("Upload: Seek to %d\n", (int) offset);
+	QDBG("Upload: Seek to %d\n", static_cast<int>(offset));
 	if (!file->seek(offset))
 	{
-		QERR("Upload: unable to seek to %d in '%s'", (int) offset, file->getName().c_str());
+		QERR("Upload: unable to seek to %d in '%s'", static_cast<int>(offset), file->getName().c_str());
 		status = IOFail;
 		return;
 	}
 
-	size_t chunk = (size_t) std::min<uint64_t>(uploadBuffer.size(), total - offset);
+	size_t chunk = static_cast<size_t>(std::min<uint64_t>(uploadBuffer.size(), total - offset));
 	if (!chunk) return;
 
 	/*
@@ -143,7 +143,7 @@ void QuickDC::Upload::transfer()
 	 * could never complete - and since a dead socket reports 0 from then on,
 	 * nothing else ended it either.
 	 */
-	ssize_t out = socket->write(uploadBuffer.data(), (size_t) in);
+	ssize_t out = socket->write(uploadBuffer.data(), static_cast<size_t>(in));
 	if (out < 0)
 	{
 		QERR("Upload: unable to write to the peer");
@@ -151,9 +151,9 @@ void QuickDC::Upload::transfer()
 		return;
 	}
 
-	QDBG("Upload::transfer, in=%d, out=%d", (int) in, (int) out);
+	QDBG("Upload::transfer, in=%d, out=%d", static_cast<int>(in), static_cast<int>(out));
 	rate.add(out);
-	offset += (uint64_t) out;
+	offset += static_cast<uint64_t>(out);
 }
 
 
@@ -184,7 +184,7 @@ QuickDC::ZUpload::~ZUpload()
 void QuickDC::ZUpload::close()
 {
 	QDBG("ZUpload finished: %d bytes sent for %d bytes of file (ratio %.2f)",
-		(int) compressedBytes, (int) (offset - (total - length)), ratio);
+		static_cast<int>(compressedBytes), static_cast<int>(offset - (total - length)), ratio);
 	Upload::close();
 }
 
@@ -214,8 +214,8 @@ bool QuickDC::ZUpload::flushPending()
 		if (!out) return false;
 
 		rate.add(out);
-		compressedBytes += (uint64_t) out;
-		pendingOffset += (size_t) out;
+		compressedBytes += static_cast<uint64_t>(out);
+		pendingOffset += static_cast<size_t>(out);
 	}
 
 	pendingSize = 0;
@@ -235,20 +235,20 @@ void QuickDC::ZUpload::transfer()
 	{
 		if (!file->seek(offset))
 		{
-			QERR("ZUpload: unable to seek to %d in '%s'", (int) offset, file->getName().c_str());
+			QERR("ZUpload: unable to seek to %d in '%s'", static_cast<int>(offset), file->getName().c_str());
 			status = IOFail;
 			return;
 		}
 
-		ssize_t chunk = (ssize_t) std::min<uint64_t>(compressBuffer.size(), total - offset);
-		ssize_t in = file->read(compressBuffer.data(), (size_t) chunk);
+		ssize_t chunk = static_cast<ssize_t>(std::min<uint64_t>(compressBuffer.size(), total - offset));
+		ssize_t in = file->read(compressBuffer.data(), static_cast<size_t>(chunk));
 		if (in <= 0)
 		{
 			QERR("ZUpload: unable to read from '%s'", file->getName().c_str());
 			status = IOFail;
 			return;
 		}
-		consumed = (size_t) in;
+		consumed = static_cast<size_t>(in);
 	}
 
 	/* An empty input is what tells the codec to flush. */
@@ -276,10 +276,10 @@ void QuickDC::ZUpload::transfer()
 	pendingOffset = 0;
 
 	if (offset > (total - length))
-		ratio = (double) (compressedBytes + produced) / (double) (offset - (total - length));
+		ratio = static_cast<double>(compressedBytes + produced) / static_cast<double>(offset - (total - length));
 
 	QDBG("ZUpload::transfer, consumed=%d, produced=%d, at %d/%d",
-		(int) consumed, (int) produced, (int) offset, (int) total);
+		static_cast<int>(consumed), static_cast<int>(produced), static_cast<int>(offset), static_cast<int>(total));
 
 	flushPending();
 }
@@ -305,10 +305,10 @@ QuickDC::Download::Download(TransferManager* mgr, PrivateTransferListener* liste
 		return;
 	}
 
-	QDBG("Download-ctor: Seek to %d\n", (int) offset);
+	QDBG("Download-ctor: Seek to %d\n", static_cast<int>(offset));
 	if (!file->seek(offset))
 	{
-		QERR("Unable to seek to %d in '%s'", (int) offset, file->getName().c_str());
+		QERR("Unable to seek to %d in '%s'", static_cast<int>(offset), file->getName().c_str());
 		status = IOFail;
 		return;
 	}
@@ -331,7 +331,7 @@ void QuickDC::Download::pushPending(const char* data, size_t length)
 
 	/* Only what has not reached the file yet is carried over, and it stays in
 	   front of what has just arrived: the peer sent them in that order. */
-	pending.erase(pending.begin(), pending.begin() + (std::ptrdiff_t) pendingOffset);
+	pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(pendingOffset));
 	pendingOffset = 0;
 
 	pending.insert(pending.end(), data, data + length);
@@ -341,7 +341,7 @@ void QuickDC::Download::close()
 {
 	file->close();
 	manager->onTransferStopped(this);
-	QDBG("Download stopped (%d/%d bytes).", (int) offset, (int) total);
+	QDBG("Download stopped (%d/%d bytes).", static_cast<int>(offset), static_cast<int>(total));
 }
 
 void QuickDC::Download::transfer()
@@ -355,25 +355,25 @@ void QuickDC::Download::transfer()
 	/* Never read past the end of the chunk we asked for. */
 	size_t want = downloadBuffer.size();
 	uint64_t remaining = total - offset;
-	if (remaining < (uint64_t) want) want = (size_t) remaining;
+	if (remaining < static_cast<uint64_t>(want)) want = static_cast<size_t>(remaining);
 	if (!want) return;
 
 	if (!pending.empty())
 	{
 		size_t take = pending.size() - pendingOffset;
-		if ((uint64_t) take > remaining) take = (size_t) remaining;
+		if (static_cast<uint64_t>(take) > remaining) take = static_cast<size_t>(remaining);
 
 		ssize_t out = file->write(pending.data() + pendingOffset, take);
-		if (out != (ssize_t) take)
+		if (out != static_cast<ssize_t>(take))
 		{
 			QERR("Download: wrote %d of %d buffered bytes to '%s'",
-				(int) out, (int) take, file->getName().c_str());
+				static_cast<int>(out), static_cast<int>(take), file->getName().c_str());
 			status = IOFail;
 			return;
 		}
 
 		rate.add(out);
-		offset += (uint64_t) out;
+		offset += static_cast<uint64_t>(out);
 		pendingOffset += take;
 
 		if (pendingOffset >= pending.size())
@@ -402,7 +402,7 @@ void QuickDC::Download::transfer()
 			return;
 
 		case Samurai::IO::ReadResult::EndOfFile:
-			QDBG("Download: the peer closed after %d of %d bytes", (int) offset, (int) total);
+			QDBG("Download: the peer closed after %d of %d bytes", static_cast<int>(offset), static_cast<int>(total));
 			status = IOFail;
 			return;
 
@@ -413,16 +413,16 @@ void QuickDC::Download::transfer()
 	}
 
 	ssize_t out = file->write(downloadBuffer.data(), in);
-	if (out != (ssize_t) in)
+	if (out != static_cast<ssize_t>(in))
 	{
 		QERR("Download: wrote %d of %d bytes to '%s'",
-			(int) out, (int) in, file->getName().c_str());
+			static_cast<int>(out), static_cast<int>(in), file->getName().c_str());
 		status = IOFail;
 		return;
 	}
 
 	rate.add(out);
-	offset += (uint64_t) out;
+	offset += static_cast<uint64_t>(out);
 }
 
 

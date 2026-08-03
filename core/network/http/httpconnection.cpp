@@ -36,7 +36,7 @@ Http::Connection::~Connection()
 
 void Http::Connection::close()
 {
-	QDBG("Http::Connection::close(): socket=%p, mgr=%p", (void*) QuickDC::Connection::socket.get(), manager);
+	QDBG("Http::Connection::close(): socket=%p, mgr=%p", static_cast<void*>(QuickDC::Connection::socket.get()), manager);
 
 	/*
 	 * The destructor closes as well, and it runs from the deferred deletion

@@ -286,7 +286,7 @@ bool QuickDC::FilelistRequest::isValidIdentifier(const char* id)
 
 	for (const char c : name)
 	{
-		const unsigned char ch = (unsigned char) c;
+		const unsigned char ch = static_cast<unsigned char>(c);
 
 		/* A separator would make the identifier a path of its own, and a
 		   control byte has no business in a nickname whatever it does to a
@@ -474,7 +474,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 
 			if (dropped)
 				QERR("Discarded %d unusable entry/entries while loading the download queue",
-					(int) dropped);
+					static_cast<int>(dropped));
 
 			return !broken;
 		}
@@ -574,7 +574,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 			current->setPriority(QueueFile::convertPriority(prio));
 
 			if (s_added)
-				current->added = Samurai::TimeStamp((time_t) Samurai::Util::Convert::to_int64(s_added));
+				current->added = Samurai::TimeStamp(static_cast<time_t>(Samurai::Util::Convert::to_int64(s_added)));
 		}
 
 		void startSource(const AttributeList& list)
@@ -600,9 +600,9 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 			const char* s_lastseen = getAttribute(list, "lastseen");
 
 			if (s_retries)
-				source->setRetryCount((size_t) Samurai::Util::Convert::to_int32(s_retries));
+				source->setRetryCount(static_cast<size_t>(Samurai::Util::Convert::to_int32(s_retries)));
 			if (s_lastseen)
-				source->setLastSeen(Samurai::TimeStamp((time_t) Samurai::Util::Convert::to_int64(s_lastseen)));
+				source->setLastSeen(Samurai::TimeStamp(static_cast<time_t>(Samurai::Util::Convert::to_int64(s_lastseen))));
 
 			if (source->isExpired())
 			{
@@ -741,7 +741,7 @@ void QuickDC::QueueManager::searchForSources()
 		lastSourceSearch.reset();
 
 		QDBG("Looking for more sources for '%s'; it has %d",
-			file->getLocalFilename(), (int) file->countSources());
+			file->getLocalFilename(), static_cast<int>(file->countSources()));
 		return;
 	}
 }
@@ -979,7 +979,7 @@ Samurai::IO::File* QuickDC::QueueManager::openLeafFile(const char* tth, uint64_t
 		return 0;
 	}
 
-	length = (uint64_t) leaves->size();
+	length = static_cast<uint64_t>(leaves->size());
 	QDBG("Serving the leaf hashes of a file we are downloading");
 	return leaves;
 }
@@ -996,11 +996,11 @@ Samurai::IO::File* QuickDC::QueueManager::openVerifiedRange(const char* tth, uin
 	uint64_t runEnd = file->getChunks().getRunEnd(offset);
 	if (runEnd <= offset)
 	{
-		QDBG("Asked for %d of '%s', which we do not have", (int) offset, tth);
+		QDBG("Asked for %d of '%s', which we do not have", static_cast<int>(offset), tth);
 		return 0;
 	}
 
-	if (length >= 0 && offset + (uint64_t) length > runEnd)
+	if (length >= 0 && offset + static_cast<uint64_t>(length) > runEnd)
 	{
 		QDBG("Asked for more of '%s' than we have verified", tth);
 		return 0;
@@ -1014,7 +1014,7 @@ Samurai::IO::File* QuickDC::QueueManager::openVerifiedRange(const char* tth, uin
 	}
 
 	servable = runEnd;
-	QDBG("Serving %d-%d of a file we are downloading", (int) offset, (int) runEnd);
+	QDBG("Serving %d-%d of a file we are downloading", static_cast<int>(offset), static_cast<int>(runEnd));
 	return part;
 }
 
@@ -1096,8 +1096,8 @@ void QuickDC::QueueManager::commitChunk(QueueFile* file, uint64_t offset, uint64
 	dirty = true;
 
 	QDBG("Committed %d bytes at offset %d of '%s' (%d/%d done)",
-		(int) length, (int) offset, file->getLocalFilename(),
-		(int) file->getDoneBytes(), (int) file->getSize());
+		static_cast<int>(length), static_cast<int>(offset), file->getLocalFilename(),
+		static_cast<int>(file->getDoneBytes()), static_cast<int>(file->getSize()));
 
 	if (file->isComplete()) onFileComplete(file);
 }
@@ -1146,14 +1146,14 @@ uint64_t QuickDC::QueueManager::chunkSizeFor(const FileSource* source) const
 	const uint64_t configured = getChunkSize();
 
 	/* Nothing measured yet, or a floor already past where we would grow to. */
-	if (!source || configured >= (uint64_t) QUICKDC_CHUNK_SIZE_MAX) return configured;
+	if (!source || configured >= static_cast<uint64_t>(QUICKDC_CHUNK_SIZE_MAX)) return configured;
 
 	const uint64_t rate = source->getThroughput();
 	if (!rate) return configured;
 
 	const uint64_t want = rate * QUICKDC_CHUNK_TARGET_SECONDS;
 
-	return std::clamp(want, configured, (uint64_t) QUICKDC_CHUNK_SIZE_MAX);
+	return std::clamp(want, configured, static_cast<uint64_t>(QUICKDC_CHUNK_SIZE_MAX));
 }
 
 uint64_t QuickDC::QueueManager::getChunkSize() const
@@ -1165,7 +1165,7 @@ uint64_t QuickDC::QueueManager::getChunkSize() const
 	int configured = core->config->getNumber("Chunk size", QUICKDC_CHUNK_SIZE);
 	if (configured <= 0) return QUICKDC_CHUNK_SIZE;
 
-	return (uint64_t) configured;
+	return static_cast<uint64_t>(configured);
 }
 
 size_t QuickDC::QueueManager::getMaxDownloads() const
@@ -1177,7 +1177,7 @@ size_t QuickDC::QueueManager::getMaxDownloads() const
 	int configured = core->config->getNumber("Max downloads", 3);
 	if (configured <= 0) return 3;
 
-	return (size_t) configured;
+	return static_cast<size_t>(configured);
 }
 
 /* ---- file lists ---- */
@@ -1252,8 +1252,8 @@ std::string QuickDC::QueueManager::makeToken()
 {
 	char buf[48];
 	snprintf(buf, sizeof(buf), "QDC%lu%lu",
-		(unsigned long) Samurai::TimeStamp().getInternalData(),
-		(unsigned long) ++tokenCounter);
+		static_cast<unsigned long>(Samurai::TimeStamp().getInternalData()),
+		static_cast<unsigned long>(++tokenCounter));
 	return std::string(buf);
 }
 
@@ -1441,7 +1441,7 @@ void QuickDC::QueueManager::expire()
 	for (size_t n = 0; n < deadLists.size(); n++)
 	{
 		QDBG("Giving up on the file list of '%s' after %d attempt(s)",
-			deadLists[n]->getClientID(), (int) deadLists[n]->getRetryCount());
+			deadLists[n]->getClientID(), static_cast<int>(deadLists[n]->getRetryCount()));
 		removeFilelistRequest(deadLists[n]);
 	}
 
@@ -1506,12 +1506,12 @@ void QuickDC::QueueManager::schedule()
 	}
 
 	/* Highest priority first. PrioPaused is never scheduled. */
-	for (int prio = (int) QueueFile::PrioHigh; prio >= (int) QueueFile::PrioLow; prio--)
+	for (int prio = static_cast<int>(QueueFile::PrioHigh); prio >= static_cast<int>(QueueFile::PrioLow); prio--)
 	{
 		for (size_t n = 0; n < files.size() && inFlight < budget; n++)
 		{
 			QueueFile* file = files[n];
-			if ((int) file->getPriority() != prio) continue;
+			if (static_cast<int>(file->getPriority()) != prio) continue;
 			if (file->isComplete()) continue;
 			if (!file->getSize()) continue;
 
@@ -1592,7 +1592,7 @@ size_t QuickDC::QueueManager::collectSources(::Share::RemoteDir* dir, const char
 	if (depth >= QUICKDC_FILELIST_MAX_DEPTH)
 	{
 		QERR("The file list of '%s' nests deeper than %d directories; not descending further",
-			cid, (int) QUICKDC_FILELIST_MAX_DEPTH);
+			cid, static_cast<int>(QUICKDC_FILELIST_MAX_DEPTH));
 		return 0;
 	}
 
@@ -1638,7 +1638,7 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 	 * magic number.
 	 */
 	bool compressed = false;
-	size_t size = (size_t) raw.size();
+	size_t size = static_cast<size_t>(raw.size());
 
 	if (size > 3 && raw.open(Samurai::IO::File::Mode::Read))
 	{
@@ -1654,14 +1654,14 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 	 * whole by the decoder further down.
 	 */
 	const size_t limit = compressed
-		? (size_t) QUICKDC_FILELIST_MAX_PACKED
-		: (size_t) QUICKDC_FILELIST_MAX_PLAIN;
+		? static_cast<size_t>(QUICKDC_FILELIST_MAX_PACKED)
+		: static_cast<size_t>(QUICKDC_FILELIST_MAX_PLAIN);
 
 	if (size > limit)
 	{
 		QERR("Refusing the %s file list of '%s': %lu bytes, and the limit is %lu",
 			compressed ? "compressed" : "plain", request->getClientID(),
-			(unsigned long) size, (unsigned long) limit);
+			static_cast<unsigned long>(size), static_cast<unsigned long>(limit));
 		raw.remove();
 		return 0;
 	}
@@ -1723,7 +1723,7 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 					break;
 				}
 				if (!got) drained = true;
-				in = std::span<const char>(packed, (size_t) got);
+				in = std::span<const char>(packed, static_cast<size_t>(got));
 			}
 
 			const Samurai::IO::Codec::Progress p = codec.step(in, out);
@@ -1735,13 +1735,13 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 			}
 
 			produced += p.produced;
-			if (produced > (uint64_t) QUICKDC_FILELIST_MAX_PLAIN)
+			if (produced > static_cast<uint64_t>(QUICKDC_FILELIST_MAX_PLAIN))
 			{
 				problem = "it unpacks to more than we are willing to read";
 				break;
 			}
 
-			if (p.produced && target.write(out, p.produced) != (ssize_t) p.produced)
+			if (p.produced && target.write(out, p.produced) != static_cast<ssize_t>(p.produced))
 			{
 				problem = "it could not be written out";
 				break;
@@ -1796,7 +1796,7 @@ size_t QuickDC::QueueManager::onFilelistDownloaded(FilelistRequest* request, con
 	size_t added = collectSources(decoder.root, hub, cid);
 
 	QDBG("Read the file list of '%s'; it gave us %d new source(s)",
-		request->getClientID(), (int) added);
+		request->getClientID(), static_cast<int>(added));
 
 	return added;
 }
@@ -1896,7 +1896,7 @@ bool QuickDC::QueueManager::load()
 		return true;
 	}
 
-	size_t size = (size_t) file.size();
+	size_t size = static_cast<size_t>(file.size());
 	if (!size)
 	{
 		QDBG("The download queue on disk is empty");
@@ -1920,8 +1920,8 @@ bool QuickDC::QueueManager::load()
 		return false;
 	}
 
-	Samurai::IO::Buffer buffer((size_t) got);
-	buffer.append(temp, (size_t) got);
+	Samurai::IO::Buffer buffer(static_cast<size_t>(got));
+	buffer.append(temp, static_cast<size_t>(got));
 	delete[] temp;
 
 	QueueXMLReader handler(this, &buffer);
@@ -1934,7 +1934,7 @@ bool QuickDC::QueueManager::load()
 	dirty = false;
 	lastSaved.reset();
 
-	QDBG("Loaded %d file(s) into the download queue", (int) files.size());
+	QDBG("Loaded %d file(s) into the download queue", static_cast<int>(files.size()));
 	return ret;
 }
 
@@ -1982,9 +1982,9 @@ bool QuickDC::QueueManager::save()
 			xmlout->append(XML_INDENT XML_INDENT "<Source url=\"");
 			XML::escape(xmlout, url);
 			xmlout->append("\" lastseen=\"");
-			xmlout->append(std::to_string((uint64_t) source->getLastSeen().getInternalData()));
+			xmlout->append(std::to_string(static_cast<uint64_t>(source->getLastSeen().getInternalData())));
 			xmlout->append("\" retries=\"");
-			xmlout->append(std::to_string((uint64_t) source->getRetryCount()));
+			xmlout->append(std::to_string(static_cast<uint64_t>(source->getRetryCount())));
 			xmlout->append("\" />" XML_NEWLINE);
 
 			free(url);
@@ -2021,7 +2021,7 @@ bool QuickDC::QueueManager::save()
 		out.close();
 		delete[] data;
 
-		if (written == (ssize_t) length)
+		if (written == static_cast<ssize_t>(length))
 		{
 			Samurai::IO::File target(path);
 			target.remove();
@@ -2044,7 +2044,7 @@ bool QuickDC::QueueManager::save()
 
 	if (ret)
 	{
-		QDBG("Saved %d file(s) to the download queue", (int) stored);
+		QDBG("Saved %d file(s) to the download queue", static_cast<int>(stored));
 		(void) stored;
 		dirty = false;
 		lastSaved.reset();

@@ -86,8 +86,8 @@ const char* QuickDC::User::getEmail() const            { return email.c_str(); }
 const char* QuickDC::User::getSpeed() const            { return speed.c_str(); }
 const char* QuickDC::User::getUserAgent() const        { return userAgent.c_str(); }
 uint32_t    QuickDC::User::getSessionID() const        { return sessionID; }
-const uint8_t*    QuickDC::User::getPrivateID() const  { return (const uint8_t*) privateID.c_str(); }
-const uint8_t*    QuickDC::User::getClientID() const   { return (const uint8_t*) clientID.c_str(); }
+const uint8_t*    QuickDC::User::getPrivateID() const  { return reinterpret_cast<const uint8_t*>(privateID.c_str()); }
+const uint8_t*    QuickDC::User::getClientID() const   { return reinterpret_cast<const uint8_t*>(clientID.c_str()); }
 uint64_t    QuickDC::User::getSharedBytes() const      { return shared; }
 uint32_t    QuickDC::User::getNumSlots() const         { return numSlots; }
 uint32_t    QuickDC::User::getSharedFiles() const      { return sharedFiles; }
@@ -144,8 +144,8 @@ bool        QuickDC::User::setDescription(const char* str) { return copyIfChange
 bool        QuickDC::User::setEmail(const char* str)       { return copyIfChanged(email, str, 127); }
 bool        QuickDC::User::setSpeed(const char* str)       { return copyIfChanged(speed, str, 15); }
 bool        QuickDC::User::setUserAgent(const char* str)   { return copyIfChanged(userAgent, str, 63); }
-bool        QuickDC::User::setClientID(uint8_t* mem)       { return copyIfChanged(clientID, (const char*) mem, 63); }
-bool        QuickDC::User::setPrivateID(uint8_t* mem)      { return copyIfChanged(privateID, (const char*) mem, 63); }
+bool        QuickDC::User::setClientID(uint8_t* mem)       { return copyIfChanged(clientID, reinterpret_cast<const char*>(mem), 63); }
+bool        QuickDC::User::setPrivateID(uint8_t* mem)      { return copyIfChanged(privateID, reinterpret_cast<const char*>(mem), 63); }
 bool        QuickDC::User::setSessionID(uint32_t n)        COPY_NUM_IF_CHANGED(n, sessionID);
 bool        QuickDC::User::setSharedBytes(uint64_t n)      COPY_NUM_IF_CHANGED(n, shared);
 bool        QuickDC::User::setNumSlots(uint32_t n)         COPY_NUM_IF_CHANGED(n, numSlots);

@@ -97,7 +97,7 @@ bool QuickDC::ConnectionManager::EventMessage(const Samurai::Message* msg) {
 	if (msg->getID() == QuickDC::MsgConnectionDropped)
 	{
 		QDBG("EventMessage: MsgConnectionDropped");
-		Connection* conn = (Connection*) msg->getData();
+		Connection* conn = static_cast<Connection*>(msg->getData());
 		delete conn;
 		return true;
 	}

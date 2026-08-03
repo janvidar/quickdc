@@ -225,16 +225,16 @@ Share::RemoteFileList::~RemoteFileList() {
 }
 	
 bool Share::RemoteFileList::decode() {
-	size_t size = (size_t) file->size();
+	size_t size = static_cast<size_t>(file->size());
 	if (!file->open(Samurai::IO::File::Mode::Read)) {
 		QERR("Unable to open file");
 		return false;
 	}
 
 	uint8_t* temp_buffer = new uint8_t[size];
-	file->read((char*) temp_buffer, size);
+	file->read(reinterpret_cast<char*>(temp_buffer), size);
 	buffer = new Samurai::IO::Buffer(size);
-	buffer->append((char*) temp_buffer, size);
+	buffer->append(reinterpret_cast<char*>(temp_buffer), size);
 	delete[] temp_buffer;
 	
 	XMLFileListHandler* handler = new XMLFileListHandler(root, buffer);

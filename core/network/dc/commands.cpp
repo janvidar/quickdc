@@ -70,12 +70,12 @@ DC::SendMyInfo::SendMyInfo(const char* nick, const char* description, const char
 	bool active_mode = false;       // FIXME
 	int  numslots = 3;              // FIXME
 	
-	char* tag = (char*) malloc(50);
+	char* tag = static_cast<char*>(malloc(50));
 	snprintf(tag, 50, "<" PRODUCT " V:" VERSION ",M:%c,H:%d/%d/%d,S:%d>",
 			active_mode ? 'A' : 'P',
-			(int) QuickDC::Core::getInstance()->hubs->countHubsNormal()+1,
-			(int) QuickDC::Core::getInstance()->hubs->countHubsRegistered(),
-			(int) QuickDC::Core::getInstance()->hubs->countHubsOperator()+1, numslots
+			static_cast<int>(QuickDC::Core::getInstance()->hubs->countHubsNormal())+1,
+			static_cast<int>(QuickDC::Core::getInstance()->hubs->countHubsRegistered()),
+			static_cast<int>(QuickDC::Core::getInstance()->hubs->countHubsOperator())+1, numslots
 		);
 	
 	buffer->append("$MyINFO $ALL ");
@@ -206,7 +206,7 @@ DC::SendADCGet::SendADCGet(const char* type, const char* name, uint64_t offset, 
 	/* Built with snprintf because the length may legitimately be -1. */
 	char numbers[48];
 	snprintf(numbers, sizeof(numbers), " %llu %lld",
-		(unsigned long long) offset, (long long) length);
+		static_cast<unsigned long long>(offset), static_cast<long long>(length));
 
 	buffer->append("$ADCGET ");
 	buffer->append(type);
@@ -220,7 +220,7 @@ DC::SendADCSnd::SendADCSnd(const char* type, const char* name, uint64_t offset, 
 {
 	char numbers[48];
 	snprintf(numbers, sizeof(numbers), " %llu %llu",
-		(unsigned long long) offset, (unsigned long long) length);
+		static_cast<unsigned long long>(offset), static_cast<unsigned long long>(length));
 
 	buffer->append("$ADCSND ");
 	buffer->append(type);

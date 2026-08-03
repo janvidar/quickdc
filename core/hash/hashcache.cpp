@@ -37,7 +37,7 @@ QuickDC::Hash::CacheEntry* QuickDC::Hash::CacheEntry::create(const Samurai::IO::
 	{
 		depth = 0;
 		const Samurai::Crypto::Digest::HashValue& value = job->getHasher()->digest();
-		leafdata.append((const char*) value.getData(), hash_size);
+		leafdata.append(reinterpret_cast<const char*>(value.getData()), hash_size);
 	}
 	
 	
@@ -72,7 +72,7 @@ QuickDC::Hash::CacheEntry* QuickDC::Hash::CacheEntry::create(CacheEntryHeader& d
 		return 0;
 	}
 	
-	CacheEntry* entry = new CacheEntry(file, (enum QuickDC::Hash::HashType) data.algorithm, leafdata, data.leaves, data.depth);
+	CacheEntry* entry = new CacheEntry(file, static_cast<enum QuickDC::Hash::HashType>(data.algorithm), leafdata, data.leaves, data.depth);
 	
 	return entry;
 }
@@ -94,7 +94,7 @@ void QuickDC::Hash::CacheEntry::setCacheFileOffset(off_t pos)
 
 void QuickDC::Hash::CacheEntry::write(Samurai::IO::Buffer* writer)
 {
-	QDBG("QuickDC::Hash::CacheEntry::write(), file=%s (%zu bytes)", file.getName().c_str(), (size_t) file.size());
+	QDBG("QuickDC::Hash::CacheEntry::write(), file=%s (%zu bytes)", file.getName().c_str(), static_cast<size_t>(file.size()));
 	
 	CacheRecordHeader header;
 	CacheRecordHeader data_header;
@@ -114,13 +114,13 @@ void QuickDC::Hash::CacheEntry::write(Samurai::IO::Buffer* writer)
 	memcpy(record.name, filename, std::min(strlen(filename), sizeof(record.name) - 1));
 	record.size      = size;
 	record.mtime     = mtime.getInternalData();
-	record.algorithm = (size_t) algorithm;
+	record.algorithm = static_cast<size_t>(algorithm);
 	record.leaves    = leaves;
 	record.depth     = depth;
 
-	writer->append((const char*) &header, sizeof(header));
-	writer->append((const char*) &record, sizeof(record));
-	writer->append((const char*) &data_header, sizeof(data_header));
+	writer->append(reinterpret_cast<const char*>(&header), sizeof(header));
+	writer->append(reinterpret_cast<const char*>(&record), sizeof(record));
+	writer->append(reinterpret_cast<const char*>(&data_header), sizeof(data_header));
 	writer->append(leafdata);
 }
 

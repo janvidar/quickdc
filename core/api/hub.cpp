@@ -229,8 +229,8 @@ bool QuickDC::Hub::connectUser(const char* user, const char* token)
 	static size_t counter = 0;
 	char generated[32];
 	snprintf(generated, sizeof(generated), "MAN%lu%lu",
-		(unsigned long) Samurai::TimeStamp().getInternalData(),
-		(unsigned long) ++counter);
+		static_cast<unsigned long>(Samurai::TimeStamp().getInternalData()),
+		static_cast<unsigned long>(++counter));
 
 	session->sendConnectionRequest(u, generated);
 	return true;
@@ -352,8 +352,8 @@ int QuickDC::Hub::retryDelay(HubListener::StatusNetwork why, size_t attempts)
 	 * drops every client at once would otherwise have all of them back at the same
 	 * instant, which is how it came to drop them.
 	 */
-	const int spread = (int) (wait / 2);
-	return (int) (wait - spread) + Samurai::Util::pseudoRandom(0, spread);
+	const int spread = static_cast<int>(wait / 2);
+	return static_cast<int>(wait - spread) + Samurai::Util::pseudoRandom(0, spread);
 }
 
 void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
@@ -386,9 +386,9 @@ void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 	}
 
 	QDBG("Trying '%s' again in %d seconds (attempt %d)",
-		canonicalUrl, wait, (int) attempts);
+		canonicalUrl, wait, static_cast<int>(attempts));
 
 	delete timer;
-	timer = new Samurai::Timer(this, (time_t) wait, true);
+	timer = new Samurai::Timer(this, static_cast<time_t>(wait), true);
 }
 

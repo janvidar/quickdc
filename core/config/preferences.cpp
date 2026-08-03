@@ -125,11 +125,11 @@ bool Preferences::write() {
 	std::map<const std::string, group>::iterator group_iterator;
 	std::map<const std::string, std::string>::iterator prefs_iterator;
 	for (group_iterator = groups.begin(); group_iterator != groups.end(); group_iterator++) {
-		writeSectionStart((char*) (*group_iterator).first.c_str());
+		writeSectionStart((*group_iterator).first.c_str());
 		for (prefs_iterator = (*group_iterator).second.begin(); prefs_iterator != (*group_iterator).second.end(); prefs_iterator++) {
-			writeSetting(((char*) (*prefs_iterator).first.c_str()), (char*) (*prefs_iterator).second.c_str());
+			writeSetting((*prefs_iterator).first.c_str(), (*prefs_iterator).second.c_str());
 		}
-		writeSectionEnd((char*) (*group_iterator).first.c_str());
+		writeSectionEnd((*group_iterator).first.c_str());
 	}
 
 	writeEnd();

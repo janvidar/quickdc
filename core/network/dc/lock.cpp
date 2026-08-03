@@ -22,13 +22,13 @@ std::string DC::Lock::calculateKey(std::string_view lock) {
 	   result, so the two cannot be the same buffer. */
 	std::string tmp(lock);
 	for (size_t i = 1; i < lock.size(); i++)
-		tmp[i] = (char) (lock[i] ^ lock[i-1]);
+		tmp[i] = static_cast<char>(lock[i] ^ lock[i-1]);
 
 	// set the first one.
-	tmp[0] = (char) (lock[0] ^ tmp[lock.size()-1] ^ 5);
+	tmp[0] = static_cast<char>(lock[0] ^ tmp[lock.size()-1] ^ 5);
 
 	for (char& c : tmp)
-		c = (char) (((c << 4) & 0xf0) | ((c >> 4) & 0x0f));
+		c = static_cast<char>(((c << 4) & 0xf0) | ((c >> 4) & 0x0f));
 
 	// escape it.
 	std::string key;

@@ -82,14 +82,14 @@ void QuickDC::FileSource::touch()
 
 uint64_t QuickDC::FileSource::getThroughput() const
 {
-	return (throughput > 0.0) ? (uint64_t) throughput : 0;
+	return (throughput > 0.0) ? static_cast<uint64_t>(throughput) : 0;
 }
 
 void QuickDC::FileSource::onChunkDone(uint64_t bytes, double seconds)
 {
 	if (!bytes || seconds <= 0.0) return;
 
-	const double sample = (double) bytes / seconds;
+	const double sample = static_cast<double>(bytes) / seconds;
 
 	/*
 	 * Smoothed rather than taken as read. One chunk is a small sample and a

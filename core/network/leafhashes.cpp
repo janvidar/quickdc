@@ -41,7 +41,7 @@ static uint64_t leaf_size_for(uint64_t fileSize, size_t leafCount)
 	for (uint64_t size = TTH_MIN_LEAF_SIZE; size; size *= 2)
 	{
 		uint64_t needed = (fileSize + size - 1) / size;
-		if (needed == (uint64_t) leafCount) return size;
+		if (needed == static_cast<uint64_t>(leafCount)) return size;
 		if (needed <= 1) break;
 	}
 	return 0;
@@ -59,7 +59,7 @@ bool QuickDC::LeafHashes::load(const char* tth, uint64_t fileSize_, const char* 
 	uint64_t leaf = leaf_size_for(fileSize_, count);
 	if (!leaf)
 	{
-		QDBG("Leaf data for '%s' does not describe a %d byte file", tth, (int) fileSize_);
+		QDBG("Leaf data for '%s' does not describe a %d byte file", tth, static_cast<int>(fileSize_));
 		return false;
 	}
 
@@ -91,7 +91,7 @@ bool QuickDC::LeafHashes::load(const char* tth, uint64_t fileSize_, const char* 
 	leafSize = leaf;
 	fileSize = fileSize_;
 
-	QDBG("Got %d verified leaves of %d bytes each for '%s'", (int) leafCount, (int) leafSize, tth);
+	QDBG("Got %d verified leaves of %d bytes each for '%s'", static_cast<int>(leafCount), static_cast<int>(leafSize), tth);
 	return true;
 }
 
@@ -104,7 +104,7 @@ bool QuickDC::LeafHashes::verify(Samurai::IO::File& file, uint64_t offset, uint6
 	/* Whole leaves, unless this is the tail of the file. */
 	if ((length % leafSize) && (offset + length != fileSize)) return false;
 
-	size_t first = (size_t) (offset / leafSize);
+	size_t first = static_cast<size_t>(offset / leafSize);
 	char buffer[65536];
 	bool ok = true;
 
@@ -120,34 +120,34 @@ bool QuickDC::LeafHashes::verify(Samurai::IO::File& file, uint64_t offset, uint6
 		Samurai::Crypto::Digest::Tiger* algo = new Samurai::Crypto::Digest::Tiger();
 		Samurai::Crypto::Digest::MerkleTree leaf(algo);
 
-		if (!file.seek((off_t) at)) ok = false;
+		if (!file.seek(static_cast<off_t>(at))) ok = false;
 
 		for (uint64_t done = 0; ok && done < want; )
 		{
 			size_t piece = sizeof(buffer);
-			if (done + piece > want) piece = (size_t) (want - done);
+			if (done + piece > want) piece = static_cast<size_t>(want - done);
 
-			if (file.read(buffer, piece) != (ssize_t) piece)
+			if (file.read(buffer, piece) != static_cast<ssize_t>(piece))
 			{
 				QERR("Unable to read %d bytes at %d of '%s' to verify it",
-					(int) piece, (int) (at + done), file.getName().c_str());
+					static_cast<int>(piece), static_cast<int>(at + done), file.getName().c_str());
 				ok = false;
 				break;
 			}
 
-			leaf.update((uint8_t*) buffer, piece);
+			leaf.update(buffer, piece);
 			done += piece;
 		}
 
 		if (ok)
 		{
 			const Samurai::Crypto::Digest::HashValue& value = leaf.digest();
-			size_t index = first + (size_t) ((at - offset) / leafSize);
+			size_t index = first + static_cast<size_t>((at - offset) / leafSize);
 
 			if (index >= leafCount
 				|| memcmp(value.getData(), leaves.data() + index * hashSize, hashSize))
 			{
-				QDBG("Leaf %d of '%s' does not match", (int) index, file.getName().c_str());
+				QDBG("Leaf %d of '%s' does not match", static_cast<int>(index), file.getName().c_str());
 				ok = false;
 			}
 		}
@@ -163,7 +163,7 @@ char* QuickDC::LeafHashes::makeFilename(const char* tempFilename)
 	if (!tempFilename) return 0;
 
 	size_t length = strlen(tempFilename) + 6;
-	char* out = (char*) malloc(length);
+	char* out = static_cast<char*>(malloc(length));
 	if (out) snprintf(out, length, "%s.tthl", tempFilename);
 	return out;
 }
@@ -175,7 +175,7 @@ bool QuickDC::LeafHashes::save(const char* filename) const
 	Samurai::IO::File file(filename);
 	if (!file.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate)) return false;
 
-	bool ok = (file.write(leaves.data(), leafCount * hashSize) == (ssize_t) (leafCount * hashSize));
+	bool ok = (file.write(leaves.data(), leafCount * hashSize) == static_cast<ssize_t>(leafCount * hashSize));
 	file.close();
 	return ok;
 }
@@ -187,7 +187,7 @@ bool QuickDC::LeafHashes::load(const char* filename, const char* tth, uint64_t f
 	Samurai::IO::File file(filename);
 	if (!file.exists() || !file.open(Samurai::IO::File::Mode::Read)) return false;
 
-	size_t length = (size_t) file.size();
+	size_t length = static_cast<size_t>(file.size());
 	if (!length)
 	{
 		file.close();
@@ -195,7 +195,7 @@ bool QuickDC::LeafHashes::load(const char* filename, const char* tth, uint64_t f
 	}
 
 	std::vector<char> data(length);
-	bool ok = (file.read(data.data(), length) == (ssize_t) length);
+	bool ok = (file.read(data.data(), length) == static_cast<ssize_t>(length));
 	file.close();
 
 	if (ok) ok = load(tth, fileSize_, data.data(), length);

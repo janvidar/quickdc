@@ -20,16 +20,16 @@
 #include <string.h>
 #include <string_view>
 
-#define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
+#define FOURCC(a, b, c, d) (static_cast<uint32_t>( static_cast<uint32_t>(a) << 24 | (static_cast<uint32_t>(b) << 16) | (static_cast<uint32_t>(c) << 8) | static_cast<uint32_t>(d)))
 
 /* Unsigned: char is signed here, so a byte with the top bit set sign extends
    into the whole word, and shifting a negative int left is undefined besides. */
 static uint32_t fourcc_of(const char* buffer)
 {
-	return (((uint32_t) (unsigned char) buffer[0] << 24)
-	      | ((uint32_t) (unsigned char) buffer[1] << 16)
-	      | ((uint32_t) (unsigned char) buffer[2] << 8)
-	      |  (uint32_t) (unsigned char) buffer[3]);
+	return ((static_cast<uint32_t>(static_cast<unsigned char>(buffer[0])) << 24)
+	      | (static_cast<uint32_t>(static_cast<unsigned char>(buffer[1])) << 16)
+	      | (static_cast<uint32_t>(static_cast<unsigned char>(buffer[2])) << 8)
+	      |  static_cast<uint32_t>(static_cast<unsigned char>(buffer[3])));
 }
 
 static bool probe_tcp_tls(const char* buffer, size_t length) {
@@ -293,7 +293,7 @@ void QuickDC::ProtocolProbe::probe() {
 	ssize_t len = socket->peek(buf, 16);
 	if (len <= 0) return;
 
-	switch (QuickDC::identify(buf, (size_t) len)) {
+	switch (QuickDC::identify(buf, static_cast<size_t>(len))) {
 		case Protocol::ADCHub:
 		{
 			ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;

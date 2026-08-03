@@ -313,8 +313,8 @@ Samurai::IO::File* QuickDC::Hash::Manager::getLeafData(const Samurai::IO::File& 
 	if (!lookup(file, entry) || !entry) return 0;
 	if (!entry->getLeafdataSize()) return 0;
 
-	offset = (uint64_t) entry->getCacheFileOffset();
-	length = (uint64_t) entry->getLeafdataSize();
+	offset = static_cast<uint64_t>(entry->getCacheFileOffset());
+	length = static_cast<uint64_t>(entry->getLeafdataSize());
 	return getCacheFile();
 }
 

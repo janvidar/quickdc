@@ -147,7 +147,7 @@ bool DC::CommandProxy::write()
 		qcmd->setOffset(offset + sent);
 	
 		// FIXME: toSend
-		if ((size_t) sent < toSend)
+		if (static_cast<size_t>(sent) < toSend)
 		{
 			socket->toggleWriteNotifier(true);
 			more = false;

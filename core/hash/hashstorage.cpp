@@ -12,7 +12,7 @@
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
 
-#define HEADER_SIZE_INFO     (uint8_t) sizeof(size_t)
+#define HEADER_SIZE_INFO     static_cast<uint8_t>(sizeof(size_t))
 #define HEADER_EOL           0x0a
 #define HEADER_EOF           0x1b
 #define HEADER_VERSION       0x01
@@ -114,8 +114,8 @@ bool QuickDC::Hash::CacheStorage::read(QuickDC::Hash::CacheEntry*& ptr)
 size_t QuickDC::Hash::CacheStorage::readSectionHeader(uint32_t magic)
 {
 	CacheRecordHeader header;
-	ssize_t got = file.read((char*) &header, sizeof(header));
-	if (got < (ssize_t) sizeof(header))
+	ssize_t got = file.read(reinterpret_cast<char*>(&header), sizeof(header));
+	if (got < static_cast<ssize_t>(sizeof(header)))
 	{
 		QERR("Unexpected end of record header");
 		return 0;
@@ -137,9 +137,9 @@ size_t QuickDC::Hash::CacheStorage::readSectionHeader(uint32_t magic)
 	/* The size comes out of the file, and the read below buffers all of it
 	   before finding out the file is nowhere near that long. */
 	const off_t remaining = file.size() - position;
-	if (remaining < 0 || (uint64_t) header.size > (uint64_t) remaining)
+	if (remaining < 0 || static_cast<uint64_t>(header.size) > static_cast<uint64_t>(remaining))
 	{
-		QERR("Record claims %u bytes, but %lld remain", header.size, (long long) remaining);
+		QERR("Record claims %u bytes, but %lld remain", header.size, static_cast<long long>(remaining));
 		return 0;
 	}
 
@@ -152,7 +152,7 @@ size_t QuickDC::Hash::CacheStorage::readSection(uint32_t magic, Samurai::IO::Buf
 	if (!size) return 0;
 	
 	ssize_t got = file.read(&buffer, size);
-	if (got < (ssize_t) size)
+	if (got < static_cast<ssize_t>(size))
 	{
 		QERR("Unexpected end of file");
 		return 0;
@@ -172,8 +172,8 @@ size_t QuickDC::Hash::CacheStorage::readSection(uint32_t magic, void* ptr, size_
 		return 0;
 	}
 	
-	ssize_t got = file.read((char*) ptr, size);
-	if (got < (ssize_t) size)
+	ssize_t got = file.read(static_cast<char*>(ptr), size);
+	if (got < static_cast<ssize_t>(size))
 	{
 		QERR("Unexpected end of file");
 		return 0;
@@ -215,8 +215,8 @@ bool QuickDC::Hash::CacheStorage::openForWriting()
 	record.size_info    = HEADER_SIZE_INFO;
 	record.version      = HEADER_VERSION;
 	
-	buffer.append((const char*) &header, sizeof(header));
-	buffer.append((const char*) &record, sizeof(record));
+	buffer.append(reinterpret_cast<const char*>(&header), sizeof(header));
+	buffer.append(reinterpret_cast<const char*>(&record), sizeof(record));
 
 	/* write() consumes the buffer, so the length has to be taken first. */
 	size_t length = buffer.size();
@@ -241,7 +241,7 @@ void QuickDC::Hash::CacheStorage::close()
 			CacheRecordHeader header;
 			header.magic = STORAGE_MAGIC_EOF;
 			header.size  = 0;
-			file.write((const char*) &header, sizeof(header));
+			file.write(reinterpret_cast<const char*>(&header), sizeof(header));
 		}
 		
 		reset();

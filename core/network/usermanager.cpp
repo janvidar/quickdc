@@ -51,7 +51,7 @@ const User* UserManager::getUserByClientID(const char* cid) {
 	const std::string_view want(cid);
 	for (const auto& entry : users) {
 		const User* u = entry.second;
-		if (want == (const char*) u->getClientID()) return u;
+		if (want == reinterpret_cast<const char*>(u->getClientID())) return u;
 	}
 	return 0;
 }

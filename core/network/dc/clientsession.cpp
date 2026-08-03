@@ -233,7 +233,7 @@ void DC::ClientSession::sendDirection()
 		my_prio = Samurai::Util::pseudoRandom(1000, 32767);
 
 		QDBG("Asking for a %s (priority %d)",
-			my_direction == DirDownload ? "download" : "upload", (int) my_prio);
+			my_direction == DirDownload ? "download" : "upload", static_cast<int>(my_prio));
 
 		if (extendedProtocol)
 		{
@@ -508,15 +508,15 @@ void DC::ClientSession::requestNextChunk()
 
 	request->setReservation(offset, length);
 	chunk_offset = offset;
-	chunk_length = (int64_t) length;
+	chunk_length = static_cast<int64_t>(length);
 
 	char tthpath[64];
 	snprintf(tthpath, sizeof(tthpath), "TTH/%s", qfile->getTTH());
 
 	QDBG("Requesting %d bytes at offset %d of '%s'",
-		(int) length, (int) offset, qfile->getLocalFilename());
+		static_cast<int>(length), static_cast<int>(offset), qfile->getLocalFilename());
 
-	send(new DC::SendADCGet("file", tthpath, offset, (int64_t) length));
+	send(new DC::SendADCGet("file", tthpath, offset, static_cast<int64_t>(length)));
 }
 
 
@@ -630,7 +630,7 @@ void DC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 	/* Work out how it went before the transfer object goes away. */
 	bool complete = (transfer && transfer->isFinished());
 	uint64_t offset = chunk_offset;
-	uint64_t length = (chunk_length > 0) ? (uint64_t) chunk_length : 0;
+	uint64_t length = (chunk_length > 0) ? static_cast<uint64_t>(chunk_length) : 0;
 
 	QuickDC::PendingRequest* request = (queue && !token.empty()) ? queue->lookupRequest(token.c_str()) : 0;
 
@@ -689,7 +689,7 @@ void DC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 		return;
 	}
 
-	QDBG("The chunk at %d did not complete; handing it back", (int) offset);
+	QDBG("The chunk at %d did not complete; handing it back", static_cast<int>(offset));
 	if (length) queue->releaseChunk(qfile, offset, length);
 	request->clearReservation();
 	queue->onRequestFailed(token.c_str());
@@ -781,7 +781,7 @@ void DC::ClientSession::onGet(const char* fn, uint64_t offset, int64_t chunklen)
 void DC::ClientSession::onGetZBlock(const char* file, uint64_t offset, int64_t length)
 {
 	QDBG("Requested file (ZBLOCK): '%s', offset=%llu, length=%llu", file,
-		(unsigned long long) offset, (unsigned long long) length);
+		static_cast<unsigned long long>(offset), static_cast<unsigned long long>(length));
 	(void) file;
 	(void) offset;
 	(void) length;
@@ -792,11 +792,11 @@ void DC::ClientSession::onGetZBlock(const char* file, uint64_t offset, int64_t l
 }
 
 
-#define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
+#define FOURCC(a, b, c, d) (static_cast<uint32_t>( static_cast<uint32_t>(a) << 24 | (static_cast<uint32_t>(b) << 16) | (static_cast<uint32_t>(c) << 8) | static_cast<uint32_t>(d)))
 
 void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset, int64_t length, bool zlib)
 {
-	QDBG("Requested file (ADCGET): '%s', offset=%d, length=%d", fn, (int) offset, (int) length);
+	QDBG("Requested file (ADCGET): '%s', offset=%d, length=%d", fn, static_cast<int>(offset), static_cast<int>(length));
 
 	if (!upload_approved)
 	{
@@ -834,7 +834,7 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	int slots = config->getNumber("Slots", 3);
-	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= (size_t) slots);
+	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= static_cast<size_t>(slots));
 
 	uint64_t servable = 0;
 	uint64_t internal_offset = 0;
@@ -904,23 +904,23 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 		return;
 	}
 
-	if (!servable) servable = (uint64_t) file->size();
+	if (!servable) servable = static_cast<uint64_t>(file->size());
 
 	chunk_offset = offset;
-	if (length < 0 || offset + (uint64_t) length > servable)
-		chunk_length = (int64_t) (servable - offset);
+	if (length < 0 || offset + static_cast<uint64_t>(length) > servable)
+		chunk_length = static_cast<int64_t>(servable - offset);
 	else
 		chunk_length = length;
 
 	if (offset > servable || chunk_length <= 0)
 	{
-		QDBG("Asked for %d of '%s', which is not ours to send", (int) offset, fn);
+		QDBG("Asked for %d of '%s', which is not ours to send", static_cast<int>(offset), fn);
 		sendErrorFileUnavailable();
 		return;
 	}
 
 	send(new DC::SendADCSnd(kind, (type == FOURCC('l','i','s','t')) ? "/" : fn,
-		chunk_offset, (uint64_t) chunk_length));
+		chunk_offset, static_cast<uint64_t>(chunk_length)));
 
 	transfer = new QuickDC::Upload(xfrmgr, this, proxy->socket, file,
 		internal_offset + chunk_offset, chunk_length);
@@ -929,7 +929,7 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 
 void DC::ClientSession::onADCSend(const char* filename, uint32_t type, uint64_t offset, int64_t length, bool compressed)
 {
-	QDBG("Receiving file (ADCSND): '%s', offset=%d, length=%d", filename, (int) offset, (int) length);
+	QDBG("Receiving file (ADCSND): '%s', offset=%d, length=%d", filename, static_cast<int>(offset), static_cast<int>(length));
 	(void) filename;
 
 	QuickDC::Core* core = QuickDC::Core::getInstance();
@@ -961,7 +961,7 @@ void DC::ClientSession::onADCSend(const char* filename, uint32_t type, uint64_t 
 
 	if (length <= 0)
 	{
-		QERR("The peer offered a nonsensical length (%d)", (int) length);
+		QERR("The peer offered a nonsensical length (%d)", static_cast<int>(length));
 		queue->onRequestFailed(token.c_str());
 		proxy->close();
 		return;
@@ -994,7 +994,7 @@ void DC::ClientSession::onADCSend(const char* filename, uint32_t type, uint64_t 
 
 		chunk_offset = 0;
 		chunk_length = length;
-		request->setReservation(0, (uint64_t) length);
+		request->setReservation(0, static_cast<uint64_t>(length));
 
 		transfer = new QuickDC::Download(xfrmgr, this, socket, file, 0, length);
 		state = StateTransfer;
@@ -1025,10 +1025,10 @@ void DC::ClientSession::onADCSend(const char* filename, uint32_t type, uint64_t 
 	 */
 	if (!request->haveReservation()
 		|| offset != request->getReservedOffset()
-		|| (uint64_t) length > request->getReservedLength())
+		|| static_cast<uint64_t>(length) > request->getReservedLength())
 	{
 		QERR("The peer answered with %d bytes at %d, which is not the chunk we reserved",
-			(int) length, (int) offset);
+			static_cast<int>(length), static_cast<int>(offset));
 		queue->onRequestFailed(token.c_str());
 		proxy->close();
 		return;
@@ -1041,7 +1041,7 @@ void DC::ClientSession::onADCSend(const char* filename, uint32_t type, uint64_t 
 	chunk_length = length;
 
 	/* Hold the request to what the peer actually promised. */
-	request->setReservation(offset, (uint64_t) length);
+	request->setReservation(offset, static_cast<uint64_t>(length));
 
 	transfer = new QuickDC::Download(xfrmgr, this, socket, file, offset, length);
 	state = StateTransfer;

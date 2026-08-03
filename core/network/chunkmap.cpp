@@ -20,11 +20,11 @@
  */
 static bool parseNumber(const char*& p, uint64_t& out)
 {
-	if (!isdigit((unsigned char) *p)) return false;
+	if (!isdigit(static_cast<unsigned char>(*p))) return false;
 
 	char* endp = 0;
 	errno = 0;
-	out = (uint64_t) strtoull(p, &endp, 10);
+	out = static_cast<uint64_t>(strtoull(p, &endp, 10));
 	if (errno == ERANGE) return false;
 
 	p = endp;
@@ -323,7 +323,7 @@ size_t QuickDC::ChunkMap::countBlocks(uint64_t blockSize) const
 {
 	if (!blockSize || !size) return 0;
 
-	size_t blocks = (size_t) ((size + blockSize - 1) / blockSize);
+	size_t blocks = static_cast<size_t>((size + blockSize - 1) / blockSize);
 	size_t have = 0;
 	for (size_t n = 0; n < blocks; n++)
 		if (hasBlock(blockSize, n)) have++;
@@ -335,7 +335,7 @@ size_t QuickDC::ChunkMap::countBlockRuns(uint64_t blockSize) const
 {
 	if (!blockSize || !size) return 0;
 
-	size_t blocks = (size_t) ((size + blockSize - 1) / blockSize);
+	size_t blocks = static_cast<size_t>((size + blockSize - 1) / blockSize);
 	size_t runs = 0;
 
 	for (size_t n = 0; n < blocks; )
@@ -352,7 +352,7 @@ std::string QuickDC::ChunkMap::toIndexString(uint64_t blockSize) const
 	std::string out;
 	if (!blockSize || !size) return out;
 
-	size_t blocks = (size_t) ((size + blockSize - 1) / blockSize);
+	size_t blocks = static_cast<size_t>((size + blockSize - 1) / blockSize);
 
 	for (size_t n = 0; n < blocks; )
 	{
@@ -362,9 +362,9 @@ std::string QuickDC::ChunkMap::toIndexString(uint64_t blockSize) const
 		while (n < blocks && hasBlock(blockSize, n)) n++;
 
 		if (out.size()) out += ",";
-		out += std::to_string((uint64_t) first);
+		out += std::to_string(static_cast<uint64_t>(first));
 		out += ",";
-		out += std::to_string((uint64_t) n);
+		out += std::to_string(static_cast<uint64_t>(n));
 	}
 	return out;
 }

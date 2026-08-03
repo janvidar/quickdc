@@ -94,7 +94,7 @@ uint32_t DC::Tag::getSlots() {
 	if (slotcount.empty()) return 0;
 	int nslots = Samurai::Util::Convert::to_int32(slotcount.c_str());
 	if (nslots < 0) return 0;
-	return (uint32_t) nslots;
+	return static_cast<uint32_t>(nslots);
 }
 
 /**

@@ -378,7 +378,7 @@ void DC::HubSession::onPassiveConnect(const char* user)
 			if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
 			{
 				const char* addr = config->getString("Address");
-				uint16_t port = (uint16_t) config->getNumber("Port");
+				uint16_t port = static_cast<uint16_t>(config->getNumber("Port"));
 
 				/* Telling them where to reach us is what makes the inbound
 				   connection an expected one. */
@@ -406,7 +406,7 @@ void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 		config->setGroup("Network");
 
 		const char* addr = config->getString("Address");
-		uint16_t port = (uint16_t) config->getNumber("Port");
+		uint16_t port = static_cast<uint16_t>(config->getNumber("Port"));
 
 		cmd = new DC::SendConnectToMe(u->getID(), addr, port);
 	}
@@ -575,7 +575,7 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	cmd.addArgument("HI", hubIpPort.c_str());
 	cmd.addArgument("U4", std::to_string(myPort));
 	cmd.addArgument("TR", request->getTTH());
-	cmd.addArgument("PC", std::to_string((int) runs));
+	cmd.addArgument("PC", std::to_string(static_cast<int>(runs)));
 	cmd.addArgument("PI", indexes.c_str());
 
 	Samurai::IO::Buffer buffer;
@@ -586,7 +586,7 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	packet.setAddress(&peer);
 	core->server->send(&packet);
 
-	QDBG("Offered %d run(s) of '%s' to %s", (int) runs, request->getTTH(), replyTo);
+	QDBG("Offered %d run(s) of '%s' to %s", static_cast<int>(runs), request->getTTH(), replyTo);
 }
 
 /**
@@ -605,7 +605,7 @@ void DC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
 
 	QDBG("Search result: '%s' (%d bytes) from '%s'",
 		result->getFile() ? result->getFile() : "",
-		(int) result->getSize(),
+		static_cast<int>(result->getSize()),
 		result->getUser() ? result->getUser()->getNick() : "");
 
 	/*
@@ -774,7 +774,7 @@ void DC::HubSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Ne
 			why = QuickDC::HubListener::NetErrorHostUnreachable;
 			break;
 		default:
-			QERR("Network error %d on '%s'", (int) error,
+			QERR("Network error %d on '%s'", static_cast<int>(error),
 				hub ? hub->getUrl() : "");
 	}
 
@@ -825,7 +825,7 @@ void DC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 	
 	if (1) { /* FILENAME */
 		buffer.append(filename);
-		buffer.append((char) 0x05);
+		buffer.append(static_cast<char>(0x05));
 		buffer.append(file->getSize());
 	} else { /* DIRECTORY */
 		buffer.append(filename);
@@ -835,7 +835,7 @@ void DC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 	buffer.append(0); /* free slots */
 	buffer.append('/');
 	buffer.append(numslots);
-	buffer.append((char) 0x05);
+	buffer.append(static_cast<char>(0x05));
 	if (file->getTTH()) {
 		buffer.append("TTH:");
 		buffer.append(file->getTTH());
@@ -848,7 +848,7 @@ void DC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 	
 	if (user) {
 		/* Send passive result -- through hub */
-		buffer.append((char) 0x05);
+		buffer.append(static_cast<char>(0x05));
 		buffer.append(user->getID());
 		buffer.append("|");
 		proxy->write(buffer.pop(buffer.size()));
