@@ -18,6 +18,7 @@ set(QUICKDC_SOURCES
     network/connectionmanager.cpp
     network/downloadqueue.cpp
     network/filesource.cpp
+    network/hublist.cpp
     network/hubmanager.cpp
     network/keyprint.cpp
     network/leafhashes.cpp

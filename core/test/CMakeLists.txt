@@ -69,6 +69,7 @@ foreach(app IN LISTS QUICKDC_TEST_APPS)
 endforeach()
 
 # Unlike their neighbours these are self-contained, so they do get to run.
+add_test(NAME hublist COMMAND hublist)
 add_test(NAME zupload COMMAND testzupload)
 add_test(NAME leafhashes COMMAND testleafhashes)
 add_test(NAME xml COMMAND testxml)
