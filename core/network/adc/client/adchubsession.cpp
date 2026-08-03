@@ -1085,17 +1085,16 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 	char* code = cmd->getArgument(0);
 	char* mesg = cmd->getArgument(1);
 
-	bool fatal = false;
-
 	if (code && strlen(code) == 3)
 	{
-		// Determine severity.
+		/*
+		 * Determine severity. It decides only whether there is anything to
+		 * report: each code below sets its own reconnect time and listener
+		 * event, so recoverable and fatal are already told apart there.
+		 */
 		switch (code[0]) {
-			case '1':
-				fatal = false;
-				break;
-			case '2':
-				fatal = true;
+			case '1': // Recoverable
+			case '2': // Fatal
 				break;
 			case '0':
 				// Informal messages -- We don't care about those!
