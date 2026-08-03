@@ -72,7 +72,15 @@ class SearchRequest {
 		void addInclusion(const char* term);
 		void addExclusion(const char* term);
 		void addExtension(const char* ext);
-		
+
+		/*
+		 * The terms a file name has to carry, must not carry, and the extensions
+		 * it may have. Handed out whole, because every caller walks all of them.
+		 */
+		const std::vector<std::string>& getInclusions() const { return include; }
+		const std::vector<std::string>& getExclusions() const { return exclude; }
+		const std::vector<std::string>& getExtensions() const { return extension; }
+
 		bool isTTH() const;
 
 		/**
@@ -101,9 +109,9 @@ class SearchRequest {
 		void setType(enum FilePolicy);
 
 	protected:
-		std::vector<char*> include;
-		std::vector<char*> exclude;
-		std::vector<char*> extension;
+		std::vector<std::string> include;
+		std::vector<std::string> exclude;
+		std::vector<std::string> extension;
 		std::string tth;
 		std::string token;
 		uint64_t size;

@@ -10,8 +10,6 @@
 #include "ctype.h"
 #include <string_view>
 
-#define FREE_VECTOR(V) while (V.size()) { char* arg = V.back(); V.pop_back(); free(arg); }
-
 
 QuickDC::Share::SearchRequest::SearchRequest(QuickDC::Share::SearchReplyHandler* eh) : size(0), size_type(SizeAny), file_type(SearchAll), event_handler(eh), user(0)
 {
@@ -26,9 +24,6 @@ QuickDC::Share::SearchRequest::SearchRequest(enum SizePolicy sp, uint64_t size_,
 }
 
 QuickDC::Share::SearchRequest::~SearchRequest() {
-	FREE_VECTOR(include);
-	FREE_VECTOR(exclude);
-	FREE_VECTOR(extension);
 }
 
 void QuickDC::Share::SearchRequest::setToken(const char* token_) {
@@ -52,21 +47,22 @@ void QuickDC::Share::SearchRequest::setSizePolicy(enum SizePolicy sp) { size_typ
 void QuickDC::Share::SearchRequest::setType(enum FilePolicy fp) { file_type = fp; }
 
 
+/* Under three characters a term matches most of a share, so it is not one. */
 void QuickDC::Share::SearchRequest::addInclusion(const char* term) {
 	if (term && strlen(term) >= 3) {
-		include.push_back(strdup(term));
+		include.push_back(term);
 		QSEARCH("Search term: '%s'", term);
 	}
 }
 
 void QuickDC::Share::SearchRequest::addExclusion(const char* term) {
 	if (term && strlen(term) >= 3)
-		exclude.push_back(strdup(term));
+		exclude.push_back(term);
 }
 
 void QuickDC::Share::SearchRequest::addExtension(const char* ext) {
 	if (ext)
-		extension.push_back(strdup(ext));
+		extension.push_back(ext);
 }
 
 bool QuickDC::Share::SearchRequest::isTTH() const {

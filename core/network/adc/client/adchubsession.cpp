@@ -772,14 +772,14 @@ void ADC::HubSession::sendSearchRequest(QuickDC::Share::SearchRequest* request)
 	else
 	{
 
-		for (size_t n = 0; n < request->include.size(); n++)
-			cmd->addArgument("AN", request->include[n]);
+		for (const std::string& term : request->getInclusions())
+			cmd->addArgument("AN", term.c_str());
 
-		for (size_t n = 0; n < request->exclude.size(); n++)
-			cmd->addArgument("NO", request->exclude[n]);
+		for (const std::string& term : request->getExclusions())
+			cmd->addArgument("NO", term.c_str());
 
-		for (size_t n = 0; n < request->extension.size(); n++)
-			cmd->addArgument("EX", request->extension[n]);
+		for (const std::string& ext : request->getExtensions())
+			cmd->addArgument("EX", ext.c_str());
 
 		switch (request->getSizePolicy())
 		{

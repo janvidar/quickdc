@@ -18,6 +18,7 @@
 #include "sharefile.h"
 #include "config/preferences.h"
 #include <samurai/io/file.h>
+#include <samurai/stdc.h>
 #include <samurai/io/compression.h>
 #include <samurai/io/buffer.h>
 #include "api/attachments.h"
@@ -717,34 +718,34 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 		}
 		
 	} else {
-		if (!req->include.size()) return; /* Invalid search */
-	
+		if (req->getInclusions().empty()) return; /* Invalid search */
+
 		for (size_t n = 0; n < searchTable.size(); n++) {
 			std::pair<std::string, QuickDC::Share::File*>& current = searchTable[n];
-			const char* line = current.first.c_str();
+			const std::string& line = current.first;
 
 			/* Every term has to be there, in whatever order they were given.
 			   Searching on from where the last one matched made the order part
 			   of the question, which it is not. */
 			bool matches = true;
-			for (size_t i = 0; i < req->include.size(); i++) {
-				if (!strcasestr(line, req->include[i])) { matches = false; break; }
+			for (const std::string& term : req->getInclusions()) {
+				if (!Samurai::Util::icontains(line, term)) { matches = false; break; }
 			}
 			if (!matches) continue;
 
 			/* And none of the excluded ones. Keeping the file when the term was
 			   found is backwards: it answered with the one thing the asker had
 			   said they did not want, and hid everything else. */
-			for (size_t i = 0; i < req->exclude.size(); i++) {
-				if (strcasestr(line, req->exclude[i])) { matches = false; break; }
+			for (const std::string& term : req->getExclusions()) {
+				if (Samurai::Util::icontains(line, term)) { matches = false; break; }
 			}
 			if (!matches) continue;
 
 			/* match extension */
-			if (req->extension.size()) {
+			if (!req->getExtensions().empty()) {
 				bool extensionOK = false;
-				for (size_t i = 0; i < req->extension.size(); i++) {
-					if (current.second->getFile().matchExtension(req->extension[i])) {
+				for (const std::string& ext : req->getExtensions()) {
+					if (current.second->getFile().matchExtension(ext.c_str())) {
 						extensionOK = true;
 						break;
 					}
