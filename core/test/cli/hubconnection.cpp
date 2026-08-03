@@ -25,8 +25,10 @@ void HubConnection::status(const char* string, const char* string2) {
 }
 
 void HubConnection::EventNetStatus(enum StatusNetwork netstate) {
-	const char* msg;
-	
+	/* Initialised, because a state added to the enum and not here would
+	   otherwise be reported by printing an uninitialised pointer. */
+	const char* msg = "Unknown network state";
+
 	switch (netstate)
 	{
 		case NetInvalid:
@@ -68,7 +70,11 @@ void HubConnection::EventNetStatus(enum StatusNetwork netstate) {
 		case NetErrorHostNotFound:
 			msg = "Error: Host not found";
 			break;
-			
+
+		case NetErrorHostUnreachable:
+			msg = "Error: No route to the host, or the network is down";
+			break;
+
 		case NetErrorIO:
 			msg = "Error: An IO error occured";
 			break;
