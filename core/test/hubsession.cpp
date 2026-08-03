@@ -21,6 +21,7 @@
 #include "quickdc.h"
 #include "api/core.h"
 #include "api/hub.h"
+#include "network/adc/adccommon.h"
 #include "network/adc/client/adchubsession.h"
 #include "network/user.h"
 #include "network/usermanager.h"
@@ -318,6 +319,19 @@ static void run()
 			CHECK(s.hub.nextLine(line));
 			CHECK(line.compare(0, 4, "HSUP") == 0);
 			CHECK(line.find("ADBASE") != std::string::npos);
+
+			/*
+			 * Named one by one rather than taken as a whole line, so that a flag
+			 * going missing is a failure here and not something noticed on a hub.
+			 * RTF0 is the one worth naming twice over: a hub only carries the RT
+			 * flag on a message if both ends offered it, so a client that stops
+			 * asking simply stops sending markdown, with nothing to show for it.
+			 */
+			CHECK(line.find("AD" ADC_HASH_TIGER) != std::string::npos);
+			CHECK(line.find("AD" ADC_EXT_ADCS) != std::string::npos);
+			CHECK(line.find("AD" ADC_EXT_PFSR) != std::string::npos);
+			CHECK(line.find("AD" ADC_EXT_RICHTEXT_HUB) != std::string::npos);
+
 			printf("  ok it opens with HSUP: %s\n", line.c_str());
 		}
 		else failures++;
