@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <span>
 #include <string>
+#include <string_view>
 #include <string.h>
 #include "sharemanager.h"
 #include "sharedir.h"
@@ -136,16 +137,22 @@ void QuickDC::Share::Manager::removeShare(QuickDC::Share::Dir* dir) {
 	dir->manager = 0;
 }
 
+/* A public name is a peer's request, so it is compared rather than trusted, and
+   no name at all names nothing this share can serve. */
 Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
+	if (!pubname) return 0;
+
 #ifdef DATADUMP
 	QDBG("QuickDC::Manager::getFile(): '%s'", pubname);
 #endif
 
-	if (strcmp(pubname, "MyList.DcLst")  == 0 ||
-		strcmp(pubname, "MyList.bz2")    == 0 ||
-		strcmp(pubname, "files.xml")     == 0 ||
-		strcmp(pubname, "files.xml.bz2") == 0 ) {
-		
+	const std::string_view name(pubname);
+
+	if (name == "MyList.DcLst"  ||
+		name == "MyList.bz2"    ||
+		name == "files.xml"     ||
+		name == "files.xml.bz2") {
+
 		if (!filelists)
 		{
 			QERR("Filelists not generated yet");
@@ -167,7 +174,7 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 			}
 			return file;
 		}
-	} else if (strncasecmp("TTHL/", pubname, 5) == 0) {
+	} else if (Samurai::Util::istarts_with(name, "TTHL/")) {
 		/* Leaf hashes, which are not a file in the share at all: they live
 		   inside the hash cache, and getLeafData() is what serves them. Any
 		   other name is a file the walk below has to look for. */

@@ -5,20 +5,19 @@
 
 #include "quickdc.h"
 #include "network/dc/textescape.h"
+#include <string_view>
 
 #define DC_TRANSLATIONS 3
 static const struct
 {
-		const char* escaped;
-		const char* unescaped;
-		const size_t escaped_length;
-		const size_t unescaped_length;
+		std::string_view escaped;
+		std::string_view unescaped;
 }
 dc_text_translation_table[DC_TRANSLATIONS] =
 {
-	{ "&#124;",  "|", 6, 1 },
-	{ "&#36;",   "$", 5, 1 },
-	{ "&amp;",   "&", 5, 1 },
+	{ "&#124;",  "|" },
+	{ "&#36;",   "$" },
+	{ "&amp;",   "&" },
 };
 
 // FIXME: Make char* version of this also.
@@ -54,18 +53,21 @@ char* DC::TextEscape::unescape(char* str/*_ , size_t max*/)
 
 	for (size_t t = 0; t < DC_TRANSLATIONS; t++)
 	{
+		const std::string_view escaped = dc_text_translation_table[t].escaped;
+		const std::string_view unescaped = dc_text_translation_table[t].unescaped;
+
 		size_t newsize = 0;
 		size_t max = strlen(str);
 		for (size_t i = 0; i < max; i++)
 		{
-			if (strncmp(&str[i], dc_text_translation_table[t].escaped,
-				dc_text_translation_table[t].escaped_length) == 0)
+			/* Only what is left of the string is a candidate: a sequence cannot
+			   match on fewer characters than it is made of. */
+			if (std::string_view(&str[i], max - i).starts_with(escaped))
 			{
-				for (size_t c = 0; c < dc_text_translation_table[t].unescaped_length; c++)
-					str[newsize++] = dc_text_translation_table[t].unescaped[c];
+				for (size_t c = 0; c < unescaped.size(); c++)
+					str[newsize++] = unescaped[c];
 
-				i += dc_text_translation_table[t].escaped_length-1;
-				
+				i += escaped.size()-1;
 			}
 			else
 			{

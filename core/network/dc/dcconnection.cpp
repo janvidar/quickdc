@@ -5,12 +5,12 @@
 
 #include "quickdc.h"
 #include "network/dc/dcconnection.h"
+#include <string_view>
 
 /* static */
 bool DC::probe(const char* handshake, size_t length) {
-	if (length < 8) return false;
-	if (strncmp(handshake, "$MyNick ", 8) == 0) return true;
-	return false;
+	if (!handshake || length < 8) return false;
+	return std::string_view(handshake, length).starts_with("$MyNick ");
 }
 
 

@@ -18,6 +18,7 @@
 #include "config/preferences.h"
 
 #include <string.h>
+#include <string_view>
 
 #define FOURCC(a, b, c, d) ((uint32_t) ( (uint32_t)a << 24 | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d))
 
@@ -155,7 +156,7 @@ static bool probe_udp_dc(uint32_t fourcc) {
  */
 static bool probe_tcp_dc(const char* buffer, size_t length) {
 	if (length < 8) return false;
-	return (strncmp(buffer, "$MyNick ", 8) == 0);
+	return std::string_view(buffer, length).starts_with("$MyNick ");
 }
 
 /*

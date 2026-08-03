@@ -6,6 +6,7 @@
 #include "debug/dbg.h"
 #include <stdio.h>
 #include <string.h>
+#include <string_view>
 #include <vector>
 
 #include "network/hubmanager.h"
@@ -58,7 +59,7 @@ QuickDC::Hub* QuickDC::HubManager::getHubByUrl(const char* url) {
 	{
 		QuickDC::Hub* hub = hubs[i];
 		const char* hubUrl = hub->getUrl();
-		if (hubUrl && !strcmp(hubUrl, url)) return hub;
+		if (hubUrl && std::string_view(hubUrl) == url) return hub;
 	}
 	return 0;
 }

@@ -6,6 +6,7 @@
 #include "quickdc.h"
 #include <stdio.h>
 #include <string>
+#include <string_view>
 #include <stdlib.h>
 #include "network/dc/clientcommands.h"
 
@@ -52,13 +53,17 @@ bool DC::ClientKey::ClientKey::invoke(const char* data, size_t length) {
  * $Direction (Upload|Download) (10000-32767)
  */
 bool DC::ClientDirection::ClientDirection::invoke(const char* data, size_t length) {
-	if (length < 19) return false;
+	if (!data || length < 19) return false;
 	int priority;
 	bool upload;
 	const char* split = strrchr(data, ' ');
-	
-	if (strncmp(&data[11], "Upload", 6) == 0) upload = true;
-	else if (strncmp(&data[11], "Download", 8) == 0) upload = false;
+
+	/* The direction runs from the end of "$Direction " to the end of the line,
+	   and the line is only as long as the peer sent. */
+	const std::string_view direction(&data[11], length - 11);
+
+	if (direction.starts_with("Upload")) upload = true;
+	else if (direction.starts_with("Download")) upload = false;
 	else return false;
 	
 	priority = Samurai::Util::Convert::to_int32(&split[1]);
@@ -232,7 +237,7 @@ bool DC::ClientExtGetZBlock::ClientExtGetZBlock::invoke(const char* data, size_t
  * - "$ADCGET tthl TTH/PPUROLR2WSYTGPLCM3KV4V6LJC36SCTFQJFDJKA 0 -1"
  */
 bool DC::ClientExtADCGET::ClientExtADCGET::invoke(const char* data_, size_t length) {
-	if (length < 18) return false;
+	if (!data_ || length < 18) return false;
 
 	uint32_t type = FOURCC(data_[8], data_[9], data_[10], data_[11]);
 
@@ -255,7 +260,7 @@ bool DC::ClientExtADCGET::ClientExtADCGET::invoke(const char* data_, size_t leng
 	// Check for ZL1 (zlib transfer)
 	split = strrchr(data, ' ');
 	if (!split || strlen(split) < 2) { free(data); return false; }
-	if (strncmp(split, " ZL1", 4) == 0) {
+	if (std::string_view(split).starts_with(" ZL1")) {
 		zl1 = true;
 		split[0] = '\0';
 		split = strrchr(data, ' ');
@@ -288,7 +293,7 @@ bool DC::ClientExtADCGET::ClientExtADCGET::invoke(const char* data_, size_t leng
  * Syntax: exactly like $ADCGET.
  */
 bool DC::ClientExtADCSND::ClientExtADCSND::invoke(const char* data_, size_t length) {
-	if (length < 18) return false;
+	if (!data_ || length < 18) return false;
 
 	uint32_t type = FOURCC(data_[8], data_[9], data_[10], data_[11]);
 
@@ -311,7 +316,7 @@ bool DC::ClientExtADCSND::ClientExtADCSND::invoke(const char* data_, size_t leng
 	// Check for ZL1 (zlib transfer)
 	split = strrchr(data, ' ');
 	if (!split || strlen(split) < 2) { free(data); return false; }
-	if (strncmp(split, " ZL1", 4) == 0) {
+	if (std::string_view(split).starts_with(" ZL1")) {
 		zl1 = true;
 		split[0] = '\0';
 		split = strrchr(data, ' ');

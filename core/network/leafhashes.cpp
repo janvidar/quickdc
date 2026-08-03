@@ -12,6 +12,7 @@
 #include <samurai/crypto/digest/merkletree.h>
 
 #include <string.h>
+#include <string_view>
 
 /* The smallest leaf a tiger tree uses; every larger one doubles it. */
 #define TTH_MIN_LEAF_SIZE 1024
@@ -72,8 +73,9 @@ bool QuickDC::LeafHashes::load(const char* tth, uint64_t fileSize_, const char* 
 
 	char root[100];
 	const Samurai::Crypto::Digest::HashValue& digest = tree.digest();
+	/* 'root' is only a string once getFormattedString() says it wrote one. */
 	bool ok = digest.getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, root, sizeof(root))
-		&& !strcmp(root, tth);
+		&& std::string_view(root) == tth;
 
 	delete hasher;
 

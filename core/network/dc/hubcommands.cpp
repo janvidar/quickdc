@@ -226,7 +226,7 @@ bool DC::Hello::invoke(const char* data, size_t length)
 
 	const std::string nick(line.rest());
 
-	if (strcmp(nick.c_str(), session->getNick()) == 0)
+	if (nick == session->getNick())
 	{
 		session->onRequestMyInfo(nick.c_str());
 	}
@@ -595,12 +595,12 @@ bool DC::Search::invoke(const char* data, size_t length) {
 			if (!more) break;
 		}
 	} else {
-		if (strncasecmp(query.c_str(), "TTH:", 4) == 0 && query.size() > 40)
+		if (Samurai::Util::istarts_with(query, "TTH:") && query.size() > 40)
 			request->setTTH(&query.c_str()[4]);
 	}
 
 	const QuickDC::User* user = 0;
-	if (strncmp(replyaddr.c_str(), "Hub:", 4) == 0) {
+	if (std::string_view(replyaddr).starts_with("Hub:")) {
 		user = session->getUser(&replyaddr.c_str()[4]);
 		if (user) request->setUser(user);
 	} else {
@@ -705,7 +705,7 @@ bool DC::parseSearchResult(const char* data, size_t length,
 	std::string info = fields[hubIndex].substr(0, fields[hubIndex].rfind('('));
 	while (info.size() && info[info.size()-1] == ' ') info.erase(info.size()-1);
 
-	if (info.size() > 4 && !strncasecmp(info.c_str(), "TTH:", 4))
+	if (info.size() > 4 && Samurai::Util::istarts_with(info, "TTH:"))
 	{
 		std::string candidate = info.substr(4);
 		if (candidate.size() == 39) tth = candidate;

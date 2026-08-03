@@ -9,6 +9,7 @@
 #include "network/commandproxy.h"
 #include <map>
 #include <list>
+#include <string_view>
 
 namespace Samurai {
 	namespace IO {
@@ -26,8 +27,7 @@ namespace DC {
 
 struct eqstr {
   bool operator()(const char* s1, const char* s2) const {
-  	bool hit = strcmp(s1, s2) < 0;
-    return hit;
+    return std::string_view(s1) < std::string_view(s2);
   }
 };
 

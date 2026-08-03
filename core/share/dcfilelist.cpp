@@ -5,6 +5,7 @@
 
 #include "quickdc.h"
 #include "share/dcfilelist.h"
+#include <string_view>
 #include <vector>
 #include "xml/reader.h"
 #include <samurai/io/file.h>
@@ -125,8 +126,14 @@ static size_t depthOf(const Share::RemoteDir* dir)
 	return depth;
 }
 
+/*
+ * localName is whatever name the parser found, and a parser is free to hand a
+ * handler none at all: a view over a null pointer has no length to read, so an
+ * absent name is turned into the empty one here rather than compared as one.
+ */
 void Share::XMLFileListHandler::startElement(const char*, const char* localName, const char*, const AttributeList& list) {
-	const bool directory = (strcasecmp(localName, "Directory") == 0);
+	const std::string_view element(localName ? localName : "");
+	const bool directory = Samurai::Util::iequals(element, "Directory");
 
 	/* Inside a subtree refused for its depth. Nothing in it is built, and the
 	   directories in it are counted so that their end tags close them rather
@@ -136,7 +143,7 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 		return;
 	}
 
-	if (strcasecmp(localName, "FileListing") == 0) {
+	if (Samurai::Util::iequals(element, "FileListing")) {
 		if (currentDir) onProblem();
 		currentDir = root;
 	} else if (directory) {
@@ -145,7 +152,7 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 
 		const char* name = 0;
 		for (size_t n = 0; n < list.size(); n++) {
-			if (strcasecmp(list[n].first.c_str(), "Name") == 0)
+			if (Samurai::Util::iequals(list[n].first, "Name"))
 				name = list[n].second.c_str();
 		}
 
@@ -160,18 +167,18 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 			RemoteDir* dir = new RemoteDir(name, currentDir);
 			currentDir = dir;
 		}
-	} else if (strcasecmp(localName, "File") == 0) {
+	} else if (Samurai::Util::iequals(element, "File")) {
 		if (!currentDir) { onProblem(); return; }
 		const char* name = 0;
 		const char* tth = 0;
 		uint64_t size = 0;
 		
 		for (size_t n = 0; n < list.size(); n++) {
-			if (strcasecmp(list[n].first.c_str(), "Name") == 0)
+			if (Samurai::Util::iequals(list[n].first, "Name"))
 				name = list[n].second.c_str();
-			else if (strcasecmp(list[n].first.c_str(), "TTH") == 0)
+			else if (Samurai::Util::iequals(list[n].first, "TTH"))
 				tth = list[n].second.c_str();
-			else if (strcasecmp(list[n].first.c_str(), "Size") == 0)
+			else if (Samurai::Util::iequals(list[n].first, "Size"))
 				size = Samurai::Util::Convert::to_uint64(list[n].second.c_str());
 		}
 		if (name && *name && tth && *tth)
@@ -180,7 +187,9 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 }
 
 void Share::XMLFileListHandler::endElement(const char*, const char* localName, const char*) {
-	if (strcasecmp(localName, "Directory") == 0) {
+	const std::string_view element(localName ? localName : "");
+
+	if (Samurai::Util::iequals(element, "Directory")) {
 		if (skipped) { skipped--; return; }
 		if (!currentDir) { onProblem(); return; }
 		currentDir = currentDir->getParent();

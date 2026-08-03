@@ -127,10 +127,14 @@ const char* QuickDC::QueueFile::convertPriority(enum Priority prio)
 
 enum QuickDC::QueueFile::Priority QuickDC::QueueFile::convertPriority(const char* str)
 {
+	/* An absent attribute is not an unknown priority, and there is no view to
+	   compare for it either; both mean the default. */
 	if (!str) return PrioNormal;
-	if (!strcasecmp(str, "paused")) return PrioPaused;
-	if (!strcasecmp(str, "low"))    return PrioLow;
-	if (!strcasecmp(str, "high"))   return PrioHigh;
+
+	const std::string_view name(str);
+	if (Samurai::Util::iequals(name, "paused")) return PrioPaused;
+	if (Samurai::Util::iequals(name, "low"))    return PrioLow;
+	if (Samurai::Util::iequals(name, "high"))   return PrioHigh;
 	return PrioNormal;
 }
 
@@ -487,17 +491,19 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 
 		void startElement(const char*, const char* localName, const char*, const AttributeList& list)
 		{
-			if (!strcasecmp(localName, "File"))
+			const std::string_view element = elementName(localName);
+
+			if (Samurai::Util::iequals(element, "File"))
 				startFile(list);
-			else if (!strcasecmp(localName, "Source"))
+			else if (Samurai::Util::iequals(element, "Source"))
 				startSource(list);
-			else if (!strcasecmp(localName, "Chunk"))
+			else if (Samurai::Util::iequals(element, "Chunk"))
 				startChunk(list);
 		}
 
 		void endElement(const char*, const char* localName, const char*)
 		{
-			if (strcasecmp(localName, "File")) return;
+			if (!Samurai::Util::iequals(elementName(localName), "File")) return;
 
 			if (current)
 			{
@@ -507,11 +513,23 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 		}
 
 	protected:
-		static const char* getAttribute(const AttributeList& list, const char* name)
+		/**
+		 * The element name a parser found, as something safe to compare.
+		 *
+		 * A SAX handler is handed a pointer, and nothing in the interface says a
+		 * parser has a name to give: a view over a null one has no length to
+		 * read, so an absent name becomes the empty one and matches nothing.
+		 */
+		static std::string_view elementName(const char* localName)
+		{
+			return localName ? std::string_view(localName) : std::string_view();
+		}
+
+		static const char* getAttribute(const AttributeList& list, std::string_view name)
 		{
 			for (size_t n = 0; n < list.size(); n++)
 			{
-				if (!strcasecmp(list[n].first.c_str(), name)) return list[n].second.c_str();
+				if (Samurai::Util::iequals(list[n].first, name)) return list[n].second.c_str();
 			}
 			return 0;
 		}
