@@ -58,6 +58,24 @@ static size_t peakBytes()
 #endif
 }
 
+/*
+ * AddressSanitizer's redzones and quarantine grow the resident set by far more
+ * than the threshold the measurement below allows, so under it the figure is
+ * the allocator's and says nothing about the code. The loop still runs - where
+ * a sanitizer is in play its own leak detection is the better check anyway.
+ */
+#if defined(__SANITIZE_ADDRESS__)
+#define MEASURE_RESIDENT_GROWTH 0
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define MEASURE_RESIDENT_GROWTH 0
+#endif
+#endif
+
+#ifndef MEASURE_RESIDENT_GROWTH
+#define MEASURE_RESIDENT_GROWTH 1
+#endif
+
 int main()
 {
 	setbuf(stdout, 0);
@@ -356,9 +374,17 @@ int main()
 		const size_t after = peakBytes();
 		const size_t grew = (after > before) ? (after - before) : 0;
 
-		CHECK(grew < 50u * 1024u * 1024u);
-		printf("  ok a hub count that cannot be read frees its copy (grew %zu KB)\n",
-			grew / 1024);
+		if (MEASURE_RESIDENT_GROWTH)
+		{
+			CHECK(grew < 50u * 1024u * 1024u);
+			printf("  ok a hub count that cannot be read frees its copy (grew %zu KB)\n",
+				grew / 1024);
+		}
+		else
+		{
+			printf("  skip a hub count that cannot be read frees its copy"
+				" (not measurable under a sanitizer)\n");
+		}
 	}
 
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
