@@ -24,24 +24,6 @@ namespace Samurai {
 
 class ConsoleWakeHandler;
 
-/**
- * FIXME: The API is probably too simple.
- */
-class TextInputEventHandler
-{
-	public:
-		virtual ~TextInputEventHandler() { }
-
-		/**
-		 * This requests a tab completion to be performed
-		 * on the given string at the given position (pos).
-		 * The string can be modified, and the return value will
-		 * alert if the string cannot be modified (no match), or
-		 * if tab completion was successful.
-		 */
-		virtual bool EventTabComplete(char* str, size_t& pos) = 0;
-};
-
 class ConsoleOutput
 {
 	public:
@@ -60,9 +42,6 @@ class ConsoleInput
 		virtual bool isOK();
 		
 		virtual bool getByte(char& byte);
-		
-	private:
-		TextInputEventHandler* handler;
 };
 
 /**
