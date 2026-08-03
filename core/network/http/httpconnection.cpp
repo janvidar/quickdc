@@ -59,21 +59,21 @@ void Http::Connection::close()
 
 void Http::Connection::EventDataAvailable(const Samurai::IO::Net::Socket*)
 {
-	QDBG(__PRETTY_FUNCTION__);
+	QDBG("%s", __PRETTY_FUNCTION__);
 	read();
 }
 
 
 bool Http::Connection::write()
 {
-	QDBG(__PRETTY_FUNCTION__);
+	QDBG("%s", __PRETTY_FUNCTION__);
 	return false;
 }
 
 
 bool Http::Connection::read()
 {
-	QDBG(__PRETTY_FUNCTION__);
+	QDBG("%s", __PRETTY_FUNCTION__);
 	size_t bufsize = QuickDC::Connection::socket->getReceiveBufferSize();
 	char* buffer = new char[bufsize];
 
@@ -107,11 +107,11 @@ bool Http::Connection::read()
 
 void Http::Connection::processPipeline()
 {
-	QDBG(__PRETTY_FUNCTION__);
+	QDBG("%s", __PRETTY_FUNCTION__);
 	
 	if (isServer())
 	{
-		QDBG("Pipeline process. size of incoming queue=%d", pipeline_in->size());
+		QDBG("Pipeline process. size of incoming queue=%zu", pipeline_in->size());
 		if (pipeline_in->size())
 		{
 			
@@ -122,7 +122,7 @@ void Http::Connection::processPipeline()
 
 void Http::Connection::EventCanWrite(const Samurai::IO::Net::Socket*)
 {
-	QDBG(__PRETTY_FUNCTION__);
+	QDBG("%s", __PRETTY_FUNCTION__);
 	processPipeline();
 	write();
 }
@@ -131,14 +131,14 @@ void Http::Connection::EventCanWrite(const Samurai::IO::Net::Socket*)
 
 void Http::Connection::EventDisconnected(const Samurai::IO::Net::Socket*)
 {
-	QDBG(__PRETTY_FUNCTION__);
+	QDBG("%s", __PRETTY_FUNCTION__);
 	close();
 }
 
 
 void Http::Connection::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char*)
 {
-	QDBG(__PRETTY_FUNCTION__);
+	QDBG("%s", __PRETTY_FUNCTION__);
 	close();
 }
 

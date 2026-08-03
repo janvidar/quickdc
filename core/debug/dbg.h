@@ -41,14 +41,29 @@
 #undef QDBG_FINI
 #define QDBG_FINI do { QuickDC_Debug_Fini(); } while(0)
 
+/*
+ * The format attribute is what makes the compiler check these calls, as it
+ * already does samurai's. Without it the macros above accept any argument for
+ * any conversion: a std::string handed to %s, or a size_t to %d, compiles
+ * silently and misreads whatever is on the stack. There are around four hundred
+ * and fifty call sites in core/ and nothing covers the logging, so the check
+ * has to come from the compiler.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define QUICKDC_PRINTF_LIKE(fmt_index, first_arg) \
+	__attribute__((format(printf, fmt_index, first_arg)))
+#else
+#define QUICKDC_PRINTF_LIKE(fmt_index, first_arg)
+#endif
+
 void QuickDC_Debug_Init();
 void QuickDC_Debug_Fini();
 
-void QuickDC_Debug(const char* func, const char* file, int line, const char *format, ...);
-void QuickDC_Error(const char* func, const char* file, int line, const char *format, ...);
-void QuickDC_Net(const char* func, const char* file, int line, const char *format, ...);
-void QuickDC_Search(const char* func, const char* file, int line, const char *format, ...);
-void QuickDC_Hub(const char* func, const char* file, int line, const char *format, ...);
+void QuickDC_Debug(const char* func, const char* file, int line, const char *format, ...) QUICKDC_PRINTF_LIKE(4, 5);
+void QuickDC_Error(const char* func, const char* file, int line, const char *format, ...) QUICKDC_PRINTF_LIKE(4, 5);
+void QuickDC_Net(const char* func, const char* file, int line, const char *format, ...) QUICKDC_PRINTF_LIKE(4, 5);
+void QuickDC_Search(const char* func, const char* file, int line, const char *format, ...) QUICKDC_PRINTF_LIKE(4, 5);
+void QuickDC_Hub(const char* func, const char* file, int line, const char *format, ...) QUICKDC_PRINTF_LIKE(4, 5);
 
 
 #else /* ! DEBUG */
