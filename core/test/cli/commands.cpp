@@ -37,6 +37,21 @@ extern HubConnection* hub;
 extern bool running;
 
 
+/*
+ * Where a socket's peer is, or that we do not know.
+ *
+ * getAddress() answers null for a socket with no peer, and a transfer or a
+ * connection can be listed while it is still dialling out or after its peer has
+ * gone - so both listings below used to dereference null on a connection the
+ * user asked about at the wrong moment.
+ */
+static std::string peerAddress(const Samurai::IO::Net::Socket* socket)
+{
+	if (!socket) return std::string("(unknown)");
+	const Samurai::IO::Net::InetAddress* address = socket->getAddress();
+	return address ? address->toString() : std::string("(unknown)");
+}
+
 void cmd_output(const char* format, ...) QUICKDC_PRINTF_LIKE(1, 2);
 void cmd_output(const char* format, ...)
 {
@@ -742,8 +757,8 @@ static void cmd_transfers(const std::vector<std::string>&)
 	while (t)
 	{
 		printf("  %15s:%d\t%8d bps (%s) '%s'\n",
-			t->getSocket()->getAddress()->toString().c_str(),
-			t->getSocket()->getPort(),
+			peerAddress(t->getSocket()).c_str(),
+			t->getSocket() ? t->getSocket()->getPort() : 0,
 			(int) t->getBps(),
 			t->isDownload() ? "DN" : "UP",
 			t->getFile()->getName().c_str());
@@ -758,8 +773,8 @@ static void cmd_connections(const std::vector<std::string>&)
 	while (c)
 	{
 		printf("  %s:%5d    %s\n",
-			c->getSocket()->getAddress()->toString().c_str(),
-			c->getSocket()->getPort(),
+			peerAddress(c->getSocket()).c_str(),
+			c->getSocket() ? c->getSocket()->getPort() : 0,
 			c->getProtocol());
 		c = core->connections->next();
 	}

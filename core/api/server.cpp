@@ -66,7 +66,10 @@ void QuickDC::DCServer::EventAcceptError(const Samurai::IO::Net::ServerSocket*, 
 void QuickDC::DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, std::shared_ptr<Samurai::IO::Net::Socket> socket)
 {
 #ifdef DATADUMP
-	QDBG("Socket accepted: %s", socket->getAddress()->toString().c_str());
+	/* Null for a peer that has already gone, which an accepted socket's may have
+	   done before anything asks where it was. */
+	QDBG("Socket accepted: %s", socket->getAddress()
+		? socket->getAddress()->toString().c_str() : "(unknown)");
 #endif
 	Connection* connection = new ProtocolProbe(socket);
 	socket->setEventHandler(connection);

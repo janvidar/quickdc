@@ -241,9 +241,11 @@ bool DC::CommandProxy::dropOverlongLine()
 
 
 void DC::CommandProxy::close() {
-	/* getAddress() is an InetAddress, not a string; "%s" walked the object. */
+	/* getAddress() is an InetAddress, not a string; "%s" walked the object. It is
+	   also null once the peer has gone, which is the ordinary way to arrive here. */
 	QDBG("DC::CommandProxy() - closing socket (remote=%s:%d)",
-		socket->getAddress()->toString().c_str(), socket->getPort());
+		socket->getAddress() ? socket->getAddress()->toString().c_str() : "(unknown)",
+		socket->getPort());
 	closed = true;
 	socket->disconnect();
 }

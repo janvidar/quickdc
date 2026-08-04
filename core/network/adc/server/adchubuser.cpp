@@ -139,7 +139,11 @@ ADC::HubUser::HubUser(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC::Hu
 	sid = hub->generateNextSid();
 	state = ADC::State_Protocol;
 	credentials = Cred_User;
-	QHUB("%s: Connection from %s:%d", ADC::SID::toString(sid), socket->getAddress()->toString().c_str(), socket->getPort());
+	/* Empty is what peerAddress() answers for a socket with no peer, which is
+	   deliberate for the comparison below - said plainly here instead. */
+	const std::string from = peerAddress(socket.get());
+	QHUB("%s: Connection from %s:%d", ADC::SID::toString(sid),
+		from.empty() ? "(unknown)" : from.c_str(), socket->getPort());
 }
 
 ADC::HubUser::~HubUser() {

@@ -242,9 +242,19 @@ bool ADC::AdcSrvHistory::invoke(Command* cmd) {
 
 bool ADC::AdcSrvMyIP::invoke(Command* cmd) {
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
-	static char buf[100];
-	snprintf(buf, 100, "*** Your IP address is: %s.", cmd->getSocket()->getAddress()->toString().c_str());
-	msg->addArgument(buf);
+
+	/*
+	 * getAddress() answers null for a socket whose peer has gone, and a service
+	 * can be invoked from a command that carries no socket at all, so neither is
+	 * dereferenced without asking. Saying so is the honest answer; there is no
+	 * address to substitute.
+	 */
+	const Samurai::IO::Net::Socket* socket = cmd->getSocket();
+	const Samurai::IO::Net::InetAddress* address = socket ? socket->getAddress() : 0;
+	const std::string text = address
+		? "*** Your IP address is: " + address->toString() + "."
+		: std::string("*** Your IP address is not known.");
+	msg->addArgument(text.c_str());
 	ADC::HubUser* user  = hub->lookupUser(cmd->getSocket());
 	hub->send(msg, user);
 	return true;
