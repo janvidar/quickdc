@@ -41,6 +41,7 @@ add_executable(testsearch search.cpp)
 add_executable(testdctext dctext.cpp)
 add_executable(testconfig config.cpp)
 add_executable(testprobe probe.cpp)
+add_executable(testportforward portforward.cpp)
 add_executable(testcid cid.cpp)
 add_executable(testadchub adchub.cpp)
 
@@ -53,7 +54,8 @@ set(QUICKDC_TEST_APPS
     testqueuecomplete testsources testusers testhubsession testdchubsession
     testsecurity testclientsession testdcclientsession testfilelistgen testtransfer
     testchunkmap testadcparser testhashcache
-    testsearch testdctext testconfig testprobe testcid testadchub)
+    testsearch testdctext testconfig testprobe testcid testadchub
+    testportforward)
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
     # quickdc pulls in samurai (and thus OpenSSL, zlib, bzip2 and pthread)
@@ -94,6 +96,7 @@ add_test(NAME search COMMAND testsearch)
 add_test(NAME dctext COMMAND testdctext)
 add_test(NAME config COMMAND testconfig)
 add_test(NAME probe COMMAND testprobe)
+add_test(NAME portforward COMMAND testportforward)
 add_test(NAME cid COMMAND testcid)
 add_test(NAME adchub COMMAND testadchub)
 
