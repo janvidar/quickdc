@@ -56,18 +56,33 @@ bool QuickDC::SecurityManager::isAuthorized(enum QuickDC::Clearance::ClearancePr
 	QDBG("Checking authorization for user '%s' (token=%s), hubsession=%p, protocol=%s",
 		cid, token, hubsession, protocol == QuickDC::Clearance::ADC ? "ADC" : protocol == QuickDC::Clearance::NMDC ? "NMDC" : "HTTP");
 
-#if 1
+#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
 	/*
-		Always allow things to happen locally -- useful for testing
-		FIXME: Should this only be enabled in debug builds?
-	*/
+	 * Authorise anything arriving over the loopback, before any clearance, token
+	 * or ID is looked at.
+	 *
+	 * This is a development convenience and nothing else. It means any process on
+	 * this machine - any local account, and anything reached through an SSH or
+	 * SOCKS forward to the peer port - can ask for and receive whatever this
+	 * client would upload, without having been told about through a hub. It also
+	 * makes the strength of a transfer token irrelevant locally, since the token
+	 * is never reached.
+	 *
+	 * Compiled out unless QUICKDC_ALLOW_LOOPBACK_AUTH was asked for, which the
+	 * build warns about. It used to be `#if 1`.
+	 */
 	if (socket) {
+		/* getAddress() answers null for a socket that has no peer - one that
+		   never connected, or was closed - and this used to dereference it. */
 		const Samurai::IO::Net::InetAddress* addr = socket->getAddress();
-		if (addr->isLoopback()) {
-			QDBG("SECURITY NOTE: Authorizing link local connection");
+		if (addr && addr->isLoopback()) {
+			QERR("SECURITY: authorizing a loopback connection with no clearance, "
+				"because this build has QUICKDC_ALLOW_LOOPBACK_AUTH");
 			return true;
 		}
 	}
+#else
+	(void) socket;
 #endif
 
 	if (!access_table.size()) return false;

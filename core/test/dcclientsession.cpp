@@ -13,9 +13,10 @@
  * hub to be logged in to first. Each case therefore stands up a hub, logs a
  * session in to it, and only then makes the peer connection.
  *
- * As in the ADC harness, the pair is made over the loopback interface, where
- * SecurityManager::isAuthorized() answers true for anyone before it consults
- * its table. security.cpp covers the clearance matching itself.
+ * As in the ADC harness, the hub session grants a clearance for the peer's
+ * nickname before it connects, which is what a real one does. Being reached over
+ * the loopback used to authorise a peer on its own; it does not any more, so
+ * without that clearance every upload case here would be refused.
  */
 
 #include "quickdc.h"
@@ -254,6 +255,15 @@ class Fixture
 			   which adopts it. */
 			peer.adopt = false;
 			if (!peer.dial()) return;
+
+			/*
+			 * What the hub session grants when it asks a peer to connect, or
+			 * answers a request from one. NMDC has no token, so the nickname is
+			 * the whole of the clearance - and without it an upload is refused,
+			 * which is the point: arriving over the loopback used to be enough on
+			 * its own and no longer is.
+			 */
+			hubsession->expectPeer("peernick");
 
 			session = new DC::ClientSession(peer.theirs, hubsession);
 			ready = true;

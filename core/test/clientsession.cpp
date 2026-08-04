@@ -11,12 +11,10 @@
  * accepted socket, which is the inbound case: the peer dialled us, so it
  * speaks first and we answer.
  *
- * The pair is made over the loopback interface, which has a consequence worth
- * knowing before reading the upload cases: SecurityManager::isAuthorized()
- * returns true for any loopback peer before it consults its table, so every
- * connection here is authorised whatever the token says. The clearance
- * matching itself is covered in security.cpp, where a null socket keeps that
- * shortcut out of the way.
+ * A session that carries a token also gets a clearance granted for it, which is
+ * what a hub session does when it asks a peer to connect. Without one an upload
+ * is refused, and that is the point: being reached over the loopback used to
+ * authorise a peer on its own, and no longer does.
  */
 
 #include "quickdc.h"
@@ -178,6 +176,16 @@ class Session
 		{
 			if (!peer.connect()) return;
 
+			/* What a hub session grants when it asks this peer to connect, and
+			   what the session then checks the peer's CINF against. */
+			if (token)
+			{
+				granted_token = token;
+				QuickDC::Core::getInstance()->securityManager->grant(
+					new QuickDC::Clearance(QuickDC::Clearance::AuthorizedUser,
+						QuickDC::Clearance::ADC, 0, PEER_CID, token));
+			}
+
 			session = new ADC::ClientSession(peer.theirs, 0, token, 0, false, 0);
 			ready = true;
 		}
@@ -185,6 +193,19 @@ class Session
 		~Session()
 		{
 			delete session;
+
+			/*
+			 * By value, not by pointer: the session consumes the clearance when it
+			 * reads the peer's CINF, and that path deletes it - so holding the
+			 * pointer and deleting it here was a double free. This overload deletes
+			 * it if it is still listed and does nothing if it is not, which covers
+			 * both the cases that got that far and the ones that did not.
+			 */
+			if (!granted_token.empty())
+			{
+				QuickDC::Core::getInstance()->securityManager->revoke(
+					QuickDC::Clearance::ADC, 0, PEER_CID, granted_token.c_str());
+			}
 		}
 
 		Session(const Session&) = delete;
@@ -196,6 +217,10 @@ class Session
 			pump([] { return false; }, 60);
 		}
 
+	private:
+		std::string granted_token;
+
+	public:
 		/* The peer speaks first on an inbound connection. */
 		bool handshake()
 		{
@@ -324,9 +349,8 @@ static void run()
 	}
 
 	/*
-	 * An upload is only ever considered once some token names a job, so these
-	 * two carry one. What then approves it is the loopback shortcut rather
-	 * than a granted clearance - see the file comment.
+	 * An upload is only ever considered once some token names a job, so these two
+	 * carry one - and the fixture grants the clearance that goes with it.
 	 */
 	{
 		Session s("job1");

@@ -38,6 +38,17 @@ option(QUICKDC_BUILD_TESTS "Build the test programs and the autotest suite" ON)
 option(QUICKDC_TRACE
     "Compile in the QDBG/QNET/QHUB tracing subsystem (writes secrets to disk)" OFF)
 
+# SecurityManager::isAuthorized() used to return true for any peer on the
+# loopback before looking at a clearance, a token or an ID, under `#if 1` with a
+# FIXME asking whether it should be limited to debug builds - so it was in
+# release builds too. Any local account, and anything reached through an SSH or
+# SOCKS forward to the peer port, could take whatever this client would upload.
+#
+# Kept as an option because it is genuinely useful when driving two instances on
+# one machine, but off, and noisy when it is on.
+option(QUICKDC_ALLOW_LOOPBACK_AUTH
+    "Authorise any peer connecting over the loopback, with no clearance (INSECURE)" OFF)
+
 if(QUICKDC_TRACE)
     message(WARNING
         "QUICKDC_TRACE is ON: this build writes hub passwords (config/preferences.cpp "
@@ -143,6 +154,14 @@ if(QUICKDC_BUILD_TESTS)
     enable_testing()
 endif()
 
+if(QUICKDC_ALLOW_LOOPBACK_AUTH)
+    message(WARNING
+        "QUICKDC_ALLOW_LOOPBACK_AUTH is ON: every peer connection from 127.0.0.1 "
+        "is authorised with no clearance, no token and no matching ID. Any local "
+        "process - or anything forwarded to the peer port over SSH - can download "
+        "the whole share. Do not ship a build with this on.")
+endif()
+
 add_subdirectory(core)
 
 # ---------------------------------------------------------------------------
@@ -211,6 +230,7 @@ message(STATUS "QuickDC ${PROJECT_VERSION} configured:")
 message(STATUS "  Build type      : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build id        : ${QUICKDC_BUILD_ID}")
 message(STATUS "  Target          : ${QUICKDC_SYSTEM}/${QUICKDC_CPU}")
+message(STATUS "  Loopback auth   : ${QUICKDC_ALLOW_LOOPBACK_AUTH}")
 message(STATUS "  Samurai         : static (in-tree submodule)")
 message(STATUS "  TLS             : mandatory (backend reported above)")
 if(QUICKDC_SANITIZE)

@@ -124,6 +124,12 @@ target_compile_definitions(quickdc
 # unconditionally, so these are always safe to enable.
 target_compile_definitions(quickdc PRIVATE ZLIB BZIP2)
 
+# PUBLIC so the security test can assert whichever behaviour it was built with,
+# rather than only the default one.
+if(QUICKDC_ALLOW_LOOPBACK_AUTH)
+    target_compile_definitions(quickdc PUBLIC QUICKDC_ALLOW_LOOPBACK_AUTH)
+endif()
+
 # samurai::samurai_static carries its own include directories, the OpenSSL,
 # zlib, bzip2 and pthread link dependencies, the C++20 usage requirement, and
 # the _FILE_OFFSET_BITS / DEBUG definitions. OpenSSL comes through as PUBLIC

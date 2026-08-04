@@ -9,14 +9,22 @@
  * names the protocol, the hub session it was arranged on, the peer's ID and
  * the token that identifies the job.
  *
- * Every case here passes a null socket. isAuthorized() answers true for any
- * loopback peer before it looks at the table at all - see the last case - so a
- * socket would decide the answer before the matching under test ran.
+ * Most cases here pass a null socket, so that the table is what answers rather
+ * than anything about where the peer came from. The loopback cases at the end
+ * pass a real one, since what they are about is the address.
  */
 
 #include "quickdc.h"
 #include "network/securitymanager.h"
 
+#include <samurai/io/net/inetaddress.h>
+#include <samurai/io/net/serversocket.h>
+#include <samurai/io/net/socket.h>
+#include <samurai/io/net/socketaddress.h>
+#include <samurai/io/net/socketmonitor.h>
+
+#include <chrono>
+#include <memory>
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -37,6 +45,76 @@ static QuickDC::Clearance* grant(QuickDC::SecurityManager& mgr,
 	mgr.grant(c);
 	return c;
 }
+
+/* Runs the event loop until the condition holds, or gives up. */
+template<typename Fn>
+static bool pump(Fn done, int timeout_ms = 2000)
+{
+	Samurai::IO::Net::SocketMonitor* monitor =
+		Samurai::IO::Net::SocketMonitor::getInstance();
+
+	const auto deadline = std::chrono::steady_clock::now()
+		+ std::chrono::milliseconds(timeout_ms);
+
+	while (!done())
+	{
+		if (std::chrono::steady_clock::now() > deadline) return done();
+		monitor->wait(10);
+	}
+	return true;
+}
+
+/*
+ * A connected pair on the loopback, so a case can hand isAuthorized() a socket
+ * whose peer really is 127.0.0.1 rather than reason about one.
+ */
+class LoopbackPair
+	: public Samurai::IO::Net::ServerSocketEventHandler
+	, public Samurai::IO::Net::SocketEventHandler
+{
+	public:
+		std::shared_ptr<Samurai::IO::Net::Socket> accepted;
+
+		bool connect()
+		{
+			Samurai::IO::Net::InetSocketAddress any(static_cast<uint16_t>(0));
+			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			if (!server || server->getFD() == -1) return false;
+			if (!server->listen()) return false;
+
+			client = Samurai::IO::Net::Socket::create(this, "127.0.0.1",
+				server->getLocalPort());
+			if (!client) return false;
+			client->connect();
+
+			return pump([&] { return accepted != nullptr; });
+		}
+
+		~LoopbackPair() override
+		{
+			accepted.reset();
+			client.reset();
+			server.reset();
+		}
+
+	protected:
+		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char*) override
+		{ }
+
+		void EventAcceptSocket(const Samurai::IO::Net::ServerSocket*,
+			std::shared_ptr<Samurai::IO::Net::Socket> socket) override
+		{
+			accepted = socket;
+			accepted->setEventHandler(this);
+		}
+
+		void EventDataAvailable(const Samurai::IO::Net::Socket*) override { }
+		void EventDisconnected(const Samurai::IO::Net::Socket*) override { }
+
+	private:
+		std::shared_ptr<Samurai::IO::Net::ServerSocket> server;
+		std::shared_ptr<Samurai::IO::Net::Socket> client;
+};
 
 /* No socket, so the loopback shortcut is not what answers. */
 static bool authorized(QuickDC::SecurityManager& mgr, const char* cid, const char* token,
@@ -148,22 +226,104 @@ int main()
 		printf("  ok an UnknownUser clearance authorises anyone\n");
 	}
 
-	/*
-	 * Documented rather than endorsed: isAuthorized() returns true for any peer
-	 * on the loopback interface, before it looks at the table. It is guarded by
-	 * `#if 1` with a FIXME asking whether it should be limited to debug builds,
-	 * so it is in release builds too - anything that can open a peer connection
-	 * from 127.0.0.1 can take whatever we would upload, with no clearance, no
-	 * token and no matching ID.
-	 *
-	 * This case exists so that changing it is a deliberate act rather than a
-	 * surprise. There is no socket to hand here, so it is left asserting what
-	 * the table does when one is absent.
-	 */
 	{
 		QuickDC::SecurityManager mgr;
 		CHECK(!mgr.isAuthorized(Clearance::ADC, 0, 0, "CIDA", "t1"));
 		printf("  ok without a socket the table is what decides\n");
+	}
+
+	/* ---- where the peer came from ---- */
+
+	/*
+	 * A peer on the loopback gets no special treatment: it is refused exactly as
+	 * one from anywhere else is, because nothing granted it a clearance.
+	 *
+	 * This used to answer true, under `#if 1` with a FIXME asking whether it
+	 * should be limited to debug builds - so it was in release builds too, and any
+	 * local account or SSH forward to the peer port could take whatever this
+	 * client would upload. It is now behind QUICKDC_ALLOW_LOOPBACK_AUTH, which is
+	 * off, and this asserts whichever way the build was configured.
+	 */
+	{
+		LoopbackPair pair;
+		if (pair.connect())
+		{
+			QuickDC::SecurityManager mgr;
+
+			/* The address really is what the shortcut used to test. */
+			const Samurai::IO::Net::InetAddress* addr = pair.accepted->getAddress();
+			CHECK(addr != 0);
+			CHECK(addr && addr->isLoopback());
+
+			const bool answer = mgr.isAuthorized(Clearance::ADC, 0,
+				pair.accepted.get(), "CIDA", "t1");
+#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
+			CHECK(answer);
+			printf("  ok a loopback peer is authorised, as this build asked for\n");
+#else
+			CHECK(!answer);
+			printf("  ok a loopback peer with no clearance is refused\n");
+#endif
+		}
+		else
+		{
+			printf("FAIL could not set up a loopback pair\n");
+			failures++;
+		}
+	}
+
+	/*
+	 * And a clearance still authorises one, so the gate did not simply refuse
+	 * everything that arrives with a socket attached.
+	 */
+	{
+		LoopbackPair pair;
+		if (pair.connect())
+		{
+			QuickDC::SecurityManager mgr;
+			grant(mgr, "CIDA", "t1");
+
+			CHECK(mgr.isAuthorized(Clearance::ADC, 0, pair.accepted.get(),
+				"CIDA", "t1"));
+
+			const bool wrong = mgr.isAuthorized(Clearance::ADC, 0,
+				pair.accepted.get(), "CIDA", "wrong-token");
+#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
+			/*
+			 * Asserted rather than tolerated, because it is the whole reason the
+			 * shortcut is not on by default: the address is answered before the
+			 * token is looked at, so a peer on the loopback does not need to know
+			 * the token at all.
+			 */
+			CHECK(wrong);
+			printf("  ok a wrong token is authorised over loopback too, which is "
+				"what makes this build insecure\n");
+#else
+			CHECK(!wrong);
+			printf("  ok a cleared loopback peer is authorised and a wrong token is not\n");
+#endif
+		}
+		else failures++;
+	}
+
+	/*
+	 * A socket with no peer answers null for its address, which the shortcut
+	 * dereferenced without checking.
+	 */
+	{
+		QuickDC::SecurityManager mgr;
+		std::shared_ptr<Samurai::IO::Net::Socket> lonely =
+			Samurai::IO::Net::Socket::create(
+				static_cast<Samurai::IO::Net::SocketEventHandler*>(0),
+				std::string("127.0.0.1"), static_cast<uint16_t>(1));
+
+		if (lonely)
+		{
+			CHECK(lonely->getAddress() == 0);
+			CHECK(!mgr.isAuthorized(Clearance::ADC, 0, lonely.get(), "CIDA", "t1"));
+			printf("  ok a socket that never connected does not crash the check\n");
+		}
+		else failures++;
 	}
 
 	/*
