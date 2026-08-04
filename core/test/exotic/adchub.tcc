@@ -321,7 +321,10 @@ EXO_SETUP({
 	Samurai::IO::File(ses).remove();
 
 	core = new QuickDC::Core(cfg, ses);
-	return 1;
+
+	/* Every case reads the hub's limits through this, so a core without one is
+	   not a fixture the cases can run against. */
+	return (QuickDC::Core::getInstance() == core && core->config) ? 1 : 0;
 });
 
 EXO_TEARDOWN({

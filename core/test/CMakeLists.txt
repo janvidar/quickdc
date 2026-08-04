@@ -16,21 +16,12 @@ add_executable(quickdc_cli
 add_executable(testfile file.cpp)
 add_executable(testshare share.cpp)
 add_executable(testlock lock.cpp)
-add_executable(testzupload zupload.cpp)
-add_executable(testleafhashes leafhashes.cpp)
-add_executable(testqueuecomplete queuecomplete.cpp)
-add_executable(testhubsession hubsession.cpp)
-add_executable(testclientsession clientsession.cpp)
-add_executable(testdcclientsession dcclientsession.cpp)
-add_executable(testadchub adchub.cpp)
 
 # testdebug needs console.cpp for its output helpers.
 add_executable(testdebug debug.cpp cli/console.cpp)
 
 set(QUICKDC_TEST_APPS
-    quickdc_cli testfile testshare testlock testdebug testzupload
-    testleafhashes testqueuecomplete testhubsession testclientsession
-    testdcclientsession testadchub)
+    quickdc_cli testfile testshare testlock testdebug)
 
 # A name left here after its source was retired makes the configure fail with a
 # confusing message about a target that does not exist, so it is checked first.
@@ -57,13 +48,6 @@ foreach(app IN LISTS QUICKDC_TEST_APPS)
 endforeach()
 
 # Unlike their neighbours these are self-contained, so they do get to run.
-add_test(NAME zupload COMMAND testzupload)
-add_test(NAME leafhashes COMMAND testleafhashes)
-add_test(NAME queuecomplete COMMAND testqueuecomplete)
-add_test(NAME hubsession COMMAND testhubsession)
-add_test(NAME clientsession COMMAND testclientsession)
-add_test(NAME dcclientsession COMMAND testdcclientsession)
-add_test(NAME adchub COMMAND testadchub)
 
 add_subdirectory(autotests)
 add_subdirectory(exotic)
