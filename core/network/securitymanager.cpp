@@ -6,6 +6,7 @@
 #include "network/securitymanager.h"
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/inetaddress.h>
+#include <samurai/util/random.h>
 #include <stdlib.h>
 
 /*
@@ -100,7 +101,16 @@ bool QuickDC::SecurityManager::isAuthorized(enum QuickDC::Clearance::ClearancePr
 				   without one of them names no single connection request. */
 				if (!identifies(token) || authorization->token.empty()) continue;
 				if (!identifies(cid) || authorization->userID.empty()) continue;
-				if (authorization->token == token && authorization->userID == cid)
+
+				/*
+				 * The token is compared without leaking where it first differs;
+				 * the CID is not, because it is not a secret - every client on the
+				 * hub is sent it in an INF. Timing the one that is public tells an
+				 * attacker what they were already told.
+				 */
+				if (authorization->userID == cid
+					&& Samurai::Util::constantTimeEquals(
+						authorization->token.c_str(), token))
 					return true;
 			}
 

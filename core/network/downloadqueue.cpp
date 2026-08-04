@@ -17,6 +17,8 @@
 #include "share/dcfilelist.h"
 #include "share/searchrequest.h"
 
+#include <samurai/util/base32.h>
+#include <samurai/util/random.h>
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
 #include <samurai/io/compression.h>
@@ -728,8 +730,11 @@ void QuickDC::QueueManager::searchForSources()
 
 		if (file->tth.size() != QUICKDC_TTH_LENGTH) continue;
 
+		const std::string suffix = makeToken();
+		if (suffix.empty()) continue;
+
 		std::string token("src");
-		token += makeToken();
+		token += suffix;
 
 		QuickDC::Share::SearchRequest request(QuickDC::Share::SearchRequest::SizeAny,
 			0, file->tth.c_str(), token.c_str(), 0);
@@ -1248,20 +1253,45 @@ size_t QuickDC::QueueManager::countFilelistRequests() const
 
 /* ---- token correlation ---- */
 
+/*
+ * How many random bytes a token carries.
+ *
+ * A token is the only secret protecting an inbound peer connection: the CID it
+ * is paired with is broadcast in every INF, so anything that can reach the peer
+ * port and guess the token gets served. Sixteen bytes is past what can be
+ * searched, and short enough that the base32 of it is a reasonable thing to put
+ * on a protocol line.
+ */
+#define QUICKDC_TOKEN_ENTROPY 16
+
 std::string QuickDC::QueueManager::makeToken()
 {
-	char buf[48];
-	snprintf(buf, sizeof(buf), "QDC%lu%lu",
-		static_cast<unsigned long>(Samurai::TimeStamp().getInternalData()),
-		static_cast<unsigned long>(++tokenCounter));
-	return std::string(buf);
+	unsigned char raw[QUICKDC_TOKEN_ENTROPY];
+	if (!Samurai::Util::secureRandom(raw, sizeof(raw)))
+	{
+		/*
+		 * Nothing weaker is substituted. A token derived from the clock and a
+		 * counter is guessable by anyone who knows roughly when this process
+		 * started, and a guessable token that looks like a secret is worse than
+		 * refusing to make one - the caller can report that it could not ask for
+		 * the file, where a weak token silently serves it to whoever asks.
+		 */
+		QERR("Unable to obtain random bytes for a transfer token");
+		return std::string();
+	}
+
+	char encoded[Samurai::Util::base32_encode_size(QUICKDC_TOKEN_ENTROPY)];
+	Samurai::Util::base32_encode(raw, encoded);
+	return std::string(encoded);
 }
 
 const char* QuickDC::QueueManager::createRequest(QueueFile* file, FileSource* source)
 {
 	if (!file || !source) return 0;
 
-	std::string token = makeToken();
+	const std::string token = makeToken();
+	if (token.empty()) return 0;
+
 	PendingRequest* request = new PendingRequest(token.c_str(), file, source);
 	pending[token] = request;
 
@@ -1272,7 +1302,9 @@ const char* QuickDC::QueueManager::createRequest(FilelistRequest* filelist)
 {
 	if (!filelist) return 0;
 
-	std::string token = makeToken();
+	const std::string token = makeToken();
+	if (token.empty()) return 0;
+
 	PendingRequest* request = new PendingRequest(token.c_str(), filelist);
 	pending[token] = request;
 
