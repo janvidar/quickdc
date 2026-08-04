@@ -15,8 +15,12 @@
 #
 
 set(QUICKDC_EXOTIC_TESTS
+    adcparser.tcc
     dctext.tcc
-    security.tcc)
+    filelistgen.tcc
+    probe.tcc
+    security.tcc
+    users.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)
     cmake_path(GET input STEM stem)

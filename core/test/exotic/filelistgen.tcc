@@ -39,11 +39,6 @@
 #include <string>
 #include <vector>
 
-static int failures = 0;
-
-#define CHECK(x) do { if (!(x)) { \
-	printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
-
 /* The pid is in the name because two runs at once would otherwise share a
    share directory, and each cleans up after itself at the end. */
 static std::string scratch(const char* leaf)
@@ -264,25 +259,24 @@ class Fixture
 		std::string packed() const { return readFile(out + "/files.xml.bz2"); }
 };
 
-int main()
+/* A share with nothing in it still produces a well formed list. */
+EXO_TEST(filelistgen_an_empty_share_produces_a_well_formed_list,
 {
-	setbuf(stdout, 0);
-
-	/* A share with nothing in it still produces a well formed list. */
-	{
 		Fixture f("empty");
 		f.generate();
 
 		const std::string xml = f.plain();
-		CHECK(!xml.empty());
-		CHECK(xml.find("<FileListing") != std::string::npos);
-		CHECK(xml.find("</FileListing>") != std::string::npos);
-		CHECK(decode(xml) == "[shared]");
-		printf("  ok an empty share produces a well formed list\n");
-	}
+		EXO_ASSERT(!xml.empty());
+		EXO_ASSERT(xml.find("<FileListing") != std::string::npos);
+		EXO_ASSERT(xml.find("</FileListing>") != std::string::npos);
+		EXO_ASSERT(decode(xml) == "[shared]");
+	
+	return 1;
+});
 
-	/* Files and directories come out, and our own decoder reads them back. */
-	{
+/* Files and directories come out, and our own decoder reads them back. */
+EXO_TEST(filelistgen_files_and_directories_survive_the_round_trip,
+{
 		Fixture f("simple");
 		f.file("alpha.bin");
 		f.file("beta.bin");
@@ -291,15 +285,17 @@ int main()
 		f.generate();
 
 		const std::string decoded = decode(f.plain());
-		CHECK(decoded.find("(alpha.bin)") != std::string::npos);
-		CHECK(decoded.find("(beta.bin)") != std::string::npos);
-		CHECK(decoded.find("[music") != std::string::npos);
-		CHECK(decoded.find("(song.mp3)") != std::string::npos);
-		printf("  ok files and directories survive the round trip: %s\n", decoded.c_str());
-	}
+		EXO_ASSERT(decoded.find("(alpha.bin)") != std::string::npos);
+		EXO_ASSERT(decoded.find("(beta.bin)") != std::string::npos);
+		EXO_ASSERT(decoded.find("[music") != std::string::npos);
+		EXO_ASSERT(decoded.find("(song.mp3)") != std::string::npos);
+	
+	return 1;
+});
 
-	/* Nesting is preserved rather than flattened. */
-	{
+/* Nesting is preserved rather than flattened. */
+EXO_TEST(filelistgen_nesting_is_preserved,
+{
 		Fixture f("nested");
 		f.subdir("a");
 		f.subdir("a/b");
@@ -307,43 +303,49 @@ int main()
 		f.generate();
 
 		const std::string decoded = decode(f.plain());
-		CHECK(decoded.find("[a[b(deep.txt)]]") != std::string::npos);
-		printf("  ok nesting is preserved: %s\n", decoded.c_str());
-	}
+		EXO_ASSERT(decoded.find("[a[b(deep.txt)]]") != std::string::npos);
+	
+	return 1;
+});
 
-	/* A name with XML in it is escaped on the way out and read back whole. */
-	{
+/* A name with XML in it is escaped on the way out and read back whole. */
+EXO_TEST(filelistgen_a_name_containing_xml_is_escaped_and_read_back,
+{
 		Fixture f("escaping");
 		f.file("a & b <c>.txt");
 		f.generate();
 
 		const std::string xml = f.plain();
-		CHECK(xml.find("&amp;") != std::string::npos);
-		CHECK(xml.find("&lt;") != std::string::npos);
-		CHECK(decode(xml).find("(a & b <c>.txt)") != std::string::npos);
-		printf("  ok a name containing XML is escaped and read back\n");
-	}
+		EXO_ASSERT(xml.find("&amp;") != std::string::npos);
+		EXO_ASSERT(xml.find("&lt;") != std::string::npos);
+		EXO_ASSERT(decode(xml).find("(a & b <c>.txt)") != std::string::npos);
+	
+	return 1;
+});
 
-	/* The compressed copy is the same list. */
-	{
+/* The compressed copy is the same list. */
+EXO_TEST(filelistgen_files_xml_bz2_unpacks_to_exactly_files_xml,
+{
 		Fixture f("compressed");
 		f.file("one.bin");
 		f.file("two.bin");
 		f.generate();
 
 		const std::string packed = f.packed();
-		CHECK(!packed.empty());
-		CHECK(packed.compare(0, 3, "BZh") == 0);
-		CHECK(unbzip2(packed) == f.plain());
-		printf("  ok files.xml.bz2 unpacks to exactly files.xml\n");
-	}
+		EXO_ASSERT(!packed.empty());
+		EXO_ASSERT(packed.compare(0, 3, "BZh") == 0);
+		EXO_ASSERT(unbzip2(packed) == f.plain());
+	
+	return 1;
+});
 
-	/*
+/*
 	 * The case the truncation bug needed. Enough files with names that do not
 	 * compress well that the codec's final flush is bigger than one output
 	 * buffer, so producing it takes several calls.
 	 */
-	{
+EXO_TEST(filelistgen_a_u_byte_list_compresses_to_u_bytes_and_unpacks_whole,
+{
 		Fixture f("large");
 
 		unsigned seed = 12345;
@@ -362,42 +364,45 @@ int main()
 		const std::string plain = f.plain();
 		const std::string packed = f.packed();
 
-		CHECK(plain.size() > 200000);
-		CHECK(!packed.empty());
+		EXO_ASSERT(plain.size() > 200000);
+		EXO_ASSERT(!packed.empty());
 
 		/* Several buffers' worth, or this is not testing what it claims. */
-		CHECK(packed.size() > 64 * 1024);
+		EXO_ASSERT(packed.size() > 64 * 1024);
 
-		CHECK(unbzip2(packed) == plain);
-		printf("  ok a %zu byte list compresses to %zu bytes and unpacks whole\n",
-			plain.size(), packed.size());
-	}
+		EXO_ASSERT(unbzip2(packed) == plain);
+	
+	return 1;
+});
 
-	/* Regenerating replaces the lists rather than appending to them. */
-	{
+/* Regenerating replaces the lists rather than appending to them. */
+EXO_TEST(filelistgen_regenerating_replaces_rather_than_appends,
+{
 		Fixture f("regen");
 		f.file("first.bin");
 		f.generate();
 
 		const size_t before = f.plain().size();
-		CHECK(before > 0);
+		EXO_ASSERT(before > 0);
 
 		f.shares->createFileLists(false);
 
 		const std::string again = f.plain();
-		CHECK(again.size() == before);
-		CHECK(unbzip2(f.packed()) == again);
-		printf("  ok regenerating replaces rather than appends\n");
-	}
+		EXO_ASSERT(again.size() == before);
+		EXO_ASSERT(unbzip2(f.packed()) == again);
+	
+	return 1;
+});
 
-	/*
+/*
 	 * A symlink is not followed. isDirectory() and isRegular() answer for a
 	 * link's target, so the scanner classified one as whatever it aimed at and
 	 * the branch meant to skip it could never run - which is how a link inside a
 	 * shared directory came to publish a file from outside the share root to
 	 * anyone who asked for the list.
 	 */
-	{
+EXO_TEST(filelistgen_a_symlink_out_of_the_share_is_not_published,
+{
 		Fixture f("symlink");
 		const std::string secret = f.outsideFile("private.key", "PRIVATE KEY");
 		f.file("public.bin");
@@ -407,15 +412,17 @@ int main()
 		const std::string xml = f.plain();
 		const std::string decoded = decode(xml);
 
-		CHECK(decoded.find("(public.bin)") != std::string::npos);
-		CHECK(decoded.find("leaked.key") == std::string::npos);
-		CHECK(xml.find("leaked.key") == std::string::npos);
-		CHECK(xml.find("PRIVATE KEY") == std::string::npos);
-		printf("  ok a symlink out of the share is not published: %s\n", decoded.c_str());
-	}
+		EXO_ASSERT(decoded.find("(public.bin)") != std::string::npos);
+		EXO_ASSERT(decoded.find("leaked.key") == std::string::npos);
+		EXO_ASSERT(xml.find("leaked.key") == std::string::npos);
+		EXO_ASSERT(xml.find("PRIVATE KEY") == std::string::npos);
+	
+	return 1;
+});
 
-	/* A symlinked directory is skipped too, so a loop cannot be walked into. */
-	{
+/* A symlinked directory is skipped too, so a loop cannot be walked into. */
+EXO_TEST(filelistgen_a_symlinked_directory_is_not_descended_into,
+{
 		Fixture f("symlinkdir");
 		f.subdir("real");
 		f.file("real/inside.txt");
@@ -423,11 +430,8 @@ int main()
 		f.generate();
 
 		const std::string decoded = decode(f.plain());
-		CHECK(decoded.find("(inside.txt)") != std::string::npos);
-		CHECK(decoded.find("loop") == std::string::npos);
-		printf("  ok a symlinked directory is not descended into: %s\n", decoded.c_str());
-	}
-
-	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
-	return failures ? 1 : 0;
-}
+		EXO_ASSERT(decoded.find("(inside.txt)") != std::string::npos);
+		EXO_ASSERT(decoded.find("loop") == std::string::npos);
+	
+	return 1;
+});

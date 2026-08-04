@@ -22,11 +22,6 @@
 #include <string>
 #include <vector>
 
-static int failures = 0;
-
-#define CHECK(x) do { if (!(x)) { \
-	printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
-
 /* Records what the manager reported, so a case can assert on the events too. */
 class Events : public QuickDC::UserEventHandler
 {
@@ -56,52 +51,54 @@ static QuickDC::User* make(const char* nick, uint64_t shared = 0, const char* ci
 	return u;
 }
 
-int main()
+/* ---- joining and leaving ---- */
+EXO_TEST(users_a_user_joins_and_leaves,
 {
-	setbuf(stdout, 0);
-
-	/* ---- joining and leaving ---- */
-
-	{
 		Events events;
 		QuickDC::UserManager users(&events);
 
 		users.join("AAAA");
-		CHECK(users.countUsers() == 1);
-		CHECK(users.getUser("AAAA") != 0);
-		CHECK(events.joined.size() == 1);
+		EXO_ASSERT(users.countUsers() == 1);
+		EXO_ASSERT(users.getUser("AAAA") != 0);
+		EXO_ASSERT(events.joined.size() == 1);
 
 		users.quit("AAAA");
-		CHECK(users.countUsers() == 0);
-		CHECK(users.getUser("AAAA") == 0);
-		CHECK(events.quit.size() == 1);
-		printf("  ok a user joins and leaves\n");
-	}
+		EXO_ASSERT(users.countUsers() == 0);
+		EXO_ASSERT(users.getUser("AAAA") == 0);
+		EXO_ASSERT(events.quit.size() == 1);
+	
+	return 1;
+});
 
-	/* The same id twice is one user; a hub may repeat itself. */
-	{
+/* The same id twice is one user; a hub may repeat itself. */
+EXO_TEST(users_joining_twice_is_still_one_user,
+{
 		QuickDC::UserManager users(0);
 		users.join("AAAA");
 		users.join("AAAA");
-		CHECK(users.countUsers() == 1);
-		printf("  ok joining twice is still one user\n");
-	}
+		EXO_ASSERT(users.countUsers() == 1);
+	
+	return 1;
+});
 
-	/* Leaving without having joined must not invent anyone. */
-	{
+/* Leaving without having joined must not invent anyone. */
+EXO_TEST(users_quitting_without_joining_does_nothing,
+{
 		Events events;
 		QuickDC::UserManager users(&events);
 		users.quit("NOBODY");
-		CHECK(users.countUsers() == 0);
-		CHECK(events.quit.empty());
-		printf("  ok quitting without joining does nothing\n");
-	}
+		EXO_ASSERT(users.countUsers() == 0);
+		EXO_ASSERT(events.quit.empty());
+	
+	return 1;
+});
 
-	/*
+/*
 	 * A null id is what a malformed command leaves behind, and every one of
 	 * these builds a std::string from it.
 	 */
-	{
+EXO_TEST(users_a_null_id_is_refused_everywhere,
+{
 		QuickDC::UserManager users(0);
 		users.join(0);
 		users.quit(0);
@@ -109,35 +106,38 @@ int main()
 		users.ip(0, "127.0.0.1");
 		users.info(0, make("x"), 0, true);
 
-		CHECK(users.countUsers() == 0);
-		CHECK(users.getUser(0) == 0);
-		CHECK(users.getUserByNick(0) == 0);
-		CHECK(users.getUserByClientID(0) == 0);
-		CHECK(users.getUserByClientID("") == 0);
-		printf("  ok a null id is refused everywhere\n");
-	}
+		EXO_ASSERT(users.countUsers() == 0);
+		EXO_ASSERT(users.getUser(0) == 0);
+		EXO_ASSERT(users.getUserByNick(0) == 0);
+		EXO_ASSERT(users.getUserByClientID(0) == 0);
+		EXO_ASSERT(users.getUserByClientID("") == 0);
+	
+	return 1;
+});
 
-	/* ---- info ---- */
-
-	{
+/* ---- info ---- */
+EXO_TEST(users_info_about_an_unknown_user_adds_them,
+{
 		Events events;
 		QuickDC::UserManager users(&events);
 
 		users.info("AAAA", make("alice", 100), 0, true);
-		CHECK(users.countUsers() == 1);
-		CHECK(events.joined.size() == 1);
-		CHECK(users.countShared() == 100);
+		EXO_ASSERT(users.countUsers() == 1);
+		EXO_ASSERT(events.joined.size() == 1);
+		EXO_ASSERT(users.countShared() == 100);
 
 		const QuickDC::User* u = users.getUser("AAAA");
-		CHECK(u && u->getNick() && !strcmp(u->getNick(), "alice"));
-		printf("  ok info about an unknown user adds them\n");
-	}
+		EXO_ASSERT(u && u->getNick() && !strcmp(u->getNick(), "alice"));
+	
+	return 1;
+});
 
-	/*
+/*
 	 * An update hands back the same object, mutated, with what it used to
 	 * share - which is how the running total stays right.
 	 */
-	{
+EXO_TEST(users_an_update_replaces_the_old_share_rather_than_adding_to_it,
+{
 		QuickDC::UserManager users(0);
 		users.info("AAAA", make("alice", 100), 0, true);
 
@@ -146,26 +146,30 @@ int main()
 		u->setSharedBytes(250);
 		users.info("AAAA", u, was, true);
 
-		CHECK(users.countUsers() == 1);
-		CHECK(users.countShared() == 250);
-		printf("  ok an update replaces the old share rather than adding to it\n");
-	}
+		EXO_ASSERT(users.countUsers() == 1);
+		EXO_ASSERT(users.countShared() == 250);
+	
+	return 1;
+});
 
-	{
+EXO_TEST(users_the_shared_total_follows_who_is_on_the_hub,
+{
 		QuickDC::UserManager users(0);
 		users.info("AAAA", make("alice", 100), 0, true);
 		users.info("BBBB", make("bob", 400), 0, true);
 
-		CHECK(users.countUsers() == 2);
-		CHECK(users.countShared() == 500);
+		EXO_ASSERT(users.countUsers() == 2);
+		EXO_ASSERT(users.countShared() == 500);
 
 		users.quit("AAAA");
-		CHECK(users.countShared() == 400);
-		printf("  ok the shared total follows who is on the hub\n");
-	}
+		EXO_ASSERT(users.countShared() == 400);
+	
+	return 1;
+});
 
-	/* An unchanged update is not reported to the interface. */
-	{
+/* An unchanged update is not reported to the interface. */
+EXO_TEST(users_only_a_changed_update_is_reported,
+{
 		Events events;
 		QuickDC::UserManager users(&events);
 		users.info("AAAA", make("alice"), 0, true);
@@ -174,38 +178,41 @@ int main()
 		events.info.clear();
 
 		users.info("AAAA", u, u->getSharedBytes(), false);
-		CHECK(events.info.empty());
+		EXO_ASSERT(events.info.empty());
 
 		users.info("AAAA", u, u->getSharedBytes(), true);
-		CHECK(events.info.size() == 1);
-		printf("  ok only a changed update is reported\n");
-	}
+		EXO_ASSERT(events.info.size() == 1);
+	
+	return 1;
+});
 
-	/* ---- lookups ---- */
-
-	{
+/* ---- lookups ---- */
+EXO_TEST(users_users_are_found_by_id_nick_and_client_id,
+{
 		QuickDC::UserManager users(0);
 		users.info("AAAA", make("alice", 0, "CIDALICE"), 0, true);
 		users.info("BBBB", make("bob", 0, "CIDBOB"), 0, true);
 
-		CHECK(users.getUser("AAAA") != 0);
-		CHECK(users.getUser("ZZZZ") == 0);
+		EXO_ASSERT(users.getUser("AAAA") != 0);
+		EXO_ASSERT(users.getUser("ZZZZ") == 0);
 
 		const QuickDC::User* byNick = users.getUserByNick("bob");
-		CHECK(byNick && byNick->getNick() && !strcmp(byNick->getNick(), "bob"));
-		CHECK(users.getUserByNick("nobody") == 0);
+		EXO_ASSERT(byNick && byNick->getNick() && !strcmp(byNick->getNick(), "bob"));
+		EXO_ASSERT(users.getUserByNick("nobody") == 0);
 
 		const QuickDC::User* byCid = users.getUserByClientID("CIDALICE");
-		CHECK(byCid && byCid->getNick() && !strcmp(byCid->getNick(), "alice"));
-		CHECK(users.getUserByClientID("CIDNOBODY") == 0);
-		printf("  ok users are found by id, nick and client id\n");
-	}
+		EXO_ASSERT(byCid && byCid->getNick() && !strcmp(byCid->getNick(), "alice"));
+		EXO_ASSERT(users.getUserByClientID("CIDNOBODY") == 0);
+	
+	return 1;
+});
 
-	/*
+/*
 	 * Looking a user up from inside a walk must not move the walk. The two
 	 * lookups above used to share the manager's single iterator with it.
 	 */
-	{
+EXO_TEST(users_a_lookup_during_a_walk_does_not_disturb_the_walk,
+{
 		QuickDC::UserManager users(0);
 		users.info("AAAA", make("alice", 0, "CIDA"), 0, true);
 		users.info("BBBB", make("bob", 0, "CIDB"), 0, true);
@@ -220,48 +227,52 @@ int main()
 			users.getUserByClientID("CIDA");
 		}
 
-		CHECK(seen == 3);
-		printf("  ok a lookup during a walk does not disturb the walk\n");
-	}
+		EXO_ASSERT(seen == 3);
+	
+	return 1;
+});
 
-	/* Walking an empty manager, and next() without first(). */
-	{
+/* Walking an empty manager, and next() without first(). */
+EXO_TEST(users_walking_an_empty_manager_is_safe,
+{
 		QuickDC::UserManager users(0);
-		CHECK(users.first() == 0);
-		CHECK(users.next() == 0);
+		EXO_ASSERT(users.first() == 0);
+		EXO_ASSERT(users.next() == 0);
 
 		QuickDC::UserManager fresh(0);
-		CHECK(fresh.next() == 0);
-		printf("  ok walking an empty manager is safe\n");
-	}
+		EXO_ASSERT(fresh.next() == 0);
+	
+	return 1;
+});
 
-	/* ---- operators ---- */
-
-	{
+/* ---- operators ---- */
+EXO_TEST(users_operators_are_counted_and_stop_being_counted_on_quit,
+{
 		QuickDC::UserManager users(0);
 		users.info("AAAA", make("alice"), 0, true);
 		users.info("BBBB", make("bob"), 0, true);
 
-		CHECK(users.countOperators() == 0);
+		EXO_ASSERT(users.countOperators() == 0);
 
 		QuickDC::User* bob = (QuickDC::User*) users.getUser("BBBB");
 		bob->setOp();
 
-		CHECK(bob->isOp());
-		CHECK(users.countOperators() == 1);
+		EXO_ASSERT(bob->isOp());
+		EXO_ASSERT(users.countOperators() == 1);
 
 		QuickDC::User* alice = (QuickDC::User*) users.getUser("AAAA");
 		alice->setOp();
-		CHECK(users.countOperators() == 2);
+		EXO_ASSERT(users.countOperators() == 2);
 
 		users.quit("AAAA");
-		CHECK(users.countOperators() == 1);
-		printf("  ok operators are counted, and stop being counted on quit\n");
-	}
+		EXO_ASSERT(users.countOperators() == 1);
+	
+	return 1;
+});
 
-	/* ---- cleanup ---- */
-
-	{
+/* ---- cleanup ---- */
+EXO_TEST(users_cleanup_empties_the_hub,
+{
 		Events events;
 		QuickDC::UserManager users(&events);
 		users.info("AAAA", make("alice", 100), 0, true);
@@ -269,25 +280,24 @@ int main()
 
 		users.cleanup();
 
-		CHECK(events.cleanups == 1);
-		CHECK(users.countUsers() == 0);
-		CHECK(users.getUser("AAAA") == 0);
-		CHECK(users.first() == 0);
-		printf("  ok cleanup empties the hub\n");
-	}
+		EXO_ASSERT(events.cleanups == 1);
+		EXO_ASSERT(users.countUsers() == 0);
+		EXO_ASSERT(users.getUser("AAAA") == 0);
+		EXO_ASSERT(users.first() == 0);
+	
+	return 1;
+});
 
-	/* The manager is reusable after a cleanup, as it is on a reconnect. */
-	{
+/* The manager is reusable after a cleanup, as it is on a reconnect. */
+EXO_TEST(users_the_hub_can_be_repopulated_after_a_cleanup,
+{
 		QuickDC::UserManager users(0);
 		users.info("AAAA", make("alice", 100), 0, true);
 		users.cleanup();
 
 		users.info("AAAA", make("alice", 50), 0, true);
-		CHECK(users.countUsers() == 1);
-		CHECK(users.getUser("AAAA") != 0);
-		printf("  ok the hub can be repopulated after a cleanup\n");
-	}
-
-	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
-	return failures ? 1 : 0;
-}
+		EXO_ASSERT(users.countUsers() == 1);
+		EXO_ASSERT(users.getUser("AAAA") != 0);
+	
+	return 1;
+});
