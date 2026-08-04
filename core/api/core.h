@@ -35,6 +35,7 @@ class DCCommandProxy;
 class DCHubSession;
 class DCServer;
 class HubManager;
+class PortForward;
 class Preferences;
 class Server;
 class ShareManager;
@@ -109,6 +110,17 @@ class Core {
 		Samurai::TimerManager* timers;
 		ADC::Hub* localHub;
 		QuickDC::QueueManager* queue;
+
+		/**
+		 * Asks the internet gateway to forward the peer port, or null when the
+		 * core was built without a listening socket to forward to.
+		 *
+		 * Started here only when [Network] UseUPnP says so. A front end is free to
+		 * drive it instead - start() it, stop() it, and read isForwarded(),
+		 * getExternalPort() and getExternalAddress() to show what state it is in -
+		 * which is why this is reachable rather than private.
+		 */
+		PortForward* portforward;
 		Samurai::TimeStamp startup;
 		Samurai::MessageHandler* messageHandler;
 		Samurai::IO::Net::SocketMonitor* monitor;

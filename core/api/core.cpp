@@ -22,12 +22,52 @@
 #include "network/connectionmanager.h"
 #include "network/downloadqueue.h"
 #include "network/hubmanager.h"
+#include "network/portforward.h"
 #include "network/securitymanager.h"
 #include "network/transfermanager.h"
 #include "network/adc/server/adchub.h"
 
 #include "share/sharemanager.h"
 #include "hash/hashmanager.h"
+
+namespace {
+
+/*
+ * What the core does with the outcome, which is to record it.
+ *
+ * Nothing here decides anything: whether the client is reachable is answered by
+ * asking Core::portforward, so a front end reads the same state whether it
+ * started the forwarding itself or left it to the configuration. A file static
+ * because only one Core may exist, and it has to outlive the PortForward that
+ * points at it.
+ */
+class CorePortForwardListener : public QuickDC::PortForwardListener
+{
+	public:
+		void EventPortForwarded(uint16_t external,
+			const Samurai::IO::Net::InetAddress& address) override
+		{
+			QDBG("The peer port is reachable at %s:%d",
+				address.toString().c_str(), static_cast<int>(external));
+			(void) external;
+			(void) address;
+		}
+
+		void EventPortForwardFailure(const char* reason) override
+		{
+			/*
+			 * Not an error: a network with no gateway, or a router with the
+			 * feature switched off, reaches here and the client is simply passive.
+			 */
+			QDBG("The peer port could not be forwarded, staying passive: %s", reason);
+			(void) reason;
+		}
+};
+
+CorePortForwardListener portforward_listener;
+
+}
+
 
 QuickDC::Core::Core()
 {
@@ -72,7 +112,19 @@ QuickDC::Core::Core()
 	timers = Samurai::TimerManager::getInstance();
 	localHub = new ADC::Hub();
 	queue = new QuickDC::QueueManager();
-	
+
+	portforward = new PortForward(&portforward_listener);
+
+	/*
+	 * Off unless asked for. A search tells every host on the local segment that
+	 * this one is here and what it runs, which is a disclosure a user should
+	 * choose - and a client that cannot be connected to still works, it is only
+	 * passive.
+	 */
+	config->setGroup("Network");
+	if (config->getBool("UseUPnP", false))
+		portforward->start(config->getNumber("Port", 1411));
+
 	shares->initialize();
 }
 
@@ -104,6 +156,8 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	transfers = new TransferManager();
 
 	server = 0;
+	/* Nothing to forward to without a listening socket. */
+	portforward = 0;
 	timers = 0;
 	localHub = 0;
 	bandwidthManager = 0;
@@ -132,6 +186,13 @@ QuickDC::Core::~Core()
 
 	/* Then the queue, which flushes itself to disk as it goes. */
 	delete queue; queue = 0;
+
+	/*
+	 * Before the socket monitor is left behind, and deliberately without asking
+	 * the gateway to release anything: that would mean talking to it while the
+	 * event loop is being torn down. The finite lease is what cleans up.
+	 */
+	delete portforward; portforward = 0;
 
 	delete transfers; transfers = 0;
 	delete server; server = 0;
