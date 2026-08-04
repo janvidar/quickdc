@@ -10,6 +10,7 @@
 #include <time.h>
 
 #include "api/core.h"
+#include "network/portforward.h"
 #include "api/server.h"
 #include "api/hub.h"
 #include "config/preferences.h"
@@ -373,18 +374,24 @@ void DC::HubSession::onPassiveConnect(const char* user)
 	{
 		if (listener->EventClientConnect(u))
 		{
-			QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+			const QuickDC::Core* core = QuickDC::Core::getInstance();
+			QuickDC::Preferences* config = core->config;
 			config->setGroup("Network");
-			if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
-			{
-				const char* addr = config->getString("Address");
-				uint16_t port = static_cast<uint16_t>(config->getNumber("Port"));
 
+			const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
+				config->getBool("Active mode"), core->server != 0,
+				config->getString("Address"),
+				static_cast<uint16_t>(config->getNumber("Port")),
+				core->portforward);
+
+			if (endpoint.active)
+			{
 				/* Telling them where to reach us is what makes the inbound
 				   connection an expected one. */
 				expectPeer(user);
 
-				DC::Command* cmd = new DC::SendConnectToMe(user, addr, port);
+				DC::Command* cmd = new DC::SendConnectToMe(
+					user, endpoint.address.c_str(), endpoint.port);
 				send(cmd);
 			}
 		}
@@ -393,22 +400,25 @@ void DC::HubSession::onPassiveConnect(const char* user)
 
 void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Preferences* config = core->config;
 	DC::Command* cmd = 0;
 	config->setGroup("Network");
 
 	/* Either branch below ends with this peer connecting to us or us to them. */
 	expectPeer(u->getID());
 
-	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
+	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
+		config->getBool("Active mode"), core->server != 0,
+		config->getString("Address"),
+		static_cast<uint16_t>(config->getNumber("Port")),
+		core->portforward);
+
+	if (endpoint.active)
 	{
 		QDBG("Requesting active connection to user: %s", u->getNick());
-		config->setGroup("Network");
-
-		const char* addr = config->getString("Address");
-		uint16_t port = static_cast<uint16_t>(config->getNumber("Port"));
-
-		cmd = new DC::SendConnectToMe(u->getID(), addr, port);
+		cmd = new DC::SendConnectToMe(
+			u->getID(), endpoint.address.c_str(), endpoint.port);
 	}
 	else
 	{

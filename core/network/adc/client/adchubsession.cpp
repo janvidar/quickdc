@@ -8,6 +8,7 @@
 
 #include "quickdc.h"
 #include "api/core.h"
+#include "network/portforward.h"
 #include "api/server.h"
 #include "config/preferences.h"
 #include "network/connectionmanager.h"
@@ -735,7 +736,20 @@ void ADC::HubSession::sendClientInfo()
 		cmd->addArgument("KP", keyprint.c_str());
 
 	config->setGroup("Network");
-	QDBG("Active mode %d (server=%p)\n", config->getBool("Active mode") ? 1 : 0, QuickDC::Core::getInstance()->server);
+
+	/*
+	 * Where a peer should be told to reach us, which is the forwarded port when
+	 * there is one rather than the port that was configured: a gateway may have
+	 * granted a different one, and it is the granted one anything can reach.
+	 */
+	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
+		config->getBool("Active mode"), core->server != 0,
+		config->getString("Address", "0.0.0.0"),
+		static_cast<uint16_t>(config->getNumber("Port")),
+		core->portforward);
+
+	QDBG("Active mode %d (server=%p)\n", endpoint.active ? 1 : 0, core->server);
 
 	/*
 	 * What we can do, as the other clients see it. Built up rather than written out
@@ -745,10 +759,10 @@ void ADC::HubSession::sendClientInfo()
 	 */
 	std::string supports = "ADC0";
 
-	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
+	if (endpoint.active)
 	{
-		cmd->addArgument("I4", config->getString("Address", "0.0.0.0"));
-		cmd->addArgument("U4", std::to_string(config->getNumber("Port")));
+		cmd->addArgument("I4", endpoint.address);
+		cmd->addArgument("U4", std::to_string(endpoint.port));
 		supports += ",TCP4,UDP4";
 	}
 

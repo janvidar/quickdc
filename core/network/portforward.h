@@ -181,6 +181,37 @@ class PortForward final
 		Samurai::IO::Net::InetAddress external_address;
 };
 
+/** Where peers should be told to reach this client. */
+struct PeerEndpoint
+{
+	/** False means passive: nothing can be told to connect here. */
+	bool active = false;
+	std::string address;
+	uint16_t port = 0;
+};
+
+/**
+ * Decide what to advertise to a hub.
+ *
+ * Kept as a function of its inputs rather than read out of the core at each of
+ * the places that needs it, because both protocols advertise this and they have
+ * to agree: a client that tells an ADC hub one port and an NMDC hub another is
+ * reachable on one and silently not on the other.
+ *
+ * A forwarded port wins over the configured one. That is the whole point of the
+ * distinction - the gateway may have granted a port other than the one asked
+ * for, and it is the granted one that a peer can actually reach, so advertising
+ * what was configured would send every peer to a port with nothing behind it.
+ *
+ * @param wanted     whether the user asked to be active at all
+ * @param listening  whether there is a socket to receive a connection on
+ * @param forward    may be null, meaning no attempt is being made to forward
+ */
+PeerEndpoint peerEndpoint(bool wanted, bool listening,
+                          const std::string& configuredAddress,
+                          uint16_t configuredPort,
+                          const PortForward* forward);
+
 }
 
 #endif // HAVE_QUICKDC_PORTFORWARD_H

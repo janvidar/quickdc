@@ -5,7 +5,9 @@
 
 #include "api/core.h"
 #include "api/hub.h"
+#include "config/preferences.h"
 #include "network/hubmanager.h"
+#include "network/portforward.h"
 #include "network/dc/commands.h"
 #include "network/dc/textescape.h"
 
@@ -67,8 +69,23 @@ DC::SendMyInfo::SendMyInfo(const char* nick, const char* description, const char
 {
 	const char* connection = "10";  // FIXME
 	char flags = 0x01;              // FIXME
-	bool active_mode = false;       // FIXME
 	int  numslots = 3;              // FIXME
+
+	/*
+	 * A or P is what tells every other client whether it may connect to us, so it
+	 * has to be answered the same way the $ConnectToMe path answers it - and by
+	 * the same code, because a client advertising A that then hands out an
+	 * unreachable address is worse to use than one that admits it is passive.
+	 */
+	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Preferences* config = core->config;
+	config->setGroup("Network");
+
+	const bool active_mode = QuickDC::peerEndpoint(
+		config->getBool("Active mode"), core->server != 0,
+		config->getString("Address", "0.0.0.0"),
+		static_cast<uint16_t>(config->getNumber("Port")),
+		core->portforward).active;
 	
 	char* tag = static_cast<char*>(malloc(50));
 	snprintf(tag, 50, "<" PRODUCT " V:" VERSION ",M:%c,H:%d/%d/%d,S:%d>",

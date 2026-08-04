@@ -307,3 +307,35 @@ void QuickDC::PortForward::EventMapperError(PortMapper*, Error error,
 	reason += ")";
 	internal_fail(reason);
 }
+
+
+QuickDC::PeerEndpoint QuickDC::peerEndpoint(bool wanted, bool listening,
+                                            const std::string& configuredAddress,
+                                            uint16_t configuredPort,
+                                            const PortForward* forward)
+{
+	PeerEndpoint endpoint;
+
+	/* Being asked for is not enough: without a socket there is nothing for a
+	   peer to reach, whatever the gateway was told. */
+	if (!wanted || !listening) return endpoint;
+
+	endpoint.active = true;
+	endpoint.address = configuredAddress;
+	endpoint.port = configuredPort;
+
+	if (!forward || !forward->isForwarded()) return endpoint;
+
+	endpoint.port = forward->getExternalPort();
+
+	/*
+	 * The configured address is kept when the gateway did not say what its
+	 * outside address is: the port is the part that has to be right, and an
+	 * address of "0.0.0.0" is understood by a hub to mean "use the address you
+	 * see me coming from", which is better than a blank.
+	 */
+	if (const Samurai::IO::Net::InetAddress* outside = forward->getExternalAddress())
+		endpoint.address = outside->toString();
+
+	return endpoint;
+}

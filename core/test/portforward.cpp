@@ -172,7 +172,7 @@ class FakeGateway
 		std::map<std::string, std::vector<Answer>> scripted;
 		std::map<std::string, Answer> repeating;
 
-		/* What the gateway was asked, so a case can asssert on the requests. */
+		/* What the gateway was asked, so a case can assert on the requests. */
 		std::vector<std::string> actions;
 		std::vector<std::string> bodies;
 		bool serve_description = true;
@@ -692,11 +692,115 @@ static void run()
 	}
 }
 
+/* ------------------------------------------------------------------------- */
+
+/*
+ * What gets advertised to a hub.
+ *
+ * Both protocols ask this one function, so these are the cases that decide what
+ * an ADC INF and an NMDC $MyINFO/$ConnectToMe carry. The forwarded port winning
+ * over the configured one is the case the rest of this file exists for.
+ */
+static void endpoints()
+{
+	printf("QuickDC::peerEndpoint\n");
+
+	/* Not asked for: passive whatever else is true. */
+	{
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(false, true, "10.0.0.5", 1411, nullptr);
+		CHECK(!e.active);
+		CHECK(e.port == 0);
+	}
+
+	/* Asked for, but nothing is listening, so there is nothing to reach. */
+	{
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(true, false, "10.0.0.5", 1411, nullptr);
+		CHECK(!e.active);
+		printf("  ok active mode without a listening socket is still passive\n");
+	}
+
+	/* Asked for, listening, and not forwarding: what was configured. */
+	{
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", 1411, nullptr);
+		CHECK(e.active);
+		CHECK(e.address == "10.0.0.5");
+		CHECK(e.port == 1411);
+		printf("  ok without forwarding the configured address is advertised\n");
+	}
+
+	/* Forwarding attempted and failed: still the configured values, because a
+	   user who set up a mapping by hand is entitled to be believed. */
+	{
+		FakeGateway gateway(NOT_A_ROUTER);
+		if (!gateway.ready()) { printf("FAIL could not listen\n"); failures++; return; }
+
+		Recorder events;
+		QuickDC::PortForward forward(&events);
+		forward.start(1411, gateway.location());
+		pump([&] { return events.done(); });
+		CHECK(events.failed == 1);
+
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", 1411, &forward);
+		CHECK(e.active);
+		CHECK(e.address == "10.0.0.5");
+		CHECK(e.port == 1411);
+		printf("  ok a failed forward leaves the configured address alone\n");
+	}
+
+	/*
+	 * Forwarded, and the gateway moved the port. This is the case that would
+	 * otherwise send every peer to a port with nothing behind it.
+	 */
+	{
+		FakeGateway gateway(IGD2);
+		if (!gateway.ready()) { printf("FAIL could not listen\n"); failures++; return; }
+		agreeable(gateway, 40001);
+
+		Recorder events;
+		QuickDC::PortForward forward(&events);
+		forward.start(1411, gateway.location());
+		pump([&] { return events.done(); });
+		CHECK(events.forwarded == 1);
+
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", 1411, &forward);
+		CHECK(e.active);
+		/* The gateway's outside address, not this host's on the LAN. */
+		CHECK(e.address == "203.0.113.7");
+		CHECK(e.port == 40001);
+		printf("  ok a forwarded mapping advertises the granted port and outside address\n");
+	}
+
+	/* Released again: back to what was configured. */
+	{
+		FakeGateway gateway(IGD1);
+		if (!gateway.ready()) { printf("FAIL could not listen\n"); failures++; return; }
+		agreeable(gateway);
+
+		Recorder events;
+		QuickDC::PortForward forward(&events);
+		forward.start(1411, gateway.location());
+		pump([&] { return events.done(); });
+		forward.stop();
+
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", 1411, &forward);
+		CHECK(e.active);
+		CHECK(e.port == 1411);
+		printf("  ok a released mapping falls back to the configured port\n");
+	}
+}
+
 int main()
 {
 	setbuf(stdout, 0);
 
 	run();
+	endpoints();
 
 	printf(failures ? "%d FAILURE(S)\n" : "all ok\n", failures);
 	return failures ? 1 : 0;
