@@ -49,9 +49,14 @@ exotic_add_tests(quickdc_autotest
     DISCOVER
     SOURCES
         adc_parser.tcc
+        filelist.tcc
+        filesource.tcc
         keyprint.tcc
+        nmdc.tcc
         preferences.tcc
         queue.tcc
+        queuefile.tcc
+        securitymanager.tcc
         stdc.tcc
         user.tcc
     LIBRARIES quickdc::quickdc)
