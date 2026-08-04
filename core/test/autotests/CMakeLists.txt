@@ -1,89 +1,60 @@
 #
 ## The QuickDC autotest suite (*.tcc)
 ##
-## These are real automated tests, but they have to be run through the
-## "exotic" generator (https://github.com/janvidar/exotic) to become
-## compilable C++. If the generator is not installed, skip them rather than
-## fail the build - a developer without it should still get a working tree.
+## Built with exotic (https://github.com/janvidar/exotic), which is pinned as a
+## submodule inside samurai and added to this build by the top level. A clone
+## made without --recurse-submodules leaves it absent, which is now the only way
+## it can be missing - it used to be resolved with find_program(), so the build
+## depended on which exotic happened to be first on PATH.
 ##
-## The skip is a WARNING rather than a STATUS because it silently removes 194
-## assertions and ctest still reports every remaining test green, so a build
-## that skipped them looks exactly like one that ran them. Anything that gates
-## on the suite should set QUICKDC_REQUIRE_AUTOTESTS so the absence is fatal
-## instead of quiet; the CI workflow does.
+## The skip is a WARNING rather than a STATUS because it silently removes every
+## assertion below and ctest still reports the remaining tests green, so a build
+## that skipped them looks exactly like one that ran them. Anything that gates on
+## the suite should set QUICKDC_REQUIRE_AUTOTESTS so the absence is fatal instead
+## of quiet; the CI workflow does.
 #
 
 option(QUICKDC_REQUIRE_AUTOTESTS
-    "Fail the configure if the 'exotic' generator is missing, rather than skipping the suite" OFF)
+    "Fail the configure if the vendored 'exotic' is missing, rather than skipping the suite" OFF)
 
-find_program(QUICKDC_EXOTIC_EXECUTABLE exotic
-    DOC "Path to the exotic test generator")
-
-if(NOT QUICKDC_EXOTIC_EXECUTABLE)
+if(NOT COMMAND exotic_add_tests)
     if(QUICKDC_REQUIRE_AUTOTESTS)
         message(FATAL_ERROR
-            "QuickDC: 'exotic' generator not found and QUICKDC_REQUIRE_AUTOTESTS is ON. "
-            "Build it from samurai/third_party/exotic and install it, or put it on PATH.")
+            "QuickDC: the vendored 'exotic' is not available and "
+            "QUICKDC_REQUIRE_AUTOTESTS is ON. Run "
+            "'git submodule update --init --recursive'.")
     endif()
     message(WARNING
-        "QuickDC: 'exotic' generator not found - SKIPPING the autotest suite. "
-        "194 assertions will not run, and ctest will still report success. "
-        "Build it from samurai/third_party/exotic to enable them.")
+        "QuickDC: the vendored 'exotic' is not available - SKIPPING the autotest "
+        "suite, and ctest will still report success. Run "
+        "'git submodule update --init --recursive' to enable it.")
     return()
 endif()
 
-set(QUICKDC_EXOTIC_INPUTS
-    adc_parser.tcc
-    keyprint.tcc
-    preferences.tcc
-    queue.tcc
-    stdc.tcc
-    user.tcc)
-
-set(QUICKDC_EXOTIC_INPUT_PATHS "")
-foreach(input IN LISTS QUICKDC_EXOTIC_INPUTS)
-    list(APPEND QUICKDC_EXOTIC_INPUT_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/${input})
-endforeach()
-
-set(QUICKDC_EXOTIC_GENERATED ${CMAKE_CURRENT_BINARY_DIR}/generated_tests.cpp)
-
-add_custom_command(
-    OUTPUT ${QUICKDC_EXOTIC_GENERATED}
-    COMMAND ${CMAKE_COMMAND}
-        -DEXOTIC=${QUICKDC_EXOTIC_EXECUTABLE}
-        -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
-        -DOUTPUT=${QUICKDC_EXOTIC_GENERATED}
-        "-DINPUTS=${QUICKDC_EXOTIC_INPUTS}"
-        -P ${PROJECT_SOURCE_DIR}/cmake/RunExotic.cmake
-    DEPENDS ${QUICKDC_EXOTIC_INPUT_PATHS} ${PROJECT_SOURCE_DIR}/cmake/RunExotic.cmake
-    COMMENT "Generating QuickDC autotest suite"
-    VERBATIM)
-
-# exotic --standalone inlines the contents of autotest.h (behind its own
-# include guard) but still emits an #include for it, so the header only has to
-# exist to satisfy the preprocessor. Prefer the real one; fall back to an empty
-# stand-in so the suite builds without exotic's source tree present.
-find_path(QUICKDC_EXOTIC_INCLUDE_DIR autotest.h
-    PATH_SUFFIXES exotic exotic/src
-    DOC "Directory containing exotic's autotest.h")
-
-if(QUICKDC_EXOTIC_INCLUDE_DIR)
-    set(QUICKDC_EXOTIC_HEADER_DIR ${QUICKDC_EXOTIC_INCLUDE_DIR})
-else()
-    set(QUICKDC_EXOTIC_HEADER_DIR ${CMAKE_CURRENT_BINARY_DIR}/exotic-stub)
-    file(MAKE_DIRECTORY ${QUICKDC_EXOTIC_HEADER_DIR})
-    file(WRITE ${QUICKDC_EXOTIC_HEADER_DIR}/autotest.h
-        "/* Intentionally empty: exotic --standalone already inlines the real\n"
-        "   autotest.h, but still emits an #include for it. See CMakeLists.txt. */\n")
-endif()
-
-add_executable(quickdc_autotest ${QUICKDC_EXOTIC_GENERATED})
-
-target_include_directories(quickdc_autotest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}   # the .tcc files are #included by name
-    ${QUICKDC_EXOTIC_HEADER_DIR})
-
-target_link_libraries(quickdc_autotest PRIVATE quickdc::quickdc)
+#
+# MODE AUTO compiles each .tcc as its own translation unit and lets each test
+# register itself before main(). Nothing is generated, which removes two things
+# this file used to work around: the generator's --standalone output needed an
+# autotest.h to exist even though it inlines one, so an empty stub had to be
+# written into the build directory; and the inlined runtime carries a vsnprintf()
+# forwarder that -Werror=format-nonliteral rejected, so that one flag had to be
+# relaxed for this target. Neither applies when the runtime is a library.
+#
+# DISCOVER registers one CTest entry per EXO_TEST instead of one for the whole
+# binary, so a failure names the case and `ctest -R` can select it.
+#
+exotic_add_tests(quickdc_autotest
+    LANGUAGE CXX
+    MODE AUTO
+    DISCOVER
+    SOURCES
+        adc_parser.tcc
+        keyprint.tcc
+        preferences.tcc
+        queue.tcc
+        stdc.tcc
+        user.tcc
+    LIBRARIES quickdc::quickdc)
 
 set_target_properties(quickdc_autotest PROPERTIES
     OUTPUT_NAME autotest
@@ -92,14 +63,3 @@ set_target_properties(quickdc_autotest PROPERTIES
     CXX_EXTENSIONS OFF)
 
 quickdc_harden(quickdc_autotest)
-
-# The .tcc bodies are ours and worth checking, but exotic emits its own runtime
-# into the same translation unit - and that includes a vsnprintf() forwarder,
-# which is exactly what -Wformat-nonliteral exists to complain about. The
-# generator's output is not ours to correct, so the one warning it trips is
-# relaxed here rather than the whole hardening set being dropped.
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(quickdc_autotest PRIVATE -Wno-format-nonliteral)
-endif()
-
-add_test(NAME autotest COMMAND quickdc_autotest)

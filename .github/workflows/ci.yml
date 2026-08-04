@@ -4,10 +4,15 @@
 ## Lives in .github/workflows because Gitea Actions reads that path as well as
 ## its own, so one file serves both remotes.
 ##
-## Every job configures with QUICKDC_REQUIRE_AUTOTESTS=ON. Without it a missing
-## 'exotic' generator drops 194 assertions and ctest still reports every
-## remaining test green, so a run that skipped them looks exactly like one that
-## did not - see core/test/autotests/CMakeLists.txt.
+## Every job configures with QUICKDC_REQUIRE_AUTOTESTS=ON. Without it an absent
+## exotic submodule drops the whole autotest suite and ctest still reports every
+## remaining test green, so a run that skipped it looks exactly like one that did
+## not - see core/test/autotests/CMakeLists.txt.
+##
+## exotic itself needs no step of its own: it is a submodule inside samurai, the
+## top level adds it to the build, and MODE AUTO compiles the .tcc files against
+## the library rather than running the generator. The checkouts below are
+## recursive for that reason.
 #
 
 name: CI
@@ -37,7 +42,7 @@ jobs:
 
     steps:
       # samurai is a submodule, and it carries exotic as one of its own, so the
-      # checkout has to be recursive for the autotest suite to be buildable.
+      # checkout has to be recursive or the autotest suite is skipped.
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -53,15 +58,6 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja openssl@3
 
-      - name: Build and install exotic
-        run: |
-          cmake -S samurai/third_party/exotic -B build-exotic -G Ninja \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DEXOTIC_INSTALL=ON \
-                -DCMAKE_INSTALL_PREFIX="$HOME/.local"
-          cmake --build build-exotic
-          cmake --install build-exotic
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       # The system OpenSSL on macOS is a LibreSSL too old for the 3.5 floor
       # samurai enforces, so point CMake at the keg-only one.
@@ -120,15 +116,6 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja openssl@3
 
-      - name: Build and install exotic
-        run: |
-          cmake -S samurai/third_party/exotic -B build-exotic -G Ninja \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DEXOTIC_INSTALL=ON \
-                -DCMAKE_INSTALL_PREFIX="$HOME/.local"
-          cmake --build build-exotic
-          cmake --install build-exotic
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Configure
         run: |
@@ -173,15 +160,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build zlib1g-dev libbz2-dev libssl-dev
 
-      - name: Build and install exotic
-        run: |
-          cmake -S samurai/third_party/exotic -B build-exotic -G Ninja \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DEXOTIC_INSTALL=ON \
-                -DCMAKE_INSTALL_PREFIX="$HOME/.local"
-          cmake --build build-exotic
-          cmake --install build-exotic
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Configure, build and test with tracing on
         run: |
@@ -246,15 +224,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build zlib1g-dev libbz2-dev libssl-dev
 
-      - name: Build and install exotic
-        run: |
-          cmake -S samurai/third_party/exotic -B build-exotic -G Ninja \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DEXOTIC_INSTALL=ON \
-                -DCMAKE_INSTALL_PREFIX="$HOME/.local"
-          cmake --build build-exotic
-          cmake --install build-exotic
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Configure and build
         run: |

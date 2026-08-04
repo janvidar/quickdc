@@ -152,6 +152,25 @@ endif()
 
 if(QUICKDC_BUILD_TESTS)
     enable_testing()
+
+    #
+    # The test generator and runtime, from the copy pinned inside samurai rather
+    # than whatever happens to be on PATH.
+    #
+    # find_program(exotic) used to resolve this, which made the build depend on
+    # the machine: an older exotic earlier in PATH carries a different runtime, so
+    # a .tcc using an assertion added later compiled or did not depending on the
+    # environment. The submodule is the version this tree is tested against.
+    #
+    # samurai adds the same directory, but only when its own tests are enabled -
+    # and this build turns those off - so it is added here instead. Both of
+    # exotic's options default to off for a nested build, so this contributes no
+    # install rules and does not build exotic's own regression suite.
+    #
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/samurai/third_party/exotic/CMakeLists.txt)
+        add_subdirectory(samurai/third_party/exotic
+            ${CMAKE_CURRENT_BINARY_DIR}/exotic)
+    endif()
 endif()
 
 if(QUICKDC_ALLOW_LOOPBACK_AUTH)
