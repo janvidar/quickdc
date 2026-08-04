@@ -5,7 +5,7 @@
 
 /*
  * A search arrives from a hub, is turned into a SearchRequest, and is run
- * against our own share. What comes back names our files to whoever asked, so
+ * against our own share-> What comes back names our files to whoever asked, so
  * the matching rules are what decides both whether we are findable at all and
  * what we hand out - a request asking for one thing and being answered with
  * another is not a cosmetic fault.
@@ -234,6 +234,34 @@ class Share
 };
 
 /* A TTH root is 39 base32 characters, in upper case. */
+
+namespace {
+
+/*
+ * Built once for this file rather than per case: scanning and hashing a
+ * directory is the expensive part, and every case below searches the same four
+ * files. Under DISCOVER each test is its own process, so this is the cost of a
+ * test rather than of the file - see core/test/exotic/CMakeLists.txt.
+ */
+Share* share = 0;
+
+}
+
+EXO_SETUP({
+	share = new Share();
+	share->file("holiday photos.jpg", 1000);
+	share->file("holiday video sample.avi", 5000);
+	share->file("concert video.avi", 20000);
+	share->file("readme.txt", 100);
+	return share->scan() ? 1 : 0;
+});
+
+EXO_TEARDOWN({
+	delete share;
+	share = 0;
+	return 1;
+});
+
 EXO_TEST(search_a_tth_is_kept_in_upper_case,
 {
 		Request req(0);
@@ -345,7 +373,7 @@ EXO_TEST(search_a_single_term_matches_whatever_case_it_is_in,
 		Replies r;
 		Request req(&r);
 		req.addInclusion("concert");
-		share.shares->search(&req);
+		share->shares->search(&req);
 
 		EXO_ASSERT(r.count() == 1);
 		EXO_ASSERT(r.has("concert video.avi"));
@@ -353,7 +381,7 @@ EXO_TEST(search_a_single_term_matches_whatever_case_it_is_in,
 		Replies upper;
 		Request req2(&upper);
 		req2.addInclusion("CONCERT");
-		share.shares->search(&req2);
+		share->shares->search(&req2);
 		EXO_ASSERT(upper.count() == 1);
 	
 	return 1;
@@ -366,7 +394,7 @@ EXO_TEST(search_every_term_has_to_appear,
 		Request req(&r);
 		req.addInclusion("holiday");
 		req.addInclusion("video");
-		share.shares->search(&req);
+		share->shares->search(&req);
 
 		EXO_ASSERT(r.count() == 1);
 		EXO_ASSERT(r.has("holiday video sample.avi"));
@@ -385,7 +413,7 @@ EXO_TEST(search_the_terms_may_be_given_in_any_order,
 		Request req(&r);
 		req.addInclusion("video");
 		req.addInclusion("holiday");
-		share.shares->search(&req);
+		share->shares->search(&req);
 
 		EXO_ASSERT(r.count() == 1);
 		EXO_ASSERT(r.has("holiday video sample.avi"));
@@ -399,7 +427,7 @@ EXO_TEST(search_a_term_nothing_matches_returns_nothing,
 		Replies r;
 		Request req(&r);
 		req.addInclusion("nosuchthing");
-		share.shares->search(&req);
+		share->shares->search(&req);
 		EXO_ASSERT(r.count() == 0);
 	
 	return 1;
@@ -410,7 +438,7 @@ EXO_TEST(search_a_search_with_no_terms_does_not_return_the_whole_share,
 {
 		Replies r;
 		Request req(&r);
-		share.shares->search(&req);
+		share->shares->search(&req);
 		EXO_ASSERT(r.count() == 0);
 	
 	return 1;
@@ -427,7 +455,7 @@ EXO_TEST(search_an_excluded_term_is_excluded,
 		Request req(&r);
 		req.addInclusion("video");
 		req.addExclusion("sample");
-		share.shares->search(&req);
+		share->shares->search(&req);
 
 		EXO_ASSERT(r.has("concert video.avi"));
 		EXO_ASSERT(!r.has("holiday video sample.avi"));
@@ -444,7 +472,7 @@ EXO_TEST(search_any_one_exclusion_is_enough_to_drop_a_file,
 		req.addInclusion("holiday");
 		req.addExclusion("sample");
 		req.addExclusion("photos");
-		share.shares->search(&req);
+		share->shares->search(&req);
 
 		EXO_ASSERT(r.count() == 0);
 	
@@ -458,7 +486,7 @@ EXO_TEST(search_an_extension_narrows_the_results,
 		Request req(&r);
 		req.addInclusion("holiday");
 		req.addExtension("avi");
-		share.shares->search(&req);
+		share->shares->search(&req);
 
 		EXO_ASSERT(r.count() == 1);
 		EXO_ASSERT(r.has("holiday video sample.avi"));
@@ -473,7 +501,7 @@ EXO_TEST(search_an_extension_nothing_has_matches_nothing,
 		Request req(&r);
 		req.addInclusion("holiday");
 		req.addExtension("mp3");
-		share.shares->search(&req);
+		share->shares->search(&req);
 		EXO_ASSERT(r.count() == 0);
 	
 	return 1;
@@ -491,7 +519,7 @@ EXO_TEST(search_a_smallest_size_is_respected,
 		req.addInclusion("avi");
 		req.setSize(10000);
 		req.setSizePolicy(Request::SizeMin);
-		share.shares->search(&req);
+		share->shares->search(&req);
 
 		EXO_ASSERT(r.has("concert video.avi"));
 		EXO_ASSERT(!r.has("holiday video sample.avi"));
@@ -507,7 +535,7 @@ EXO_TEST(search_a_largest_size_is_respected,
 		req.addInclusion("avi");
 		req.setSize(10000);
 		req.setSizePolicy(Request::SizeMax);
-		share.shares->search(&req);
+		share->shares->search(&req);
 
 		EXO_ASSERT(r.has("holiday video sample.avi"));
 		EXO_ASSERT(!r.has("concert video.avi"));
@@ -523,7 +551,7 @@ EXO_TEST(search_any_size_matches_both,
 		req.addInclusion("avi");
 		req.setSize(10000);
 		req.setSizePolicy(Request::SizeAny);
-		share.shares->search(&req);
+		share->shares->search(&req);
 		EXO_ASSERT(r.count() == 2);
 	
 	return 1;
@@ -532,14 +560,14 @@ EXO_TEST(search_any_size_matches_both,
 /* Searching by hash finds the one file and nothing else. */
 EXO_TEST(search_a_search_by_hash_finds_the_file_it_names,
 {
-		const std::string tth = share.tthOf("readme.txt");
+		const std::string tth = share->tthOf("readme.txt");
 		EXO_ASSERT(tth.size() == 39);
 
 		Replies r;
 		Request req(&r);
 		req.setTTH(tth.c_str());
 		EXO_ASSERT(req.isTTH());
-		share.shares->search(&req);
+		share->shares->search(&req);
 
 		EXO_ASSERT(r.count() == 1);
 		EXO_ASSERT(r.has("readme.txt"));
@@ -553,7 +581,7 @@ EXO_TEST(search_a_hash_nothing_matches_returns_nothing,
 		Replies r;
 		Request req(&r);
 		req.setTTH("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-		share.shares->search(&req);
+		share->shares->search(&req);
 		EXO_ASSERT(r.count() == 0);
 	
 	return 1;
@@ -562,7 +590,7 @@ EXO_TEST(search_a_hash_nothing_matches_returns_nothing,
 /*
 	 * What a hit is called. The name goes out in the FN field of a search
 	 * result - by UDP straight to whoever searched, or through the hub - so it
-	 * has to be the name the file has inside the share.
+	 * has to be the name the file has inside the share->
 	 *
 	 * A subdirectory is constructed from its full path on disk, and the public
 	 * name was composed from that, so every hit below the top level of a share
@@ -620,7 +648,7 @@ EXO_TEST(search_no_more_results_than_the_request_allows,
 		Replies r;
 		Request req(&r);
 		req.addInclusion("hol");
-		share.shares->search(&req);
+		share->shares->search(&req);
 		EXO_ASSERT((int) r.count() <= req.getMaxResults());
 	
 	return 1;

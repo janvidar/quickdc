@@ -19,7 +19,10 @@ set(QUICKDC_EXOTIC_TESTS
     dctext.tcc
     filelistgen.tcc
     probe.tcc
+    hashcache.tcc
+    search.tcc
     security.tcc
+    transfer.tcc
     users.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)

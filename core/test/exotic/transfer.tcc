@@ -204,6 +204,15 @@ static bool runDownload(QuickDC::Transfer* transfer, Pair& pair, const std::stri
 }
 
 /* The whole file, as a baseline for the offset cases below. */
+
+namespace {
+
+/* The bytes every case below transfers. Built here rather than per case because
+   it is the same twenty thousand bytes each time. */
+const std::string data = pattern(20000);
+
+}
+
 EXO_TEST(transfer_a_whole_file_upload_sends_the_file,
 {
 		const std::string path = scratch("whole");
