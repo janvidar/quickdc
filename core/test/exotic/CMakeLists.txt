@@ -15,6 +15,7 @@
 #
 
 set(QUICKDC_EXOTIC_TESTS
+    dctext.tcc
     security.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)
