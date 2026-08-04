@@ -56,6 +56,22 @@ QuickDC::Hub::Hub(HubListener* listener_, Samurai::IO::Net::URL* url_)
 
 QuickDC::Hub::~Hub()
 {
+	/*
+	 * The session first, and this order is not a preference.
+	 *
+	 * connect() is the only thing that makes one and nothing else takes it over,
+	 * so this owns it - and leaving it behind left more than memory: a session
+	 * holds a socket registered with the monitor, whose callbacks name this object
+	 * and the listener it was given. Both are gone by then, so the next turn of
+	 * the event loop reported a disconnect into freed memory. It also holds the
+	 * url deleted below.
+	 */
+	delete session;
+	session = 0;
+
+	delete timer;
+	timer = 0;
+
 	delete url;
 	free(canonicalUrl);
 
@@ -144,7 +160,7 @@ void QuickDC::Hub::sendChatMessage(const char *message, bool richText)
 
 void QuickDC::Hub::sendPrivateChatMessage(const QuickDC::User* user, const char* message,
                                          bool richText) {
-	if (!session && session->isLoggedIn())
+	if (!session || !session->isLoggedIn())
 	{
 		listener->EventSystemError("sendPrivateChatMessage(): No session");
 		return;
