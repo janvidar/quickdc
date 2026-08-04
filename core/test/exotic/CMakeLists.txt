@@ -22,6 +22,7 @@ set(QUICKDC_EXOTIC_TESTS
     hashcache.tcc
     search.tcc
     security.tcc
+    token.tcc
     chunkmap.tcc
     config.tcc
     hublist.tcc
