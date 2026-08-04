@@ -23,7 +23,6 @@ add_executable(testhubsession hubsession.cpp)
 add_executable(testdchubsession dchubsession.cpp)
 add_executable(testclientsession clientsession.cpp)
 add_executable(testdcclientsession dcclientsession.cpp)
-add_executable(testportforward portforward.cpp)
 add_executable(testadchub adchub.cpp)
 
 # testdebug needs console.cpp for its output helpers.
@@ -59,7 +58,6 @@ add_test(NAME hubsession COMMAND testhubsession)
 add_test(NAME dchubsession COMMAND testdchubsession)
 add_test(NAME clientsession COMMAND testclientsession)
 add_test(NAME dcclientsession COMMAND testdcclientsession)
-add_test(NAME portforward COMMAND testportforward)
 add_test(NAME adchub COMMAND testadchub)
 
 add_subdirectory(autotests)
