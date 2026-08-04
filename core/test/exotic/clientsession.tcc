@@ -19,8 +19,10 @@
 
 #include "quickdc.h"
 #include "api/core.h"
+#include "network/adc/adccommon.h"
 #include "network/adc/client/adcclientsession.h"
 #include "network/downloadqueue.h"
+#include "network/hubsession.h"
 #include "network/securitymanager.h"
 
 #include <samurai/io/file.h>
@@ -31,6 +33,7 @@
 #include <samurai/io/net/inetaddress.h>
 
 #include <chrono>
+#include <errno.h>
 #include <memory>
 #include <stdio.h>
 #include <string.h>
@@ -164,6 +167,66 @@ class Peer :
 		void EventTLSDisconnected(const Samurai::IO::Net::Socket*) override { }
 		void EventError(const Samurai::IO::Net::Socket*,
 			Samurai::IO::Net::SocketError, const char*) override { }
+};
+
+/*
+ * The hub the session would relay a peer error through, and nothing else it does.
+ *
+ * A DSTA is only ever sent by way of the hub session, so this is where what
+ * reaches the other peer can be read off. Everything else is a stub: the case
+ * below drives one call and looks at its arguments.
+ */
+class RecordingHubSession : public QuickDC::HubSession
+{
+	public:
+		RecordingHubSession() : QuickDC::HubSession(0) { }
+
+		size_t errors = 0;
+		std::string sid;
+		std::string code;
+		std::string message;
+		std::string token;
+
+		void sendPeerError(const char* remote_id, const char* code_, const char* msg,
+			const char* token_, const char*) override
+		{
+			errors++;
+			sid = remote_id ? remote_id : "";
+			code = code_ ? code_ : "";
+			message = msg ? msg : "";
+			token = token_ ? token_ : "";
+		}
+
+		void connect() override { }
+		void disconnect() override { }
+		void sendPrivateChatMessage(const QuickDC::User*, const char*, bool) override { }
+		void sendChatMessage(const char*, bool) override { }
+		void sendAdminUserKick(const QuickDC::User*) override { }
+		void sendAdminUserRedirect(const QuickDC::User*, const char*, const char*) override { }
+		void sendConnectionRequest(const QuickDC::User*, const char*) override { }
+		void sendSearchRequest(QuickDC::Share::SearchRequest*) override { }
+		void sendClientInfo() override { }
+		void sendPassword(const char*) override { }
+		const QuickDC::User* getUser(const char*) override { return 0; }
+		const QuickDC::User* getLocalUser() override { return 0; }
+		QuickDC::UserManager* getUserManager() override { return 0; }
+		void onSearchResult(QuickDC::Share::SearchResult*) override { }
+		bool isLoggedIn() const override { return true; }
+		bool isSecure() const override { return false; }
+};
+
+/*
+ * The session, with the socket error handler reachable.
+ *
+ * The socket monitor is the only other caller of it, and no case can make the
+ * kernel report a chosen errno on demand - so it is called with exactly what
+ * samurai would have handed it.
+ */
+class ErrorableSession : public ADC::ClientSession
+{
+	public:
+		using ADC::ClientSession::ClientSession;
+		using ADC::ClientSession::EventError;
 };
 
 /* A connected pair with the session on the accepted end. */
@@ -550,6 +613,49 @@ EXO_TEST(clientsession_malformed_and_unknown_commands_are_survived,
 
 	pump([] { return false; }, 200);
 	EXO_ASSERT(s.session != 0);
+	return 1;
+});
+
+/*
+ * A connection that fails, and what the peer that asked for it is told.
+ *
+ * samurai reports a socket error with strerror() of the local errno, and that
+ * text went out in the DSTA the hub relays to the peer - telling it what this
+ * host's operating system is and what state it is in. The status code and the
+ * token are what the peer needs, so those stay; the phrase is ours now, and the
+ * errno is logged and goes nowhere else.
+ */
+EXO_TEST(clientsession_a_socket_error_is_not_repeated_to_the_peer,
+{
+	Peer peer;
+	if (!peer.connect()) EXO_SKIP(CANNOT_CONNECT);
+
+	ErrorableSession session(peer.theirs, 0, "job1", 0, false, 0);
+
+	RecordingHubSession hub;
+	session.setHubSession(&hub);
+
+	/* The C library's text for a refused connection, which samurai passes on. */
+	const std::string errno_text = strerror(ECONNREFUSED);
+	EXO_ASSERT(!errno_text.empty());
+
+	session.EventError(peer.theirs.get(),
+		Samurai::IO::Net::SocketError::ConnectionRefused, errno_text.c_str());
+
+	/* The peer is told, because it is waiting for a connection that is not
+	   coming, and the code and the token are what say which one. */
+	EXO_ASSERT(hub.errors == 1);
+	EXO_ASSERT(hub.code == "242");
+	EXO_ASSERT(hub.token == "job1");
+
+	if (hub.message.find(errno_text) != std::string::npos)
+	{
+		const std::string why = "our errno text was sent to the peer: '"
+			+ hub.message + "'";
+		EXO_FAIL(why.c_str());
+	}
+
+	EXO_ASSERT(hub.message == ADC_STR_CONNECTION_FAILED);
 	return 1;
 });
 

@@ -30,6 +30,27 @@
 #include <samurai/timer.h>
 #include <samurai/timestamp.h>
 
+/*
+ * Where a socket's peer is, for the log.
+ *
+ * getAddress() answers null for a socket that has no peer - one that never
+ * connected, or whose peer has already gone - and a connection is refused, or
+ * dropped, precisely when that may have happened, so the two lines below used to
+ * dereference null on the case they were reporting.
+ *
+ * A placeholder rather than nothing, because this one is only ever printed;
+ * where an address is compared, an unknown one has to stay unknown.
+ *
+ * Only the log reads it, and the log is compiled out unless this is a tracing
+ * build, which is what the attribute is for.
+ */
+[[maybe_unused]] static std::string peerAddress(const Samurai::IO::Net::Socket* socket)
+{
+	if (!socket) return std::string("(unknown)");
+	const Samurai::IO::Net::InetAddress* addr = socket->getAddress();
+	return addr ? addr->toString() : std::string("(unknown)");
+}
+
 #define CHECK_SID_OK() \
 	ADC::HubUser* user  = lookupUser(ADC::SID::fromString(cmd->getSourceID())); \
 	ADC::HubUser* user_sock = lookupUser(cmd->getSocket()); \
@@ -594,7 +615,7 @@ bool ADC::Hub::admitConnection(const Samurai::IO::Net::Socket* socket) {
 	 */
 	if (users.size() >= static_cast<size_t>(maxUsers) + maxHandshake) {
 		QHUB("Refusing a connection from %s: %zu connections already",
-			socket->getAddress()->toString().c_str(), users.size());
+			peerAddress(socket).c_str(), users.size());
 		return false;
 	}
 
@@ -605,12 +626,24 @@ bool ADC::Hub::admitConnection(const Samurai::IO::Net::Socket* socket) {
 	 */
 	if (countHandshaking() >= maxHandshake) {
 		QHUB("Refusing a connection from %s: %zu already in the login exchange",
-			socket->getAddress()->toString().c_str(), countHandshaking());
+			peerAddress(socket).c_str(), countHandshaking());
 		return false;
 	}
 
+	/*
+	 * An address we cannot read is refused rather than exempted. The per-address
+	 * limit is what bounds one host opening connections in a loop, and skipping
+	 * the check for a connection whose address is unknown made that the way
+	 * around it - the one connection the limit never applied to. There is also
+	 * nothing to attribute such a connection to afterwards.
+	 */
 	const Samurai::IO::Net::InetAddress* address = socket->getAddress();
-	if (address && countFromAddress(*address) >= maxPerAddress) {
+	if (!address) {
+		QHUB("Refusing a connection whose address cannot be read");
+		return false;
+	}
+
+	if (countFromAddress(*address) >= maxPerAddress) {
 		QHUB("Refusing a connection from %s: %zu connections from that address",
 			address->toString().c_str(), countFromAddress(*address));
 		return false;
@@ -678,12 +711,24 @@ void ADC::Hub::EventDisconnected(const Samurai::IO::Net::Socket* socket)  {
 	}
 }
 
-void ADC::Hub::EventError(const Samurai::IO::Net::Socket* socket, Samurai::IO::Net::SocketError, const char* msg)
+void ADC::Hub::EventError(const Samurai::IO::Net::Socket* socket, Samurai::IO::Net::SocketError error, const char* msg)
 {
 	ADC::HubUser* user = lookupUser(socket);
-	if (user) {
-		onQuit(user, msg);
-	}
+	if (!user) return;
+
+	/*
+	 * The detail is logged and goes no further. 'msg' is the C library's text for
+	 * this one peer's errno, and the quit below is broadcast to every other user
+	 * on the hub - so passing it on published one peer's local error conditions,
+	 * and the host's operating system, to all of them. They are told a phrase of
+	 * ours instead.
+	 */
+	QHUB("%s: Socket error %d: %s", ADC::SID::toString(user->sid),
+		static_cast<int>(error), msg ? msg : "no detail given");
+	(void) error;
+	(void) msg;
+
+	onQuit(user, ADC_STR_CONNECTION_LOST);
 }
 
 ADC::HubUser* ADC::Hub::lookupUser(const Samurai::IO::Net::Socket* socket) {

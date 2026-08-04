@@ -31,6 +31,7 @@
 #include "network/adc/cid.h"
 #include "network/adc/parser.h"
 #include "network/adc/server/adchub.h"
+#include "network/adc/server/adchubservice.h"
 #include "network/adc/server/adchubuser.h"
 
 #include <samurai/crypto/digest/tiger.h>
@@ -45,6 +46,8 @@
 #include <samurai/util/base32.h>
 
 #include <chrono>
+#include <errno.h>
+#include <map>
 #include <memory>
 #include <span>
 #include <stdio.h>
@@ -120,11 +123,39 @@ static Identity makeIdentity(uint8_t seed)
 	return id;
 }
 
+/*
+ * An argument as it appears on the wire: a space is escaped on the way out, so a
+ * phrase looked for in a raw line has to be spelled the same way.
+ */
+static std::string escapedArgument(const std::string& text)
+{
+	std::string out;
+	for (size_t n = 0; n < text.size(); n++)
+	{
+		if (text[n] == ' ') out += "\\s";
+		else out += text[n];
+	}
+	return out;
+}
+
+/*
+ * The hub, with the socket error handler reachable.
+ *
+ * The socket monitor is the only other caller of it, and no case can make the
+ * kernel report a chosen errno on demand - so it is called with exactly what
+ * samurai would have handed it.
+ */
+class TestHub : public ADC::Hub
+{
+	public:
+		using ADC::Hub::EventError;
+};
+
 /* The hub, and the listening socket that hands connections to it. */
 class Server : public Samurai::IO::Net::ServerSocketEventHandler
 {
 	public:
-		ADC::Hub hub;
+		TestHub hub;
 		std::shared_ptr<Samurai::IO::Net::ServerSocket> server;
 		size_t accepted = 0;
 
@@ -630,6 +661,63 @@ EXO_TEST(adchub_a_mismatched_source_sid_retires_the_connection_and_says_whose_it
 	return 1;
 });
 
+/*
+ * A connection that fails, and what the rest of the hub is told about it.
+ *
+ * samurai reports a socket error with strerror() of the local errno, and the hub
+ * put that text straight into the MS field of the IQUI it broadcasts - so one
+ * peer's errno, and with it the host's operating system and its error
+ * conditions, was published to every other user on the hub. What they are told
+ * now is a phrase of the hub's own; the errno is logged and goes nowhere else.
+ */
+EXO_TEST(adchub_a_socket_error_is_not_repeated_to_the_other_users,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(20), "alice"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(21), "bob"));
+
+	/* The hub's end of bob's connection, which is what the monitor would name. */
+	const sid_t sid = ADC::SID::fromString(bob.sid.c_str());
+	const Samurai::IO::Net::Socket* peer = 0;
+	std::map<const Samurai::IO::Net::Socket*, ADC::HubUser*>::iterator it;
+	for (it = s.hub.socket_map.begin(); it != s.hub.socket_map.end(); it++)
+		if ((*it).second->getSID() == sid) peer = (*it).first;
+	EXO_ASSERT(peer != 0);
+
+	/* The C library's text for a reset, which is what samurai passes on. */
+	const std::string errno_text = strerror(ECONNRESET);
+	EXO_ASSERT(!errno_text.empty());
+
+	s.hub.EventError(peer, Samurai::IO::Net::SocketError::SocketRead,
+		errno_text.c_str());
+
+	/* Alice is told bob is gone, by bob's SID - that much she needs. */
+	std::string line;
+	EXO_ASSERT(alice.waitFor("IQUI", line));
+	EXO_ASSERT(line.find(bob.sid) != std::string::npos);
+
+	/* Nothing the hub ever said to alice carries the errno text, raw or escaped. */
+	if (alice.sawLine({errno_text}) || alice.sawLine({escapedArgument(errno_text)}))
+	{
+		const std::string why = "the peer's errno text reached another user: '"
+			+ errno_text + "'";
+		EXO_FAIL(why.c_str());
+	}
+
+	/* And the reason given is the hub's own phrase. */
+	EXO_ASSERT(line.find("MS" + escapedArgument(ADC_STR_CONNECTION_LOST))
+		!= std::string::npos);
+
+	EXO_ASSERT(pump([&] { return s.hub.users.size() == 1; }));
+	return 1;
+});
+
 /* How many connections, and from where. */
 EXO_TEST(adchub_connections_past_the_per_address_limit_do_not_become_users,
 {
@@ -652,6 +740,53 @@ EXO_TEST(adchub_connections_past_the_per_address_limit_do_not_become_users,
 	EXO_ASSERT(s.hub.users.size() == 3);
 
 	for (size_t n = 0; n < clients.size(); n++) delete clients[n];
+	return 1;
+});
+
+/*
+ * A connection with no peer, which is what a socket that never connected is.
+ *
+ * getAddress() answers null for one, and refusing a connection is exactly when
+ * the hub says where it came from - so both of those lines dereferenced null on
+ * a peer that had gone by the time it was turned away. Only a tracing build
+ * compiles the hub log at all, which is why this survived: it crashed there and
+ * nowhere else.
+ */
+EXO_TEST(adchub_a_connection_with_no_peer_is_refused_rather_than_crashed_on,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	/* Made, not connected: there is no peer, so there is no address. */
+	std::shared_ptr<Samurai::IO::Net::Socket> lonely =
+		Samurai::IO::Net::Socket::create(
+			static_cast<Samurai::IO::Net::SocketEventHandler*>(0),
+			std::string("127.0.0.1"), s.port());
+
+	if (!lonely) EXO_SKIP("could not create a socket");
+	EXO_ASSERT(lonely->getAddress() == 0);
+
+	/* Every connection is one too many, which is the branch that reports the
+	   count and where the connection came from. */
+	s.hub.maxUsers = 0;
+	s.hub.maxHandshake = 0;
+	EXO_ASSERT(!s.hub.admitConnection(lonely.get()));
+
+	/* And the one that reports the login exchange it could not join. */
+	s.hub.maxUsers = 128;
+	EXO_ASSERT(!s.hub.admitConnection(lonely.get()));
+
+	/*
+	 * And with room to spare it is still refused, because the per-address limit
+	 * cannot be applied to an address that cannot be read - skipping the check
+	 * would have made this the one connection the limit never bounded.
+	 */
+	s.hub.maxHandshake = 8;
+	s.hub.maxPerAddress = 8;
+	EXO_ASSERT(!s.hub.admitConnection(lonely.get()));
+
+	/* A connection that is not a Socket at all is not admitted either. */
+	EXO_ASSERT(!s.hub.admitConnection(0));
 	return 1;
 });
 
@@ -752,6 +887,59 @@ EXO_TEST(adchub_a_full_hub_turns_an_ordinary_user_away,
 	/* The second is refused, and the first is left alone. */
 	EXO_ASSERT(s.hub.countLoggedIn() == 1);
 #endif
+	return 1;
+});
+
+/*
+ * The service that tells a user where it is connecting from.
+ *
+ * It asked the socket for its address and formatted the answer without looking,
+ * so a peer that had gone by the time the question was processed crashed the hub
+ * - and this one is not a log line, so it crashed every build.
+ */
+EXO_TEST(adchub_the_address_service_answers_a_connection_with_no_peer,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client c;
+	EXO_ASSERT(c.connect(s.port()));
+	EXO_ASSERT(c.login(makeIdentity(22), "asker"));
+
+	c.send("BMSG " + c.sid + " +myip");
+
+	std::string line;
+	bool answered = false;
+	for (int n = 0; n < 10 && !answered; n++)
+	{
+		if (!c.nextLine(line)) break;
+		answered = line.find("Your\\sIP\\saddress") != std::string::npos;
+	}
+
+	EXO_ASSERT(answered);
+	EXO_ASSERT(line.find("127.0.0.1") != std::string::npos);
+
+	/* The same question asked over a connection that has no peer. */
+	std::shared_ptr<Samurai::IO::Net::Socket> lonely =
+		Samurai::IO::Net::Socket::create(
+			static_cast<Samurai::IO::Net::SocketEventHandler*>(0),
+			std::string("127.0.0.1"), s.port());
+
+	if (!lonely) EXO_SKIP("could not create a socket");
+	EXO_ASSERT(lonely->getAddress() == 0);
+
+	ADC::Command ask(FOURCC('B','M','S','G'), c.sid.c_str(), 0);
+	ask.setSocket(lonely.get());
+	ask.addArgument("+myip");
+	EXO_ASSERT(s.hub.services->invoke(&ask));
+
+	answered = false;
+	for (int n = 0; n < 10 && !answered; n++)
+	{
+		if (!c.nextLine(line)) break;
+		answered = line.find("Your\\sIP\\saddress\\sis\\snot\\sknown") != std::string::npos;
+	}
+	EXO_ASSERT(answered);
 	return 1;
 });
 

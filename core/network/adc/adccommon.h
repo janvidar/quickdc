@@ -83,5 +83,18 @@ typedef uint32_t bbs_message_t;
 #define ADC_STR_TRANSFER_FILE_PART      "Requested part of file is not available"
 #define ADC_STR_TRANSFER_SLOT_ERROR     "No more slots available"
 
+/*
+ * What is said about a connection that failed.
+ *
+ * Phrases of ours, chosen here, because the alternative is the C library's text
+ * for whatever the local errno was: the hub broadcasts a lost connection to
+ * every other user in an IQUI, and a client tells the peer that asked for a
+ * connection about it in a DSTA. Either one carries the host's operating system
+ * and its error conditions to somebody who has no business knowing them. The
+ * errno belongs in the log, which stays here.
+ */
+#define ADC_STR_CONNECTION_LOST         "Connection lost"
+#define ADC_STR_CONNECTION_FAILED       "Connection failed"
+
 
 #endif // HAVE_QUICKDC_ADC_COMMON_H

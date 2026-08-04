@@ -865,7 +865,10 @@ void ADC::ClientSession::EventHostFound(const Samurai::IO::Net::Socket*) { }
 
 void ADC::ClientSession::EventConnecting(const Samurai::IO::Net::Socket* sock)
 {
-	QDBG("Connecting to %s", sock->getAddress()->toString().c_str());
+	/* Asked inside the log call, because getAddress() answers null until there is
+	   a peer - and a socket that is still connecting may never get one. */
+	QDBG("Connecting to %s", sock && sock->getAddress()
+		? sock->getAddress()->toString().c_str() : "(unknown)");
 	(void) sock;
 }
 
@@ -999,12 +1002,23 @@ void ADC::ClientSession::EventCanWrite(const Samurai::IO::Net::Socket*)
 	}
 }
 
-void ADC::ClientSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg)
+void ADC::ClientSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError error, const char* msg)
 {
+	/*
+	 * What the peer is told is a status code and a phrase of ours. 'msg' is the C
+	 * library's text for our own errno, and it went out in a DSTA relayed through
+	 * the hub - telling whoever asked for this connection what this host's
+	 * operating system is and what state it is in. The code is what the peer needs
+	 * to know the connection it asked for is not happening; the errno is not.
+	 */
+	QERR("Peer connection failed with socket error %d: %s",
+		static_cast<int>(error), msg ? msg : "no detail given");
+
 	if (hubsession)
-		hubsession->sendPeerError(remote_sid.empty() ? 0 : remote_sid.c_str(), "242", msg,
-			token.empty() ? 0 : token.c_str(), ADC_COMPLIANCE);
-	QERR("Error: %s", msg);
+		hubsession->sendPeerError(remote_sid.empty() ? 0 : remote_sid.c_str(),
+			adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_CONNECT_ERROR).c_str(),
+			ADC_STR_CONNECTION_FAILED, token.empty() ? 0 : token.c_str(), ADC_COMPLIANCE);
+
 	abandonDownload();
 	manager->remove(this);
 }
