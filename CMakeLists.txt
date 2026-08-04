@@ -51,6 +51,8 @@ option(QUICKDC_SANITIZE
 # Defines quickdc_harden(), and probes what this toolchain supports. Included
 # here rather than in core/ so that the probe results are reported once and the
 # test targets can use the same function.
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 include(QuickDCHardening)
 
 # ---------------------------------------------------------------------------
@@ -142,6 +144,63 @@ if(QUICKDC_BUILD_TESTS)
 endif()
 
 add_subdirectory(core)
+
+# ---------------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------------
+#
+# Until now `cmake --install` installed samurai and nothing of QuickDC, so
+# anything built against this library - a front end, in particular - had to reach
+# into the source tree for both the archive and the headers. That makes every
+# consumer depend on the build directory's layout, and gives them no way to say
+# which version they were built against.
+#
+# Every header under core/ is installed, not a curated subset. The API headers
+# reach a dozen others through their own includes - api/hub.h needs
+# network/hubsession.h to declare a member, config/preferences.h needs
+# iniparser.h - and the boundary between those and the rest has never been
+# drawn in this tree. Installing everything is honest about that: it says the
+# whole of core/ is what a consumer may reach for, rather than implying a
+# curated surface that was really just whatever the closure happened to pull in.
+
+# No INCLUDES DESTINATION: the target already carries the same path through its
+# INSTALL_INTERFACE, and naming it here as well exports it twice.
+install(TARGETS quickdc
+    EXPORT quickdcTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+# Layout preserved, so an installed header's own "network/user.h" resolves the
+# same way it does in the source tree.
+install(DIRECTORY core/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/quickdc
+    FILES_MATCHING
+        PATTERN "*.h"
+        # Neither is part of anything a consumer compiles against.
+        PATTERN "test" EXCLUDE
+        PATTERN "documentation" EXCLUDE)
+
+install(EXPORT quickdcTargets
+    FILE quickdcTargets.cmake
+    NAMESPACE quickdc::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/quickdc)
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/quickdcConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/quickdcConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/quickdc)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/quickdcConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    # Nothing about this library's interface is stable yet, so a consumer that
+    # asked for one version gets an exact match or nothing.
+    COMPATIBILITY ExactVersion)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/quickdcConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/quickdcConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/quickdc)
 
 # ---------------------------------------------------------------------------
 # Summary

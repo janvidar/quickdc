@@ -1,0 +1,17 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# quickdc links samurai::samurai_static as a PUBLIC dependency, so the target
+# has to exist before quickdcTargets.cmake names it. samurai is installed by the
+# same build - it is a submodule of this one - so it is normally found in the
+# same prefix, and CMAKE_PREFIX_PATH covers the case where it is not.
+#
+# A static archive does not link its own dependencies, so everything samurai
+# pulls in - Threads, zlib, bzip2, OpenSSL - is resolved by samurai's own config
+# file rather than repeated here.
+find_dependency(samurai)
+
+include("${CMAKE_CURRENT_LIST_DIR}/quickdcTargets.cmake")
+
+check_required_components(quickdc)

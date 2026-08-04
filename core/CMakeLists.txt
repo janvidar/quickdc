@@ -84,7 +84,15 @@ set_target_properties(quickdc PROPERTIES OUTPUT_NAME quickdc)
 
 # Sources include their siblings by path from core/, e.g. "debug/dbg.h" and
 # "quickdc.h". PUBLIC so the test programs get it too.
-target_include_directories(quickdc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+#
+# Split across the two interfaces because the build-tree path is meaningless to
+# anything consuming an installed package: without the generator expressions the
+# exported target would carry an absolute path into whatever machine built it.
+# The installed headers keep the same layout under include/quickdc, so a consumer
+# writes the same #include lines this tree does.
+target_include_directories(quickdc PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/quickdc>)
 
 # C++20 to match samurai, which exports cxx_std_20 as a usage requirement and
 # whose headers use std::span, std::optional and class template argument
