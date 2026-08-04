@@ -29,13 +29,20 @@ add_executable(testadchub adchub.cpp)
 add_executable(testdebug debug.cpp cli/console.cpp)
 
 set(QUICKDC_TEST_APPS
- quickdc_cli testfile testshare testlock testdebug testzupload
- testleafhashes
- testqueuecomplete testhubsession testdchubsession
- testclientsession testdcclientsession
+    quickdc_cli testfile testshare testlock testdebug testzupload
+    testleafhashes testqueuecomplete testhubsession testdchubsession
+    testclientsession testdcclientsession testadchub)
 
- testadchub
- testportforward)
+# A name left here after its source was retired makes the configure fail with a
+# confusing message about a target that does not exist, so it is checked first.
+foreach(app IN LISTS QUICKDC_TEST_APPS)
+    if(NOT TARGET ${app})
+        message(FATAL_ERROR
+            "QuickDC: QUICKDC_TEST_APPS names '${app}', which no add_executable() "
+            "declares. It was probably left behind when its test was converted to "
+            "core/test/exotic.")
+    endif()
+endforeach()
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
  # quickdc pulls in samurai (and thus OpenSSL, zlib, bzip2 and pthread)
