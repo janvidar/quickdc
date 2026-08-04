@@ -29,6 +29,24 @@
  * socket only took part of it - so the queue outlived the block a local was declared
  * in, and went on to read, and finally delete, a dead stack frame.
  */
+/*
+ * Where a socket's peer is, or nothing.
+ *
+ * getAddress() answers null for a socket that has no peer - one that never
+ * connected, or whose peer has already gone - and a login can be processed after
+ * that has happened, so the three places below that used to dereference it
+ * without asking would crash on a peer that hung up at the wrong moment.
+ *
+ * Nothing rather than a placeholder, so that two unknown addresses do not
+ * compare equal: an address that is not known is not the same address.
+ */
+static std::string peerAddress(const Samurai::IO::Net::Socket* socket)
+{
+	if (!socket) return std::string();
+	const Samurai::IO::Net::InetAddress* addr = socket->getAddress();
+	return addr ? addr->toString() : std::string();
+}
+
 #define INF_SEND_ERROR(USER, HUB, CODE, MSG, FLAG, DATA) { \
 	ADC::Command* x_cmd = new ADC::Command(FOURCC('I','S','T','A')); \
 	x_cmd->addArgument(CODE); \
@@ -41,8 +59,11 @@
 	if (CMD->haveArgument("I4", 2)) { \
 		Samurai::IO::Net::InetAddress ip(CMD->getArgument("I4", 2), Samurai::IO::Net::InetAddress::Version::IPv4); \
 		Samurai::IO::Net::InetAddress any("0.0.0.0", Samurai::IO::Net::InetAddress::Version::IPv4); \
-		Samurai::IO::Net::InetAddress* actualIP = const_cast<Samurai::IO::Net::InetAddress*>(SOCKET->getAddress()); \
-		if (ip == any) { \
+		const Samurai::IO::Net::InetAddress* actualIP = SOCKET->getAddress(); \
+		if (!actualIP) { \
+			/* No peer to compare against, and none to substitute. */ \
+			CMD->removeArgument("I4", 2); \
+		} else if (ip == any) { \
 			CMD->removeArgument("I4", 2); \
 			CMD->addArgument("I4", actualIP->toString()); \
 		} else if (ip != *actualIP) { \
@@ -236,7 +257,16 @@ bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
 		}
 	
 		if (HubUser* hu = hub->lookupUser(nick)) {
-			if (std::string_view(hu->cid) != cid || hu->socket->getAddress()->toString() != socket->getAddress()->toString()) {
+			/*
+			 * Fail closed on an address that is not known: an unknown one is not
+			 * a match, so the old session is left alone and the new one refused
+			 * rather than the old one being kicked on a guess.
+			 */
+			const std::string existing = peerAddress(hu->socket.get());
+			const std::string incoming = peerAddress(socket.get());
+			const bool sameAddress = !existing.empty() && existing == incoming;
+
+			if (std::string_view(hu->cid) != cid || !sameAddress) {
 				INF_SEND_ERROR(this, hub, "222", "User already logged in.", 0, 0);
 				return false;
 			} else {
@@ -257,20 +287,31 @@ bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
 		
 		INF_CHECK_IP(cmd, socket, hub);
 		
+#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
 		/*
-		 * Give the local user operator access.
+		 * Give a client connecting over the loopback administrator access.
 		 *
-		 * Recognised by the address it connects from, not by its PID as this
-		 * used to be. ADC requires a client to send its PID to every hub it
-		 * joins - it is how the hub checks the CID is the PID's hash - so every
-		 * hub the local client has ever visited holds the value that used to be
-		 * enough to become admin here. The comparison was not constant time
-		 * either, and the outcome is echoed straight back in the OP flag.
+		 * Behind the same option that governs authorising a peer over the
+		 * loopback, because it is the same trust and the same threat: any local
+		 * account, and anything reached through a forward to the hub's port,
+		 * becomes an administrator of this hub - able to kick, ban and redirect
+		 * every other user on it. It used to be unconditional.
+		 *
+		 * Recognised by the address it connects from, not by its PID as this once
+		 * was. ADC requires a client to send its PID to every hub it joins - it is
+		 * how the hub checks the CID is the PID's hash - so every hub the local
+		 * client has ever visited held the value that used to be enough to become
+		 * administrator here. That comparison was not constant time either, and
+		 * its outcome was echoed straight back in the OP flag.
 		 */
-		if (socket->getAddress()->isLoopback()) {
+		const Samurai::IO::Net::InetAddress* from = socket->getAddress();
+		if (from && from->isLoopback()) {
+			QERR("SECURITY: making a loopback client an administrator of this hub, "
+				"because this build has QUICKDC_ALLOW_LOOPBACK_AUTH");
 			credentials = Cred_Admin;
 			cmd->addArgument("OP", "1");
 		}
+#endif
 
 		cmd->removeArgument("PD", 2);
 		

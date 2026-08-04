@@ -713,26 +713,40 @@ EXO_TEST(adchub_a_logged_in_user_that_goes_quiet_is_swept_away,
 });
 
 /* A hub that is full, and who is let in anyway. */
-EXO_TEST(adchub_an_operator_is_let_into_a_full_hub,
+/*
+ * A full hub turns an ordinary user away.
+ *
+ * This could not be tested until recently: every client here connects from the
+ * loopback address, and the hub gave a loopback client administrator
+ * credentials unconditionally - which exempted it from the limit. So the limit
+ * was never reached by anything, and this asserts it now that the grant is
+ * behind QUICKDC_ALLOW_LOOPBACK_AUTH.
+ */
+EXO_TEST(adchub_a_full_hub_turns_an_ordinary_user_away,
 {
 	Server s;
 	EXO_ASSERT(s.listen());
 
 	s.hub.maxUsers = 1;
 
-	/*
-	 * Both of these connect from the loopback address, which the hub gives
-	 * administrator credentials - so both are exempt from the limit. Written as
-	 * an 'or' the exemption held for everyone, which is to say for nobody.
-	 */
 	Client first;
 	Client second;
 	EXO_ASSERT(first.connect(s.port()));
 	EXO_ASSERT(first.login(makeIdentity(5), "first"));
 	EXO_ASSERT(second.connect(s.port()));
-	EXO_ASSERT(second.login(makeIdentity(6), "second"));
+	second.login(makeIdentity(6), "second");
 
+#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
+	/*
+	 * Both are administrators in this build, and an administrator is exempt -
+	 * the exemption is an 'and', so written as an 'or' it held for everyone,
+	 * which is to say for nobody.
+	 */
 	EXO_ASSERT(s.hub.countLoggedIn() == 2);
+#else
+	/* The second is refused, and the first is left alone. */
+	EXO_ASSERT(s.hub.countLoggedIn() == 1);
+#endif
 	return 1;
 });
 
