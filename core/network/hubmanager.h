@@ -6,6 +6,9 @@
 #ifndef HAVE_QUICKDC_HUB_MANAGER_H
 #define HAVE_QUICKDC_HUB_MANAGER_H
 
+#include <samurai/timer.h>
+
+#include <chrono>
 #include <vector>
 
 namespace QuickDC {
@@ -18,12 +21,29 @@ namespace Share {
 }
 
 /**
+ * How long to wait before telling the hubs that our own status changed.
+ *
+ * Every request inside the window collapses into one update at the end of it,
+ * and the window restarts on nothing - so a client reconnecting to six hubs,
+ * which changes the hub counts on each attempt, sends one update rather than
+ * six to every hub it is on. Hubs treat a client that updates constantly as
+ * flooding, and none of what changes here is worth a round trip the moment it
+ * happens.
+ *
+ * The delay is deliberately at the end rather than the start: an update sent
+ * immediately would carry the counts from the middle of the reconnect, and then
+ * be suppressed for the window that follows, leaving every hub holding a number
+ * that was never true for long.
+ */
+#define QUICKDC_HUB_INFO_UPDATE_DELAY_SECONDS 10
+
+/**
  * This class manages multiple hub connections.
  */
-class HubManager {
+class HubManager : public Samurai::TimerListener {
 	public:
 		HubManager();
-		virtual ~HubManager();
+		~HubManager() override;
 	
 		void add(Hub* hub);
 		void remove(Hub* hub);
@@ -53,6 +73,46 @@ class HubManager {
 		size_t searchAllHubs(Share::SearchRequest* request);
 
 		/**
+		 * Ask for our own status to be re-sent to every hub we are logged in to.
+		 *
+		 * For something a hub was told once and would otherwise keep believing -
+		 * the port a peer should use, and how many hubs we are on as guest,
+		 * registered user and operator. A hub that holds a stale port hands every
+		 * other client an address with nothing behind it.
+		 *
+		 * Throttled: this schedules one update rather than sending anything, and
+		 * any number of calls inside the window produce a single update. Call it
+		 * freely.
+		 */
+		void requestClientInfoUpdate();
+
+		/** True while an update is scheduled but has not been sent. */
+		bool isClientInfoUpdatePending() const { return info_timer != 0; }
+
+		/**
+		 * How long a request waits before the update goes out.
+		 *
+		 * Settable because how much updating a hub tolerates is a property of the
+		 * hub rather than of this client. Takes effect on the next request; one
+		 * already scheduled keeps the window it was given.
+		 */
+		void setClientInfoUpdateDelay(std::chrono::milliseconds delay)
+		{ info_delay = delay; }
+
+		std::chrono::milliseconds getClientInfoUpdateDelay() const
+		{ return info_delay; }
+
+		/**
+		 * Send it now, and cancel anything scheduled.
+		 *
+		 * The unthrottled path, for a caller that knows it is about to stop
+		 * running an event loop. Prefer requestClientInfoUpdate().
+		 *
+		 * @return how many hubs were told.
+		 */
+		size_t sendClientInfoToAllHubs();
+
+		/**
 		 * Returns the number of hubs where we are logged in
 		 * as normal users.
 		 */
@@ -71,7 +131,13 @@ class HubManager {
 		size_t countHubsOperator();
 		
 	protected:
+		void EventTimeout(Samurai::Timer* timer) override;
+
 		std::vector<Hub*> hubs;
+
+		/** Non-null while an update is scheduled. */
+		Samurai::Timer* info_timer;
+		std::chrono::milliseconds info_delay;
 };
 
 }

@@ -67,7 +67,9 @@ class HubSession
 		void sendChatMessage(const char* msg, bool richText = false) override;
 		void sendAdminUserKick(const QuickDC::User* user) override;
 		void sendAdminUserRedirect(const QuickDC::User* user, const char* address, const char* reason) override;
-		void sendClientInfo() override { }
+		/* $MyINFO is NMDC's status update, and re-sending it is how a hub is
+		   told that something in it changed. */
+		void sendClientInfo() override { if (isLoggedIn()) sendMyInfo(); }
 		void sendSearchRequest(QuickDC::Share::SearchRequest* request) override;
 		void sendConnectionRequest(const QuickDC::User*, const char* token) override;
 		

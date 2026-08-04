@@ -51,6 +51,7 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 				address.toString().c_str(), static_cast<int>(external));
 			(void) external;
 			(void) address;
+			announce();
 		}
 
 		void EventPortForwardFailure(const char* reason) override
@@ -61,6 +62,27 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			 */
 			QDBG("The peer port could not be forwarded, staying passive: %s", reason);
 			(void) reason;
+			announce();
+		}
+
+	private:
+		/*
+		 * Whether this client can be connected to, and on what port, is part of
+		 * what a hub was told at login - so a hub joined before the answer changed
+		 * is still handing every other client the old one. Both outcomes announce,
+		 * because losing a forwarded port matters as much as gaining one: a hub
+		 * left saying we are active would have peers waiting on a connection that
+		 * can no longer arrive.
+		 */
+		static void announce()
+		{
+			const QuickDC::Core* core = QuickDC::Core::getInstance();
+			if (!core || !core->hubs) return;
+
+			/* Throttled with everything else that changes what a hub was told,
+			   so a network that comes and goes does not update every hub each
+			   time it does. */
+			core->hubs->requestClientInfoUpdate();
 		}
 };
 

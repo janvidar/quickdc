@@ -21,6 +21,7 @@
 #include "quickdc.h"
 #include "api/core.h"
 #include "api/hub.h"
+#include "network/hubmanager.h"
 #include "network/adc/adccommon.h"
 #include "network/adc/client/adchubsession.h"
 #include "network/user.h"
@@ -32,6 +33,7 @@
 #include <samurai/io/net/serversocket.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/socketmonitor.h>
+#include <samurai/timer.h>
 #include <samurai/io/net/socketaddress.h>
 #include <samurai/io/net/inetaddress.h>
 
@@ -73,6 +75,7 @@ static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
 	Samurai::IO::Net::SocketMonitor* monitor =
 		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::TimerManager* timers = Samurai::TimerManager::getInstance();
 
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
@@ -81,6 +84,9 @@ static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 	{
 		if (std::chrono::steady_clock::now() > deadline) return done();
 		monitor->wait(10);
+		/* Driven here too, so a case waiting on a timer does not depend on
+		   wait() having done it. */
+		timers->process();
 	}
 	return true;
 }
@@ -361,6 +367,137 @@ static void run()
 			printf("  ok a SID is answered with BINF: %s\n", line.c_str());
 		}
 		else failures++;
+	}
+
+	/*
+	 * A status update re-sends INF, which is how a hub is told that something it
+	 * was told once has changed - the port a peer should use being the case that
+	 * matters, since forwarding it succeeds long after the hub was joined.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			std::string line;
+			/*
+			 * Drained directly rather than by calling nextLine() until it fails:
+			 * that waits for a line to arrive, so the last call would sit out the
+			 * whole timeout for nothing and make this case the slowest here.
+			 */
+			s.hub.drain();
+			s.hub.received.clear();
+
+			s.session->sendClientInfo();
+			pump([] { return false; }, 60);
+
+			CHECK(s.hub.nextLine(line));
+			CHECK(line.compare(0, 4, "BINF") == 0);
+			CHECK(line.find("NI") != std::string::npos);
+			printf("  ok a status update re-sends INF: %s\n", line.c_str());
+		}
+		else failures++;
+	}
+
+	/*
+	 * Asking for an update schedules one rather than sending it. Many asks inside
+	 * the window are one update: a client reconnecting to several hubs changes the
+	 * hub counts on every attempt, and a hub treats a client that says so each
+	 * time as flooding.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+			s.hub.drain();
+			s.hub.received.clear();
+
+			for (int n = 0; n < 20; n++) hubs->requestClientInfoUpdate();
+
+			/* One timer, and nothing on the wire yet. */
+			CHECK(hubs->isClientInfoUpdatePending());
+			pump([] { return false; }, 120);
+			s.hub.drain();
+			CHECK(s.hub.received.empty());
+			printf("  ok twenty update requests send nothing straight away\n");
+		}
+		else failures++;
+	}
+
+	/*
+	 * And the update does go out when the window closes.
+	 *
+	 * Driven through Hub::connect() rather than by building the session directly,
+	 * because the fan-out walks the hub manager and reads each hub's session -
+	 * which only connect() sets. The delay is shortened so this does not sit out
+	 * the real one.
+	 */
+	{
+		FakeHub fake;
+		Listener listener;
+		if (!fake.listen()) { failures++; return; }
+
+		const std::string address = "adc://127.0.0.1:" + std::to_string(fake.port());
+		Samurai::IO::Net::URL url(address);
+		QuickDC::Hub ui(&listener, &url);
+
+		QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+		ui.connect();
+
+		if (fake.accepted())
+		{
+			std::string line;
+			/* The support exchange, a SID, and the INF echoed back, which is what
+			   being logged in means. */
+			CHECK(fake.nextLine(line));
+			fake.send("ISUP ADBASE ADTIGR");
+			pump([] { return false; }, 60);
+			fake.send("ISID AAAA");
+			pump([] { return false; }, 60);
+			if (fake.nextLine(line) && line.compare(0, 4, "BINF") == 0)
+			{
+				fake.send(line);
+				pump([] { return false; }, 60);
+			}
+
+			fake.drain();
+			fake.received.clear();
+
+			/*
+			 * The manager is the process-wide one, so an earlier case may have left
+			 * a request pending with the long window - which this one would be
+			 * folded into, exactly as intended. Flushed first so what is measured
+			 * here is this case's own requests.
+			 */
+			hubs->sendClientInfoToAllHubs();
+			pump([] { return false; }, 60);
+			fake.drain();
+			fake.received.clear();
+
+			hubs->setClientInfoUpdateDelay(std::chrono::milliseconds(50));
+			hubs->requestClientInfoUpdate();
+			hubs->requestClientInfoUpdate();
+			hubs->requestClientInfoUpdate();
+
+			const bool arrived = pump([&] {
+				fake.drain();
+				return fake.received.find("BINF") != std::string::npos;
+			}, 2000);
+
+			CHECK(arrived);
+			CHECK(!hubs->isClientInfoUpdatePending());
+
+			/* Three requests, one INF. */
+			size_t infs = 0;
+			for (size_t at = fake.received.find("BINF"); at != std::string::npos;
+			     at = fake.received.find("BINF", at + 1)) infs++;
+			CHECK(infs == 1);
+			printf("  ok three requests inside the window become one update\n");
+		}
+		else failures++;
+
+		hubs->setClientInfoUpdateDelay(
+			std::chrono::seconds(QUICKDC_HUB_INFO_UPDATE_DELAY_SECONDS));
 	}
 
 	/* ---- who is on the hub ---- */

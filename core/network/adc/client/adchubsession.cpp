@@ -519,6 +519,8 @@ void ADC::HubSession::EventUserInfo(const QuickDC::User* data)
 			}
 			userState = QuickDC::HubSession::StateNormal;
 			listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
+			/* One more hub we are on, which the others were told a count of. */
+			QuickDC::Core::getInstance()->hubs->requestClientInfoUpdate();
 		}
 	}
 	listener->EventUserUpdate(data);
@@ -928,6 +930,8 @@ void ADC::HubSession::onUserInfo(const char* id, QuickDC::User* data, uint64_t o
 			   users->info() below, by which time the state it tests has already
 			   been moved. */
 			listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
+			/* One more hub we are on, which the others were told a count of. */
+			QuickDC::Core::getInstance()->hubs->requestClientInfoUpdate();
 			break;
 
 		case QuickDC::HubSession::StateNormal:

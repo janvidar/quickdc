@@ -320,6 +320,9 @@ void DC::HubSession::onLoggedIn()
 	/* As ADC does. Without it a client cannot tell a hub it has merely reached
 	   from one it is actually logged in to. */
 	listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
+
+	/* One more hub we are on, which the others were told a count of. */
+	QuickDC::Core::getInstance()->hubs->requestClientInfoUpdate();
 }
 
 /**

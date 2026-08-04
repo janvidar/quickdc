@@ -438,6 +438,48 @@ static void run()
 		else failures++;
 	}
 
+	/*
+	 * A status update re-sends $MyINFO. This did nothing at all until port
+	 * forwarding needed it: the base class declares sendClientInfo() as the way to
+	 * tell a hub that something changed, ADC implemented it, and the NMDC override
+	 * was an empty body - so an NMDC hub kept whatever it was told at login for as
+	 * long as the session lasted.
+	 */
+	{
+		Session s;
+		if (s.ready && s.login())
+		{
+			std::string line;
+			s.hub.drain();
+			s.hub.received.clear();
+
+			s.session->sendClientInfo();
+			pump([] { return false; }, 60);
+
+			CHECK(s.hub.expect("$MyINFO ", line));
+			printf("  ok a status update re-sends $MyINFO: %s\n", line.c_str());
+		}
+		else failures++;
+	}
+
+	/* And nothing is sent before there is a hub that would understand it. */
+	{
+		Session s;
+		if (s.ready)
+		{
+			s.hub.drain();
+			s.hub.received.clear();
+
+			s.session->sendClientInfo();
+			pump([] { return false; }, 60);
+
+			s.hub.drain();
+			CHECK(s.hub.received.empty());
+			printf("  ok a status update before login sends nothing\n");
+		}
+		else failures++;
+	}
+
 	/* ---- who is on the hub ---- */
 
 	{
