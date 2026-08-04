@@ -32,7 +32,16 @@ set(QUICKDC_EXOTIC_TESTS
     queue.tcc
     acl.tcc
     sources.tcc
-    xml.tcc)
+    xml.tcc
+    cid.tcc
+    adchub.tcc
+    clientsession.tcc
+    dchubsession.tcc
+    dcclientsession.tcc
+    hubsession.tcc
+    leafhashes.tcc
+    queuecomplete.tcc
+    zupload.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)
     cmake_path(GET input STEM stem)

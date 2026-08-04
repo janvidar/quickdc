@@ -24,7 +24,6 @@ add_executable(testdchubsession dchubsession.cpp)
 add_executable(testclientsession clientsession.cpp)
 add_executable(testdcclientsession dcclientsession.cpp)
 add_executable(testportforward portforward.cpp)
-add_executable(testcid cid.cpp)
 add_executable(testadchub adchub.cpp)
 
 # testdebug needs console.cpp for its output helpers.
@@ -36,7 +35,7 @@ set(QUICKDC_TEST_APPS
  testqueuecomplete testhubsession testdchubsession
  testclientsession testdcclientsession
 
- testcid testadchub
+ testadchub
  testportforward)
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
@@ -61,7 +60,6 @@ add_test(NAME dchubsession COMMAND testdchubsession)
 add_test(NAME clientsession COMMAND testclientsession)
 add_test(NAME dcclientsession COMMAND testdcclientsession)
 add_test(NAME portforward COMMAND testportforward)
-add_test(NAME cid COMMAND testcid)
 add_test(NAME adchub COMMAND testadchub)
 
 add_subdirectory(autotests)
