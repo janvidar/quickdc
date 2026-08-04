@@ -16,7 +16,6 @@ add_executable(quickdc_cli
 add_executable(testfile file.cpp)
 add_executable(testshare share.cpp)
 add_executable(testlock lock.cpp)
-add_executable(hublist hublist.cpp)
 add_executable(testzupload zupload.cpp)
 add_executable(testleafhashes leafhashes.cpp)
 add_executable(testxml xml.cpp)
@@ -30,8 +29,6 @@ add_executable(testhubsession hubsession.cpp)
 add_executable(testdchubsession dchubsession.cpp)
 add_executable(testclientsession clientsession.cpp)
 add_executable(testdcclientsession dcclientsession.cpp)
-add_executable(testchunkmap chunkmap.cpp)
-add_executable(testconfig config.cpp)
 add_executable(testportforward portforward.cpp)
 add_executable(testcid cid.cpp)
 add_executable(testadchub adchub.cpp)
@@ -40,12 +37,12 @@ add_executable(testadchub adchub.cpp)
 add_executable(testdebug debug.cpp cli/console.cpp)
 
 set(QUICKDC_TEST_APPS
- quickdc_cli testfile testshare testlock hublist testdebug testzupload
+ quickdc_cli testfile testshare testlock testdebug testzupload
  testleafhashes testxml testadccommand testfilelist testacl testqueue
  testqueuecomplete testsources testhubsession testdchubsession
  testclientsession testdcclientsession
- testchunkmap
- testconfig testcid testadchub
+
+ testcid testadchub
  testportforward)
 
 foreach(app IN LISTS QUICKDC_TEST_APPS)
@@ -62,7 +59,6 @@ foreach(app IN LISTS QUICKDC_TEST_APPS)
 endforeach()
 
 # Unlike their neighbours these are self-contained, so they do get to run.
-add_test(NAME hublist COMMAND hublist)
 add_test(NAME zupload COMMAND testzupload)
 add_test(NAME leafhashes COMMAND testleafhashes)
 add_test(NAME xml COMMAND testxml)
@@ -76,8 +72,6 @@ add_test(NAME hubsession COMMAND testhubsession)
 add_test(NAME dchubsession COMMAND testdchubsession)
 add_test(NAME clientsession COMMAND testclientsession)
 add_test(NAME dcclientsession COMMAND testdcclientsession)
-add_test(NAME chunkmap COMMAND testchunkmap)
-add_test(NAME config COMMAND testconfig)
 add_test(NAME portforward COMMAND testportforward)
 add_test(NAME cid COMMAND testcid)
 add_test(NAME adchub COMMAND testadchub)

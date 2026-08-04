@@ -22,6 +22,9 @@ set(QUICKDC_EXOTIC_TESTS
     hashcache.tcc
     search.tcc
     security.tcc
+    chunkmap.tcc
+    config.tcc
+    hublist.tcc
     transfer.tcc
     users.tcc)
 

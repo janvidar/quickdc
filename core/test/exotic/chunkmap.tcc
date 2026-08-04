@@ -22,13 +22,6 @@
 #include <stdio.h>
 #include <string>
 
-#define CHECK(expr) \
-	do { \
-		if (!(expr)) { \
-			printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #expr); \
-			failures++; \
-		} \
-	} while (0)
 
 using ChunkMap = QuickDC::ChunkMap;
 
@@ -50,7 +43,9 @@ static bool holds(const ChunkMap& map)
 	return true;
 }
 
-#define check(map) CHECK(holds(map))
+/* Expands to an assertion, so a map that does not hold together fails the
+   case it was checked in. */
+#define check(map) EXO_ASSERT(holds(map))
 
 /* "0-100,200-300" as one string, for readable comparisons. */
 static std::string ranges(const ChunkMap& map)
@@ -585,9 +580,6 @@ EXO_TEST(chunkmap_overlapping_input_is_coalesced_on_the_way_in,
 	 */
 EXO_TEST(chunkmap_malformed_queue_notation_is_refused_and_keeps_nothing,
 {
-	/* TCCIFY: reports failure or a skip its own way. Convert by hand
-	   to EXO_FAIL(msg) / EXO_SKIP(reason) - this test cannot fail
-	   as it stands. */
 
 		const char* bad[] = {
 			"garbage",
@@ -614,9 +606,9 @@ EXO_TEST(chunkmap_malformed_queue_notation_is_refused_and_keeps_nothing,
 
 			if (map.fromString(bad[n]))
 			{
-				printf("FAIL %s:%d: accepted \"%s\" as \"%s\"\n",
-					__FILE__, __LINE__, bad[n], map.toString().c_str());
-				failures++;
+				const std::string why = std::string("accepted \"") + bad[n]
+					+ "\" as \"" + map.toString() + "\"";
+				EXO_FAIL(why.c_str());
 			}
 
 			/* And nothing of it was kept. */
@@ -732,9 +724,6 @@ EXO_TEST(chunkmap_a_peer_holding_nothing_decodes_as_nothing,
 	 */
 EXO_TEST(chunkmap_malformed_block_notation_is_refused_and_keeps_nothing,
 {
-	/* TCCIFY: reports failure or a skip its own way. Convert by hand
-	   to EXO_FAIL(msg) / EXO_SKIP(reason) - this test cannot fail
-	   as it stands. */
 
 		const char* bad[] = {
 			"garbage",
@@ -760,9 +749,9 @@ EXO_TEST(chunkmap_malformed_block_notation_is_refused_and_keeps_nothing,
 
 			if (map.fromIndexString(bad[n], 1000))
 			{
-				printf("FAIL %s:%d: accepted \"%s\" as \"%s\"\n",
-					__FILE__, __LINE__, bad[n], map.toString().c_str());
-				failures++;
+				const std::string why = std::string("accepted \"") + bad[n]
+					+ "\" as \"" + map.toString() + "\"";
+				EXO_FAIL(why.c_str());
 			}
 			EXO_ASSERT(map.getRangeCount() == 0);
 		}

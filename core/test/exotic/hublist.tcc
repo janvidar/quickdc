@@ -319,35 +319,51 @@ static const char* HUBLIST_XML =
 	"  </Hubs>\n"
 	"</Hublist>\n";
 
-/* Every field of the document above, so a value read out of the wrong attribute
-   is as visible as one that went missing. */
-static void checkSample(const std::vector<QuickDC::HubListEntry>& hubs)
+/*
+ * Every field of the document above, so a value read out of the wrong attribute
+ * is as visible as one that went missing.
+ *
+ * Reports which field was wrong rather than only that something was, which is
+ * why this is a function and not twenty assertions at each call site. Callers
+ * wrap it in EXO_ASSERT.
+ */
+#define FIELD(expr) \
+	do { \
+		if (!(expr)) { \
+			printf("    wrong field: %s\n", #expr); \
+			return false; \
+		} \
+	} while (0)
+
+static bool checkSample(const std::vector<QuickDC::HubListEntry>& hubs)
 {
-	CHECK(hubs.size() == 2);
-	if (hubs.size() != 2) return;
+	FIELD(hubs.size() == 2);
 
-	CHECK(hubs[0].name == "Some Hub");
-	CHECK(hubs[0].address == "dchub://hub.example.org:411");
-	CHECK(hubs[0].description == "A hub");
-	CHECK(hubs[0].country == "Norway");
-	CHECK(hubs[0].users == 120);
-	CHECK(hubs[0].shared == 4096000000ULL);
-	CHECK(hubs[0].minshare == 0);
-	CHECK(hubs[0].minslots == 0);
-	CHECK(hubs[0].maxhubs == 0);
-	CHECK(hubs[0].maxusers == 500);
+	FIELD(hubs[0].name == "Some Hub");
+	FIELD(hubs[0].address == "dchub://hub.example.org:411");
+	FIELD(hubs[0].description == "A hub");
+	FIELD(hubs[0].country == "Norway");
+	FIELD(hubs[0].users == 120);
+	FIELD(hubs[0].shared == 4096000000ULL);
+	FIELD(hubs[0].minshare == 0);
+	FIELD(hubs[0].minslots == 0);
+	FIELD(hubs[0].maxhubs == 0);
+	FIELD(hubs[0].maxusers == 500);
 
-	CHECK(hubs[1].name == "Another");
-	CHECK(hubs[1].address == "adc://adc.example.net:2780");
-	CHECK(hubs[1].description == "& another");
-	CHECK(hubs[1].country == "Sweden");
-	CHECK(hubs[1].users == 7);
-	CHECK(hubs[1].shared == 1024);
-	CHECK(hubs[1].minshare == 1048576);
-	CHECK(hubs[1].minslots == 2);
-	CHECK(hubs[1].maxhubs == 5);
-	CHECK(hubs[1].maxusers == 50);
+	FIELD(hubs[1].name == "Another");
+	FIELD(hubs[1].address == "adc://adc.example.net:2780");
+	FIELD(hubs[1].description == "& another");
+	FIELD(hubs[1].country == "Sweden");
+	FIELD(hubs[1].users == 7);
+	FIELD(hubs[1].shared == 1024);
+	FIELD(hubs[1].minshare == 1048576);
+	FIELD(hubs[1].minslots == 2);
+	FIELD(hubs[1].maxhubs == 5);
+	FIELD(hubs[1].maxusers == 50);
+	return true;
 }
+
+#undef FIELD
 
 /* A list of 'target' bytes or so, to say where the size limits are. */
 static std::string bulkHublist(size_t target, size_t& count)
@@ -376,7 +392,7 @@ EXO_TEST(hublist_a_plain_xml_hublist_is_read_field_by_field,
 {
 		Fetch f(reply(200, "OK", HUBLIST_XML));
 		EXO_ASSERT(f.ok());
-		checkSample(f.hubs());
+		EXO_ASSERT(checkSample(f.hubs()));
 
 		/* And it asked for the path the URL named, over HTTP/1.1. */
 		EXO_ASSERT(f.server.served() == 1);
@@ -393,7 +409,7 @@ EXO_TEST(hublist_the_same_list_bzip2_compressed_reads_the_same_u_bytes_packed,
 
 		Fetch f(reply(200, "OK", packed));
 		EXO_ASSERT(f.ok());
-		checkSample(f.hubs());
+		EXO_ASSERT(checkSample(f.hubs()));
 	
 	return 1;
 });
@@ -403,7 +419,7 @@ EXO_TEST(hublist_a_body_delimited_by_the_close_is_read,
 {
 		Fetch f(replyUntilClose(HUBLIST_XML));
 		EXO_ASSERT(f.ok());
-		checkSample(f.hubs());
+		EXO_ASSERT(checkSample(f.hubs()));
 	
 	return 1;
 });
@@ -446,7 +462,7 @@ EXO_TEST(hublist_a_redirect_is_followed_to_the_list_at_the_end_of,
 {
 		Fetch f({ redirect("/moved/hublist.xml"), reply(200, "OK", HUBLIST_XML) });
 		EXO_ASSERT(f.ok());
-		checkSample(f.hubs());
+		EXO_ASSERT(checkSample(f.hubs()));
 		EXO_ASSERT(f.server.served() == 2);
 		EXO_ASSERT(f.server.requests.size() == 2
 			&& f.server.requests[1].compare(0, 12, "GET /moved/h") == 0);
@@ -460,7 +476,7 @@ EXO_TEST(hublist_a_chain_up_to_the_limit_is_followed,
 		Fetch f({ redirect("/one"), redirect("/two"), redirect("/three"),
 			redirect("/four"), redirect("/five"), reply(200, "OK", HUBLIST_XML) });
 		EXO_ASSERT(f.ok());
-		checkSample(f.hubs());
+		EXO_ASSERT(checkSample(f.hubs()));
 		EXO_ASSERT(f.server.served() == 6);
 	
 	return 1;

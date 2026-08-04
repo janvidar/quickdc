@@ -248,9 +248,6 @@ EXO_TEST(config_preferences_are_written_when_they_go_out_of_scope,
 /* A password is a setting like any other, and has to survive as typed. */
 EXO_TEST(config_a_password_survives_being_written_and_read,
 {
-	/* TCCIFY: reports failure or a skip its own way. Convert by hand
-	   to EXO_FAIL(msg) / EXO_SKIP(reason) - this test cannot fail
-	   as it stands. */
 
 		Conf conf;
 		const char* passwords[] = {
@@ -280,9 +277,9 @@ EXO_TEST(config_a_password_survives_being_written_and_read,
 			const std::string got = prefs.getString(key);
 			if (got != passwords[n])
 			{
-				printf("FAIL %s:%d \"%s\" came back as \"%s\"\n",
-					__FILE__, __LINE__, passwords[n], got.c_str());
-				failures++;
+				const std::string why = std::string("\"") + passwords[n]
+					+ "\" came back as \"" + got + "\"";
+				EXO_FAIL(why.c_str());
 			}
 		}
 	
@@ -519,9 +516,6 @@ EXO_TEST(config_an_unterminated_section_header_does_not_lose_a_character,
 /* The header we write is comments, and it comes back as nothing. */
 EXO_TEST(config_the_file_we_write_is_one_we_can_read,
 {
-	/* TCCIFY: reports failure or a skip its own way. Convert by hand
-	   to EXO_FAIL(msg) / EXO_SKIP(reason) - this test cannot fail
-	   as it stands. */
 
 		Conf conf;
 		{
@@ -545,10 +539,9 @@ EXO_TEST(config_the_file_we_write_is_one_we_can_read,
 
 			if (!line.empty() && line[0] != ';')
 			{
-				printf("FAIL %s:%d a comment is not on a line of its own: \"%s\"\n",
-					__FILE__, __LINE__, line.c_str());
-				failures++;
-				break;
+				const std::string why =
+					"a comment is not on a line of its own: \"" + line + "\"";
+				EXO_FAIL(why.c_str());
 			}
 			at++;
 		}
