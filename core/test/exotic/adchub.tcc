@@ -133,6 +133,11 @@ class Server : public Samurai::IO::Net::ServerSocketEventHandler
 			hub.enabled = true;
 		}
 
+		/*
+		 * Whether the kernel gave us a bound socket, which is about the machine
+		 * and not about the hub - so a case whose listen() fails skips rather
+		 * than reporting the code under test as broken.
+		 */
 		bool listen()
 		{
 			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
@@ -409,7 +414,7 @@ EXO_TEST(adchub_the_send_queue_refuses_past_its_ceiling,
 EXO_TEST(adchub_a_line_that_is_never_terminated_closes_the_connection,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	Client c;
 	EXO_ASSERT(c.connect(s.port()));
@@ -432,7 +437,7 @@ EXO_TEST(adchub_a_line_that_is_never_terminated_closes_the_connection,
 EXO_TEST(adchub_a_user_advertises_at_most_max_user_features,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	Client c;
 	EXO_ASSERT(c.connect(s.port()));
@@ -467,7 +472,7 @@ EXO_TEST(adchub_a_user_advertises_at_most_max_user_features,
 EXO_TEST(adchub_every_session_id_handed_out_resolves_back_to_its_user,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	/*
 	 * Started just below the 20 bits a SID has, so the next few allocations run
@@ -521,7 +526,7 @@ EXO_TEST(adchub_every_session_id_handed_out_resolves_back_to_its_user,
 EXO_TEST(adchub_a_message_with_no_message_does_not_take_the_hub_down,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	Client c;
 	EXO_ASSERT(c.connect(s.port()));
@@ -558,7 +563,7 @@ EXO_TEST(adchub_a_message_with_no_message_does_not_take_the_hub_down,
 EXO_TEST(adchub_an_inf_is_accumulated_across_updates_and_handed_on_whole,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	Client alice;
 	EXO_ASSERT(alice.connect(s.port()));
@@ -597,7 +602,7 @@ EXO_TEST(adchub_an_inf_is_accumulated_across_updates_and_handed_on_whole,
 EXO_TEST(adchub_a_mismatched_source_sid_retires_the_connection_and_says_whose_it_was,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	Client alice;
 	Client bob;
@@ -629,7 +634,7 @@ EXO_TEST(adchub_a_mismatched_source_sid_retires_the_connection_and_says_whose_it
 EXO_TEST(adchub_connections_past_the_per_address_limit_do_not_become_users,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	s.hub.maxPerAddress = 3;
 
@@ -653,7 +658,7 @@ EXO_TEST(adchub_connections_past_the_per_address_limit_do_not_become_users,
 EXO_TEST(adchub_connections_past_the_handshake_limit_do_not_become_users,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	s.hub.maxPerAddress = 64;
 	s.hub.maxHandshake = 2;
@@ -678,7 +683,7 @@ EXO_TEST(adchub_connections_past_the_handshake_limit_do_not_become_users,
 EXO_TEST(adchub_a_connection_that_never_logs_in_is_swept_away,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	s.hub.handshakeTimeout = 1;
 	s.sweepEvery(std::chrono::milliseconds(50));
@@ -697,7 +702,7 @@ EXO_TEST(adchub_a_connection_that_never_logs_in_is_swept_away,
 EXO_TEST(adchub_a_logged_in_user_that_goes_quiet_is_swept_away,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	s.hub.handshakeTimeout = 0;
 	s.hub.idleTimeout = 1;
@@ -725,7 +730,7 @@ EXO_TEST(adchub_a_logged_in_user_that_goes_quiet_is_swept_away,
 EXO_TEST(adchub_a_full_hub_turns_an_ordinary_user_away,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	s.hub.maxUsers = 1;
 
@@ -754,7 +759,7 @@ EXO_TEST(adchub_a_full_hub_turns_an_ordinary_user_away,
 EXO_TEST(adchub_the_chat_history_keeps_what_it_is_configured_to,
 {
 	Server s;
-	EXO_ASSERT(s.listen());
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 	Client c;
 	EXO_ASSERT(c.connect(s.port()));
@@ -835,7 +840,7 @@ EXO_TEST(adchub_hubs_come_and_go_leaving_nothing_behind,
 	for (int n = 0; n < 3; n++)
 	{
 		Server s;
-		EXO_ASSERT(s.listen());
+		if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
 
 		Client c;
 		EXO_ASSERT(c.connect(s.port()));
