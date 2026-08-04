@@ -205,6 +205,13 @@ void DC::ClientSession::sendChallenge()
 	}
 
 	const std::string my_lock = Lock::createLock();
+	if (my_lock.empty())
+	{
+		QERR("No lock to challenge with; dropping the connection");
+		proxy->close();
+		return;
+	}
+
 	const std::string my_pk = Lock::createPk();
 	my_key = DC::Lock::calculateKey(my_lock);
 

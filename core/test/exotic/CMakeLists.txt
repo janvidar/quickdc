@@ -41,6 +41,7 @@ set(QUICKDC_EXOTIC_TESTS
     dcclientsession.tcc
     hubsession.tcc
     leafhashes.tcc
+    lock.tcc
     portforward.tcc
     queuecomplete.tcc
     zupload.tcc)
