@@ -30,7 +30,8 @@ set(QUICKDC_EXOTIC_TESTS
     adccommand.tcc
     filelist.tcc
     queue.tcc
-    acl.tcc)
+    acl.tcc
+    sources.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)
     cmake_path(GET input STEM stem)
