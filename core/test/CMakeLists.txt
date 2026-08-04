@@ -19,10 +19,6 @@ add_executable(testlock lock.cpp)
 add_executable(testzupload zupload.cpp)
 add_executable(testleafhashes leafhashes.cpp)
 add_executable(testxml xml.cpp)
-add_executable(testadccommand adccommand.cpp)
-add_executable(testfilelist filelist.cpp)
-add_executable(testacl acl.cpp)
-add_executable(testqueue queue.cpp)
 add_executable(testqueuecomplete queuecomplete.cpp)
 add_executable(testsources sources.cpp)
 add_executable(testhubsession hubsession.cpp)
@@ -38,7 +34,7 @@ add_executable(testdebug debug.cpp cli/console.cpp)
 
 set(QUICKDC_TEST_APPS
  quickdc_cli testfile testshare testlock testdebug testzupload
- testleafhashes testxml testadccommand testfilelist testacl testqueue
+ testleafhashes testxml
  testqueuecomplete testsources testhubsession testdchubsession
  testclientsession testdcclientsession
 
@@ -62,10 +58,6 @@ endforeach()
 add_test(NAME zupload COMMAND testzupload)
 add_test(NAME leafhashes COMMAND testleafhashes)
 add_test(NAME xml COMMAND testxml)
-add_test(NAME adccommand COMMAND testadccommand)
-add_test(NAME filelist COMMAND testfilelist)
-add_test(NAME acl COMMAND testacl)
-add_test(NAME queue COMMAND testqueue)
 add_test(NAME queuecomplete COMMAND testqueuecomplete)
 add_test(NAME sources COMMAND testsources)
 add_test(NAME hubsession COMMAND testhubsession)

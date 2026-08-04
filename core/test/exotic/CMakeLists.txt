@@ -26,7 +26,11 @@ set(QUICKDC_EXOTIC_TESTS
     config.tcc
     hublist.tcc
     transfer.tcc
-    users.tcc)
+    users.tcc
+    adccommand.tcc
+    filelist.tcc
+    queue.tcc
+    acl.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)
     cmake_path(GET input STEM stem)

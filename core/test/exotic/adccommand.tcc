@@ -59,7 +59,7 @@ static std::string written(ADC::Command& cmd)
 	return buf.copyRange(0, buf.size());
 }
 
-static void check(const char* label, const char* expect, ADC::Command& cmd)
+static bool check(const char* label, const char* expect, ADC::Command& cmd)
 {
 	const std::string wire = written(cmd);
 	const char* raw = cmd.getRawCommand();
@@ -87,19 +87,76 @@ static void check(const char* label, const char* expect, ADC::Command& cmd)
 		ok = false;
 	}
 
-	if (!ok)
-	{
-		failures++;
-		return;
-	}
-
-	std::string shown;
-	for (const char* p = expect; *p; p++)
-		if (*p == '\n') shown += "\\n"; else shown += *p;
-	printf("  ok %-34s '%s'\n", label, shown.c_str());
+	return ok;
 }
 
-EXO_TEST(adccommand_,
+/* Commands whose prefix needs no ID. */
+EXO_TEST(adccommand_no_ids_required,
+{
+		ADC::Command cmd(FOURCC('I','S','I','D'));
+		EXO_ASSERT(check("no ids required", "ISID\n", cmd));
+	
+	return 1;
+});
+
+EXO_TEST(adccommand_with_arguments,
+{
+		ADC::Command cmd(FOURCC('H','S','U','P'));
+		cmd.addArgument("AD", "BASE");
+		cmd.addArgument("RM", "TIGR");
+		EXO_ASSERT(check("with arguments", "HSUP ADBASE RMTIGR\n", cmd));
+	
+	return 1;
+});
+
+EXO_TEST(adccommand_broadcast_with_a_source,
+{
+		ADC::Command cmd(FOURCC('B','I','N','F'), "AAAA");
+		cmd.addArgument("NI", "nick");
+		EXO_ASSERT(check("broadcast with a source", "BINF AAAA NInick\n", cmd));
+	
+	return 1;
+});
+
+EXO_TEST(adccommand_rich_text_broadcast,
+{
+		/* A rich text chat line: the body is escaped, the flag follows it. */
+		ADC::Command cmd(FOURCC('B','M','S','G'), "AAAA");
+		cmd.addArgument("**found it** in `~/Music`");
+		cmd.addArgument("RT", "1");
+		EXO_ASSERT(check("rich text broadcast",
+			"BMSG AAAA **found\\sit**\\sin\\s`~/Music` RT1\n", cmd));
+	
+	return 1;
+});
+
+/*
+	 * The support flags. Rich text is a hub extension, so it belongs in the SUP a
+	 * client sends to a hub and in the one a hub answers with, and nowhere in the
+	 * one a client sends to another client - the RT flag only travels via a hub.
+	 */
+EXO_TEST(adccommand_support_flags_to_a_hub,
+{
+		ADC::Command cmd(FOURCC('H','S','U','P'));
+		ADC::addSupportFlags(cmd, false);
+		EXO_ASSERT(check("support flags to a hub",
+			"HSUP ADBASE ADBAS0 ADTIGR ADPFSR ADADCS ADPING ADBBS0 AD"
+			ADC_EXT_RICHTEXT "\n", cmd));
+	
+	return 1;
+});
+
+EXO_TEST(adccommand_support_flags_to_a_client,
+{
+		ADC::Command cmd(FOURCC('C','S','U','P'));
+		ADC::addSupportFlags(cmd, true);
+		EXO_ASSERT(check("support flags to a client",
+			"CSUP ADBASE ADBAS0 ADTIGR ADPFSR ADADCS ADBZIP ADZLIG\n", cmd));
+	
+	return 1;
+});
+
+EXO_TEST(adccommand_support_flags_from_our_hub,
 {
 		/* Our own hub answers out of the same branch, so its ISUP carries it too. */
 		ADC::Command cmd(FOURCC('I','S','U','P'));
@@ -109,12 +166,31 @@ EXO_TEST(adccommand_,
 	return 1;
 });
 
+EXO_TEST(adccommand_direct_with_both_ids,
+{
+		ADC::Command cmd(FOURCC('D','M','S','G'), "AAAA", "BBBB");
+		cmd.addArgument("hello");
+		EXO_ASSERT(check("direct with both ids", "DMSG AAAA BBBB hello\n", cmd));
+	
+	return 1;
+});
+
+/* A space in an argument has to come back escaped. */
+EXO_TEST(adccommand_argument_escaping,
+{
+		ADC::Command cmd(FOURCC('B','M','S','G'), "AAAA");
+		cmd.addArgument("two words");
+		EXO_ASSERT(check("argument escaping", "BMSG AAAA two\\swords\n", cmd));
+	
+	return 1;
+});
+
 /*
 	 * Incomplete commands. write() gives up on these, and the point is that
 	 * asking twice behaves the same as asking once and that nothing is left
 	 * half written into a caller's buffer.
 	 */
-EXO_TEST(adccommand__2,
+EXO_TEST(adccommand_broadcast_with_no_source,
 {
 		ADC::Command cmd(FOURCC('B','I','N','F'));
 		EXO_ASSERT(cmd.getSize() == 0);
@@ -132,7 +208,7 @@ EXO_TEST(adccommand__2,
 	return 1;
 });
 
-EXO_TEST(adccommand__2_2,
+EXO_TEST(adccommand_direct_with_no_target,
 {
 		ADC::Command cmd(FOURCC('D','M','S','G'), "AAAA");
 		EXO_ASSERT(cmd.getSize() == 0);
@@ -142,7 +218,7 @@ EXO_TEST(adccommand__2_2,
 });
 
 /* A caller's own buffer must not be disturbed by a command it cannot write. */
-EXO_TEST(adccommand__2_2_2,
+EXO_TEST(adccommand_incomplete_leaves_the_buffer,
 {
 		ADC::Command cmd(FOURCC('B','I','N','F'));
 		Samurai::IO::Buffer buf;
@@ -154,7 +230,7 @@ EXO_TEST(adccommand__2_2_2,
 });
 
 /* Appending to a buffer that already holds something starts where it ended. */
-EXO_TEST(adccommand__2_2_2_2,
+EXO_TEST(adccommand_appends_after_existing_data,
 {
 		ADC::Command cmd(FOURCC('I','S','I','D'));
 		Samurai::IO::Buffer buf;
@@ -167,7 +243,7 @@ EXO_TEST(adccommand__2_2_2_2,
 });
 
 /* Changing the command drops the cache rather than serving a stale answer. */
-EXO_TEST(adccommand__2_2_2_2_2,
+EXO_TEST(adccommand_cache_follows_the_arguments,
 {
 		ADC::Command cmd(FOURCC('B','M','S','G'), "AAAA");
 		cmd.addArgument("one");
@@ -187,12 +263,8 @@ EXO_TEST(adccommand__2_2_2_2_2,
 	 * Asking an abandoned command for its bytes must not cost anything. Each
 	 * call re-runs write(), because there is no cache for it to stop at.
 	 */
-EXO_TEST(adccommand__2_2_2_2_2_2,
+EXO_TEST(adccommand_abandoned_command_allocates_nothing,
 {
-	/* TCCIFY: reports failure or a skip its own way. Convert by hand
-	   to EXO_FAIL(msg) / EXO_SKIP(reason) - this test cannot fail
-	   as it stands. */
-
 		ADC::Command cmd(FOURCC('B','I','N','F'));
 		cmd.getSize();
 
@@ -206,19 +278,16 @@ EXO_TEST(adccommand__2_2_2_2_2_2,
 
 		if (after != before)
 		{
-			printf("FAIL abandoned command leaks: %zu allocations over 200 calls\n",
-				after - before);
-			failures++;
-		}
-		else
-		{
+			const std::string why = "abandoned command leaks: "
+				+ std::to_string(after - before) + " allocations over 200 calls";
+			EXO_FAIL(why.c_str());
 		}
 	
 	return 1;
 });
 
 /* The same for one that does serialise, once its cache is warm. */
-EXO_TEST(adccommand__2_2_2_2_2_2_2,
+EXO_TEST(adccommand_cached_command_allocates_nothing,
 {
 		ADC::Command cmd(FOURCC('B','M','S','G'), "AAAA");
 		cmd.addArgument("hello");
@@ -236,7 +305,7 @@ EXO_TEST(adccommand__2_2_2_2_2_2_2,
 });
 
 /* A parsed command caches the line it came from. */
-EXO_TEST(adccommand__2_2_2_2_2_2_2_2,
+EXO_TEST(adccommand_parsed_command_keeps_its_line,
 {
 		ADC::Command cmd;
 		const char* line = "BMSG AAAA hello";

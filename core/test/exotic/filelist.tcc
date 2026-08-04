@@ -88,7 +88,7 @@ static Share::RemoteDir* decode(const char* xml, bool& ok)
 	return root;
 }
 
-static void check(const char* label, const char* xml, const char* expect)
+static bool check(const char* label, const char* xml, const char* expect)
 {
 	bool ok = false;
 	Share::RemoteDir* root = decode(xml, ok);
@@ -96,13 +96,13 @@ static void check(const char* label, const char* xml, const char* expect)
 	std::string out;
 	render(root, out);
 
-	if (out == expect)
-		printf("  ok %s\n", label);
-	else
-		printf("FAIL %s\n    input:    %s\n    expected: %s\n    actual:   %s\n",
-			label, xml, expect, out.c_str()), failures++;
+	const bool matched = (out == expect);
+	if (!matched)
+		printf("    %s\n      input:    %s\n      expected: %s\n      actual:   %s\n",
+			label, xml, expect, out.c_str());
 
 	delete root;
+	return matched;
 }
 
 #define LIST(body) "<FileListing Version=\"1\" Base=\"/\">" body "</FileListing>"
@@ -175,11 +175,9 @@ EXO_TEST(filelist_decoding_and_deleting_balances,
 
 		if (live != before)
 		{
-			printf("FAIL decoding leaks: %zu allocations over 20 lists\n", live - before);
-			failures++;
-		}
-		else
-		{
+			const std::string why = "decoding leaks: "
+				+ std::to_string(live - before) + " allocations over 20 lists";
+			EXO_FAIL(why.c_str());
 		}
 	
 	return 1;
@@ -274,5 +272,278 @@ EXO_TEST(filelist_a_u_level_tree_carries_a_size_to_the_root_and,
 
 		delete root;
 	
+	return 1;
+});
+
+EXO_TEST(filelist_empty_list,
+{
+	EXO_ASSERT(check("empty list", LIST(""), ""));
+	return 1;
+});
+
+EXO_TEST(filelist_one_file,
+{
+	EXO_ASSERT(check("one file",
+			LIST("<File Name=\"a.mp3\" Size=\"123\" TTH=\"ROOT\"/>"),
+			"(a.mp3,123,ROOT)"));
+	return 1;
+});
+
+EXO_TEST(filelist_one_directory,
+{
+	EXO_ASSERT(check("one directory",
+			LIST("<Directory Name=\"music\"></Directory>"),
+			"[music]"));
+	return 1;
+});
+
+EXO_TEST(filelist_file_inside_a_directory,
+{
+	EXO_ASSERT(check("file inside a directory",
+			LIST("<Directory Name=\"music\">"
+			     "<File Name=\"a.mp3\" Size=\"123\" TTH=\"ROOT\"/>"
+			     "</Directory>"),
+			"[music(a.mp3,123,ROOT)]"));
+	return 1;
+});
+
+EXO_TEST(filelist_nested_directories,
+{
+	EXO_ASSERT(check("nested directories",
+			LIST("<Directory Name=\"a\">"
+			     "<Directory Name=\"b\">"
+			     "<File Name=\"deep\" Size=\"1\" TTH=\"T\"/>"
+			     "</Directory>"
+			     "</Directory>"),
+			"[a[b(deep,1,T)]]"));
+	return 1;
+});
+
+/*
+	 * Siblings only stay siblings if the self-closing directory pops. It used
+	 * to be that no end tag was reported for one at all.
+	 */
+EXO_TEST(filelist_self_closing_directory_is_not_left_open,
+{
+	EXO_ASSERT(check("self-closing directory is not left open",
+			LIST("<Directory Name=\"empty\"/>"
+			     "<Directory Name=\"next\"/>"),
+			"[empty][next]"));
+	return 1;
+});
+
+EXO_TEST(filelist_sibling_directories,
+{
+	EXO_ASSERT(check("sibling directories",
+			LIST("<Directory Name=\"a\"><File Name=\"x\" Size=\"1\" TTH=\"T\"/></Directory>"
+			     "<Directory Name=\"b\"><File Name=\"y\" Size=\"2\" TTH=\"U\"/></Directory>"),
+			"[a(x,1,T)][b(y,2,U)]"));
+	return 1;
+});
+
+/* The form other clients write: no space before the slash. */
+EXO_TEST(filelist_no_space_before_the_slash,
+{
+	EXO_ASSERT(check("no space before the slash",
+			LIST("<File Name=\"a.mp3\" Size=\"123\" TTH=\"ROOT\"/>"),
+			"(a.mp3,123,ROOT)"));
+	return 1;
+});
+
+EXO_TEST(filelist_space_before_the_slash,
+{
+	EXO_ASSERT(check("space before the slash",
+			LIST("<File Name=\"a.mp3\" Size=\"123\" TTH=\"ROOT\" />"),
+			"(a.mp3,123,ROOT)"));
+	return 1;
+});
+
+/* Attribute order is not fixed by the schema. */
+EXO_TEST(filelist_attributes_in_another_order,
+{
+	EXO_ASSERT(check("attributes in another order",
+			LIST("<File TTH=\"ROOT\" Name=\"a.mp3\" Size=\"123\"/>"),
+			"(a.mp3,123,ROOT)"));
+	return 1;
+});
+
+EXO_TEST(filelist_element_names_are_matched_without_case,
+{
+	EXO_ASSERT(check("element names are matched without case",
+			LIST("<directory NAME=\"music\"><file name=\"a\" size=\"5\" tth=\"T\"/></directory>"),
+			"[music(a,5,T)]"));
+	return 1;
+});
+
+/* Names carry entities, and a file list is where the interesting ones are. */
+EXO_TEST(filelist_escaped_name,
+{
+	EXO_ASSERT(check("escaped name",
+			LIST("<File Name=\"a &amp; b &lt;c&gt;\" Size=\"1\" TTH=\"T\"/>"),
+			"(a & b <c>,1,T)"));
+	return 1;
+});
+
+EXO_TEST(filelist_name_that_is_literally_an_entity,
+{
+	EXO_ASSERT(check("name that is literally an entity",
+			LIST("<File Name=\"a&amp;lt;b\" Size=\"1\" TTH=\"T\"/>"),
+			"(a&lt;b,1,T)"));
+	return 1;
+});
+
+EXO_TEST(filelist_numeric_reference_in_a_name,
+{
+	EXO_ASSERT(check("numeric reference in a name",
+			LIST("<File Name=\"caf&#233;\" Size=\"1\" TTH=\"T\"/>"),
+			"(caf\xc3\xa9,1,T)"));
+	return 1;
+});
+
+EXO_TEST(filelist_utf_8_name,
+{
+	EXO_ASSERT(check("utf-8 name",
+			LIST("<Directory Name=\"Bj\xc3\xb8rn\"/>"),
+			"[Bj\xc3\xb8rn]"));
+	return 1;
+});
+
+/* Incomplete entries are refused rather than half built. */
+EXO_TEST(filelist_file_with_no_tth,
+{
+	EXO_ASSERT(check("file with no tth",
+			LIST("<File Name=\"a.mp3\" Size=\"123\"/>"),
+			""));
+	return 1;
+});
+
+EXO_TEST(filelist_file_with_no_name,
+{
+	EXO_ASSERT(check("file with no name",
+			LIST("<File Size=\"123\" TTH=\"ROOT\"/>"),
+			""));
+	return 1;
+});
+
+EXO_TEST(filelist_file_with_an_empty_name,
+{
+	EXO_ASSERT(check("file with an empty name",
+			LIST("<File Name=\"\" Size=\"123\" TTH=\"ROOT\"/>"),
+			""));
+	return 1;
+});
+
+EXO_TEST(filelist_file_with_an_empty_tth,
+{
+	EXO_ASSERT(check("file with an empty tth",
+			LIST("<File Name=\"a.mp3\" Size=\"123\" TTH=\"\"/>"),
+			""));
+	return 1;
+});
+
+EXO_TEST(filelist_directory_with_no_name,
+{
+	EXO_ASSERT(check("directory with no name",
+			LIST("<Directory><File Name=\"a\" Size=\"1\" TTH=\"T\"/></Directory>"),
+			"(a,1,T)"));
+	return 1;
+});
+
+EXO_TEST(filelist_directory_with_an_empty_name,
+{
+	EXO_ASSERT(check("directory with an empty name",
+			LIST("<Directory Name=\"\"/>"),
+			""));
+	return 1;
+});
+
+/* A missing size is not a reason to drop the file. */
+EXO_TEST(filelist_file_with_no_size,
+{
+	EXO_ASSERT(check("file with no size",
+			LIST("<File Name=\"a.mp3\" TTH=\"ROOT\"/>"),
+			"(a.mp3,0,ROOT)"));
+	return 1;
+});
+
+EXO_TEST(filelist_file_with_a_junk_size,
+{
+	EXO_ASSERT(check("file with a junk size",
+			LIST("<File Name=\"a.mp3\" Size=\"abc\" TTH=\"ROOT\"/>"),
+			"(a.mp3,0,ROOT)"));
+	return 1;
+});
+
+/*
+	 * Nothing here may reach through a null currentDir, whatever the list says.
+	 * The tree is empty in each case; that it returns at all is the assertion.
+	 */
+EXO_TEST(filelist_file_outside_any_listing,
+{
+	EXO_ASSERT(check("file outside any listing",
+			"<File Name=\"a\" Size=\"1\" TTH=\"T\"/>",
+			""));
+	return 1;
+});
+
+EXO_TEST(filelist_directory_outside_any_listing,
+{
+	EXO_ASSERT(check("directory outside any listing",
+			"<Directory Name=\"a\"/>",
+			""));
+	return 1;
+});
+
+EXO_TEST(filelist_end_tag_with_nothing_open,
+{
+	EXO_ASSERT(check("end tag with nothing open",
+			"</Directory><File Name=\"a\" Size=\"1\" TTH=\"T\"/>",
+			""));
+	return 1;
+});
+
+EXO_TEST(filelist_more_end_tags_than_start_tags,
+{
+	EXO_ASSERT(check("more end tags than start tags",
+			LIST("<Directory Name=\"a\"></Directory></Directory></Directory>"
+			     "<File Name=\"x\" Size=\"1\" TTH=\"T\"/>"),
+			"[a]"));
+	return 1;
+});
+
+EXO_TEST(filelist_unclosed_directory,
+{
+	EXO_ASSERT(check("unclosed directory",
+			LIST("<Directory Name=\"a\"><File Name=\"x\" Size=\"1\" TTH=\"T\"/>"),
+			"[a(x,1,T)]"));
+	return 1;
+});
+
+EXO_TEST(filelist_nested_listings,
+{
+	EXO_ASSERT(check("nested listings",
+			LIST(LIST("<File Name=\"a\" Size=\"1\" TTH=\"T\"/>")),
+			"(a,1,T)"));
+	return 1;
+});
+
+EXO_TEST(filelist_junk_instead_of_a_listing,
+{
+	EXO_ASSERT(check("junk instead of a listing", "not xml at all", ""));
+	return 1;
+});
+
+EXO_TEST(filelist_empty_document,
+{
+	EXO_ASSERT(check("empty document", "", ""));
+	return 1;
+});
+
+EXO_TEST(filelist_unknown_elements_are_ignored,
+{
+	EXO_ASSERT(check("unknown elements are ignored",
+			LIST("<Nonsense Name=\"x\"/>"
+			     "<File Name=\"a\" Size=\"1\" TTH=\"T\"/>"),
+			"(a,1,T)"));
 	return 1;
 });
