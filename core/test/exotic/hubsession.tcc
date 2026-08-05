@@ -343,6 +343,64 @@ namespace {
 std::string config_file;
 QuickDC::Core* core = 0;
 
+/*
+ * The value of one INF field, or nothing when the field is absent.
+ *
+ * Looked up by token rather than by searching the line, because an INF carries a
+ * CID and a PID as thirty-nine characters of base32 each - and base32 is letters
+ * and digits, so "U4", "TCP4" and "UDP4" all occur inside one from time to time.
+ * Those identifiers are random per run, which makes a search for a bare field name
+ * a test that passes most days.
+ */
+std::string infField(const std::string& line, const std::string& field)
+{
+	size_t at = 0;
+	while (at < line.size())
+	{
+		size_t end = line.find(' ', at);
+		if (end == std::string::npos) end = line.size();
+
+		const std::string token = line.substr(at, end - at);
+		if (token.compare(0, field.size(), field) == 0)
+			return token.substr(field.size());
+
+		at = end + 1;
+	}
+	return std::string();
+}
+
+/** Whether the SU field lists a flag, which is a comma separated set. */
+bool claims(const std::string& line, const std::string& flag)
+{
+	const std::string su = infField(line, "SU");
+
+	size_t at = 0;
+	while (at < su.size())
+	{
+		size_t end = su.find(',', at);
+		if (end == std::string::npos) end = su.size();
+
+		if (su.compare(at, end - at, flag) == 0) return true;
+		at = end + 1;
+	}
+	return false;
+}
+
+/** Whether an INF carries a field at all. */
+bool hasField(const std::string& line, const std::string& field)
+{
+	size_t at = 0;
+	while (at < line.size())
+	{
+		size_t end = line.find(' ', at);
+		if (end == std::string::npos) end = line.size();
+
+		if (line.compare(at, field.size(), field) == 0) return true;
+		at = end + 1;
+	}
+	return false;
+}
+
 }
 
 EXO_SETUP({
@@ -439,11 +497,85 @@ EXO_TEST(hubsession_a_sid_is_answered_with_binf,
 });
 
 /*
+ * A field the user left blank is left out, rather than sent as a name with
+ * nothing after it.
+ *
+ * Nobody has to read it either way, so this is about what the client says about
+ * itself: an empty 'EM' is a claim to have an e-mail address that happens to be
+ * the empty string, and ADC reads an empty field as an instruction to drop one -
+ * which is a strange thing to open a conversation with.
+ */
+EXO_TEST(hubsession_an_unset_email_is_not_announced,
+{
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("User");
+	config->setString("E-mail", "");
+
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+
+	s.say("ISUP ADBASE ADTIGR");
+	s.say("ISID AAAA");
+
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 4, "BINF") == 0);
+
+	EXO_ASSERT(!hasField(line, "EM"));
+
+	/* The description is configured, so that one is there - which is what makes
+	   the absence above about the value and not about the field. */
+	EXO_ASSERT(hasField(line, "DE"));
+	return 1;
+});
+
+/* And one the user did fill in is announced. */
+EXO_TEST(hubsession_a_configured_email_is_announced,
+{
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("User");
+	config->setString("E-mail", "someone@example.com");
+
+	Session s;
+	const bool listening = s.hub.listening;
+
+	std::string line;
+	bool got = false;
+	if (listening && s.ready)
+	{
+		got = s.hub.nextLine(line);
+		s.say("ISUP ADBASE ADTIGR");
+		s.say("ISID AAAA");
+		got = got && s.hub.nextLine(line);
+	}
+
+	/* Put back before anything is asserted, since the core outlives this case
+	   and a failed assertion leaves. */
+	config->setGroup("User");
+	config->setString("E-mail", "");
+
+	if (!listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(got);
+	EXO_ASSERT(line.compare(0, 4, "BINF") == 0);
+	EXO_ASSERT(infField(line, "EM") == "someone@example.com");
+	return 1;
+});
+
+/*
  * A status update re-sends INF, which is how a hub is told that something it
  * was told once has changed - the port a peer should use being the case that
  * matters, since forwarding it succeeds long after the hub was joined.
+ *
+ * And it says what changed and nothing else. A hub merges an INF into what it
+ * holds and relays the fields that arrived, so repeating the rest costs a line
+ * the length of the whole record and buys nothing - and 'PD', which proves the
+ * client ID, may only be sent once.
  */
-EXO_TEST(hubsession_a_status_update_re_sends_inf,
+EXO_TEST(hubsession_a_status_update_says_only_what_changed,
 {
 	Session s;
 	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
@@ -459,8 +591,16 @@ EXO_TEST(hubsession_a_status_update_re_sends_inf,
 	s.hub.drain();
 	s.hub.received.clear();
 
+	/* Something the hub was told once and is no longer true. */
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	config->setNumber("Slots", 17);
+
 	s.session->sendClientInfo();
 	pump([] { return false; }, 60);
+
+	config->setGroup("Network");
+	config->setNumber("Slots", 3);
 
 	EXO_ASSERT(s.hub.nextLine(line));
 
@@ -469,7 +609,38 @@ EXO_TEST(hubsession_a_status_update_re_sends_inf,
 		const std::string why = "the update was not an INF: " + line;
 		EXO_FAIL(why.c_str());
 	}
-	EXO_ASSERT(line.find("NI") != std::string::npos);
+
+	EXO_ASSERT(infField(line, "SL") == "17");
+
+	/* The nick did not change, and the two identity fields never do. */
+	EXO_ASSERT(!hasField(line, "NI"));
+	EXO_ASSERT(!hasField(line, "ID"));
+	EXO_ASSERT(!hasField(line, "PD"));
+	EXO_ASSERT(!hasField(line, "VE"));
+	return 1;
+});
+
+/*
+ * And an update with nothing to report is not sent at all, rather than sent as
+ * a line naming this client and no fields. Every hub count, port forwarding
+ * result and reachability verdict asks for one, and a hub relays each of them
+ * to everyone on it.
+ */
+EXO_TEST(hubsession_an_update_of_nothing_is_not_sent,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.session->sendClientInfo();
+	pump([] { return false; }, 120);
+
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.empty());
 	return 1;
 });
 
@@ -551,6 +722,12 @@ EXO_TEST(hubsession_three_requests_inside_the_window_become_one_update,
 	fake.drain();
 	fake.received.clear();
 
+	/* Something for the update to be about, since one with nothing to report
+	   is not sent - which is what the case after this one is for. */
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	config->setNumber("Slots", 11);
+
 	hubs->setClientInfoUpdateDelay(std::chrono::milliseconds(50));
 	hubs->requestClientInfoUpdate();
 	hubs->requestClientInfoUpdate();
@@ -571,10 +748,66 @@ EXO_TEST(hubsession_three_requests_inside_the_window_become_one_update,
 	/* Put back before anything is asserted, since a failed assertion leaves. */
 	hubs->setClientInfoUpdateDelay(
 		std::chrono::seconds(QUICKDC_HUB_INFO_UPDATE_DELAY_SECONDS));
+	config->setGroup("Network");
+	config->setNumber("Slots", 3);
 
 	EXO_ASSERT(arrived);
 	EXO_ASSERT(!pending);
 	EXO_ASSERT(infs == 1);
+	return 1;
+});
+
+/*
+ * A hub that joined and had nothing change since is told nothing, which is what
+ * makes the pre-empted hub count worth pre-empting: the update login schedules
+ * finds the counts already right and goes no further.
+ *
+ * Driven through Hub::connect() like the case above, because it is the count
+ * this session contributes to the manager that is under test, and the manager
+ * only sees a session connect() made.
+ */
+EXO_TEST(hubsession_the_login_inf_already_counts_this_hub,
+{
+	FakeHub fake;
+	Listener listener;
+	if (!fake.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	const std::string address = "adc://127.0.0.1:" + std::to_string(fake.port());
+	Samurai::IO::Net::URL url(address);
+	QuickDC::Hub ui(&listener, &url);
+
+	QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+
+	/* Whatever earlier cases left behind, which this one is measured against. */
+	const size_t before = hubs->countHubsNormal();
+
+	ui.connect();
+	EXO_ASSERT(fake.accepted());
+
+	std::string line;
+	EXO_ASSERT(fake.nextLine(line));
+	fake.send("ISUP ADBASE ADTIGR");
+	pump([] { return false; }, 60);
+	fake.send("ISID AAAA");
+	pump([] { return false; }, 60);
+
+	EXO_ASSERT(fake.nextLine(line));
+	EXO_ASSERT(line.compare(0, 4, "BINF") == 0);
+
+	/* One more than the hubs already joined: this one, counted before the hub
+	   had a chance to say so. */
+	EXO_ASSERT(infField(line, "HN") == std::to_string(before + 1));
+
+	/* And logging in changes nothing, so the update it asks for says nothing. */
+	fake.send(line);
+	pump([] { return false; }, 60);
+	fake.drain();
+	fake.received.clear();
+
+	hubs->sendClientInfoToAllHubs();
+	pump([] { return false; }, 120);
+	fake.drain();
+	EXO_ASSERT(fake.received.find("BINF") == std::string::npos);
 	return 1;
 });
 
@@ -642,6 +875,47 @@ EXO_TEST(hubsession_an_inf_update_does_not_duplicate_the_user,
 	const QuickDC::User* alice = users ? users->getUser("BBBB") : 0;
 	EXO_ASSERT(alice && alice->getSharedBytes() == 500);
 	EXO_ASSERT(alice && alice->getNick() && !strcmp(alice->getNick(), "alice"));
+	return 1;
+});
+
+/*
+ * And it leaves everything it does not mention alone.
+ *
+ * An INF update names what changed and nothing else, which is what a hub relays
+ * and what this client sends. Reading one as a whole picture of the user empties
+ * every field it happens not to carry, so a peer that moved a file into its share
+ * would lose its description, its address and - the one that does damage - the
+ * 'SU' saying it can be connected to and can traverse a NAT. Nothing reports that;
+ * transfers with that peer simply stop being arranged the way they were.
+ */
+EXO_TEST(hubsession_an_inf_update_leaves_the_fields_it_omits_alone,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.say("BINF BBBB NIalice DEsomeone EMalice@example.com VEDC/1.0 SL4 "
+	      "SS100 I410.0.0.1 U41411 SUADC0,TCP4,UDP4,NATT");
+
+	s.say("BINF BBBB SS500");
+
+	QuickDC::UserManager* users = s.session->getUserManager();
+	const QuickDC::User* alice = users ? users->getUser("BBBB") : 0;
+	EXO_ASSERT(alice);
+
+	EXO_ASSERT(alice->getSharedBytes() == 500);
+
+	EXO_ASSERT(alice->getDescription() && !strcmp(alice->getDescription(), "someone"));
+	EXO_ASSERT(alice->getEmail() && !strcmp(alice->getEmail(), "alice@example.com"));
+	EXO_ASSERT(alice->getUserAgent() && !strcmp(alice->getUserAgent(), "DC/1.0"));
+	EXO_ASSERT(alice->getNumSlots() == 4);
+	EXO_ASSERT(alice->getAddressIPv4() && !strcmp(alice->getAddressIPv4(), "10.0.0.1"));
+	EXO_ASSERT(alice->getPortIPv4() == 1411);
+
+	/* The one a connection is planned from. */
+	EXO_ASSERT(alice->supports(ADC_EXT_TCP4));
+	EXO_ASSERT(alice->supports(ADC_EXT_NATT));
 	return 1;
 });
 
@@ -1694,75 +1968,23 @@ void reportRefusals(QuickDC::Reachability* known)
 }
 
 /*
- * The value of one INF field, or nothing when the field is absent.
- *
- * Looked up by token rather than by searching the line, because an INF carries a
- * CID and a PID as thirty-nine characters of base32 each - and base32 is letters
- * and digits, so "U4", "TCP4" and "UDP4" all occur inside one from time to time.
- * Those identifiers are random per run, which makes a search for a bare field name
- * a test that passes most days.
- */
-std::string infField(const std::string& line, const std::string& field)
-{
-	size_t at = 0;
-	while (at < line.size())
-	{
-		size_t end = line.find(' ', at);
-		if (end == std::string::npos) end = line.size();
-
-		const std::string token = line.substr(at, end - at);
-		if (token.compare(0, field.size(), field) == 0)
-			return token.substr(field.size());
-
-		at = end + 1;
-	}
-	return std::string();
-}
-
-/** Whether the SU field lists a flag, which is a comma separated set. */
-bool claims(const std::string& line, const std::string& flag)
-{
-	const std::string su = infField(line, "SU");
-
-	size_t at = 0;
-	while (at < su.size())
-	{
-		size_t end = su.find(',', at);
-		if (end == std::string::npos) end = su.size();
-
-		if (su.compare(at, end - at, flag) == 0) return true;
-		at = end + 1;
-	}
-	return false;
-}
-
-/** Whether an INF carries a field at all. */
-bool hasField(const std::string& line, const std::string& field)
-{
-	size_t at = 0;
-	while (at < line.size())
-	{
-		size_t end = line.find(' ', at);
-		if (end == std::string::npos) end = line.size();
-
-		if (line.compare(at, field.size(), field) == 0) return true;
-		at = end + 1;
-	}
-	return false;
-}
-
-/*
  * The INF this session sends when asked directly.
  *
  * Asked of the session rather than through the manager: this fixture's session is
  * not one the process-wide manager drives, so going through it would skip every
  * case here and read as coverage that is not there.
+ *
+ * The whole of it rather than the difference, since the cases below read several
+ * fields out of the one line: an INF only says what has changed, so a case asking
+ * about SU would otherwise find I4 missing and conclude the address had been
+ * withdrawn, when all that happened was that it stayed the same.
  */
 bool announcedSupport(Session& s, std::string& out)
 {
 	s.hub.drain();
 	s.hub.received.clear();
 
+	s.session->forgetAnnouncedInfo();
 	s.session->sendClientInfo();
 
 	std::string line;
@@ -1960,6 +2182,45 @@ EXO_TEST(hubsession_a_passive_client_publishes_no_port_and_claims_nothing,
 	EXO_ASSERT(!hasField(inf, "U4"));
 	EXO_ASSERT(!claims(inf, "TCP4"));
 	EXO_ASSERT(!claims(inf, "UDP4"));
+	return 1;
+});
+
+/*
+ * A port that was published and is no longer open is withdrawn, rather than left
+ * behind for the hub to keep handing out.
+ *
+ * Withdrawing it means sending the field with nothing after it, which is how ADC
+ * says to drop one. Leaving it out of the update instead says only that it has
+ * not changed, and every peer goes on being told to connect to a port that is
+ * shut - which is also what suppresses the NAT traversal that would have worked.
+ */
+EXO_TEST(hubsession_a_port_that_closed_is_withdrawn,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	{
+		ActiveCore active;
+		EXO_ASSERT(s.login());
+
+		std::string inf;
+		EXO_ASSERT(announcedSupport(s, inf));
+		EXO_ASSERT(!infField(inf, "U4").empty());
+	}
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.session->sendClientInfo();
+	pump([] { return false; }, 60);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 4, "BINF") == 0);
+
+	EXO_ASSERT(hasField(line, "U4"));
+	EXO_ASSERT(infField(line, "U4").empty());
 	return 1;
 });
 

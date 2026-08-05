@@ -198,33 +198,36 @@ size_t QuickDC::HubManager::sendClientInfoToAllHubs() {
 }
 
 
-size_t QuickDC::HubManager::countHubsNormal() {
+size_t QuickDC::HubManager::countHubsNormal(const HubSession* except) {
 	size_t n = 0;
 	for (size_t i = 0; i < hubs.size(); i++)
 	{
 		QuickDC::Hub* hub = hubs[i];
+		if (hub->session == except) continue;
 		if (hub->session && hub->session->isLoggedIn() && hub->session->access == HubSession::AccessNormal) n++;
 	}
 	return n;
 }
 
 
-size_t QuickDC::HubManager::countHubsRegistered() {
+size_t QuickDC::HubManager::countHubsRegistered(const HubSession* except) {
 	size_t n = 0;
 	for (size_t i = 0; i < hubs.size(); i++)
 	{
 		QuickDC::Hub* hub = hubs[i];
+		if (hub->session == except) continue;
 		if (hub->session && hub->session->isLoggedIn() && hub->session->access == HubSession::AccessRegistered) n++;
 	}
 	return n;
 }
 
 
-size_t QuickDC::HubManager::countHubsOperator() {
+size_t QuickDC::HubManager::countHubsOperator(const HubSession* except) {
 	size_t n = 0;
 	for (size_t i = 0; i < hubs.size(); i++)
 	{
 		QuickDC::Hub* hub = hubs[i];
+		if (hub->session == except) continue;
 		if (hub->session && hub->session->isLoggedIn() && hub->session->access == HubSession::AccessOperator) n++;
 	}
 	return n;

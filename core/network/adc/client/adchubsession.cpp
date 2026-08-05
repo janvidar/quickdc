@@ -792,32 +792,67 @@ void ADC::HubSession::sendAdminUserRedirect(const QuickDC::User* user, const cha
 }
 
 
-void ADC::HubSession::sendClientInfo()
+void ADC::HubSession::forgetAnnouncedInfo()
+{
+	announcedInfo.clear();
+}
+
+
+void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 {
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	config->setGroup("Network");
 
-	ADC::Command* cmd = new ADC::Command(FOURCC('B','I','N','F'), localSid());
-	cmd->addArgument("NI", nickname);
-	cmd->addArgument("SL", std::to_string(config->getNumber("Slots", 3)));
-	cmd->addArgument("SS", std::to_string(QuickDC::Core::getInstance()->shares->getSharedSize()));
-	cmd->addArgument("SF", std::to_string(QuickDC::Core::getInstance()->shares->getFiles()));
-	cmd->addArgument("DE", description);
-	cmd->addArgument("EM", email);
-	cmd->addArgument("VE", PRODUCT " " VERSION);
-	cmd->addArgument("ID", ADC::CID::getInstance()->getCID());
-	cmd->addArgument("PD", ADC::CID::getInstance()->getPID());
-	cmd->addArgument("HN", std::to_string(QuickDC::Core::getInstance()->hubs->countHubsNormal()));
-	cmd->addArgument("HR", std::to_string(QuickDC::Core::getInstance()->hubs->countHubsRegistered()));
-	cmd->addArgument("HO", std::to_string(QuickDC::Core::getInstance()->hubs->countHubsOperator()));
+	fields.emplace_back("NI", nickname);
+	fields.emplace_back("SL", std::to_string(config->getNumber("Slots", 3)));
+	fields.emplace_back("SS", std::to_string(QuickDC::Core::getInstance()->shares->getSharedSize()));
+	fields.emplace_back("SF", std::to_string(QuickDC::Core::getInstance()->shares->getFiles()));
+	fields.emplace_back("DE", description);
+	fields.emplace_back("EM", email);
+	fields.emplace_back("VE", PRODUCT " " VERSION);
+	fields.emplace_back("ID", ADC::CID::getInstance()->getCID());
+	fields.emplace_back("PD", ADC::CID::getInstance()->getPID());
+
+	/*
+	 * How many hubs this client is on, counting this one - which the manager is
+	 * asked to leave out, because it counts the hubs we are logged in to and
+	 * this INF is what logging in consists of. Counted here instead, so the
+	 * number does not depend on which side of the login it is asked from.
+	 *
+	 * Until the hub answers, what kind of user we will be there is a guess: one
+	 * we hold a password for will make us registered, anything else a normal
+	 * user. Guessing beats leaving it out, and costs nothing when it is right -
+	 * the update that login schedules then finds the counts unchanged and sends
+	 * nothing, where it used to exist for no reason but to say one greater than
+	 * what had gone out a moment earlier. Being made an operator is the rare
+	 * case, and still costs the one correction it always did.
+	 */
+	QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+	size_t normal = hubs->countHubsNormal(this);
+	size_t registered = hubs->countHubsRegistered(this);
+	size_t op = hubs->countHubsOperator(this);
+
+	switch (isLoggedIn() ? access
+	                     : (password.empty() ? QuickDC::HubSession::AccessNormal
+	                                         : QuickDC::HubSession::AccessRegistered))
+	{
+		case QuickDC::HubSession::AccessOperator:   op++; break;
+		case QuickDC::HubSession::AccessRegistered: registered++; break;
+		default:                                    normal++; break;
+	}
+
+	fields.emplace_back("HN", std::to_string(normal));
+	fields.emplace_back("HR", std::to_string(registered));
+	fields.emplace_back("HO", std::to_string(op));
 
 	/*
 	 * KEYP: publish what our own certificate hashes to, so a peer dialling us
-	 * over ADCS can tell that it reached us and not someone in between.
+	 * over ADCS can tell that it reached us and not someone in between. No
+	 * certificate, nothing to say.
 	 */
 	std::string keyprint;
-	if (QuickDC::Keyprint::ofOwnCertificate(keyprint))
-		cmd->addArgument("KP", keyprint.c_str());
+	if (!QuickDC::Keyprint::ofOwnCertificate(keyprint)) keyprint.clear();
+	fields.emplace_back("KP", keyprint);
 
 	config->setGroup("Network");
 
@@ -866,12 +901,14 @@ void ADC::HubSession::sendClientInfo()
 	 * Nothing else changes: no U4, and neither TCP4 nor UDP4, so a peer still reads
 	 * us as somebody to be invited rather than somebody to connect to.
 	 */
-	cmd->addArgument("I4", announcedAddress(endpoint));
+	fields.emplace_back("I4", announcedAddress(endpoint));
+
+	/* Nothing to say for U4 when nobody can connect here, and saying nothing is
+	   also what withdraws a port announced while we still could. */
+	fields.emplace_back("U4", endpoint.active ? std::to_string(endpoint.port) : std::string());
 
 	if (endpoint.active)
 	{
-		cmd->addArgument("U4", std::to_string(endpoint.port));
-
 		/*
 		 * TCP4 is a claim other clients act on: it says a peer told to connect
 		 * here will get through. Withdrawn once enough peers have reported that
@@ -922,7 +959,60 @@ void ADC::HubSession::sendClientInfo()
 	supports += ",";
 	supports += ADC_EXT_RICHTEXT;
 
-	cmd->addArgument("SU", supports);
+	fields.emplace_back("SU", supports);
+}
+
+
+void ADC::HubSession::sendClientInfo()
+{
+	/* Nothing can be said before the hub has named us. A broadcast with no
+	   source is not written at all, and taking it as said would leave every
+	   field in it recorded as told and never sent again. */
+	if (!localSid()) return;
+
+	std::vector<ADC::InfField> fields;
+	collectClientInfo(fields);
+
+	std::vector<const ADC::InfField*> changed;
+
+	for (const ADC::InfField& field : fields)
+	{
+		const std::string* told = 0;
+		for (const ADC::InfField& seen : announcedInfo)
+			if (seen.first == field.first) { told = &seen.second; break; }
+
+		/*
+		 * A field this hub has not been told is worth sending when there is
+		 * something to say for it, and left out otherwise - an unset e-mail
+		 * belongs out of the INF altogether rather than in it and blank.
+		 *
+		 * One this hub has been told is sent when it has changed, and that
+		 * includes changing to nothing: the empty field is how ADC says to drop
+		 * one, so a client that has stopped being reachable withdraws the port
+		 * it published rather than leaving peers dialling it.
+		 *
+		 * Which leaves 'NI', 'ID' and 'PD' out of every INF after the first
+		 * without being named here, since none of them ever changes - and 'PD'
+		 * is one the specification allows only in the first.
+		 */
+		if (told ? *told == field.second : field.second.empty()) continue;
+
+		changed.push_back(&field);
+	}
+
+	/*
+	 * Nothing has changed, so there is nothing to say. Sending the INF anyway
+	 * would be a line naming this client and no fields, which a hub relays to
+	 * everyone on it for no purpose - and does so on every hub count, port
+	 * forwarding result and reachability verdict, which is often.
+	 */
+	if (changed.empty()) return;
+
+	ADC::Command* cmd = new ADC::Command(FOURCC('B','I','N','F'), localSid());
+	for (const ADC::InfField* field : changed)
+		cmd->addArgument(field->first.c_str(), field->second);
+
+	announcedInfo = std::move(fields);
 	send(cmd);
 }
 
@@ -1080,6 +1170,12 @@ void ADC::HubSession::onSID(char* sid_)
 	}
 
 	sid = sid_;
+
+	/* A SID is the start of a session, and a hub holds what it was told for no
+	   longer than one - so whatever a previous connection said is not something
+	   this one can send the difference from. */
+	forgetAnnouncedInfo();
+
 	sendClientInfo();
 	userState = QuickDC::HubSession::StateIdentify;
 }

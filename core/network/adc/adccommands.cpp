@@ -177,6 +177,30 @@ bool ADC::CmdGetPass::invoke(ADC::Command* cmd) {
 		if (extract_int_tmp__) var = Samurai::Util::Convert::to_int32(extract_int_tmp__); \
 	}
 
+/*
+ * A field is applied only when the INF actually carries it.
+ *
+ * An INF update names what changed and nothing else - that is what a hub
+ * relays, and what this client now sends - so a field that is absent is one
+ * this user has not touched, not one they have cleared. Applying it regardless
+ * would empty a description on every unrelated share size change, and empty the
+ * 'SU' the connection strategy reads, leaving a peer that supports TCP4 and
+ * NATT looking like it supports neither.
+ *
+ * Absent and empty are told apart by haveArgument(): getArgument() answers the
+ * empty string for a field that is there and blank, and null for one that is
+ * not there at all.
+ */
+#define INF_APPLY_STRING(prefix, setter) \
+	if (cmd->haveArgument(prefix, 2)) { \
+		if (u->setter(cmd->getArgument(prefix, 2))) changed = true; \
+	}
+
+#define INF_APPLY_INT(prefix, setter, var) \
+	if (cmd->haveArgument(prefix, 2)) { \
+		if (u->setter(var)) changed = true; \
+	}
+
 bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::High);
 	char* tmp = 0;
@@ -246,30 +270,27 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 		int port_ipv6 = 0;
 		EXTRACT_INT(port_ipv6, "U6");
 		
-		if (u->setDescription(cmd->getArgument("DE", 2))) changed = true;
-		if (u->setEmail(cmd->getArgument("EM", 2))) changed = true;
-		if (u->setSharedBytes(shared)) changed = true;
-		if (u->setUserAgent(cmd->getArgument("VE", 2))) changed = true;
-		if (u->setNumSlots(numslots)) changed = true;
-		if (u->setHubsOperator(hub_cnt_op)) changed = true;
-		if (u->setHubsRegistered(hub_cnt_reg)) changed = true;
-		if (u->setHubsRegular(hub_cnt_user)) changed = true;
-		
-		if (u->setSupports(cmd->getArgument("SU", 2))) changed = true;
-		if (u->setAddressIPv4(cmd->getArgument("I4", 2))) changed = true;
-		if (u->setAddressIPv6(cmd->getArgument("I6", 2))) changed = true;
-		if (u->setPortIPv4(port_ipv4)) changed = true;
-		if (u->setPortIPv6(port_ipv6)) changed = true;
+		INF_APPLY_STRING("DE", setDescription);
+		INF_APPLY_STRING("EM", setEmail);
+		INF_APPLY_INT("SS", setSharedBytes, shared);
+		INF_APPLY_STRING("VE", setUserAgent);
+		INF_APPLY_INT("SL", setNumSlots, numslots);
+		INF_APPLY_INT("HO", setHubsOperator, hub_cnt_op);
+		INF_APPLY_INT("HR", setHubsRegistered, hub_cnt_reg);
+		INF_APPLY_INT("HN", setHubsRegular, hub_cnt_user);
+
+		INF_APPLY_STRING("SU", setSupports);
+		INF_APPLY_STRING("I4", setAddressIPv4);
+		INF_APPLY_STRING("I6", setAddressIPv6);
+		INF_APPLY_INT("U4", setPortIPv4, port_ipv4);
+		INF_APPLY_INT("U6", setPortIPv6, port_ipv6);
 
 		/*
-		 * KEYP: the keyprint the user says their certificate has. Unlike the
-		 * fields above this one is only touched when the field is actually
-		 * present - an INF update carries only what changed, and quietly
-		 * forgetting a keyprint would turn a later peer connection back into
-		 * an unverified one without anyone noticing.
-		 *
-		 * A keyprint we cannot read replaces the one we had, rather than
-		 * leaving a stale value behind to raise a false alarm against.
+		 * KEYP: the keyprint the user says their certificate has. Read by hand
+		 * rather than through the macros above, because a keyprint we cannot
+		 * make sense of replaces the one we had rather than being ignored -
+		 * leaving a stale value behind is what a false alarm would be raised
+		 * against.
 		 */
 		if (cmd->haveArgument("KP", 2))
 		{

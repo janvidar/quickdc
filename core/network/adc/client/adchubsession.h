@@ -19,6 +19,8 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 
 namespace QuickDC {
@@ -61,6 +63,17 @@ class CommandProxy;
 class Command;
 
 /**
+ * An INF field and what this client has to say for it.
+ *
+ * An empty value means it has nothing to say - no e-mail was configured, there
+ * is no certificate to take a keyprint of, no port because nobody can connect
+ * here. Every field this client manages appears with a value either way, which
+ * is what lets one rule cover both leaving an unset field out of the first INF
+ * and telling the hub to drop a field that has since become unset.
+ */
+using InfField = std::pair<std::string, std::string>;
+
+/**
  * A class describing a current hub session.
  * In other words, a class holding all info related to a hub
  * connection.
@@ -85,6 +98,14 @@ class HubSession :
 		void sendClientInfo() override;
 		void sendSearchRequest(QuickDC::Share::SearchRequest* request) override;
 		void sendConnectionRequest(const QuickDC::User*, const char* token) override;
+
+		/**
+		 * Forget what this hub was told, so the next INF is a whole one again.
+		 *
+		 * Called when the hub assigns a SID, which is where a session begins and
+		 * therefore where the hub stops holding anything an earlier one said.
+		 */
+		void forgetAnnouncedInfo();
 
 		/**
 		 * The address to publish in an INF, whether or not anyone can connect to
@@ -180,6 +201,16 @@ class HubSession :
 		bool dialFromHubPort(const QuickDC::User* user, const char* proto,
 			uint16_t port, const char* token);
 
+		/**
+		 * Everything an INF would say about this client, in the order it goes
+		 * out in.
+		 *
+		 * Not const: working out what to publish is also where the reachability
+		 * record is told what is being claimed, and that has to happen on every
+		 * pass whether or not anything is left to send afterwards.
+		 */
+		void collectClientInfo(std::vector<InfField>& fields);
+
 		void send(ADC::Command* cmd, bool more = false);
 		void resetIdleTimer();
 		
@@ -251,7 +282,8 @@ class HubSession :
 		/*
 		 * All four come from the session or configuration file, so they are
 		 * always a value and never an absence - an empty description or e-mail
-		 * is a field the user left blank, and is sent as one.
+		 * is a field the user left blank, and goes out of the INF as nothing
+		 * rather than as a field with nothing in it.
 		 */
 		std::string nickname;
 		std::string description;
@@ -283,6 +315,22 @@ class HubSession :
 		 * hub refusing what we claimed and saying what it saw instead.
 		 */
 		std::string observedAddress;
+
+		/**
+		 * Every INF field this hub has been told, and the value it was told, so
+		 * a later INF can carry the difference rather than the whole of it.
+		 *
+		 * A hub merges an INF into what it already holds and relays only what
+		 * arrived, so repeating the unchanged fields buys nothing and costs a
+		 * line the length of the whole record - and 'PD' may not be repeated at
+		 * all. Empty until this hub has been told anything, which is also what a
+		 * reconnection puts it back to.
+		 *
+		 * In order, rather than looked up by name: the order fields go out in is
+		 * the order they are collected in, and keeping it makes a capture read
+		 * the same way twice.
+		 */
+		std::vector<InfField> announcedInfo;
 
 		/**
 		 * The keyprint from the 'kp' parameter of the hub address, if any.

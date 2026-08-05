@@ -15,6 +15,7 @@ namespace QuickDC {
 
 class Socket;
 class Hub;
+class HubSession;
 
 namespace Share {
 	class SearchRequest;
@@ -115,21 +116,27 @@ class HubManager : public Samurai::TimerListener {
 		/**
 		 * Returns the number of hubs where we are logged in
 		 * as normal users.
+		 *
+		 * 'except' leaves one session out of the tally, for a caller that is
+		 * about to account for itself: a session announcing these counts is
+		 * telling a hub how many hubs it is on including that one, and cannot
+		 * read its own contribution here because it is not logged in until the
+		 * announcement it is composing has been answered.
 		 */
-		size_t countHubsNormal();
-		
+		size_t countHubsNormal(const HubSession* except = 0);
+
 		/**
 		 * Returns the number of hubs where we are logged in
 		 * as registered users.
 		 */
-		size_t countHubsRegistered();
-		
+		size_t countHubsRegistered(const HubSession* except = 0);
+
 		/**
 		 * Returns the number of hubs where we are logged in
 		 * as operators.
 		 */
-		size_t countHubsOperator();
-		
+		size_t countHubsOperator(const HubSession* except = 0);
+
 	protected:
 		void EventTimeout(Samurai::Timer* timer) override;
 
