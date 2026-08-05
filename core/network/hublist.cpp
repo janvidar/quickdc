@@ -5,7 +5,7 @@
 
 #include "quickdc.h"
 #include "network/hublist.h"
-#include "xml/reader.h"
+#include <samurai/io/xml.h>
 
 #include <samurai/io/buffer.h>
 #include <samurai/io/compression.h>
@@ -140,7 +140,7 @@ bool inflate(std::string_view packed, Samurai::IO::Buffer& out, std::string& rea
  * says it is a hublist is one of the other things a URL can serve, and mining a
  * <Hub> out of that would report hubs nobody published.
  */
-class HubListHandler final : public XML::SAX::ContentHandler
+class HubListHandler final : public Samurai::IO::XmlContentHandler
 {
 	public:
 		explicit HubListHandler(std::vector<QuickDC::HubListEntry>& hubs_)
@@ -150,70 +150,35 @@ class HubListHandler final : public XML::SAX::ContentHandler
 		bool sawRoot() const { return root; }
 		size_t getSkipped() const { return skipped; }
 
-		void startDocument() override { }
+		void startElement(std::string_view, std::string_view name,
+		                  const Attributes& attributes) override;
+
+		void endElement(std::string_view, std::string_view) override { }
+		void characters(std::string_view) override { }
 
 		/*
-		 * A document that ends with elements still open is a file that stopped
-		 * before it finished, which is what a hublist truncated in transit looks
-		 * like: the tags it does have parse, and the hubs after the cut are
-		 * simply absent. The reader is content with it - it only insists that
-		 * every '<' produced a tag - so the count has to be kept here.
+		 * A list that did not parse is refused whole rather than in part. What
+		 * parsed before the reader stopped describes a document nobody wrote, and
+		 * there is no telling which hubs are missing from the rest of it - a
+		 * hublist truncated in transit is exactly that case.
 		 */
-		void endDocument() override
-		{
-			if (open) onProblem("it does not close every element it opens");
-		}
-
-		void startElement(const char*, const char* localName, const char*,
-		                  const AttributeList& list) override;
-
-		void endElement(const char*, const char*, const char*) override
-		{
-			/* The reader reports an end tag with nothing open, so this counts
-			   down past zero rather than wrapping. */
-			if (open) open--;
-			else onProblem("it closes an element that was never opened");
-		}
-
-		void characters(const char*, size_t, size_t) override { }
-		void ignorableWhitespace(const char*, size_t, size_t) override { }
-
-		void warning(const char* str) override { QERR("Hublist XML warning: %s", str); }
-
-		/*
-		 * Both of these refuse the list. The reader reports a document it could
-		 * not follow through error() and then carries on, so the events after one
-		 * describe a document nobody wrote - and there is no telling which hubs
-		 * are missing from it.
-		 */
-		void error(const char* str) override { onProblem(str); }
-		void fatalError(const char* str) override { onProblem(str); }
-
-	private:
 		void onProblem(const char* why)
 		{
 			if (problem.empty())
 				problem = why && *why ? why : "it is not well formed";
 		}
 
+	private:
 		std::vector<QuickDC::HubListEntry>& hubs;
 		std::string problem;
 		size_t skipped = 0;
-		size_t open = 0;
 		bool root = false;
 };
 
-void HubListHandler::startElement(const char*, const char* localName, const char*,
-                                  const AttributeList& list)
+void HubListHandler::startElement(std::string_view, std::string_view name,
+                                  const Attributes& attributes)
 {
-	/*
-	 * localName is whatever name the parser found, and it is documented as being
-	 * free to hand a handler none at all: an absent name becomes the empty one
-	 * here rather than being compared through a null pointer.
-	 */
-	const std::string_view element(localName ? localName : "");
-
-	open++;
+	const std::string_view element = name;
 
 	if (Samurai::Util::iequals(element, "Hublist"))
 	{
@@ -234,7 +199,7 @@ void HubListHandler::startElement(const char*, const char* localName, const char
 
 	/* The attribute names are the server's, and no two generators agree on the
 	   case of them. */
-	for (const auto& [attribute, value] : list)
+	for (const auto& [attribute, value] : attributes)
 	{
 		if (Samurai::Util::iequals(attribute, "Name"))
 			entry.name = value;
@@ -361,8 +326,25 @@ bool QuickDC::HubList::parse(std::string_view served, std::vector<HubListEntry>&
 		}
 
 		HubListHandler handler(hubs);
-		XML::SAX::XMLReader reader(&plain, &handler);
-		reader.parse();
+
+		/*
+		 * The download cap is what bounds the document, so the reader's own size
+		 * limit is raised to it rather than left at a default meant for a device
+		 * description. The rest are what a hublist plausibly is: a flat list of
+		 * hubs, so shallow, with as many entries as the cap can hold.
+		 */
+		Samurai::IO::XmlReader::Limits limits;
+		limits.maxDocumentSize = QUICKDC_HUBLIST_MAX_DOWNLOAD;
+		limits.maxDepth        = 16;
+		limits.maxElements     = QUICKDC_HUBLIST_MAX_HUBS + 16;
+		limits.maxAttributes   = 64;
+		limits.maxTextLength   = 64 * 1024;
+
+		const Samurai::IO::XmlError parsed = Samurai::IO::XmlReader::parse(
+			std::string_view(plain.ptr(), plain.size()), handler, limits);
+
+		if (parsed != Samurai::IO::XmlError::Ok)
+			handler.onProblem(Samurai::IO::toString(parsed));
 
 		if (!handler.getProblem().empty())
 		{

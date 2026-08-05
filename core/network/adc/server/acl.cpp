@@ -5,7 +5,6 @@
 
 #include "quickdc.h"
 #include "network/adc/server/acl.h"
-#include "xml/reader.h"
 
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
@@ -229,7 +228,7 @@ void ADC::ACL::Table::add(ADC::ACL::Authorization* auth)
 }
 
 /*
- * An access list is a hand-written file of a few entries per registered user,
+ * An access attributes is a hand-written file of a few entries per registered user,
  * so anything past this is a corrupt or hostile file rather than a large one,
  * and allocating from what it claims would be taking its word for it.
  */
@@ -242,7 +241,7 @@ bool ADC::ACL::Table::load()
 
 	if (!file.exists())
 	{
-		QDBG("No access list on disk yet");
+		QDBG("No access attributes on disk yet");
 		return true;
 	}
 
@@ -260,14 +259,14 @@ bool ADC::ACL::Table::load()
 	const off_t reported = file.size();
 	if (reported <= 0)
 	{
-		QDBG("The access list on disk is empty");
+		QDBG("The access attributes on disk is empty");
 		file.close();
 		return true;
 	}
 
 	if (reported > MAX_ACL_SIZE)
 	{
-		QERR("The access list is %ld bytes, which is more than an access list can be",
+		QERR("The access attributes is %ld bytes, which is more than an access attributes can be",
 			static_cast<long>(reported));
 		file.close();
 		return false;
@@ -283,7 +282,7 @@ bool ADC::ACL::Table::load()
 	   uninitialised, and handing it to the parser reads whatever it holds. */
 	if (got <= 0)
 	{
-		QERR("Unable to read the access list");
+		QERR("Unable to read the access attributes");
 		delete[] temp_buffer;
 		return false;
 	}
@@ -373,7 +372,7 @@ bool ADC::ACL::Table::save() {
 
 ADC::ACL::XMLReader::XMLReader(ADC::ACL::Table* acl_, Samurai::IO::Buffer* buffer) {
 	acl = acl_;
-	reader = new XML::SAX::XMLReader(buffer, this);
+	source = buffer;
 	current = 0;
 	problem = false;
 }
@@ -383,31 +382,37 @@ ADC::ACL::XMLReader::~XMLReader()
 	/* A file that stops in the middle of a <User> leaves one built but never
 	   handed to the table. */
 	delete current;
-	delete reader;
 }
 
 bool ADC::ACL::XMLReader::parse()
 {
 	problem = false;
-	reader->parse();
+	if (!source) return false;
+
+	/*
+	 * The hub's own access attributes, which an administrator writes. Bounded anyway:
+	 * this decides who gets in, so a file that is not what it should be is one to
+	 * refuse rather than to read as far as it goes.
+	 */
+	Samurai::IO::XmlReader::Limits limits;
+	limits.maxDocumentSize = QUICKDC_ACL_MAX_SIZE;
+	limits.maxDepth        = 8;
+	limits.maxElements     = QUICKDC_ACL_MAX_ELEMENTS;
+	limits.maxAttributes   = 32;
+	limits.maxTextLength   = 4096;
+
+	const Samurai::IO::XmlError parsed = Samurai::IO::XmlReader::parse(
+		std::string_view(source->ptr(), source->size()), *this, limits);
+
+	if (parsed != Samurai::IO::XmlError::Ok)
+		fatalError(Samurai::IO::toString(parsed));
+
 	return !problem;
 }
 
-void ADC::ACL::XMLReader::startDocument()
+void ADC::ACL::XMLReader::startElement(std::string_view, std::string_view element,
+	const Attributes& attributes)
 {
-
-}
-
-void ADC::ACL::XMLReader::endDocument()
-{
-
-}
-
-void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const char*, const AttributeList& list)
-{
-	/* The reader is allowed to name an element with nothing at all, and none of
-	   the elements handled here answers to that. */
-	const std::string_view element(localName ? localName : "");
 
 	if (Samurai::Util::iequals(element, "AccessList"))
 	{
@@ -430,16 +435,16 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 		const char* s_description = 0;
 		const char* s_expire = 0;
 		
-		for (size_t n = 0; n < list.size(); n++)
+		for (size_t n = 0; n < attributes.size(); n++)
 		{
-			if (Samurai::Util::iequals(list[n].first, "name"))
-				s_name = list[n].second.c_str();
-			else if (Samurai::Util::iequals(list[n].first, "description"))
-				s_description = list[n].second.c_str();
-			else if (Samurai::Util::iequals(list[n].first, "credential"))
-				s_credential = list[n].second.c_str();
-			else if (Samurai::Util::iequals(list[n].first, "expire"))
-				s_expire = list[n].second.c_str();
+			if (Samurai::Util::iequals(attributes[n].first, "name"))
+				s_name = attributes[n].second.c_str();
+			else if (Samurai::Util::iequals(attributes[n].first, "description"))
+				s_description = attributes[n].second.c_str();
+			else if (Samurai::Util::iequals(attributes[n].first, "credential"))
+				s_credential = attributes[n].second.c_str();
+			else if (Samurai::Util::iequals(attributes[n].first, "expire"))
+				s_expire = attributes[n].second.c_str();
 		}
 		
 		if (!(s_name && *s_name && s_description && *s_description
@@ -477,12 +482,12 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 		const char* s_type = 0;
 		const char* s_data = 0;
 
-		for (size_t n = 0; n < list.size(); n++)
+		for (size_t n = 0; n < attributes.size(); n++)
 		{
-			if (Samurai::Util::iequals(list[n].first, "type"))
-				s_type = list[n].second.c_str();
-			else if (Samurai::Util::iequals(list[n].first, "data"))
-				s_data = list[n].second.c_str();
+			if (Samurai::Util::iequals(attributes[n].first, "type"))
+				s_type = attributes[n].second.c_str();
+			else if (Samurai::Util::iequals(attributes[n].first, "data"))
+				s_data = attributes[n].second.c_str();
 		}
 		
 		if (!(s_type && *s_type && s_data && *s_data))
@@ -517,9 +522,9 @@ void ADC::ACL::XMLReader::startElement(const char*, const char* localName, const
 	}
 }
 
-void ADC::ACL::XMLReader::endElement(const char*, const char* localName, const char*)
+void ADC::ACL::XMLReader::endElement(std::string_view, std::string_view element)
 {
-	if (Samurai::Util::iequals(localName ? localName : "", "User"))
+	if (Samurai::Util::iequals(element, "User"))
 	{
 		/* A <User> the start tag refused leaves nothing to add, and the table
 		   walks its entries without checking them. */
@@ -531,18 +536,9 @@ void ADC::ACL::XMLReader::endElement(const char*, const char* localName, const c
 	}
 }
 
-void ADC::ACL::XMLReader::characters(const char*, size_t, size_t)
+void ADC::ACL::XMLReader::characters(std::string_view)
 {
 }
-
-void ADC::ACL::XMLReader::ignorableWhitespace(const char*, size_t, size_t)
-{
-	// QDBG("  whitespace,  (@%d, %d)", start, length);
-}
-
-void ADC::ACL::XMLReader::warning(const char* str) { QERR("ACL WARNING: %s", str); }
-void ADC::ACL::XMLReader::error(const char* str)   { QERR("ACL ERROR:   %s", str); }
-void ADC::ACL::XMLReader::fatalError(const char*)  { onProblem(); }
 
 void ADC::ACL::XMLReader::onProblem()
 {

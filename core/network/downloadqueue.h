@@ -101,6 +101,29 @@
  */
 #define QUICKDC_FILELIST_MAX_DEPTH 128
 
+/**
+ * How many elements a peer's file list may contain.
+ *
+ * Every one becomes a directory or a file held in memory, so this bounds what a
+ * list costs to keep rather than what it costs to read - the size cap above
+ * already bounds the reading. The smallest entry a list can carry is some seventy
+ * bytes, so a list at that cap cannot hold many more of them than this; it is
+ * here so that the memory has a stated bound rather than one that falls out of
+ * two other numbers.
+ */
+#define QUICKDC_FILELIST_MAX_ENTRIES (4*1000*1000)
+
+/**
+ * Bounds on our own queue file.
+ *
+ * ~/.quickdc/queue.xml is written by this client and read back on the next start,
+ * so these are what it writes rather than what a peer might send. A file past
+ * them is one that grew in a way nothing here explains - a corruption, or an
+ * edit - and is better refused than half loaded.
+ */
+#define QUICKDC_QUEUE_MAX_SIZE     (64*1024*1024)
+#define QUICKDC_QUEUE_MAX_ELEMENTS (1000*1000)
+
 namespace Samurai {
 	namespace IO {
 		class Buffer;

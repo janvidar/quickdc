@@ -5,9 +5,10 @@
 
 #include "quickdc.h"
 #include "share/dcfilelist.h"
+#include "network/downloadqueue.h"
 #include <string_view>
 #include <vector>
-#include "xml/reader.h"
+#include <samurai/io/xml.h>
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
 
@@ -85,7 +86,7 @@ void Share::RemoteDir::addSize(uint64_t size_) {
  * that opens with anything other than <FileListing> writes through it.
  */
 Share::XMLFileListHandler::XMLFileListHandler(RemoteDir* root_, Samurai::IO::Buffer* buffer)
-	: reader(new XML::SAX::XMLReader(buffer, this))
+	: source(buffer)
 	, root(root_)
 	, currentDir(0)
 	, skipped(0)
@@ -94,12 +95,40 @@ Share::XMLFileListHandler::XMLFileListHandler(RemoteDir* root_, Samurai::IO::Buf
 }
 
 Share::XMLFileListHandler::~XMLFileListHandler() {
-	delete reader;
 }
 
 bool Share::XMLFileListHandler::parse() {
 	problem = false;
-	reader->parse();
+	if (!source) return false;
+
+	/*
+	 * A file list is not a small document, and the reader's own defaults are set
+	 * for one that is - so every bound is named here against what a share can
+	 * legitimately be rather than inherited.
+	 *
+	 * The size is the same cap the transfer was already held to, so a list that
+	 * arrived is a list that can be read. The depth matches the one this handler
+	 * enforces on the tree it builds, plus the <FileListing> around it. An
+	 * element is a directory or a file, so the count is what bounds a share; the
+	 * attributes per element are Name, Size and TTH with room to spare; and a
+	 * file list carries no character data at all.
+	 */
+	Samurai::IO::XmlReader::Limits limits;
+	limits.maxDocumentSize = QUICKDC_FILELIST_MAX_PLAIN;
+	limits.maxDepth        = QUICKDC_FILELIST_MAX_DEPTH + 2;
+	limits.maxElements     = QUICKDC_FILELIST_MAX_ENTRIES;
+	limits.maxAttributes   = 16;
+	limits.maxTextLength   = 4096;
+
+	const Samurai::IO::XmlError parsed = Samurai::IO::XmlReader::parse(
+		std::string_view(source->ptr(), source->size()), *this, limits);
+
+	if (parsed != Samurai::IO::XmlError::Ok)
+	{
+		QERR("File list refused: %s", Samurai::IO::toString(parsed));
+		onProblem();
+	}
+
 	return !problem;
 }
 
@@ -131,8 +160,9 @@ static size_t depthOf(const Share::RemoteDir* dir)
  * handler none at all: a view over a null pointer has no length to read, so an
  * absent name is turned into the empty one here rather than compared as one.
  */
-void Share::XMLFileListHandler::startElement(const char*, const char* localName, const char*, const AttributeList& list) {
-	const std::string_view element(localName ? localName : "");
+void Share::XMLFileListHandler::startElement(std::string_view, std::string_view tag,
+	const Attributes& attributes) {
+	const std::string_view element = tag;
 	const bool directory = Samurai::Util::iequals(element, "Directory");
 
 	/* Inside a subtree refused for its depth. Nothing in it is built, and the
@@ -151,9 +181,9 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 		// Add Directory to the currentDir.
 
 		const char* name = 0;
-		for (size_t n = 0; n < list.size(); n++) {
-			if (Samurai::Util::iequals(list[n].first, "Name"))
-				name = list[n].second.c_str();
+		for (size_t n = 0; n < attributes.size(); n++) {
+			if (Samurai::Util::iequals(attributes[n].first, "Name"))
+				name = attributes[n].second.c_str();
 		}
 
 		if (name && *name) {
@@ -173,21 +203,21 @@ void Share::XMLFileListHandler::startElement(const char*, const char* localName,
 		const char* tth = 0;
 		uint64_t size = 0;
 		
-		for (size_t n = 0; n < list.size(); n++) {
-			if (Samurai::Util::iequals(list[n].first, "Name"))
-				name = list[n].second.c_str();
-			else if (Samurai::Util::iequals(list[n].first, "TTH"))
-				tth = list[n].second.c_str();
-			else if (Samurai::Util::iequals(list[n].first, "Size"))
-				size = Samurai::Util::Convert::to_uint64(list[n].second.c_str());
+		for (size_t n = 0; n < attributes.size(); n++) {
+			if (Samurai::Util::iequals(attributes[n].first, "Name"))
+				name = attributes[n].second.c_str();
+			else if (Samurai::Util::iequals(attributes[n].first, "TTH"))
+				tth = attributes[n].second.c_str();
+			else if (Samurai::Util::iequals(attributes[n].first, "Size"))
+				size = Samurai::Util::Convert::to_uint64(attributes[n].second.c_str());
 		}
 		if (name && *name && tth && *tth)
 			new Share::RemoteFile(name, size, tth, currentDir);
 	}
 }
 
-void Share::XMLFileListHandler::endElement(const char*, const char* localName, const char*) {
-	const std::string_view element(localName ? localName : "");
+void Share::XMLFileListHandler::endElement(std::string_view, std::string_view tag) {
+	const std::string_view element = tag;
 
 	if (Samurai::Util::iequals(element, "Directory")) {
 		if (skipped) { skipped--; return; }
@@ -196,17 +226,9 @@ void Share::XMLFileListHandler::endElement(const char*, const char* localName, c
 	}
 }
 
-void Share::XMLFileListHandler::characters(const char*, size_t, size_t)
+void Share::XMLFileListHandler::characters(std::string_view)
 {
 }
-
-void Share::XMLFileListHandler::ignorableWhitespace(const char*, size_t, size_t)
-{
-}
-
-void Share::XMLFileListHandler::warning(const char* str) { QERR("XML WARNING: %s", str); }
-void Share::XMLFileListHandler::error(const char* str)   { QERR("XML ERROR:   %s", str); }
-void Share::XMLFileListHandler::fatalError(const char*)  { onProblem(); }
 
 void Share::XMLFileListHandler::onProblem() { problem = true; }
 

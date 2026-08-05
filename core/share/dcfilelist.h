@@ -8,7 +8,7 @@
 
 #include <sys/types.h>
 #include <vector>
-#include "xml/reader.h"
+#include <samurai/io/xml.h>
 
 namespace Samurai {
 	namespace IO {
@@ -87,31 +87,29 @@ class RemoteDir {
 };
 
 
-class XMLFileListHandler : public XML::SAX::ContentHandler {
+class XMLFileListHandler : public Samurai::IO::XmlContentHandler {
 	public:
 		XMLFileListHandler(RemoteDir* root_, Samurai::IO::Buffer* buffer);
-		virtual ~XMLFileListHandler();
+		~XMLFileListHandler() override;
 
 		XMLFileListHandler(const XMLFileListHandler&) = delete;
 		XMLFileListHandler& operator=(const XMLFileListHandler&) = delete;
 		
 		bool parse();
 	
-	public: /* For SAX parser */
+	public: /* Reported by the reader */
 		void startDocument() override;
 		void endDocument() override;
-		void startElement(const char*, const char* localName, const char*, const AttributeList& list) override;
-		void endElement(const char*, const char* localName, const char*) override;
-		void characters(const char* ch, size_t, size_t) override;
-		void ignorableWhitespace(const char*, size_t, size_t) override;
-		void warning(const char* str) override;
-		void error(const char* str) override;
-		void fatalError(const char*) override;
+		void startElement(std::string_view, std::string_view tag,
+			const Attributes& attributes) override;
+		void endElement(std::string_view, std::string_view tag) override;
+		void characters(std::string_view) override;
 		
 	protected:
 		void onProblem();
 	
-		XML::SAX::XMLReader* reader;
+		/* Borrowed, and read when parse() is called rather than at construction. */
+		Samurai::IO::Buffer* source;
 		RemoteDir* root;
 		RemoteDir* currentDir;
 		/* Open <Directory> elements inside a subtree refused for its depth,

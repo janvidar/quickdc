@@ -73,7 +73,6 @@ set(QUICKDC_SOURCES
     hash/hashcache.cpp
     hash/hashstorage.cpp
     xml/node.cpp
-    xml/reader.cpp
     xml/writer.cpp)
 
 add_library(quickdc STATIC ${QUICKDC_SOURCES})

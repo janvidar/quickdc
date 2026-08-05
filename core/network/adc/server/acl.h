@@ -8,10 +8,27 @@
 
 #include "quickdc.h"
 #include <samurai/timestamp.h>
-#include "xml/reader.h"
+#include <samurai/io/xml.h>
 
 #include <string>
+#include <string_view>
 #include <vector>
+
+namespace Samurai {
+	namespace IO {
+		class Buffer;
+	}
+}
+
+/**
+ * Bounds on the hub's access list.
+ *
+ * Written by whoever administers the hub, and read to decide who gets in - so a
+ * file that is not what it should be is refused rather than read as far as it
+ * goes. Generous against any real list.
+ */
+#define QUICKDC_ACL_MAX_SIZE     (8*1024*1024)
+#define QUICKDC_ACL_MAX_ELEMENTS (100*1000)
 
 
 namespace ADC {
@@ -160,10 +177,10 @@ class Table {
 		std::string path;
 };
 
-class XMLReader : public XML::SAX::ContentHandler {
+class XMLReader : public Samurai::IO::XmlContentHandler {
 	public:
 		XMLReader(Table* acl, Samurai::IO::Buffer* buffer);
-		virtual ~XMLReader();
+		~XMLReader() override;
 
 		XMLReader(const XMLReader&) = delete;
 		XMLReader& operator=(const XMLReader&) = delete;
@@ -171,20 +188,25 @@ class XMLReader : public XML::SAX::ContentHandler {
 		bool parse();
 	
 	public:
-		void startDocument() override;
-		void endDocument() override;
-		void startElement(const char*, const char* localName, const char*, const AttributeList& list) override;
-		void endElement(const char*, const char* localName, const char*) override;
-		void characters(const char* ch, size_t, size_t) override;
-		void ignorableWhitespace(const char*, size_t, size_t) override;
-		void warning(const char* str) override;
-		void error(const char* str) override;
-		void fatalError(const char*) override;
+		void startElement(std::string_view, std::string_view element,
+			const Attributes& attributes) override;
+		void endElement(std::string_view, std::string_view element) override;
+		void characters(std::string_view) override;
 		
 	protected:
+		/*
+		 * A complaint about what an entry says rather than about the markup. The
+		 * entry is dropped and the file is still read: one unusable line in an
+		 * access list is not a reason to admit nobody.
+		 */
+		void warning(const char* str) { QERR("ACL WARNING: %s", str); }
+		void error(const char* str)   { QERR("ACL ERROR:   %s", str); }
+		void fatalError(const char* str) { QERR("ACL ERROR:   %s", str); onProblem(); }
+
 		void onProblem();
 	
-		XML::SAX::XMLReader* reader;
+		/* Borrowed, and read when parse() is called. */
+		Samurai::IO::Buffer* source;
 		bool problem;
 		
 	private:

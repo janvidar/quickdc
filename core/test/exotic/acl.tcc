@@ -301,10 +301,30 @@ EXO_TEST(acl_nested_users,
 	return 1;
 });
 
+/*
+ * A stray end tag stops the read where it is, so nothing after it is admitted.
+ *
+ * The reader used to complain and carry on, which recovered the entry below - and
+ * which meant deciding who gets into a hub from a file already known to be
+ * malformed. What survives is whatever parsed before the error, and here that is
+ * nothing: the corruption is the first thing in the file.
+ */
 EXO_TEST(acl_end_tag_with_nothing_open,
 {
 	EXO_ASSERT(check("end tag with nothing open",
 			ACL("</User><User credential=\"admin\" name=\"a\" description=\"d\" expire=\"" EXPIRE "\"/>"),
+			""));
+	return 1;
+});
+
+/* And entries before it are kept, which is what makes that a stop rather than a
+   refusal of the whole list. */
+EXO_TEST(acl_entries_before_a_stray_end_tag_are_kept,
+{
+	EXO_ASSERT(check("entries before a stray end tag",
+			ACL("<User credential=\"admin\" name=\"a\" description=\"d\" expire=\"" EXPIRE "\"/>"
+			    "</User>"
+			    "<User credential=\"user\" name=\"b\" description=\"e\" expire=\"" EXPIRE "\"/>"),
 			"[admin a d]"));
 	return 1;
 });

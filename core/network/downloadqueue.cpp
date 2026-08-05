@@ -13,7 +13,7 @@
 #include "config/preferences.h"
 #include "hash/hashmanager.h"
 #include "hash/hashjob.h"
-#include "xml/reader.h"
+#include <samurai/io/xml.h>
 #include "share/dcfilelist.h"
 #include "share/searchrequest.h"
 
@@ -451,28 +451,47 @@ class QueueVerifier : public QuickDC::Hash::JobListener
 /* QueueXMLReader - reads ~/.quickdc/queue.xml                               */
 /* ------------------------------------------------------------------------- */
 
-class QueueXMLReader : public XML::SAX::ContentHandler
+class QueueXMLReader : public Samurai::IO::XmlContentHandler
 {
 	public:
 		QueueXMLReader(QueueManager* queue_, Samurai::IO::Buffer* buffer)
-			: reader(0)
+			: source(buffer)
 			, queue(queue_)
 			, current(0)
 			, broken(false)
 			, dropped(0)
 		{
-			reader = new XML::SAX::XMLReader(buffer, this);
 		}
 
-		virtual ~QueueXMLReader()
+		~QueueXMLReader() override
 		{
-			delete reader;
 			delete current;
 		}
 
 		bool parse()
 		{
-			reader->parse();
+			if (!source) return false;
+
+			/*
+			 * Our own file, written by the queue below - so the bounds are what
+			 * this writes rather than what a stranger might send, and a file that
+			 * has grown past them is one to refuse rather than to trust.
+			 */
+			Samurai::IO::XmlReader::Limits limits;
+			limits.maxDocumentSize = QUICKDC_QUEUE_MAX_SIZE;
+			limits.maxDepth        = 8;
+			limits.maxElements     = QUICKDC_QUEUE_MAX_ELEMENTS;
+			limits.maxAttributes   = 32;
+			limits.maxTextLength   = 4096;
+
+			const Samurai::IO::XmlError parsed = Samurai::IO::XmlReader::parse(
+				std::string_view(source->ptr(), source->size()), *this, limits);
+
+			if (parsed != Samurai::IO::XmlError::Ok)
+			{
+				QERR("queue.xml: %s", Samurai::IO::toString(parsed));
+				broken = true;
+			}
 
 			if (dropped)
 				QERR("Discarded %d unusable entry/entries while loading the download queue",
@@ -482,30 +501,22 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 		}
 
 	public:
-		void startDocument() override { }
-		void endDocument() override { }
-		void characters(const char*, size_t, size_t) override { }
-		void ignorableWhitespace(const char*, size_t, size_t) override { }
+		void characters(std::string_view) override { }
 
-		void warning(const char* str) override { QDBG("queue.xml: %s", str); (void) str; }
-		void error(const char* str) override { QERR("queue.xml: %s", str); }
-		void fatalError(const char* str) override { QERR("queue.xml: %s", str); broken = true; }
-
-		void startElement(const char*, const char* localName, const char*, const AttributeList& list) override
+		void startElement(std::string_view, std::string_view element,
+			const Attributes& attributes) override
 		{
-			const std::string_view element = elementName(localName);
-
 			if (Samurai::Util::iequals(element, "File"))
-				startFile(list);
+				startFile(attributes);
 			else if (Samurai::Util::iequals(element, "Source"))
-				startSource(list);
+				startSource(attributes);
 			else if (Samurai::Util::iequals(element, "Chunk"))
-				startChunk(list);
+				startChunk(attributes);
 		}
 
-		void endElement(const char*, const char* localName, const char*) override
+		void endElement(std::string_view, std::string_view element) override
 		{
-			if (!Samurai::Util::iequals(elementName(localName), "File")) return;
+			if (!Samurai::Util::iequals(element, "File")) return;
 
 			if (current)
 			{
@@ -515,19 +526,14 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 		}
 
 	protected:
-		/**
-		 * The element name a parser found, as something safe to compare.
-		 *
-		 * A SAX handler is handed a pointer, and nothing in the interface says a
-		 * parser has a name to give: a view over a null one has no length to
-		 * read, so an absent name becomes the empty one and matches nothing.
+		/*
+		 * A complaint about the contents rather than about the markup: the entry
+		 * is dropped and the rest of the file is still read, because one unusable
+		 * entry is not a reason to lose a queue.
 		 */
-		static std::string_view elementName(const char* localName)
-		{
-			return localName ? std::string_view(localName) : std::string_view();
-		}
+		void error(const char* str) { QERR("queue.xml: %s", str); }
 
-		static const char* getAttribute(const AttributeList& list, std::string_view name)
+		static const char* getAttribute(const Attributes& list, std::string_view name)
 		{
 			for (size_t n = 0; n < list.size(); n++)
 			{
@@ -536,7 +542,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 			return 0;
 		}
 
-		void startFile(const AttributeList& list)
+		void startFile(const Attributes& list)
 		{
 			if (current)
 			{
@@ -579,7 +585,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 				current->added = Samurai::TimeStamp(static_cast<time_t>(Samurai::Util::Convert::to_int64(s_added)));
 		}
 
-		void startSource(const AttributeList& list)
+		void startSource(const Attributes& list)
 		{
 			if (!current) return;
 
@@ -616,7 +622,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 			current->addSource(source);
 		}
 
-		void startChunk(const AttributeList& list)
+		void startChunk(const Attributes& list)
 		{
 			if (!current) return;
 
@@ -644,7 +650,7 @@ class QueueXMLReader : public XML::SAX::ContentHandler
 		}
 
 	protected:
-		XML::SAX::XMLReader* reader;
+		Samurai::IO::Buffer* source;
 		QueueManager* queue;
 		QueueFile* current;
 		bool broken;

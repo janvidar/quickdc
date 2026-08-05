@@ -536,10 +536,31 @@ EXO_TEST(queue_nested_files,
 	return 1;
 });
 
+/*
+ * A stray end tag stops the read where it is, so nothing after it is loaded.
+ *
+ * The reader used to complain and then carry on, which recovered the entry below
+ * - and which meant acting on a document nobody wrote, since there is no telling
+ * what else is wrong with a file that is already malformed. What survives now is
+ * whatever parsed before the error, and here that is nothing: the corruption is
+ * the first thing in the file.
+ */
 EXO_TEST(queue_end_tag_with_nothing_open,
 {
 	EXO_ASSERT(check("end tag with nothing open",
 			QUEUE("</File><File name=\"/tmp/a\" size=\"1\" tth=\"" TTH1 "\"/>"),
+			""));
+	return 1;
+});
+
+/* And what came before it does survive, which is what makes that a stop rather
+   than a refusal of the whole file. */
+EXO_TEST(queue_entries_before_a_stray_end_tag_are_kept,
+{
+	EXO_ASSERT(check("entries before a stray end tag",
+			QUEUE("<File name=\"/tmp/a\" size=\"1\" tth=\"" TTH1 "\"/>"
+			      "</File>"
+			      "<File name=\"/tmp/b\" size=\"1\" tth=\"" TTH2 "\"/>"),
 			"[/tmp/a 1 " TTH1 " normal done=0]"));
 	return 1;
 });
