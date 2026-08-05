@@ -43,6 +43,7 @@ set(QUICKDC_EXOTIC_TESTS
     leafhashes.tcc
     lock.tcc
     portforward.tcc
+    reachability.tcc
     queuecomplete.tcc
     zupload.tcc)
 

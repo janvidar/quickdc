@@ -23,6 +23,7 @@ set(QUICKDC_SOURCES
     network/keyprint.cpp
     network/leafhashes.cpp
     network/portforward.cpp
+    network/reachability.cpp
     network/probe.cpp
     network/securitymanager.cpp
     network/transfer.cpp
