@@ -459,9 +459,6 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 	
 		case 'B':
 		case 'U':
-#ifdef NAT_TRAVERSAL_SUPPORT
-		case 'X':
-#endif
 			if (!source_id) return;
 			stream->appendBinary(fourcc, Samurai::IO::Buffer::BinaryMode::BigEndian);
 			stream->append(' ');

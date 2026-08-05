@@ -65,6 +65,8 @@ namespace ADC {
 			void onSCH(ADC::Command* cmd);
 			void onCTM(ADC::Command* cmd);
 			void onRCM(ADC::Command* cmd);
+			void onNAT(ADC::Command* cmd);
+			void onRNT(ADC::Command* cmd);
 			void onDSC(ADC::Command* cmd);
 			void onPAS(ADC::Command* cmd);
 			void onSTA(ADC::Command* cmd);

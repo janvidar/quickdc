@@ -537,6 +537,24 @@ bool ADC::HubCmdRCM::invoke(ADC::Command* cmd) {
 	return true;
 }
 
+/*
+ * NATT: two passive clients arranging to connect to each other. Relayed exactly
+ * as CTM and RCM are - the hub is the only path between two clients that neither
+ * can reach - and carrying a port that means something only to the client that
+ * named it, so there is nothing here for the hub to check.
+ */
+bool ADC::HubCmdNAT::invoke(ADC::Command* cmd) {
+	cmd->setPriority(ADC::Command::Normal);
+	hub->onNAT(cmd);
+	return true;
+}
+
+bool ADC::HubCmdRNT::invoke(ADC::Command* cmd) {
+	cmd->setPriority(ADC::Command::Normal);
+	hub->onRNT(cmd);
+	return true;
+}
+
 bool ADC::HubCmdPAS::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::High);
 	hub->onPAS(cmd);

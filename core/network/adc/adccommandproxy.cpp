@@ -71,6 +71,8 @@ ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket
 	FOURCC_REG('D','R','E','S', new ADC::HubCmdRES(this, hub));
 	FOURCC_REG('D','C','T','M', new ADC::HubCmdCTM(this, hub));
 	FOURCC_REG('D','R','C','M', new ADC::HubCmdRCM(this, hub));
+	FOURCC_REG('D','N','A','T', new ADC::HubCmdNAT(this, hub));
+	FOURCC_REG('D','R','N','T', new ADC::HubCmdRNT(this, hub));
 	FOURCC_REG('D','S','T','A', new ADC::HubCmdSTA(this, hub));
 
 	// echo messages

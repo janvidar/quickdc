@@ -204,7 +204,16 @@ void ADC::Hub::onSUP(ADC::Command* cmd) {
 
 		ADC::Command* c_sup = new ADC::Command(FOURCC('I','S','U','P'));
 		ADC::addSupportFlags(*c_sup, false);
-		
+
+		/*
+		 * Added here rather than in addSupportFlags(), which a client uses to
+		 * introduce itself through the same branch: relaying NATT and being able to
+		 * use it are different claims, and a hub that can pass DNAT and DRNT
+		 * between two clients says nothing about whether its operator's own client
+		 * could take part.
+		 */
+		c_sup->addArgument("AD", ADC_EXT_NATT);
+
 		ADC::Command* c_sid = new ADC::Command(FOURCC('I','S','I','D'));
 		c_sid->addArgument(ADC::SID::toString(user->sid));
 		send(c_sup, user, true);
@@ -347,6 +356,34 @@ void ADC::Hub::onCTM(ADC::Command* cmd) {
 }
 
 void ADC::Hub::onRCM(ADC::Command* cmd) {
+	CHECK_SID_OK();
+	ADC::HubUser* target = lookupUser(ADC::SID::fromString(cmd->getTargetID()));
+	if (user->state == State_Normal && target && target->state == State_Normal) {
+		send(cmd, target);
+	}
+}
+
+
+/*
+ * NATT, which two clients that can neither of them be connected to use to reach
+ * each other: one names the port it will dial from, the other answers with its
+ * own, and both dial at once. Relayed as CTM and RCM are, because the hub is the
+ * only path between them.
+ *
+ * The port belongs to the client that named it and describes a mapping only its
+ * own NAT knows about, so unlike I4 there is nothing here the hub could verify.
+ * What it can do is what it already does for the address: forward it only between
+ * two users who are both logged in.
+ */
+void ADC::Hub::onNAT(ADC::Command* cmd) {
+	CHECK_SID_OK();
+	ADC::HubUser* target = lookupUser(ADC::SID::fromString(cmd->getTargetID()));
+	if (user->state == State_Normal && target && target->state == State_Normal) {
+		send(cmd, target);
+	}
+}
+
+void ADC::Hub::onRNT(ADC::Command* cmd) {
 	CHECK_SID_OK();
 	ADC::HubUser* target = lookupUser(ADC::SID::fromString(cmd->getTargetID()));
 	if (user->state == State_Normal && target && target->state == State_Normal) {

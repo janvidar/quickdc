@@ -1158,3 +1158,112 @@ EXO_TEST(adchub_an_update_of_nothing_is_not_relayed,
 	EXO_ASSERT(bob.received.find("BINF") == std::string::npos);
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* NAT traversal, relayed                                                    */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Two clients that neither of them can be connected to reach each other by dialling
+ * at once, which they arrange over the hub because the hub is the only path between
+ * them. The hub's part is to pass DNAT and DRNT along, exactly as it passes CTM and
+ * RCM.
+ *
+ * Unlike an address, there is nothing here the hub could check: the port describes
+ * a mapping only the naming client's own NAT knows about. What it does check is the
+ * same thing it checks for a CTM - that both ends are logged in.
+ */
+EXO_TEST(adchub_a_nat_traversal_request_reaches_the_other_client,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(31), "alice"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(32), "bob"));
+
+	bob.drain();
+	bob.received.clear();
+
+	/* Alice names the port she will dial from. */
+	alice.send("DNAT " + alice.sid + " " + bob.sid + " ADC/1.0 1000 tok1");
+
+	std::string line;
+	EXO_ASSERT(bob.waitFor("DNAT", line));
+	EXO_ASSERT(line.find(alice.sid) != std::string::npos);
+	EXO_ASSERT(line.find("1000") != std::string::npos);
+	EXO_ASSERT(line.find("tok1") != std::string::npos);
+	return 1;
+});
+
+/* And the answer comes back the same way. */
+EXO_TEST(adchub_a_nat_traversal_answer_reaches_the_other_client,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(33), "alice"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(34), "bob"));
+
+	alice.drain();
+	alice.received.clear();
+
+	bob.send("DRNT " + bob.sid + " " + alice.sid + " ADC/1.0 2000 tok1");
+
+	std::string line;
+	EXO_ASSERT(alice.waitFor("DRNT", line));
+	EXO_ASSERT(line.find(bob.sid) != std::string::npos);
+	EXO_ASSERT(line.find("2000") != std::string::npos);
+	return 1;
+});
+
+/* A request naming somebody who is not here reaches nobody. */
+EXO_TEST(adchub_a_nat_traversal_request_for_nobody_is_dropped,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(35), "alice"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(36), "bob"));
+
+	bob.drain();
+	bob.received.clear();
+
+	alice.send("DNAT " + alice.sid + " ZZZZ ADC/1.0 1000 tok1");
+
+	pump([] { return false; }, 300);
+	bob.drain();
+	EXO_ASSERT(bob.received.find("DNAT") == std::string::npos);
+	return 1;
+});
+
+/*
+ * And the hub says it will relay them, so a client knows before it tries. Signalled
+ * by the hub because relaying NATT and being able to use it are different claims.
+ */
+EXO_TEST(adchub_the_hub_says_it_relays_nat_traversal,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	EXO_ASSERT(alice.connect(s.port()));
+
+	alice.send("HSUP ADBASE ADTIGR");
+
+	std::string line;
+	EXO_ASSERT(alice.waitFor("ISUP", line));
+	EXO_ASSERT(line.find("ADNATT") != std::string::npos);
+	return 1;
+});

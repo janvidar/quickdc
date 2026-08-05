@@ -111,10 +111,6 @@ static bool probe_udp_adc(uint32_t fourcc) {
 		case FOURCC('U','R','E','S'):
 		case FOURCC('U','S','T','A'):
 		case FOURCC('U','P','S','R'):
-#ifdef NAT_TRAVERSAL_SUPPORT
-		case FOURCC('U','T','U','N'):
-		case FOURCC('U','E','C','O'):
-#endif
 			return true;
 		default:
 			return false;
@@ -124,14 +120,13 @@ static bool probe_udp_adc(uint32_t fourcc) {
 
 /*
  * Probe for ADC datagrams targetted for the hub.
+ *
+ * Nothing yet: no datagram in ADC is addressed to a hub. NAT traversal is arranged
+ * over the hub connection with DNAT and DRNT rather than over UDP, so it adds
+ * nothing here either.
  */
 static bool probe_udp_adchub(uint32_t fourcc) {
-#ifdef NAT_TRAVERSAL_SUPPORT
-	if (FOURCC('H','T','U','N') == fourcc) return true;
-	if (FOURCC('H','E','C','O') == fourcc) return true;
-#else
 	(void) fourcc;
-#endif
 	return false;
 }
 
