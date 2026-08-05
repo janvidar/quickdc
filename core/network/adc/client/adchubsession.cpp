@@ -121,6 +121,32 @@ static bool reachable(QuickDC::Preferences* config)
 }
 
 /*
+ * The address to publish, active or not.
+ *
+ * For an active client peerEndpoint() has already ranked what is known - what a hub
+ * observed, what a gateway reported, what was configured. For a passive one it
+ * answers with nothing, because it is describing somewhere to connect and there is
+ * nowhere; the address is still ours to publish, so the same ranking is applied
+ * here by hand.
+ *
+ * "0.0.0.0" is the last resort and is not a blank: ADC reads it as a request for
+ * the hub to fill in the address it sees, which is how a client behind a NAT that
+ * nothing has told it about learns where it is.
+ */
+std::string ADC::HubSession::announcedAddress(const QuickDC::PeerEndpoint& endpoint) const
+{
+	if (endpoint.active && !endpoint.address.empty()) return endpoint.address;
+
+	if (!observedAddress.empty()) return observedAddress;
+
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	const char* configured = config->getString("Address", "0.0.0.0");
+
+	return (configured && *configured) ? configured : "0.0.0.0";
+}
+
+/*
  * Refuse a peer connection that would not be encrypted, and say so where a user
  * can see it: a transfer that never starts is otherwise indistinguishable from a
  * peer that is simply not answering.
@@ -833,9 +859,27 @@ void ADC::HubSession::sendClientInfo()
 	 */
 	std::string supports = "ADC0";
 
+	/*
+	 * The address goes out whether or not anyone can connect to it.
+	 *
+	 * It used to be sent only by an active client, which reads as the private thing
+	 * to do and is why it was that way - but NAT traversal cannot work without it.
+	 * Two passive clients reach each other by dialling at once, and neither can dial
+	 * an address the hub never passed on; the specification says as much, requiring
+	 * the hub to forward I4 for both of them.
+	 *
+	 * So this is a deliberate trade rather than an oversight: a passive user's
+	 * address becomes visible to the other clients on the hub - the hub itself has
+	 * always seen it - in exchange for being able to transfer with the other passive
+	 * users at all. Without it a passive pair has no path between them.
+	 *
+	 * Nothing else changes: no U4, and neither TCP4 nor UDP4, so a peer still reads
+	 * us as somebody to be invited rather than somebody to connect to.
+	 */
+	cmd->addArgument("I4", announcedAddress(endpoint));
+
 	if (endpoint.active)
 	{
-		cmd->addArgument("I4", endpoint.address);
 		cmd->addArgument("U4", std::to_string(endpoint.port));
 
 		/*

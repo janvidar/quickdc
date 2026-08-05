@@ -22,6 +22,7 @@
 
 
 namespace QuickDC {
+struct PeerEndpoint;
 class Hub;
 class User;
 class SearchRequest;
@@ -84,6 +85,13 @@ class HubSession :
 		void sendClientInfo() override;
 		void sendSearchRequest(QuickDC::Share::SearchRequest* request) override;
 		void sendConnectionRequest(const QuickDC::User*, const char* token) override;
+
+		/**
+		 * The address to publish in an INF, whether or not anyone can connect to
+		 * it. Published even when passive, because NAT traversal cannot work
+		 * without the hub forwarding it.
+		 */
+		std::string announcedAddress(const QuickDC::PeerEndpoint& endpoint) const;
 		bool knowUser(const char* username);
 		const QuickDC::User* getUser(const char* username) override;
 		const QuickDC::User* getLocalUser() override;

@@ -1690,6 +1690,64 @@ void reportRefusals(QuickDC::Reachability* known)
 }
 
 /*
+ * The value of one INF field, or nothing when the field is absent.
+ *
+ * Looked up by token rather than by searching the line, because an INF carries a
+ * CID and a PID as thirty-nine characters of base32 each - and base32 is letters
+ * and digits, so "U4", "TCP4" and "UDP4" all occur inside one from time to time.
+ * Those identifiers are random per run, which makes a search for a bare field name
+ * a test that passes most days.
+ */
+std::string infField(const std::string& line, const std::string& field)
+{
+	size_t at = 0;
+	while (at < line.size())
+	{
+		size_t end = line.find(' ', at);
+		if (end == std::string::npos) end = line.size();
+
+		const std::string token = line.substr(at, end - at);
+		if (token.compare(0, field.size(), field) == 0)
+			return token.substr(field.size());
+
+		at = end + 1;
+	}
+	return std::string();
+}
+
+/** Whether the SU field lists a flag, which is a comma separated set. */
+bool claims(const std::string& line, const std::string& flag)
+{
+	const std::string su = infField(line, "SU");
+
+	size_t at = 0;
+	while (at < su.size())
+	{
+		size_t end = su.find(',', at);
+		if (end == std::string::npos) end = su.size();
+
+		if (su.compare(at, end - at, flag) == 0) return true;
+		at = end + 1;
+	}
+	return false;
+}
+
+/** Whether an INF carries a field at all. */
+bool hasField(const std::string& line, const std::string& field)
+{
+	size_t at = 0;
+	while (at < line.size())
+	{
+		size_t end = line.find(' ', at);
+		if (end == std::string::npos) end = line.size();
+
+		if (line.compare(at, field.size(), field) == 0) return true;
+		at = end + 1;
+	}
+	return false;
+}
+
+/*
  * The INF this session sends when asked directly.
  *
  * Asked of the session rather than through the manager: this fixture's session is
@@ -1730,8 +1788,8 @@ EXO_TEST(hubsession_an_active_client_claims_tcp4,
 	std::string inf;
 	EXO_ASSERT(announcedSupport(s, inf));
 
-	EXO_ASSERT(inf.find("TCP4") != std::string::npos);
-	EXO_ASSERT(inf.find("UDP4") != std::string::npos);
+	EXO_ASSERT(claims(inf, "TCP4"));
+	EXO_ASSERT(claims(inf, "UDP4"));
 	return 1;
 });
 
@@ -1755,17 +1813,17 @@ EXO_TEST(hubsession_the_tcp4_claim_is_withdrawn_once_peers_report_failing,
 	std::string inf;
 	EXO_ASSERT(announcedSupport(s, inf));
 
-	EXO_ASSERT(inf.find("TCP4") == std::string::npos);
+	EXO_ASSERT(!claims(inf, "TCP4"));
 
 	/*
 	 * UDP4 stands. Nothing can disprove it - a peer that cannot reach the port has
 	 * no datagram it could send to say so - so it is not withdrawn on the strength
 	 * of what the TCP reports said.
 	 */
-	EXO_ASSERT(inf.find("UDP4") != std::string::npos);
+	EXO_ASSERT(claims(inf, "UDP4"));
 
 	/* Still an endpoint to publish: passive for connections, not absent. */
-	EXO_ASSERT(inf.find("I4") != std::string::npos);
+	EXO_ASSERT(hasField(inf, "I4"));
 	return 1;
 });
 
@@ -1786,7 +1844,7 @@ EXO_TEST(hubsession_a_connection_that_arrived_keeps_the_claim,
 	std::string inf;
 	EXO_ASSERT(announcedSupport(s, inf));
 
-	EXO_ASSERT(inf.find("TCP4") != std::string::npos);
+	EXO_ASSERT(claims(inf, "TCP4"));
 	return 1;
 });
 
@@ -1815,7 +1873,7 @@ EXO_TEST(hubsession_forcing_active_mode_overrules_the_reports,
 	config->setBool("Force active mode", false);
 
 	EXO_ASSERT(announced);
-	EXO_ASSERT(inf.find("TCP4") != std::string::npos);
+	EXO_ASSERT(claims(inf, "TCP4"));
 	return 1;
 });
 
@@ -1852,5 +1910,94 @@ EXO_TEST(hubsession_a_loopback_connection_is_not_evidence_of_reachability,
 	EXO_ASSERT(known->tcp() == QuickDC::Reachability::State::Unknown);
 
 	client.reset();
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* The address, published either way                                         */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A passive client publishes its address too.
+ *
+ * Sending it only when active reads as the private thing to do, and it is why this
+ * was that way - but NAT traversal cannot work without it. Two passive clients
+ * reach each other by dialling at once, and neither can dial an address the hub
+ * never passed on.
+ */
+EXO_TEST(hubsession_a_passive_client_publishes_its_address,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+
+	EXO_ASSERT(hasField(inf, "I4"));
+	return 1;
+});
+
+/*
+ * And publishes nothing that would have a peer connect to it: no port, and neither
+ * TCP4 nor UDP4, so it still reads as somebody to invite rather than somebody to
+ * dial.
+ */
+EXO_TEST(hubsession_a_passive_client_publishes_no_port_and_claims_nothing,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+	EXO_ASSERT(!hasField(inf, "U4"));
+	EXO_ASSERT(!claims(inf, "TCP4"));
+	EXO_ASSERT(!claims(inf, "UDP4"));
+	return 1;
+});
+
+/*
+ * With nothing known, the address published is the one ADC reads as a question: fill
+ * in what you see. That is how a client behind a NAT nothing has told it about finds
+ * out where it is.
+ */
+EXO_TEST(hubsession_a_client_with_no_known_address_asks_for_one,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	config->setString("Address", "0.0.0.0");
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+
+	EXO_ASSERT(infField(inf, "I4") == "0.0.0.0");
+	return 1;
+});
+
+/* And once a hub has said where it sees us, that is what goes out - even passive,
+   where peerEndpoint() has no address to offer because there is nowhere to connect. */
+EXO_TEST(hubsession_a_passive_client_publishes_the_address_the_hub_reported,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	/* The hub refusing what we claimed and saying what it sees instead. */
+	s.say("ISTA 146 Invalid\\sIP IP198.51.100.9");
+	pump([] { return false; }, 200);
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+
+	EXO_ASSERT(infField(inf, "I4") == "198.51.100.9");
 	return 1;
 });
