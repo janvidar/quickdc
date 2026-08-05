@@ -12,6 +12,17 @@
 #include <samurai/messagehandler.h>
 #include <samurai/stdc.h>
 
+/*
+ * After samurai's, and never before it. Samurai's dbg.h guards each macro with
+ * `#if !defined(...)`, so whichever header is included first owns the QDBG
+ * family for that translation unit, and samurai arrives here through the line
+ * above whether or not a source file asked for it. QuickDC's own header #undefs
+ * the names before defining them, so including it last is what makes a core
+ * source file log to ~/.quickdc/debug rather than to samurai's sinks - which
+ * nothing in QuickDC opens, so a call that binds to them writes nowhere at all.
+ */
+#include "debug/dbg.h"
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
