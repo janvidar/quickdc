@@ -84,6 +84,8 @@ DC::SendMyInfo::SendMyInfo(const char* nick, const char* description, const char
 	const bool active_mode = QuickDC::peerEndpoint(
 		config->getBool("Active mode"), core->server != 0,
 		config->getString("Address", "0.0.0.0"),
+		/* NMDC has no field for a hub to report the address it sees. */
+		std::string(),
 		static_cast<uint16_t>(config->getNumber("Port")),
 		core->portforward).active;
 	

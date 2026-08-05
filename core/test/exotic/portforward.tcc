@@ -699,7 +699,7 @@ EXO_TEST(portforward_a_port_forward_destroyed_in_flight_reports_nothing,
 EXO_TEST(portforward_active_mode_without_a_listening_socket_is_still_passive,
 {
 		const QuickDC::PeerEndpoint e =
-			QuickDC::peerEndpoint(true, false, "10.0.0.5", 1411, nullptr);
+			QuickDC::peerEndpoint(true, false, "10.0.0.5", "", 1411, nullptr);
 		EXO_ASSERT(!e.active);
 	
 	return 1;
@@ -709,7 +709,7 @@ EXO_TEST(portforward_active_mode_without_a_listening_socket_is_still_passive,
 EXO_TEST(portforward_without_forwarding_the_configured_address_is_advertised,
 {
 		const QuickDC::PeerEndpoint e =
-			QuickDC::peerEndpoint(true, true, "10.0.0.5", 1411, nullptr);
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", "", 1411, nullptr);
 		EXO_ASSERT(e.active);
 		EXO_ASSERT(e.address == "10.0.0.5");
 		EXO_ASSERT(e.port == 1411);
@@ -731,7 +731,7 @@ EXO_TEST(portforward_a_failed_forward_leaves_the_configured_address_alone,
 		EXO_ASSERT(events.failed == 1);
 
 		const QuickDC::PeerEndpoint e =
-			QuickDC::peerEndpoint(true, true, "10.0.0.5", 1411, &forward);
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", "", 1411, &forward);
 		EXO_ASSERT(e.active);
 		EXO_ASSERT(e.address == "10.0.0.5");
 		EXO_ASSERT(e.port == 1411);
@@ -756,7 +756,7 @@ EXO_TEST(portforward_a_forwarded_mapping_advertises_the_granted_port_and_outside
 		EXO_ASSERT(events.forwarded == 1);
 
 		const QuickDC::PeerEndpoint e =
-			QuickDC::peerEndpoint(true, true, "10.0.0.5", 1411, &forward);
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", "", 1411, &forward);
 		EXO_ASSERT(e.active);
 		/* The gateway's outside address, not this host's on the LAN. */
 		EXO_ASSERT(e.address == "203.0.113.7");
@@ -779,9 +779,80 @@ EXO_TEST(portforward_a_released_mapping_falls_back_to_the_configured_port,
 		forward.stop();
 
 		const QuickDC::PeerEndpoint e =
-			QuickDC::peerEndpoint(true, true, "10.0.0.5", 1411, &forward);
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", "", 1411, &forward);
 		EXO_ASSERT(e.active);
 		EXO_ASSERT(e.port == 1411);
+	
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* An address something on the outside reported                              */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A gateway asked for its outside address answers with the address of *its*
+ * outside. Behind a carrier-grade NAT that is another private address, and a
+ * client advertising it sends every peer somewhere that reaches nobody. Anything
+ * that watched our packets arrive knows better, so it wins - an ADC hub reports
+ * this, which is where the observed address comes from.
+ */
+EXO_TEST(portforward_an_observed_address_outranks_the_gateways_own,
+{
+		FakeGateway gateway(IGD2);
+		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
+		agreeable(gateway, 40001);
+
+		Recorder events;
+		QuickDC::PortForward forward(&events);
+		forward.start(1411, gateway.location());
+		pump([&] { return events.done(); });
+		EXO_ASSERT(events.forwarded == 1);
+
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", "198.51.100.9", 1411, &forward);
+		EXO_ASSERT(e.active);
+		EXO_ASSERT(e.address == "198.51.100.9");
+
+		/* Only the address. The gateway is the only thing that knows which port it
+		   granted, and a hub cannot see that at all. */
+		EXO_ASSERT(e.port == 40001);
+	
+	return 1;
+});
+
+/* And over the configured one, with no gateway in the picture at all - the case
+   of a user who forwarded a port by hand and typed the wrong address. */
+EXO_TEST(portforward_an_observed_address_outranks_the_configured_one,
+{
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", "198.51.100.9", 1411, nullptr);
+		EXO_ASSERT(e.active);
+		EXO_ASSERT(e.address == "198.51.100.9");
+		EXO_ASSERT(e.port == 1411);
+	
+	return 1;
+});
+
+/* Nothing observed leaves the other two deciding, which is what every case above
+   this section relies on. */
+EXO_TEST(portforward_no_observed_address_changes_nothing,
+{
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(true, true, "10.0.0.5", "", 1411, nullptr);
+		EXO_ASSERT(e.active);
+		EXO_ASSERT(e.address == "10.0.0.5");
+	
+	return 1;
+});
+
+/* A passive client advertises nothing, whoever reported what. */
+EXO_TEST(portforward_an_observed_address_does_not_make_a_passive_client_active,
+{
+		const QuickDC::PeerEndpoint e =
+			QuickDC::peerEndpoint(false, true, "10.0.0.5", "198.51.100.9", 1411, nullptr);
+		EXO_ASSERT(!e.active);
+		EXO_ASSERT(e.address.empty());
 	
 	return 1;
 });

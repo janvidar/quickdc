@@ -235,6 +235,16 @@ class HubSession :
 		bool secure;
 
 		/**
+		 * Where this hub says it sees us, and empty until it has said.
+		 *
+		 * Per hub rather than per client: the address a hub observes is the one it
+		 * will hand to peers on that hub, and two hubs reached over different
+		 * routes need not agree. Set from a status naming an address, which is a
+		 * hub refusing what we claimed and saying what it saw instead.
+		 */
+		std::string observedAddress;
+
+		/**
 		 * The keyprint from the 'kp' parameter of the hub address, if any.
 		 *
 		 * Unset is the only thing that means "check nothing", which is why this

@@ -311,6 +311,7 @@ void QuickDC::PortForward::EventMapperError(PortMapper*, Error error,
 
 QuickDC::PeerEndpoint QuickDC::peerEndpoint(bool wanted, bool listening,
                                             const std::string& configuredAddress,
+                                            const std::string& observedAddress,
                                             uint16_t configuredPort,
                                             const PortForward* forward)
 {
@@ -321,21 +322,35 @@ QuickDC::PeerEndpoint QuickDC::peerEndpoint(bool wanted, bool listening,
 	if (!wanted || !listening) return endpoint;
 
 	endpoint.active = true;
+
+	/*
+	 * Least authoritative first, so that each better answer overwrites the one
+	 * before it and the order on the page is the order of precedence. Written as a
+	 * sequence rather than as early returns because the address and the port are
+	 * decided by different things: a hub knows where we are but not what the
+	 * gateway granted, and the gateway knows the port but not, behind a
+	 * carrier-grade NAT, any address that reaches us.
+	 */
 	endpoint.address = configuredAddress;
 	endpoint.port = configuredPort;
 
-	if (!forward || !forward->isForwarded()) return endpoint;
+	if (forward && forward->isForwarded())
+	{
+		endpoint.port = forward->getExternalPort();
 
-	endpoint.port = forward->getExternalPort();
+		/*
+		 * The configured address is kept when the gateway did not say what its
+		 * outside address is: the port is the part that has to be right, and an
+		 * address of "0.0.0.0" is understood by a hub to mean "use the address you
+		 * see me coming from", which is better than a blank.
+		 */
+		if (const Samurai::IO::Net::InetAddress* outside = forward->getExternalAddress())
+			endpoint.address = outside->toString();
+	}
 
-	/*
-	 * The configured address is kept when the gateway did not say what its
-	 * outside address is: the port is the part that has to be right, and an
-	 * address of "0.0.0.0" is understood by a hub to mean "use the address you
-	 * see me coming from", which is better than a blank.
-	 */
-	if (const Samurai::IO::Net::InetAddress* outside = forward->getExternalAddress())
-		endpoint.address = outside->toString();
+	/* Best, so last: see the note on the declaration. */
+	if (!observedAddress.empty())
+		endpoint.address = observedAddress;
 
 	return endpoint;
 }

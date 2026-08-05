@@ -203,12 +203,22 @@ struct PeerEndpoint
  * for, and it is the granted one that a peer can actually reach, so advertising
  * what was configured would send every peer to a port with nothing behind it.
  *
+ * An observed address wins over both, and it is worth saying why it outranks the
+ * gateway's own answer: a gateway asked for its outside address answers with the
+ * address of *its* outside, which behind a carrier-grade NAT is another private
+ * address that reaches nobody. Something that watched our packets arrive cannot
+ * be wrong about where they came from.
+ *
  * @param wanted     whether the user asked to be active at all
  * @param listening  whether there is a socket to receive a connection on
+ * @param observedAddress  where something on the outside says it sees us, empty
+ *        when nothing has said. ADC hubs report this; NMDC has no way to, so the
+ *        NMDC callers pass nothing and rely on the configured value.
  * @param forward    may be null, meaning no attempt is being made to forward
  */
 PeerEndpoint peerEndpoint(bool wanted, bool listening,
                           const std::string& configuredAddress,
+                          const std::string& observedAddress,
                           uint16_t configuredPort,
                           const PortForward* forward);
 

@@ -790,6 +790,7 @@ void ADC::HubSession::sendClientInfo()
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
 		config->getBool("Active mode"), core->server != 0,
 		config->getString("Address", "0.0.0.0"),
+		observedAddress,
 		static_cast<uint16_t>(config->getNumber("Port")),
 		core->portforward);
 
@@ -1328,10 +1329,38 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 				break;
 
 
+			/*
+			 * The hub refused the address we claimed and says what it sees
+			 * instead. That is the address peers will be told to connect to, so
+			 * it is the one to use: taken, and the INF sent again so the hub has
+			 * something it will accept.
+			 *
+			 * Only from the hub, and only for us - a 'D' status is another client
+			 * talking, and no other client is in a position to say where we are.
+			 */
 			case ADC_CODE_PROTOCOL_IP_INF_ERROR: /* Specify: 'IP' (ip address). Context: INF */
-				/* Should not occur. */
-				QERR("IP address is wrong");
+			{
+				/* ISTA is the hub speaking; DSTA is another client, and no other
+				   client is in a position to say where we are. */
+				const bool fromHub = cmd->getFourcc() == FOURCC('I','S','T','A');
+
+				const char* seen = cmd->getArgument("IP", 2);
+				if (!fromHub || !seen || !*seen)
+				{
+					QERR("Told our IP address is wrong, with no address to use");
+					break;
+				}
+
+				if (observedAddress == seen) break;
+
+				QERR("The hub sees us at %s, not at the address we claimed", seen);
+				observedAddress = seen;
+
+				/* Coalesced with everything else that changes what a hub was
+				   told, so a hub correcting us does not race our own update. */
+				QuickDC::Core::getInstance()->hubs->requestClientInfoUpdate();
 				break;
+			}
 
 
 			// These can safely be ignored here. Only used for Client-Client transfers

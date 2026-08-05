@@ -384,6 +384,8 @@ void DC::HubSession::onPassiveConnect(const char* user)
 			const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
 				config->getBool("Active mode"), core->server != 0,
 				config->getString("Address"),
+				/* NMDC has no field for a hub to report the address it sees. */
+				std::string(),
 				static_cast<uint16_t>(config->getNumber("Port")),
 				core->portforward);
 
@@ -414,6 +416,8 @@ void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
 		config->getBool("Active mode"), core->server != 0,
 		config->getString("Address"),
+		/* NMDC has no field for a hub to report the address it sees. */
+		std::string(),
 		static_cast<uint16_t>(config->getNumber("Port")),
 		core->portforward);
 
