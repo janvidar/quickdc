@@ -782,14 +782,14 @@ static void cmd_connections(const std::vector<std::string>&)
 
 static void cmd_hubkick(const std::vector<std::string>& args)
 {
-	ADC::Hub* localHub = QuickDC::Core::getInstance()->localHub;
+	ADC::LocalHub::Hub* localHub = QuickDC::Core::getInstance()->localHub;
 	if (!localHub)
 	{
 		cmd_error("Local hub not started");
 		return;
 	}
 
-	ADC::HubUser* user = localHub->lookupUser(args[0].c_str());
+	ADC::LocalHub::User* user = localHub->lookupUser(args[0].c_str());
 	if (!user)
 	{
 		cmd_error("No user named `%s' on the local hub", args[0].c_str());
@@ -802,7 +802,7 @@ static void cmd_hubkick(const std::vector<std::string>& args)
 
 static void cmd_hubstats(const std::vector<std::string>&)
 {
-	ADC::Hub* localHub = QuickDC::Core::getInstance()->localHub;
+	ADC::LocalHub::Hub* localHub = QuickDC::Core::getInstance()->localHub;
 	if (!localHub)
 	{
 		cmd_error("Local hub not started");
@@ -825,22 +825,22 @@ static void cmd_hubstats(const std::vector<std::string>&)
 	size_t max_send_queue    = 0;
 	size_t tot_send_queue    = 0;
 
-	std::vector<ADC::HubUser*>::iterator it;
+	std::vector<ADC::LocalHub::User*>::iterator it;
 	for (it = localHub->users.begin(); it != localHub->users.end(); it++)
 	{
-		ADC::HubUser* user = (*it);
+		ADC::LocalHub::User* user = (*it);
 		switch (user->getCredentials()) {
-			case ADC::Cred_User:            count_cred_user++;      break;
-			case ADC::Cred_Operator:        count_cred_operator++;  break;
-			case ADC::Cred_Admin:           count_cred_admin++;     break;
+			case ADC::LocalHub::Cred_User:            count_cred_user++;      break;
+			case ADC::LocalHub::Cred_Operator:        count_cred_operator++;  break;
+			case ADC::LocalHub::Cred_Admin:           count_cred_admin++;     break;
 		}
 		switch (user->getState()) {
-			case ADC::State_None:           count_state_none++;     break;
-			case ADC::State_Protocol:       count_state_protocol++; break;
-			case ADC::State_Identify:       count_state_identify++; break;
-			case ADC::State_Verify:         count_state_verify++;   break;
-			case ADC::State_Normal:         count_state_normal++;   break;
-			case ADC::State_WaitDisconnect: count_state_wait++;     break;
+			case ADC::LocalHub::State_None:           count_state_none++;     break;
+			case ADC::LocalHub::State_Protocol:       count_state_protocol++; break;
+			case ADC::LocalHub::State_Identify:       count_state_identify++; break;
+			case ADC::LocalHub::State_Verify:         count_state_verify++;   break;
+			case ADC::LocalHub::State_Normal:         count_state_normal++;   break;
+			case ADC::LocalHub::State_WaitDisconnect: count_state_wait++;     break;
 		}
 
 		if (user->getSendQueueSize() > max_send_queue)

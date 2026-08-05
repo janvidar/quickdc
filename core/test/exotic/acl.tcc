@@ -4,7 +4,7 @@
  */
 
 /*
- * Drives ADC::ACL::XMLReader over hub access lists and checks the table that
+ * Drives ADC::LocalHub::ACL::XMLReader over hub access lists and checks the table that
  * comes out.
  *
  * The table decides who may log in and with what rights, so an entry that
@@ -43,16 +43,16 @@ static void writeFile(const std::string& path, const char* content)
  * Renders the loaded table so a whole access list can be asserted at once,
  * including the users that should not have survived.
  */
-static std::string render(const ADC::ACL::Table& table)
+static std::string render(const ADC::LocalHub::ACL::Table& table)
 {
 	std::string out;
 	for (size_t n = 0; n < table.countUsers(); n++)
 	{
-		const ADC::ACL::Authorization* auth = table.getUser(n);
+		const ADC::LocalHub::ACL::Authorization* auth = table.getUser(n);
 		if (!auth) { out += "(null)"; continue; }
 
 		out += "[";
-		out += ADC::ACL::Authorization::convertCredential(auth->getCredential());
+		out += ADC::LocalHub::ACL::Authorization::convertCredential(auth->getCredential());
 		out += " ";
 		out += auth->getName() ? auth->getName() : "-";
 		out += " ";
@@ -76,7 +76,7 @@ static bool check(const char* label, const char* xml, const char* expect)
 
 	std::string out;
 	{
-		ADC::ACL::Table table(path.c_str());
+		ADC::LocalHub::ACL::Table table(path.c_str());
 		out = render(table);
 	}
 
@@ -360,7 +360,7 @@ EXO_TEST(acl_empty_file,
 /* A missing file leaves an empty table rather than anything worse. */
 EXO_TEST(acl_a_missing_file_leaves_an_empty_table,
 {
-	ADC::ACL::Table table("/tmp/quickdc_acl_does_not_exist_4711.xml");
+	ADC::LocalHub::ACL::Table table("/tmp/quickdc_acl_does_not_exist_4711.xml");
 	EXO_ASSERT(table.countUsers() == 0);
 	EXO_ASSERT(table.getUser(0) == 0);
 
@@ -384,14 +384,14 @@ EXO_TEST(acl_save_and_load_round_trip,
 
 	std::string first;
 	{
-		ADC::ACL::Table table(path.c_str());
+		ADC::LocalHub::ACL::Table table(path.c_str());
 		first = render(table);
 	}
 
 	/* The destructor above wrote the table back over the same path. */
 	std::string second;
 	{
-		ADC::ACL::Table table(path.c_str());
+		ADC::LocalHub::ACL::Table table(path.c_str());
 		second = render(table);
 	}
 

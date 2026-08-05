@@ -196,7 +196,7 @@ QuickDC::Core::Core()
 	 * unprocessed while run() polled an empty list.
 	 */
 	timers = Samurai::TimerManager::getInstance();
-	localHub = new ADC::Hub();
+	localHub = new ADC::LocalHub::Hub();
 	queue = new QuickDC::QueueManager();
 
 	portforward = new PortForward(&portforward_listener);

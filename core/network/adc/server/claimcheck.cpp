@@ -28,12 +28,12 @@ namespace {
  *
  * Swept when the next check starts, which is the only thing that adds to the list.
  */
-std::vector<std::unique_ptr<ADC::ClaimCheck>> checks;
+std::vector<std::unique_ptr<ADC::LocalHub::ClaimCheck>> checks;
 
 }
 
 
-size_t ADC::ClaimCheck::running()
+size_t ADC::LocalHub::ClaimCheck::running()
 {
 	size_t live = 0;
 	for (const auto& check : checks)
@@ -42,7 +42,7 @@ size_t ADC::ClaimCheck::running()
 }
 
 
-void ADC::ClaimCheck::forget(Hub* hub)
+void ADC::LocalHub::ClaimCheck::forget(Hub* hub)
 {
 	for (size_t n = checks.size(); n > 0; n--)
 	{
@@ -52,13 +52,13 @@ void ADC::ClaimCheck::forget(Hub* hub)
 }
 
 
-void ADC::ClaimCheck::reset()
+void ADC::LocalHub::ClaimCheck::reset()
 {
 	checks.clear();
 }
 
 
-ADC::ClaimCheck* ADC::ClaimCheck::start(Hub* hub, HubUser* user,
+ADC::LocalHub::ClaimCheck* ADC::LocalHub::ClaimCheck::start(Hub* hub, User* user,
                                         const char* protocol, uint16_t port)
 {
 	if (!hub || !user) return 0;
@@ -151,7 +151,7 @@ ADC::ClaimCheck* ADC::ClaimCheck::start(Hub* hub, HubUser* user,
 }
 
 
-ADC::ClaimCheck::ClaimCheck(Hub* hub_, sid_t sid_, const std::string& address_,
+ADC::LocalHub::ClaimCheck::ClaimCheck(Hub* hub_, sid_t sid_, const std::string& address_,
                             uint16_t port_, const std::string& protocol_)
 	: hub(hub_), sid(sid_), address(address_), port(port_), protocol(protocol_)
 {
@@ -177,7 +177,7 @@ ADC::ClaimCheck::ClaimCheck(Hub* hub_, sid_t sid_, const std::string& address_,
 }
 
 
-ADC::ClaimCheck::~ClaimCheck()
+ADC::LocalHub::ClaimCheck::~ClaimCheck()
 {
 	/*
 	 * A running check being destroyed - the hub it reports to is going away - still
@@ -192,13 +192,13 @@ ADC::ClaimCheck::~ClaimCheck()
 }
 
 
-void ADC::ClaimCheck::EventConnected(const Samurai::IO::Net::Socket*)
+void ADC::LocalHub::ClaimCheck::EventConnected(const Samurai::IO::Net::Socket*)
 {
 	reachable();
 }
 
 
-void ADC::ClaimCheck::EventDisconnected(const Samurai::IO::Net::Socket*)
+void ADC::LocalHub::ClaimCheck::EventDisconnected(const Samurai::IO::Net::Socket*)
 {
 	/*
 	 * A close after the connection was up, which happens either way: a client that
@@ -209,14 +209,14 @@ void ADC::ClaimCheck::EventDisconnected(const Samurai::IO::Net::Socket*)
 }
 
 
-void ADC::ClaimCheck::EventError(const Samurai::IO::Net::Socket*,
+void ADC::LocalHub::ClaimCheck::EventError(const Samurai::IO::Net::Socket*,
                                  Samurai::IO::Net::SocketError, const char* msg)
 {
 	unreachable(msg && *msg ? msg : "the connection failed");
 }
 
 
-void ADC::ClaimCheck::reachable()
+void ADC::LocalHub::ClaimCheck::reachable()
 {
 	if (finished) return;
 	finish();
@@ -231,7 +231,7 @@ void ADC::ClaimCheck::reachable()
 
 /* 'why' is the log's business only: see ADC_STR_CONNECTION_FAILED for why a
    system's error text is not sent to the client it is about. */
-void ADC::ClaimCheck::unreachable([[maybe_unused]] const char* why)
+void ADC::LocalHub::ClaimCheck::unreachable([[maybe_unused]] const char* why)
 {
 	if (finished) return;
 	finish();
@@ -242,7 +242,7 @@ void ADC::ClaimCheck::unreachable([[maybe_unused]] const char* why)
 	 * Looked up now rather than remembered, because the client may have gone in the
 	 * seconds this took - and one that has gone is not one to tell anything.
 	 */
-	HubUser* user = hub->lookupUser(sid);
+	User* user = hub->lookupUser(sid);
 	if (!user) return;
 
 	/*
@@ -277,7 +277,7 @@ void ADC::ClaimCheck::unreachable([[maybe_unused]] const char* why)
 }
 
 
-void ADC::ClaimCheck::finish()
+void ADC::LocalHub::ClaimCheck::finish()
 {
 	finished = std::chrono::steady_clock::now();
 

@@ -102,11 +102,11 @@ static std::string peerAddress(const Samurai::IO::Net::Socket* socket)
 }
 
 
-ADC::HubConnection::HubConnection(std::shared_ptr<Samurai::IO::Net::Socket> socket_) {
+ADC::LocalHub::Connection::Connection(std::shared_ptr<Samurai::IO::Net::Socket> socket_) {
 	socket = std::move(socket_);
 }
 
-ADC::HubConnection::~HubConnection()
+ADC::LocalHub::Connection::~Connection()
 {
 	/*
 	 * A user is normally dropped from inside one of its socket's own event
@@ -117,22 +117,22 @@ ADC::HubConnection::~HubConnection()
 	socket.reset();
 }
 
-void ADC::HubConnection::resetTimer() {
+void ADC::LocalHub::Connection::resetTimer() {
 	last_act.reset();
 }
 
-time_t ADC::HubConnection::getIdleTime() {
+time_t ADC::LocalHub::Connection::getIdleTime() {
 	return last_act.elapsed();
 }
 
-ADC::HubUser::HubUser(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC::Hub* hub) :
-	HubConnection(std::move(socket_)),
+ADC::LocalHub::User::User(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC::LocalHub::Hub* hub) :
+	Connection(std::move(socket_)),
 	command_sup(0),
 	command_inf(0),
 	nick(0),
 	cid(0),
 	locked(false),
-	tokens(ADC::HUB_COMMAND_BURST),
+	tokens(ADC::LocalHub::HUB_COMMAND_BURST),
 	tokens_filled(std::chrono::steady_clock::now()),
 	disconnecting(false),
 	quitting(false),
@@ -141,7 +141,7 @@ ADC::HubUser::HubUser(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC::Hu
 	proxy = new CommandProxy(socket, hub);
 	proxy->setSendQueueLimit(hub->hardSendQ);
 	sid = hub->generateNextSid();
-	state = ADC::State_Protocol;
+	state = ADC::LocalHub::State_Protocol;
 	credentials = Cred_User;
 	/* Empty is what peerAddress() answers for a socket with no peer, which is
 	   deliberate for the comparison below - said plainly here instead. */
@@ -150,7 +150,7 @@ ADC::HubUser::HubUser(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC::Hu
 		from.empty() ? "(unknown)" : from.c_str(), socket->getPort());
 }
 
-ADC::HubUser::~HubUser() {
+ADC::LocalHub::User::~User() {
 	free(nick);
 	free(cid);
 	clearFeatures();
@@ -178,7 +178,7 @@ ADC::HubUser::~HubUser() {
 	}
 }
 
-bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
+bool ADC::LocalHub::User::setINF(ADC::Command* cmd, ADC::LocalHub::Hub* hub) {
 	
 	/* These parameters can only be set by the hub, and must
 	   therefore be removed */
@@ -264,7 +264,7 @@ bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
 			return false;
 		}
 	
-		if (HubUser* hu = hub->lookupUser(nick)) {
+		if (User* hu = hub->lookupUser(nick)) {
 			/*
 			 * Fail closed on an address that is not known: an unknown one is not
 			 * a match, so the old session is left alone and the new one refused
@@ -333,8 +333,8 @@ bool ADC::HubUser::setINF(ADC::Command* cmd, ADC::Hub* hub) {
 	return false;
 }
 
-void ADC::HubUser::addFeature(const std::string& feature) {
-	if (features.size() >= ADC::MAX_USER_FEATURES) return;
+void ADC::LocalHub::User::addFeature(const std::string& feature) {
+	if (features.size() >= ADC::LocalHub::MAX_USER_FEATURES) return;
 	features.insert(feature);
 }
 
@@ -344,41 +344,41 @@ void ADC::HubUser::addFeature(const std::string& feature) {
  * remaining length each time around, which was itself quadratic in that length,
  * and stopped once the ceiling is reached.
  */
-void ADC::HubUser::addFeatures(const char* feats) {
+void ADC::LocalHub::User::addFeatures(const char* feats) {
 	if (!feats) return;
 
 	std::string_view rest(feats);
-	while (!rest.empty() && features.size() < ADC::MAX_USER_FEATURES) {
+	while (!rest.empty() && features.size() < ADC::LocalHub::MAX_USER_FEATURES) {
 		addFeature(std::string(rest.substr(0, std::min<size_t>(4, rest.size()))));
 		rest.remove_prefix(std::min<size_t>(5, rest.size()));
 	}
 }
 
-void ADC::HubUser::clearFeatures() {
+void ADC::LocalHub::User::clearFeatures() {
 	features.clear();
 }
 
-std::string ADC::HubUser::getObservedAddress() const
+std::string ADC::LocalHub::User::getObservedAddress() const
 {
 	return peerAddress(socket.get());
 }
 
 
-bool ADC::HubUser::hasFeature(const char* feature) const {
+bool ADC::LocalHub::User::hasFeature(const char* feature) const {
 	/* Either of these disqualifies it; the test used to be an 'and', which meant
 	   a null feature reached strlen(). */
 	if (!feature || strlen(feature) != 4) return false;
 	return features.count(feature) != 0;
 }
 
-bool ADC::HubUser::allowCommand() {
+bool ADC::LocalHub::User::allowCommand() {
 	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 	const std::chrono::duration<double> elapsed = now - tokens_filled;
 	tokens_filled = now;
 
-	tokens += elapsed.count() * ADC::HUB_COMMAND_RATE;
-	if (tokens > ADC::HUB_COMMAND_BURST)
-		tokens = ADC::HUB_COMMAND_BURST;
+	tokens += elapsed.count() * ADC::LocalHub::HUB_COMMAND_RATE;
+	if (tokens > ADC::LocalHub::HUB_COMMAND_BURST)
+		tokens = ADC::LocalHub::HUB_COMMAND_BURST;
 
 	if (tokens < 1.0) return false;
 
@@ -386,11 +386,11 @@ bool ADC::HubUser::allowCommand() {
 	return true;
 }
 
-size_t ADC::HubUser::getSendQueueSize() {
+size_t ADC::LocalHub::User::getSendQueueSize() {
 	return proxy->getSendQueueSize();
 }
 
-bool ADC::HubUser::send(ADC::Command* cmd, bool more) {
+bool ADC::LocalHub::User::send(ADC::Command* cmd, bool more) {
 	const bool queued = proxy->send(cmd);
 	if (!more)
 		proxy->write();
@@ -398,7 +398,7 @@ bool ADC::HubUser::send(ADC::Command* cmd, bool more) {
 	return queued;
 }
 
-void ADC::HubUser::read() {
+void ADC::LocalHub::User::read() {
 	if (proxy && state != State_WaitDisconnect) {
 		locked = true;
 		proxy->read();

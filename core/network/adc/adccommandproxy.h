@@ -29,7 +29,9 @@ class ClientSession;
 class CommandParser;
 class Command;
 class HubSession;
-class Hub;
+
+/* The hub we run, which is a different thing from the HubSession above. */
+namespace LocalHub { class Hub; }
 
 
 class CommandProxy : public QuickDC::CommandProxy
@@ -38,7 +40,7 @@ class CommandProxy : public QuickDC::CommandProxy
 	
 		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::ClientSession* session);
 		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::HubSession* session);
-		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::Hub* hub);
+		CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::LocalHub::Hub* hub);
 		virtual ~CommandProxy();
 
 		CommandProxy(const CommandProxy&) = delete;

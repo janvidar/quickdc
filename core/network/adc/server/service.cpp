@@ -21,7 +21,7 @@
 
 #define LOCALHUB QuickDC::Core::getInstance()->localHub
 
-ADC::Service::Service(ADC::ServiceMap* map, const char* name, const char* desc) {
+ADC::LocalHub::Service::Service(ADC::LocalHub::ServiceMap* map, const char* name, const char* desc) {
 	service = strdup(name);
 	services = map;
 	description = strdup(desc);
@@ -29,62 +29,62 @@ ADC::Service::Service(ADC::ServiceMap* map, const char* name, const char* desc) 
 	services->add(this);
 }
 
-ADC::Service::~Service() {
+ADC::LocalHub::Service::~Service() {
 	free(service);
 	free(description);
 	if (services)
 		services->remove(this);
 }
 
-const char* ADC::Service::getName() const {
+const char* ADC::LocalHub::Service::getName() const {
 	return service;
 }
 
-const char* ADC::Service::getDescription() const {
+const char* ADC::LocalHub::Service::getDescription() const {
 	return description;
 }
 
-ADC::ServiceMap::ServiceMap(ADC::Hub* hub_) : hub(hub_) { }
+ADC::LocalHub::ServiceMap::ServiceMap(ADC::LocalHub::Hub* hub_) : hub(hub_) { }
 
-ADC::ServiceMap::~ServiceMap() {
+ADC::LocalHub::ServiceMap::~ServiceMap() {
 	while (services.size()) {
 		service_it = services.begin();
-		ADC::Service* service = (*service_it).second;
+		ADC::LocalHub::Service* service = (*service_it).second;
 		service->services = 0;
 		services.erase(service_it);
 		delete service;
 	}
 }
 
-void ADC::ServiceMap::add(Service* srv) {
+void ADC::LocalHub::ServiceMap::add(Service* srv) {
 	std::string s(srv->service);
 	if (services.count(s)) return;
 	services.insert( std::pair<std::string, Service*>(s, srv) );
 }
 
-void ADC::ServiceMap::remove(Service* srv) {
+void ADC::LocalHub::ServiceMap::remove(Service* srv) {
 	std::string s(srv->service);
 	if (!services.count(s)) return;
 	services.erase(s);
 }
 
-ADC::Service* ADC::ServiceMap::first() {
+ADC::LocalHub::Service* ADC::LocalHub::ServiceMap::first() {
 	service_it = services.begin();
 	return (*service_it).second;
 }
 
-ADC::Service* ADC::ServiceMap::next() {
+ADC::LocalHub::Service* ADC::LocalHub::ServiceMap::next() {
 	service_it++;
 	if (service_it != services.end()) return (*service_it).second;
 	return 0;
 }
 
-size_t ADC::ServiceMap::size() {
+size_t ADC::LocalHub::ServiceMap::size() {
 	return services.size();
 }
 
 
-bool ADC::ServiceMap::invoke(Command* cmd) {
+bool ADC::LocalHub::ServiceMap::invoke(Command* cmd) {
 	if (!cmd->getArgument(0)) return true;
 	std::string msg(cmd->getArgument(0));
 	
@@ -101,26 +101,26 @@ bool ADC::ServiceMap::invoke(Command* cmd) {
 }
 
 
-bool ADC::AdcSrvVersion::invoke(Command* cmd) {
+bool ADC::LocalHub::SrvVersion::invoke(Command* cmd) {
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 
 	msg->addArgument("\n"
 		"*** This hub is running " PRODUCT " " VERSION " (build " BUILD ") on " SYSTEM "/" CPU "\n"
 		"    Copyright (C) 2001-2006 Jan Vidar Krey, janvidar@extatic.org\n"
 		);
-	ADC::HubUser* user  = hub->lookupUser(cmd->getSocket());
+	ADC::LocalHub::User* user  = hub->lookupUser(cmd->getSocket());
 	hub->send(msg, user);
 	return true;
 }
 
-bool ADC::AdcSrvHelp::invoke(Command* cmd) {
+bool ADC::LocalHub::SrvHelp::invoke(Command* cmd) {
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 	
 	Samurai::IO::Buffer buffer;
 	buffer.append("\n*** Available commands:\n");
 	
 #define SERVICE_NAME_COLUMN 16
-	for (ADC::Service* service = services->first(); service; service = services->next()) {
+	for (ADC::LocalHub::Service* service = services->first(); service; service = services->next()) {
 		buffer.append("    ");
 		buffer.append(ADC_HUB_SERVICE_PREFIX);
 		
@@ -139,14 +139,14 @@ bool ADC::AdcSrvHelp::invoke(Command* cmd) {
 	
 	msg->addArgument(tbuf);
 	
-	ADC::HubUser* user  = hub->lookupUser(cmd->getSocket());
+	ADC::LocalHub::User* user  = hub->lookupUser(cmd->getSocket());
 	hub->send(msg, user);
 	
 	delete[] tbuf;
 	return true;
 }
 
-bool ADC::AdcSrvUptime::invoke(Command* cmd) {
+bool ADC::LocalHub::SrvUptime::invoke(Command* cmd) {
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 	Samurai::TimeStamp startup = QuickDC::Core::getInstance()->startup;
 	uint32_t seconds = startup.elapsed();
@@ -166,17 +166,17 @@ bool ADC::AdcSrvUptime::invoke(Command* cmd) {
 		snprintf(buf, 100, "*** Uptime: %u days, %u %s.", days, hours, hours == 1 ? "hour" : "hours");
 	}
 	msg->addArgument(buf);
-	ADC::HubUser* user  = hub->lookupUser(cmd->getSocket());
+	ADC::LocalHub::User* user  = hub->lookupUser(cmd->getSocket());
 	hub->send(msg, user);
 	return true;
 }
 
 #define MAX_MOTD_LEN 64 * 1024
-bool ADC::AdcSrvMotd::invoke(Command* cmd) {
+bool ADC::LocalHub::SrvMotd::invoke(Command* cmd) {
 	static Samurai::TimeStamp last_mod_time(0);
 	static char motd_buffer[MAX_MOTD_LEN] = {0, };
 
-	ADC::HubUser* user  = hub->lookupUser(cmd->getSocket());
+	ADC::LocalHub::User* user  = hub->lookupUser(cmd->getSocket());
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 
 	bool sendMessage = true;
@@ -211,7 +211,7 @@ bool ADC::AdcSrvMotd::invoke(Command* cmd) {
 }
 
 
-bool ADC::AdcSrvHistory::invoke(Command* cmd) {
+bool ADC::LocalHub::SrvHistory::invoke(Command* cmd) {
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 	
 	Samurai::IO::Buffer buffer;
@@ -234,13 +234,13 @@ bool ADC::AdcSrvHistory::invoke(Command* cmd) {
 	buffer.pop(tbuf, buffer.size());
 	tbuf[buffer.size()] = 0;
 	msg->addArgument(tbuf);
-	ADC::HubUser* user  = hub->lookupUser(cmd->getSocket());
+	ADC::LocalHub::User* user  = hub->lookupUser(cmd->getSocket());
 	hub->send(msg, user);
 	delete[] tbuf;
 	return true;
 }
 
-bool ADC::AdcSrvMyIP::invoke(Command* cmd) {
+bool ADC::LocalHub::SrvMyIP::invoke(Command* cmd) {
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 
 	/*
@@ -255,7 +255,7 @@ bool ADC::AdcSrvMyIP::invoke(Command* cmd) {
 		? "*** Your IP address is: " + address->toString() + "."
 		: std::string("*** Your IP address is not known.");
 	msg->addArgument(text.c_str());
-	ADC::HubUser* user  = hub->lookupUser(cmd->getSocket());
+	ADC::LocalHub::User* user  = hub->lookupUser(cmd->getSocket());
 	hub->send(msg, user);
 	return true;
 }

@@ -242,7 +242,7 @@ void QuickDC::ProtocolProbe::probeDatagram(Samurai::IO::Net::DatagramSocket* soc
 
 		case Protocol::ADCHub:
 		{
-			ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
+			ADC::LocalHub::Hub* hub = QuickDC::Core::getInstance()->localHub;
 			if (hub) {
 				(void) socket;
 				// hub->onDatagram(socket, packet);
@@ -290,7 +290,7 @@ void QuickDC::ProtocolProbe::probe() {
 	switch (QuickDC::identify(buf, static_cast<size_t>(len))) {
 		case Protocol::ADCHub:
 		{
-			ADC::Hub* hub = QuickDC::Core::getInstance()->localHub;
+			ADC::LocalHub::Hub* hub = QuickDC::Core::getInstance()->localHub;
 			if (hub) {
 #ifdef DATADUMP
 				QDBG("ADC hub connection");

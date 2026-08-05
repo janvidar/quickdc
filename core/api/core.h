@@ -34,7 +34,7 @@ namespace Samurai {
 
 
 namespace ADC {
-	class Hub;
+	namespace LocalHub { class Hub; }
 }
 
 namespace QuickDC {
@@ -121,7 +121,7 @@ class Core {
 		QuickDC::Hash::Manager* hash;
 		TransferManager* transfers;
 		Samurai::TimerManager* timers;
-		ADC::Hub* localHub;
+		ADC::LocalHub::Hub* localHub;
 		QuickDC::QueueManager* queue;
 
 		/**

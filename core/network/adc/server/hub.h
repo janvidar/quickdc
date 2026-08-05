@@ -30,11 +30,20 @@ namespace Samurai {
 }
 
 namespace ADC {
+
 	class Command;
 	class CommandProxy;
+
+/*
+ * The hub this program runs, as opposed to a hub it connects to. The two used to
+ * share the word: ADC::LocalHub::Hub was ours and ADC::HubSession was the connection to
+ * somebody else's, and QuickDC::Hub was that hub as the interface sees it.
+ */
+namespace LocalHub {
+
 	class Hub;
 	class ServiceMap;
-	class HubUser;
+	class User;
 
 	/** How often the hub looks over its connections for ones that have gone quiet. */
 	inline constexpr time_t HUB_SWEEP_INTERVAL = 10;
@@ -79,12 +88,12 @@ namespace ADC {
 			* @param user If the command is to be sent to one user only, a user must be specified.
 			* @param more If 'true', no attempt is made to flush the send queue. 'false' will flush it immediately.
 			*/
-			void send(ADC::Command* cmd, ADC::HubUser* user = 0, bool more = false);
+			void send(ADC::Command* cmd, ADC::LocalHub::User* user = 0, bool more = false);
 			
 			/**
 			* This method is used for disconnecting a user from the hub.
 			*/
-			void kick(ADC::HubUser* user);
+			void kick(ADC::LocalHub::User* user);
 			
 			/**
 			* This method is called when a user has connected to the
@@ -96,7 +105,7 @@ namespace ADC {
 			* Decide whether a newly probed connection may become a user at all.
 			*
 			* The hub does not authenticate, so this is the only thing standing
-			* between an anonymous peer and a HubUser with a send queue, a SID and
+			* between an anonymous peer and a User with a send queue, a SID and
 			* a command proxy of its own. Nothing here has read a byte from the
 			* connection yet.
 			*
@@ -117,13 +126,13 @@ namespace ADC {
 			* This method is called when a user is logged in, and will
 			* notify all the other users about this user.
 			*/
-			void onWelcome(HubUser*);
+			void onWelcome(User*);
 			
 			/**
 			* This method is called when a user sends a public message.
 			* It can be used to intercept the message, etc.
 			*/
-			void onPublicChat(HubUser* user, const char* line);
+			void onPublicChat(User* user, const char* line);
 			
 			/**
 			* This method is called when a user connection is dropped,
@@ -131,7 +140,7 @@ namespace ADC {
 			* This will ensure all the other users are notified about
 			* it.
 			*/
-			void onQuit(HubUser* user, const char* msg = 0);
+			void onQuit(User* user, const char* msg = 0);
 			
 		protected:
 			void EventHostLookup(const Samurai::IO::Net::Socket*) override;
@@ -151,25 +160,25 @@ namespace ADC {
 			* Lookup a user based on a socket.
 			* @return 0 if no user is found
 			*/
-			HubUser* lookupUser(const Samurai::IO::Net::Socket*);
+			User* lookupUser(const Samurai::IO::Net::Socket*);
 			
 			/**
 			* Lookup a user based on a session ID.
 			* @return 0 if no user is found
 			*/
-			HubUser* lookupUser(sid_t sid);
+			User* lookupUser(sid_t sid);
 			
 			/**
 			* Lookup a user based on a nick name.
 			* @return 0 if no user is found
 			*/
-			HubUser* lookupUser(const char* nick);
+			User* lookupUser(const char* nick);
 			
 			/**
 			* Lookup a user based on a client ID (CID).
 			* @return 0 if no user is found
 			*/
-			HubUser* lookupUserCID(const char* cid);
+			User* lookupUserCID(const char* cid);
 	
 		
 		protected:
@@ -178,31 +187,31 @@ namespace ADC {
 			* If the database is locked (processed), a message will be posted, and the operation will
 			* be performed later, when the message queue is processed.
 			*/
-			void userAdd(HubUser*);
+			void userAdd(User*);
 			
 			/**
 			* Remove a user from the user database.
 			* If the database is locked (processed), a message will be posted and the operation will
 			* be performed later, when the message queue is processed.
 			*/
-			void userRemove(HubUser*);
+			void userRemove(User*);
 
 			/**
 			* Register a user for deferred work and return the ticket naming it.
 			*
-			* Deferred work used to carry the HubUser pointer itself, which meant a
+			* Deferred work used to carry the User pointer itself, which meant a
 			* user deleted before its message was processed left the handler holding
 			* freed memory - and nothing withdrew the message. A ticket is looked up
 			* instead, and forgetPending() invalidates every ticket a user holds when
 			* it goes away, so a stale message resolves to nothing.
 			*/
-			uint64_t deferFor(HubUser* user);
+			uint64_t deferFor(User* user);
 
 			/** Resolve and consume a ticket. 0 if the user is already gone. */
-			HubUser* takePending(uint64_t ticket);
+			User* takePending(uint64_t ticket);
 
 			/** Drop every outstanding ticket naming this user. */
-			void forgetPending(const HubUser* user);
+			void forgetPending(const User* user);
 
 			/**
 			* Generate a unique session ID for a new user. This is used for new connections only,
@@ -221,7 +230,7 @@ namespace ADC {
 			/**
 			* Tell a user it is being dropped, and drop it.
 			*/
-			void expire(HubUser* user, const char* code, const char* reason);
+			void expire(User* user, const char* code, const char* reason);
 
 		public:
 			char* hubname;
@@ -263,16 +272,16 @@ namespace ADC {
 			sid_t availSid;
 			
 			/* Quick lookup maps */
-			std::map<const Samurai::IO::Net::Socket*, HubUser*> socket_map;
-			std::map<sid_t, HubUser*>         sid_map;
-			std::vector<HubUser*>                users;
+			std::map<const Samurai::IO::Net::Socket*, User*> socket_map;
+			std::map<sid_t, User*>         sid_map;
+			std::vector<User*>                users;
 			ServiceMap* services;
 			std::deque<char*> history;
 	
 			bool processing;
 
 			/* Outstanding deferred work, keyed by ticket. See deferFor(). */
-			std::map<uint64_t, HubUser*> pending;
+			std::map<uint64_t, User*> pending;
 			uint64_t nextPendingTicket;
 
 			/* ACL */
@@ -286,9 +295,10 @@ namespace ADC {
 			Samurai::Timer* timer;
 			
 	
-		friend class ADC::HubUser;
+		friend class ADC::LocalHub::User;
 	};
 
-}
+} // namespace LocalHub
+} // namespace ADC
 
 #endif // HAVE_QUICKDC_ADC_LOCALHUB_H

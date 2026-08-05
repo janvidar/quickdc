@@ -20,47 +20,47 @@ namespace XML
 
 /* The name is whatever the caller was able to read from the file, and nothing at
    all is not a credential - no more than any other unrecognised name is. */
-enum ADC::ACL::Authorization::Credential ADC::ACL::Authorization::convertCredential(const char* str)
+enum ADC::LocalHub::ACL::Authorization::Credential ADC::LocalHub::ACL::Authorization::convertCredential(const char* str)
 {
 	const std::string_view name(str ? str : "");
 
 	if ( Samurai::Util::iequals(name, "banned") )
-		return ADC::ACL::Authorization::Banned;
+		return ADC::LocalHub::ACL::Authorization::Banned;
 
 	if ( Samurai::Util::iequals(name, "guest") )
-		return ADC::ACL::Authorization::Guest;
+		return ADC::LocalHub::ACL::Authorization::Guest;
 
 	if ( Samurai::Util::iequals(name, "user") )
-		return ADC::ACL::Authorization::User;
+		return ADC::LocalHub::ACL::Authorization::User;
 
 	if ( Samurai::Util::iequals(name, "link") )
-		return ADC::ACL::Authorization::Link;
+		return ADC::LocalHub::ACL::Authorization::Link;
 
 	if ( Samurai::Util::iequals(name, "operator") )
-		return ADC::ACL::Authorization::Operator;
+		return ADC::LocalHub::ACL::Authorization::Operator;
 
 	if ( Samurai::Util::iequals(name, "admin") )
-		return ADC::ACL::Authorization::Admin;
+		return ADC::LocalHub::ACL::Authorization::Admin;
 
-	return ADC::ACL::Authorization::Invalid;
+	return ADC::LocalHub::ACL::Authorization::Invalid;
 }
 
-const char* ADC::ACL::Authorization::convertCredential(enum ADC::ACL::Authorization::Credential type)
+const char* ADC::LocalHub::ACL::Authorization::convertCredential(enum ADC::LocalHub::ACL::Authorization::Credential type)
 {
 	switch (type)
 	{
-		case ADC::ACL::Authorization::Banned:   return "banned";
-		case ADC::ACL::Authorization::Guest:    return "guest";
-		case ADC::ACL::Authorization::User:     return "user";
-		case ADC::ACL::Authorization::Link:     return "link";
-		case ADC::ACL::Authorization::Operator: return "operator";
-		case ADC::ACL::Authorization::Admin:    return "admin";
+		case ADC::LocalHub::ACL::Authorization::Banned:   return "banned";
+		case ADC::LocalHub::ACL::Authorization::Guest:    return "guest";
+		case ADC::LocalHub::ACL::Authorization::User:     return "user";
+		case ADC::LocalHub::ACL::Authorization::Link:     return "link";
+		case ADC::LocalHub::ACL::Authorization::Operator: return "operator";
+		case ADC::LocalHub::ACL::Authorization::Admin:    return "admin";
 		default:
 			return "invalid";
 	}
 }
 
-ADC::ACL::Authorization::Authorization(enum Credential cred_, Samurai::TimeStamp expire_, const char* name_, const char* description_)
+ADC::LocalHub::ACL::Authorization::Authorization(enum Credential cred_, Samurai::TimeStamp expire_, const char* name_, const char* description_)
 	: name(name_ ? name_ : ""), description(description_ ? description_ : "")
 {
 	credential = cred_;
@@ -69,36 +69,36 @@ ADC::ACL::Authorization::Authorization(enum Credential cred_, Samurai::TimeStamp
 	QDBG("* Creating authorization for user %s (%s). access=%s, expires=%s", name.c_str(), description.c_str(), convertCredential(credential), expire.getTime().c_str());
 }
 
-ADC::ACL::Authorization::~Authorization()
+ADC::LocalHub::ACL::Authorization::~Authorization()
 {
 	while (identities.size())
 	{
-		ADC::ACL::Identity* id = identities.back();
+		ADC::LocalHub::ACL::Identity* id = identities.back();
 		identities.pop_back();
 		delete id;
 	}
 
 	while (verifications.size())
 	{
-		ADC::ACL::Verification* vrfy = verifications.back();
+		ADC::LocalHub::ACL::Verification* vrfy = verifications.back();
 		verifications.pop_back();
 		delete vrfy;
 	}
 }
 
-bool ADC::ACL::Authorization::isExpired()
+bool ADC::LocalHub::ACL::Authorization::isExpired()
 {
 	return expire > Samurai::TimeStamp();
 }
 
 
-void ADC::ACL::Authorization::addIdentity(ADC::ACL::Identity* id)
+void ADC::LocalHub::ACL::Authorization::addIdentity(ADC::LocalHub::ACL::Identity* id)
 {
 	QDBG("> Identity for user %s: %s (%s)", name.c_str(), id->data.c_str(), Identity::convertIdentityType(id->type));
 	identities.push_back(id);
 }
 
-void ADC::ACL::Authorization::addVerification(ADC::ACL::Verification* verification)
+void ADC::LocalHub::ACL::Authorization::addVerification(ADC::LocalHub::ACL::Verification* verification)
 {
 	QDBG("> Verification for user %s: %s (%s)", name.c_str(), verification->data.c_str(), Verification::convertVerificationType(verification->type));
 	verifications.push_back(verification);
@@ -106,55 +106,55 @@ void ADC::ACL::Authorization::addVerification(ADC::ACL::Verification* verificati
 
 /* ------------------------------------------------------------------------- */
 
-enum ADC::ACL::Identity::IdentityType ADC::ACL::Identity::convertIdentityType(const char* str)
+enum ADC::LocalHub::ACL::Identity::IdentityType ADC::LocalHub::ACL::Identity::convertIdentityType(const char* str)
 {
 	const std::string_view name(str ? str : "");
 
 	if ( Samurai::Util::iequals(name, "name") )
-		return ADC::ACL::Identity::IdName;
+		return ADC::LocalHub::ACL::Identity::IdName;
 
 	if ( Samurai::Util::iequals(name, "cid") )
-		return ADC::ACL::Identity::IdCID;
+		return ADC::LocalHub::ACL::Identity::IdCID;
 
 	if ( Samurai::Util::iequals(name, "ipv4") )
-		return ADC::ACL::Identity::IdIPv4;
+		return ADC::LocalHub::ACL::Identity::IdIPv4;
 
 	if ( Samurai::Util::iequals(name, "ipv6") )
-		return ADC::ACL::Identity::IdIPv6;
+		return ADC::LocalHub::ACL::Identity::IdIPv6;
 
-	return ADC::ACL::Identity::Invalid;
+	return ADC::LocalHub::ACL::Identity::Invalid;
 }
 
-const char* ADC::ACL::Identity::convertIdentityType(enum ADC::ACL::Identity::IdentityType type)
+const char* ADC::LocalHub::ACL::Identity::convertIdentityType(enum ADC::LocalHub::ACL::Identity::IdentityType type)
 {
 	switch (type)
 	{
-		case ADC::ACL::Identity::IdName: return "name";
-		case ADC::ACL::Identity::IdCID:  return "cid";
-		case ADC::ACL::Identity::IdIPv4: return "ipv4";
-		case ADC::ACL::Identity::IdIPv6: return "ipv6";
+		case ADC::LocalHub::ACL::Identity::IdName: return "name";
+		case ADC::LocalHub::ACL::Identity::IdCID:  return "cid";
+		case ADC::LocalHub::ACL::Identity::IdIPv4: return "ipv4";
+		case ADC::LocalHub::ACL::Identity::IdIPv6: return "ipv6";
 		default:
 			return "invalid";
 	}
 }
 
-ADC::ACL::Identity::Identity(enum IdentityType type_, const char* data_)
+ADC::LocalHub::ACL::Identity::Identity(enum IdentityType type_, const char* data_)
 	: data(data_ ? data_ : "")
 {
 	type = type_;
 }
 
-ADC::ACL::Identity::~Identity()
+ADC::LocalHub::ACL::Identity::~Identity()
 {
 }
 
-bool ADC::ACL::Identity::matchCID(const char*)
+bool ADC::LocalHub::ACL::Identity::matchCID(const char*)
 {
 	QDBG("Implement me!");
 	return false;
 }
 
-bool ADC::ACL::Identity::matchName(const char*)
+bool ADC::LocalHub::ACL::Identity::matchName(const char*)
 {
 	QDBG("Implement me!");
 	return false;
@@ -163,66 +163,66 @@ bool ADC::ACL::Identity::matchName(const char*)
 
 /* ------------------------------------------------------------------------- */
 
-enum ADC::ACL::Verification::VerificationType ADC::ACL::Verification::convertVerificationType(const char* str)
+enum ADC::LocalHub::ACL::Verification::VerificationType ADC::LocalHub::ACL::Verification::convertVerificationType(const char* str)
 {
 	const std::string_view name(str ? str : "");
 
 	if ( Samurai::Util::iequals(name, "none") )
-		return ADC::ACL::Verification::VerifyNone;
+		return ADC::LocalHub::ACL::Verification::VerifyNone;
 
 	if ( Samurai::Util::iequals(name, "password") )
-		return ADC::ACL::Verification::VerifyPassword;
+		return ADC::LocalHub::ACL::Verification::VerifyPassword;
 
 	if ( Samurai::Util::iequals(name, "certificate") )
-		return ADC::ACL::Verification::VerifyCertificate;
+		return ADC::LocalHub::ACL::Verification::VerifyCertificate;
 
-	return ADC::ACL::Verification::Invalid;
+	return ADC::LocalHub::ACL::Verification::Invalid;
 }
 
-const char* ADC::ACL::Verification::convertVerificationType(enum ADC::ACL::Verification::VerificationType type)
+const char* ADC::LocalHub::ACL::Verification::convertVerificationType(enum ADC::LocalHub::ACL::Verification::VerificationType type)
 {
 	switch (type)
 	{
-		case ADC::ACL::Verification::VerifyNone: return "none";
-		case ADC::ACL::Verification::VerifyPassword: return "password";
-		case ADC::ACL::Verification::VerifyCertificate: return "certificate";
+		case ADC::LocalHub::ACL::Verification::VerifyNone: return "none";
+		case ADC::LocalHub::ACL::Verification::VerifyPassword: return "password";
+		case ADC::LocalHub::ACL::Verification::VerifyCertificate: return "certificate";
 		default:
 			return "invalid";
 	}
 }
 
-ADC::ACL::Verification::Verification(enum ADC::ACL::Verification::VerificationType type_, const char* data_)
+ADC::LocalHub::ACL::Verification::Verification(enum ADC::LocalHub::ACL::Verification::VerificationType type_, const char* data_)
 	: data(data_ ? data_ : "")
 {
 	type = type_;
 }
 
-ADC::ACL::Verification::~Verification()
+ADC::LocalHub::ACL::Verification::~Verification()
 {
 }
 
 /* ------------------------------------------------------------------------- */
 
 
-ADC::ACL::Table::Table(const char* path_)
+ADC::LocalHub::ACL::Table::Table(const char* path_)
 	: path(path_ ? path_ : "")
 {
 	load();
 }
 
-ADC::ACL::Table::~Table()
+ADC::LocalHub::ACL::Table::~Table()
 {
 	save();
 
 	while (acl.size())
 	{
-		ADC::ACL::Authorization* auth = acl.back();
+		ADC::LocalHub::ACL::Authorization* auth = acl.back();
 		acl.pop_back();
 		delete auth;
 	}
 }
 
-void ADC::ACL::Table::add(ADC::ACL::Authorization* auth)
+void ADC::LocalHub::ACL::Table::add(ADC::LocalHub::ACL::Authorization* auth)
 {
 	acl.push_back(auth);
 }
@@ -234,7 +234,7 @@ void ADC::ACL::Table::add(ADC::ACL::Authorization* auth)
  */
 #define MAX_ACL_SIZE (4 * 1024 * 1024)
 
-bool ADC::ACL::Table::load()
+bool ADC::LocalHub::ACL::Table::load()
 {
 	QDBG("Loading acl");
 	Samurai::IO::File file(path);
@@ -291,7 +291,7 @@ bool ADC::ACL::Table::load()
 	buffer->append(reinterpret_cast<char*>(temp_buffer), static_cast<size_t>(got));
 	delete[] temp_buffer;
 
-	ADC::ACL::XMLReader* handler = new ADC::ACL::XMLReader(this, buffer);
+	ADC::LocalHub::ACL::XMLReader* handler = new ADC::LocalHub::ACL::XMLReader(this, buffer);
 	bool ret = handler->parse();
 
 	delete handler;
@@ -307,7 +307,7 @@ bool ADC::ACL::Table::load()
 #define XML_NEWLINE "\r\n"
 #define XML_INDENT "\x9"
 
-bool ADC::ACL::Table::save() {
+bool ADC::LocalHub::ACL::Table::save() {
 	QDBG("Saving acl");
 	
 	Samurai::IO::Buffer* xmlout = new Samurai::IO::Buffer();
@@ -316,11 +316,11 @@ bool ADC::ACL::Table::save() {
 	xmlout->append(Samurai::TimeStamp().getTime("%s"));
 	xmlout->append("\">" XML_NEWLINE);
 
-	std::vector<ADC::ACL::Authorization*>::iterator it;
+	std::vector<ADC::LocalHub::ACL::Authorization*>::iterator it;
 	for (it = acl.begin(); it != acl.end(); it++) {
-		ADC::ACL::Authorization* auth = (*it);
+		ADC::LocalHub::ACL::Authorization* auth = (*it);
 		xmlout->append(XML_INDENT "<User credential=\"");
-		xmlout->append(ADC::ACL::Authorization::convertCredential(auth->credential));
+		xmlout->append(ADC::LocalHub::ACL::Authorization::convertCredential(auth->credential));
 		xmlout->append("\" name=\"");
 		XML::escape(xmlout, auth->name);
 		xmlout->append("\" description=\"");
@@ -330,19 +330,19 @@ bool ADC::ACL::Table::save() {
 		xmlout->append("\">" XML_NEWLINE);
 
 		
-		for (std::vector<ADC::ACL::Identity*>::iterator it2 = auth->identities.begin(); it2 != auth->identities.end(); it2++) {
-			ADC::ACL::Identity* id = (*it2);
+		for (std::vector<ADC::LocalHub::ACL::Identity*>::iterator it2 = auth->identities.begin(); it2 != auth->identities.end(); it2++) {
+			ADC::LocalHub::ACL::Identity* id = (*it2);
 			xmlout->append(XML_INDENT XML_INDENT "<id type=\"");
-			xmlout->append(ADC::ACL::Identity::convertIdentityType(id->type));
+			xmlout->append(ADC::LocalHub::ACL::Identity::convertIdentityType(id->type));
 			xmlout->append("\" data=\"");
 			XML::escape(xmlout, id->data);
 			xmlout->append("\" />" XML_NEWLINE);
 		}
 
-		for (std::vector<ADC::ACL::Verification*>::iterator it2 = auth->verifications.begin(); it2 != auth->verifications.end(); it2++) {
-			ADC::ACL::Verification* vrfy = (*it2);
+		for (std::vector<ADC::LocalHub::ACL::Verification*>::iterator it2 = auth->verifications.begin(); it2 != auth->verifications.end(); it2++) {
+			ADC::LocalHub::ACL::Verification* vrfy = (*it2);
 			xmlout->append(XML_INDENT XML_INDENT "<verify type=\"");
-			xmlout->append(ADC::ACL::Verification::convertVerificationType(vrfy->type));
+			xmlout->append(ADC::LocalHub::ACL::Verification::convertVerificationType(vrfy->type));
 			xmlout->append("\" data=\"");
 			XML::escape(xmlout, vrfy->data);
 			xmlout->append("\" />" XML_NEWLINE);
@@ -370,21 +370,21 @@ bool ADC::ACL::Table::save() {
 
 /* ------------------------------------------------------------------------- */
 
-ADC::ACL::XMLReader::XMLReader(ADC::ACL::Table* acl_, Samurai::IO::Buffer* buffer) {
+ADC::LocalHub::ACL::XMLReader::XMLReader(ADC::LocalHub::ACL::Table* acl_, Samurai::IO::Buffer* buffer) {
 	acl = acl_;
 	source = buffer;
 	current = 0;
 	problem = false;
 }
 
-ADC::ACL::XMLReader::~XMLReader()
+ADC::LocalHub::ACL::XMLReader::~XMLReader()
 {
 	/* A file that stops in the middle of a <User> leaves one built but never
 	   handed to the table. */
 	delete current;
 }
 
-bool ADC::ACL::XMLReader::parse()
+bool ADC::LocalHub::ACL::XMLReader::parse()
 {
 	problem = false;
 	if (!source) return false;
@@ -410,7 +410,7 @@ bool ADC::ACL::XMLReader::parse()
 	return !problem;
 }
 
-void ADC::ACL::XMLReader::startElement(std::string_view, std::string_view element,
+void ADC::LocalHub::ACL::XMLReader::startElement(std::string_view, std::string_view element,
 	const Attributes& attributes)
 {
 
@@ -454,8 +454,8 @@ void ADC::ACL::XMLReader::startElement(std::string_view, std::string_view elemen
 			return;
 		}
 			
-		enum ADC::ACL::Authorization::Credential credential = ADC::ACL::Authorization::convertCredential(s_credential);
-		if (credential == ADC::ACL::Authorization::Invalid)
+		enum ADC::LocalHub::ACL::Authorization::Credential credential = ADC::LocalHub::ACL::Authorization::convertCredential(s_credential);
+		if (credential == ADC::LocalHub::ACL::Authorization::Invalid)
 		{
 			error("Invalid credentials for user");
 		}
@@ -498,31 +498,31 @@ void ADC::ACL::XMLReader::startElement(std::string_view, std::string_view elemen
 		
 		if (is_id)
 		{
-			enum ADC::ACL::Identity::IdentityType type = ADC::ACL::Identity::convertIdentityType(s_type);
-			if (type == ADC::ACL::Identity::Invalid)
+			enum ADC::LocalHub::ACL::Identity::IdentityType type = ADC::LocalHub::ACL::Identity::convertIdentityType(s_type);
+			if (type == ADC::LocalHub::ACL::Identity::Invalid)
 			{
 				error("Invalid identity type");
 				return;
 			}
 			
-			ADC::ACL::Identity* id = new ADC::ACL::Identity(type, s_data);
+			ADC::LocalHub::ACL::Identity* id = new ADC::LocalHub::ACL::Identity(type, s_data);
 			current->addIdentity(id);
 		}
 		else
 		{
-			enum ADC::ACL::Verification::VerificationType type = ADC::ACL::Verification::convertVerificationType(s_type);
-			if (type == ADC::ACL::Verification::Invalid)
+			enum ADC::LocalHub::ACL::Verification::VerificationType type = ADC::LocalHub::ACL::Verification::convertVerificationType(s_type);
+			if (type == ADC::LocalHub::ACL::Verification::Invalid)
 			{
 				error("Invalid verification type");
 				return;
 			}
-			ADC::ACL::Verification* vrfy = new ADC::ACL::Verification(type, s_data);
+			ADC::LocalHub::ACL::Verification* vrfy = new ADC::LocalHub::ACL::Verification(type, s_data);
 			current->addVerification(vrfy);
 		}
 	}
 }
 
-void ADC::ACL::XMLReader::endElement(std::string_view, std::string_view element)
+void ADC::LocalHub::ACL::XMLReader::endElement(std::string_view, std::string_view element)
 {
 	if (Samurai::Util::iequals(element, "User"))
 	{
@@ -536,11 +536,11 @@ void ADC::ACL::XMLReader::endElement(std::string_view, std::string_view element)
 	}
 }
 
-void ADC::ACL::XMLReader::characters(std::string_view)
+void ADC::LocalHub::ACL::XMLReader::characters(std::string_view)
 {
 }
 
-void ADC::ACL::XMLReader::onProblem()
+void ADC::LocalHub::ACL::XMLReader::onProblem()
 {
 	problem = true;
 }

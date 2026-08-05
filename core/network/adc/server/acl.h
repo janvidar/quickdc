@@ -32,6 +32,7 @@ namespace Samurai {
 
 
 namespace ADC {
+namespace LocalHub {
 namespace ACL {
 
 class Authorization;
@@ -211,6 +212,7 @@ class XMLReader : public Samurai::IO::XmlContentHandler {
 };
 
 } // namespace ACL
+} // namespace LocalHub
 } // namespace ADC
 
 

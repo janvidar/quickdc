@@ -44,7 +44,9 @@ inline constexpr size_t MAX_COMMAND_ARGUMENTS = 128;
 class Parser;
 class CommandProxy;
 class QueuedCommand;
-class Hub;
+
+/* Hub::send() reaches a Command's priority and arguments; see the friend below. */
+namespace LocalHub { class Hub; }
 
 /**
  * This represents an ADC command.
@@ -231,7 +233,7 @@ class Command : public QuickDC::CommandBase
 		Samurai::TimeStamp timestamp;
 		
 	friend class ADC::Parser;
-	friend class ADC::Hub;
+	friend class ADC::LocalHub::Hub;
 	friend class ADC::CommandProxy;
 	friend class ADC::QueuedCommand;
 };

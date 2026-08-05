@@ -50,9 +50,10 @@ namespace Samurai {
 #define QUICKDC_CLAIMCHECK_REMEMBERED 512
 
 namespace ADC {
+namespace LocalHub {
 
 class Hub;
-class HubUser;
+class User;
 
 /**
  * Test whether a client that says it can be connected to actually can be.
@@ -89,7 +90,7 @@ class ClaimCheck : public Samurai::IO::Net::SocketEventHandler
 		 *         connection listens on, or there is no observed address to use.
 		 *         The caller has nothing to wait for and nothing to clean up.
 		 */
-		static ClaimCheck* start(Hub* hub, HubUser* user, const char* protocol,
+		static ClaimCheck* start(Hub* hub, User* user, const char* protocol,
 			uint16_t port);
 
 		/** How many are running, which is what the concurrency limit applies to. */
@@ -159,6 +160,7 @@ class ClaimCheck : public Samurai::IO::Net::SocketEventHandler
 		std::shared_ptr<Samurai::IO::Net::Socket> socket;
 };
 
-}
+} // namespace LocalHub
+} // namespace ADC
 
 #endif // HAVE_QUICKDC_ADC_LOCALHUB_CLAIMCHECK_H

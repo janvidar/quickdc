@@ -146,13 +146,13 @@ static std::string escapedArgument(const std::string& text)
  * kernel report a chosen errno on demand - so it is called with exactly what
  * samurai would have handed it.
  */
-class TestHub : public ADC::Hub
+class TestHub : public ADC::LocalHub::Hub
 {
 	public:
-		using ADC::Hub::EventError;
+		using ADC::LocalHub::Hub::EventError;
 
 		/* What a hub does at startup, so a case can watch it read a setting. */
-		using ADC::Hub::readConfiguration;
+		using ADC::LocalHub::Hub::readConfiguration;
 };
 
 /* The hub, and the listening socket that hands connections to it. */
@@ -172,7 +172,7 @@ class Server : public Samurai::IO::Net::ServerSocketEventHandler
 			 * process, not to a hub, so one case's checks would otherwise be
 			 * the reason the next case's are declined.
 			 */
-			ADC::ClaimCheck::reset();
+			ADC::LocalHub::ClaimCheck::reset();
 		}
 
 		/*
@@ -489,7 +489,7 @@ EXO_TEST(adchub_a_user_advertises_at_most_max_user_features,
 	EXO_ASSERT(pump([&] { return s.hub.users.size() == 1; }));
 	EXO_ASSERT(!s.hub.users.empty());
 
-	ADC::HubUser* user = s.hub.users[0];
+	ADC::LocalHub::User* user = s.hub.users[0];
 
 	/* A null feature is not a feature, and asking must not read through it. */
 	EXO_ASSERT(!user->hasFeature(0));
@@ -509,7 +509,7 @@ EXO_TEST(adchub_a_user_advertises_at_most_max_user_features,
 	std::string many;
 	while (many.size() < 128 * 1024) many += "AA1,";
 	user->addFeatures(many.c_str());
-	EXO_ASSERT(user->countFeatures() <= ADC::MAX_USER_FEATURES);
+	EXO_ASSERT(user->countFeatures() <= ADC::LocalHub::MAX_USER_FEATURES);
 	return 1;
 });
 
@@ -525,7 +525,7 @@ EXO_TEST(adchub_every_session_id_handed_out_resolves_back_to_its_user,
 	 * every private message is routed by turning those back into a number, so a
 	 * SID that does not survive that round trip is a user nobody can reach.
 	 */
-	s.hub.availSid = ADC::SID_MASK - 2;
+	s.hub.availSid = ADC::LocalHub::SID_MASK - 2;
 	s.hub.maxPerAddress = 16;
 
 	std::vector<Client*> clients;
@@ -546,7 +546,7 @@ EXO_TEST(adchub_every_session_id_handed_out_resolves_back_to_its_user,
 		if (sid == 0)
 			EXO_FAIL("a user was handed session ID zero");
 
-		if (sid != (sid & ADC::SID_MASK))
+		if (sid != (sid & ADC::LocalHub::SID_MASK))
 		{
 			const std::string why = "session ID " + std::to_string(sid)
 				+ " does not fit the twenty bits a SID has";
@@ -699,7 +699,7 @@ EXO_TEST(adchub_a_socket_error_is_not_repeated_to_the_other_users,
 	/* The hub's end of bob's connection, which is what the monitor would name. */
 	const sid_t sid = ADC::SID::fromString(bob.sid.c_str());
 	const Samurai::IO::Net::Socket* peer = 0;
-	std::map<const Samurai::IO::Net::Socket*, ADC::HubUser*>::iterator it;
+	std::map<const Samurai::IO::Net::Socket*, ADC::LocalHub::User*>::iterator it;
 	for (it = s.hub.socket_map.begin(); it != s.hub.socket_map.end(); it++)
 		if ((*it).second->getSID() == sid) peer = (*it).first;
 	EXO_ASSERT(peer != 0);
@@ -968,7 +968,7 @@ EXO_TEST(adchub_the_chat_history_keeps_what_it_is_configured_to,
 	EXO_ASSERT(c.login(makeIdentity(7), "talker"));
 	EXO_ASSERT(!s.hub.users.empty());
 
-	ADC::HubUser* user = s.hub.users[0];
+	ADC::LocalHub::User* user = s.hub.users[0];
 
 	/* A message with nothing in it is not one. */
 	s.hub.onPublicChat(user, 0);
@@ -1010,7 +1010,7 @@ EXO_TEST(adchub_a_configured_limit_that_makes_no_sense_is_clamped,
 	config->setNumber("Idle timeout", -1);
 
 	{
-		ADC::Hub hub;
+		ADC::LocalHub::Hub hub;
 		EXO_ASSERT(hub.maxUsers >= 1);
 		EXO_ASSERT(hub.maxHistory == 0);
 		EXO_ASSERT(hub.maxSendQ >= 4096);
@@ -1461,7 +1461,7 @@ EXO_TEST(adchub_a_client_claiming_nothing_is_not_checked,
 
 	pump([] { return false; }, 700);
 	EXO_ASSERT_EQ_UINT(open.accepted, 0u);
-	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
 	return 1;
 });
 
@@ -1489,7 +1489,7 @@ EXO_TEST(adchub_a_claim_on_a_privileged_port_is_not_checked,
 	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 22 tok1");
 
 	pump([] { return false; }, 700);
-	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
 
 	/* And no report either: nothing was checked, so nothing is known. */
 	alice.drain();
@@ -1515,7 +1515,7 @@ EXO_TEST(adchub_a_claim_on_an_impossible_port_is_not_checked,
 	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 -1 tok3");
 
 	pump([] { return false; }, 700);
-	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
 	return 1;
 });
 
@@ -1651,13 +1651,13 @@ EXO_TEST(adchub_a_client_that_leaves_during_a_check_is_not_reported_to,
 		alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
 			+ std::to_string(closed) + " tok1");
 
-		pump([] { return ADC::ClaimCheck::running() > 0; }, 1000);
-		EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 1u);
+		pump([] { return ADC::LocalHub::ClaimCheck::running() > 0; }, 1000);
+		EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 1u);
 	}
 
 	/* Alice's socket is gone; the check finishes and finds nobody. */
-	pump([] { return ADC::ClaimCheck::running() == 0; }, 3000);
-	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+	pump([] { return ADC::LocalHub::ClaimCheck::running() == 0; }, 3000);
+	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
 	return 1;
 });
 
@@ -1687,11 +1687,11 @@ EXO_TEST(adchub_a_hub_that_goes_away_takes_its_checks_with_it,
 		alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
 			+ std::to_string(closed) + " tok1");
 
-		pump([] { return ADC::ClaimCheck::running() > 0; }, 1000);
-		EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 1u);
+		pump([] { return ADC::LocalHub::ClaimCheck::running() > 0; }, 1000);
+		EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 1u);
 	}
 
-	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
 
 	pump([] { return false; }, 1500);
 	return 1;

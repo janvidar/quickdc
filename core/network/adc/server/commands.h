@@ -29,16 +29,19 @@ namespace ADC {
 
 class Command;
 class CommandProxy;
+
+namespace LocalHub {
+
 class Hub;
 
-class LocalHubParser : public ADC::CommandParser
+class Handler : public ADC::CommandParser
 {
 	public:
-		LocalHubParser(CommandProxy* proxy, Hub* hub);
-		virtual ~LocalHubParser();
+		Handler(CommandProxy* proxy, Hub* hub);
+		virtual ~Handler();
 
-		LocalHubParser(const LocalHubParser&) = delete;
-		LocalHubParser& operator=(const LocalHubParser&) = delete;
+		Handler(const Handler&) = delete;
+		Handler& operator=(const Handler&) = delete;
 		
 		virtual bool invoke(Command*) override = 0;
 		
@@ -48,25 +51,26 @@ class LocalHubParser : public ADC::CommandParser
 };
 
 #define ADC_LOCALHUB_CMD_CLASS(N) \
-	class N : public ADC::LocalHubParser { \
+	class N : public ADC::LocalHub::Handler { \
 		public: \
-			N(ADC::CommandProxy* proxy, ADC::Hub* hub) : ADC::LocalHubParser(proxy, hub) { }; \
+			N(ADC::CommandProxy* proxy, ADC::LocalHub::Hub* hub) : ADC::LocalHub::Handler(proxy, hub) { }; \
 			bool invoke(ADC::Command*) override; \
 	};
 
-	ADC_LOCALHUB_CMD_CLASS(HubCmdSUP);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdPAS);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdINF);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdMSG);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdSCH);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdRES);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdCTM);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdRCM);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdNAT);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdRNT);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdSTA);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdDSC);
+	ADC_LOCALHUB_CMD_CLASS(CmdSUP);
+	ADC_LOCALHUB_CMD_CLASS(CmdPAS);
+	ADC_LOCALHUB_CMD_CLASS(CmdINF);
+	ADC_LOCALHUB_CMD_CLASS(CmdMSG);
+	ADC_LOCALHUB_CMD_CLASS(CmdSCH);
+	ADC_LOCALHUB_CMD_CLASS(CmdRES);
+	ADC_LOCALHUB_CMD_CLASS(CmdCTM);
+	ADC_LOCALHUB_CMD_CLASS(CmdRCM);
+	ADC_LOCALHUB_CMD_CLASS(CmdNAT);
+	ADC_LOCALHUB_CMD_CLASS(CmdRNT);
+	ADC_LOCALHUB_CMD_CLASS(CmdSTA);
+	ADC_LOCALHUB_CMD_CLASS(CmdDSC);
 
-}
+} // namespace LocalHub
+} // namespace ADC
 
 #endif // HAVE_QUICKDC_ADC_LOCALHUB_COMMANDS_H

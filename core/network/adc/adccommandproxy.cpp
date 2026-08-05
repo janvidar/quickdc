@@ -55,35 +55,35 @@ ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket
 	FOURCC_REG('D','R','N','T', new ADC::CmdRNT(this, session));
 }
 
-ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::Hub* hub) : QuickDC::CommandProxy(std::move(socket)), handover(0)
+ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::LocalHub::Hub* hub) : QuickDC::CommandProxy(std::move(socket)), handover(0)
 {
 	// hub messages
-	FOURCC_REG('H','S','U','P', new ADC::HubCmdSUP(this, hub));
-	FOURCC_REG('H','P','A','S', new ADC::HubCmdPAS(this, hub));
-	FOURCC_REG('H','D','S','C', new ADC::HubCmdDSC(this, hub));
-	FOURCC_REG('H','M','S','G', new ADC::HubCmdMSG(this, hub));
+	FOURCC_REG('H','S','U','P', new ADC::LocalHub::CmdSUP(this, hub));
+	FOURCC_REG('H','P','A','S', new ADC::LocalHub::CmdPAS(this, hub));
+	FOURCC_REG('H','D','S','C', new ADC::LocalHub::CmdDSC(this, hub));
+	FOURCC_REG('H','M','S','G', new ADC::LocalHub::CmdMSG(this, hub));
 
 	// broadcast messages
-	FOURCC_REG('B','I','N','F', new ADC::HubCmdINF(this, hub));
-	FOURCC_REG('B','M','S','G', new ADC::HubCmdMSG(this, hub));
-	FOURCC_REG('B','S','C','H', new ADC::HubCmdSCH(this, hub));
+	FOURCC_REG('B','I','N','F', new ADC::LocalHub::CmdINF(this, hub));
+	FOURCC_REG('B','M','S','G', new ADC::LocalHub::CmdMSG(this, hub));
+	FOURCC_REG('B','S','C','H', new ADC::LocalHub::CmdSCH(this, hub));
 
 	// direct messages
-	FOURCC_REG('D','M','S','G', new ADC::HubCmdMSG(this, hub));
-	FOURCC_REG('D','S','C','H', new ADC::HubCmdSCH(this, hub));
-	FOURCC_REG('D','R','E','S', new ADC::HubCmdRES(this, hub));
-	FOURCC_REG('D','C','T','M', new ADC::HubCmdCTM(this, hub));
-	FOURCC_REG('D','R','C','M', new ADC::HubCmdRCM(this, hub));
-	FOURCC_REG('D','N','A','T', new ADC::HubCmdNAT(this, hub));
-	FOURCC_REG('D','R','N','T', new ADC::HubCmdRNT(this, hub));
-	FOURCC_REG('D','S','T','A', new ADC::HubCmdSTA(this, hub));
+	FOURCC_REG('D','M','S','G', new ADC::LocalHub::CmdMSG(this, hub));
+	FOURCC_REG('D','S','C','H', new ADC::LocalHub::CmdSCH(this, hub));
+	FOURCC_REG('D','R','E','S', new ADC::LocalHub::CmdRES(this, hub));
+	FOURCC_REG('D','C','T','M', new ADC::LocalHub::CmdCTM(this, hub));
+	FOURCC_REG('D','R','C','M', new ADC::LocalHub::CmdRCM(this, hub));
+	FOURCC_REG('D','N','A','T', new ADC::LocalHub::CmdNAT(this, hub));
+	FOURCC_REG('D','R','N','T', new ADC::LocalHub::CmdRNT(this, hub));
+	FOURCC_REG('D','S','T','A', new ADC::LocalHub::CmdSTA(this, hub));
 
 	// echo messages
-	FOURCC_REG('E','M','S','G', new ADC::HubCmdMSG(this, hub));
-	FOURCC_REG('E','S','C','H', new ADC::HubCmdSCH(this, hub));
+	FOURCC_REG('E','M','S','G', new ADC::LocalHub::CmdMSG(this, hub));
+	FOURCC_REG('E','S','C','H', new ADC::LocalHub::CmdSCH(this, hub));
 
 	// feature messages
-	FOURCC_REG('F','S','C','H', new ADC::HubCmdSCH(this, hub));
+	FOURCC_REG('F','S','C','H', new ADC::LocalHub::CmdSCH(this, hub));
 }
 
 ADC::CommandProxy::~CommandProxy()

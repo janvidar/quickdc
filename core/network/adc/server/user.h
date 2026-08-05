@@ -27,6 +27,14 @@ class Socket;
 
 namespace ADC {
 
+class Command;
+class CommandProxy;
+
+namespace LocalHub {
+
+class Hub;
+class ServiceMap;
+
 /**
  * The most features one user may advertise in the SU field of its INF.
  *
@@ -44,19 +52,13 @@ inline constexpr size_t MAX_USER_FEATURES = 64;
 inline constexpr double HUB_COMMAND_RATE = 50.0;
 inline constexpr double HUB_COMMAND_BURST = 200.0;
 
-
-class Command;
-class CommandProxy;
-class Hub;
-class ServiceMap;
-
 enum State { State_None, State_Protocol, State_Identify, State_Verify, State_Normal, State_WaitDisconnect };
 enum Credentials { Cred_User, Cred_Operator, Cred_Admin };
 
-class HubConnection {
+class Connection {
 	public:
-		HubConnection(std::shared_ptr<Samurai::IO::Net::Socket>);
-		virtual ~HubConnection();
+		Connection(std::shared_ptr<Samurai::IO::Net::Socket>);
+		virtual ~Connection();
 
 		virtual void resetTimer();
 
@@ -72,13 +74,13 @@ class HubConnection {
 };
 
 
-class HubUser : public HubConnection {
+class User : public Connection {
 	public:
-		HubUser(std::shared_ptr<Samurai::IO::Net::Socket>, Hub*);
-		virtual ~HubUser();
+		User(std::shared_ptr<Samurai::IO::Net::Socket>, Hub*);
+		virtual ~User();
 
-		HubUser(const HubUser&) = delete;
-		HubUser& operator=(const HubUser&) = delete;
+		User(const User&) = delete;
+		User& operator=(const User&) = delete;
 		
 		bool setINF(ADC::Command* cmd, Hub* hub);
 
@@ -158,9 +160,10 @@ class HubUser : public HubConnection {
 		bool announce_quit;
 
 
-	friend class ADC::Hub;
+	friend class ADC::LocalHub::Hub;
 };
 
-}
+} // namespace LocalHub
+} // namespace ADC
 
 #endif // HAVE_QUICKDC_ADC_LOCALHUB_USER_H
