@@ -8,6 +8,17 @@
 
 #include <samurai/timestamp.h>
 
+/*
+ * Where this client keeps the certificate it presents to peers, and the name that
+ * certificate asserts. Named here rather than written into core.cpp because the
+ * generator refuses a name it cannot encode - so a label that stops being usable
+ * has to fail somewhere a test can see it, not by quietly leaving the client
+ * without a certificate.
+ */
+#define QUICKDC_PRIVATE_KEY_FILE  "~/.quickdc/ssl/quickdc.key"
+#define QUICKDC_CERTIFICATE_FILE  "~/.quickdc/ssl/quickdc.crt"
+#define QUICKDC_CERTIFICATE_NAME  "quickdc"
+
 namespace Samurai {
 	namespace IO {
 		namespace Net {

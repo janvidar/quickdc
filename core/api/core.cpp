@@ -88,6 +88,65 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 
 CorePortForwardListener portforward_listener;
 
+/*
+ * Make sure there is a certificate to present, generating one if there is not.
+ *
+ * A peer transfer has to be encrypted unless the user turns that off, and a peer
+ * dialling us can only be answered with TLS if we hold a certificate - so on a
+ * client that has never had one, requiring encryption would refuse every inbound
+ * transfer, and nothing in this client ever created one. Nobody can sign a
+ * certificate for a peer on a home connection, so it is self-signed; in ADC the
+ * peer's identity is its keyprint rather than a name a certificate asserts, so
+ * that costs nothing that was on offer.
+ *
+ * An existing pair is left exactly as it is. Replacing it would change the
+ * keyprint that hubs and peers were given, and a certificate that is present but
+ * unreadable is for a person to look at, not for this to overwrite.
+ */
+void ensureCertificate(const char* key_path, const char* cert_path)
+{
+	Samurai::IO::File key(key_path);
+	Samurai::IO::File cert(cert_path);
+
+	if (key.exists() && cert.exists()) return;
+
+	/*
+	 * One of the two, which is a case to report rather than to repair: a key on
+	 * its own is useless without the certificate that goes with it, but it may
+	 * still be the key whose keyprint peers were given, and generating a new pair
+	 * over it would change that silently. Left alone, and said out loud - because
+	 * the visible effect is only that encrypted transfers stop working.
+	 */
+	if (key.exists() || cert.exists())
+	{
+		QERR("Found '%s' without its counterpart, so no certificate can be "
+			"presented - move it aside to have a new pair generated",
+			key.exists() ? key_path : cert_path);
+		return;
+	}
+
+	/*
+	 * The name is a fixed label rather than the nick or an address: a nick is
+	 * UTF-8 and may hold spaces, which a common name cannot, and the address
+	 * this client is reached at is not known here and changes. Nothing verifies
+	 * it either way.
+	 */
+	if (!Samurai::IO::Net::TlsFactory::generateSelfSignedCertificate(
+			key_path, cert_path, QUICKDC_CERTIFICATE_NAME))
+	{
+		/*
+		 * Not fatal, but worth saying: without a certificate this client cannot
+		 * answer a peer with TLS, so with encryption required it cannot be
+		 * transferred with at all.
+		 */
+		QERR("No certificate could be generated - inbound encrypted transfers "
+			"will not be possible");
+		return;
+	}
+
+	QDBG("Generated a self-signed certificate in '%s'", cert_path);
+}
+
 }
 
 
@@ -116,7 +175,8 @@ QuickDC::Core::Core()
 	messageHandler = Samurai::MessageHandler::getInstance();
 	securityManager = new QuickDC::SecurityManager();
 
-	Samurai::IO::Net::TlsFactory::setKeys("~/.quickdc/ssl/quickdc.key", "~/.quickdc/ssl/quickdc.crt");
+	ensureCertificate(QUICKDC_PRIVATE_KEY_FILE, QUICKDC_CERTIFICATE_FILE);
+	Samurai::IO::Net::TlsFactory::setKeys(QUICKDC_PRIVATE_KEY_FILE, QUICKDC_CERTIFICATE_FILE);
 
 	hash = new QuickDC::Hash::Manager();
 	shares = new QuickDC::Share::Manager(config, hash);

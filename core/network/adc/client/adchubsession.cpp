@@ -75,6 +75,48 @@ static bool canAcceptTls()
 	return cert && cert->exists() && pkey && pkey->exists();
 }
 
+/*
+ * Whether a peer transfer has to be encrypted.
+ *
+ * On by default. A peer transfer carries the file and, on the NMDC side of this
+ * client, nothing about it is protected at all; on the ADC side the protection
+ * was previously decided by a single string in a message the hub relayed, so a
+ * hub - or anyone who could forge a CTM through it - chose whether the transfer
+ * that followed was encrypted. Requiring it takes that choice away from them.
+ *
+ * The cost is real and is the reason this is a setting rather than a constant: a
+ * peer that does not offer ADCS cannot be transferred with at all, and on a
+ * plain ADC hub keyprints cannot be trusted anyway, so there the requirement
+ * buys confidentiality against an observer but not authentication of the peer.
+ */
+static bool requireEncryptedTransfers()
+{
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	return config->getBool("Require encrypted transfers", true);
+}
+
+/*
+ * Refuse a peer connection that would not be encrypted, and say so where a user
+ * can see it: a transfer that never starts is otherwise indistinguishable from a
+ * peer that is simply not answering.
+ */
+void ADC::HubSession::refuseUnencrypted(const char* from, const char* token,
+                                        const char* proto, const char* why)
+{
+	QERR("Refusing an unencrypted peer connection: %s", why);
+
+	if (listener)
+	{
+		const std::string msg = std::string("Refused an unencrypted transfer: ") + why;
+		listener->EventSystemError(msg.c_str());
+	}
+
+	sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL,
+			ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),
+		"Encryption is required", token, proto);
+}
+
 
 ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Samurai::IO::Net::URL* url, bool secure_)
 	: QuickDC::HubSession(ui)
@@ -1336,6 +1378,30 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	const std::string_view protocol(proto ? proto : "");
 	bool peerSecure = (protocol == ADC_TLS_PROTO);
 
+	/*
+	 * A plain connection is refused outright when encryption is required, and
+	 * also when we ourselves asked for ADCS - our own request is a floor. The
+	 * second case is the downgrade this closes: the protocol field arrives in a
+	 * message the hub relayed, so accepting a weaker one than we named let
+	 * whoever could write that field decide for us.
+	 */
+	if (!peerSecure && protocol == ADC_COMPLIANCE)
+	{
+		if (requireEncryptedTransfers())
+		{
+			refuseUnencrypted(from, token, proto,
+				"the peer answered with plain ADC");
+			return;
+		}
+
+		if (secure && canAcceptTls())
+		{
+			refuseUnencrypted(from, token, proto,
+				"we asked for ADCS and the peer answered with plain ADC");
+			return;
+		}
+	}
+
 	if (!peerSecure && protocol != ADC_COMPLIANCE)
 	{
 		QERR("Peer asked for protocol '%s', which is not supported", proto ? proto : "");
@@ -1405,6 +1471,26 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 		QERR("Peer asked us to accept an ADCS connection, but we have no certificate to present");
 		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),
 			"No certificate to accept TLS with", token, proto);
+		return;
+	}
+
+	/*
+	 * We are about to name a protocol in a CTM, and the peer will dial whatever
+	 * we name - so this is the last point at which the requirement can be
+	 * honoured. Without a certificate we cannot name ADCS at all, which is a
+	 * different failure from the peer refusing it and is reported as such.
+	 */
+	if (!peerSecure && requireEncryptedTransfers())
+	{
+		if (!canAcceptTls())
+		{
+			refuseUnencrypted(from, token, proto,
+				"encryption is required and there is no certificate to accept it with");
+			return;
+		}
+
+		refuseUnencrypted(from, token, proto,
+			"the peer did not ask for ADCS");
 		return;
 	}
 

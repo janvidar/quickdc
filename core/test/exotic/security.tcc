@@ -22,10 +22,15 @@
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/socketaddress.h>
 #include <samurai/io/net/socketmonitor.h>
+#include <samurai/io/net/tlsfactory.h>
+#include <samurai/io/file.h>
+
+#include "api/core.h"
 
 #include <chrono>
 #include <memory>
 #include <string>
+#include <unistd.h>
 
 namespace {
 
@@ -117,6 +122,17 @@ class LoopbackPair
 		std::shared_ptr<Samurai::IO::Net::ServerSocket> server;
 		std::shared_ptr<Samurai::IO::Net::Socket> client;
 };
+
+}
+
+namespace {
+
+std::string scratch(const char* leaf)
+{
+	static int counter = 0;
+	return "/tmp/quickdc_security_" + std::to_string((int) getpid())
+		+ "_" + std::to_string(counter++) + "_" + leaf;
+}
 
 }
 
@@ -388,5 +404,62 @@ EXO_TEST(security_an_adc_clearance_with_no_id_does_not_match_a_null_id,
 	grant(mgr, 0, "t1", Clearance::ADC);
 
 	EXO_ASSERT(!authorized(mgr, 0, "t1", Clearance::ADC));
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* The certificate this client presents                                      */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A peer transfer has to be encrypted unless the user says otherwise, and a peer
+ * dialling us can only be answered with TLS if there is a certificate to present
+ * - so Core generates one on a client that has none. Samurai's own suite covers
+ * the generator; what is asserted here is the part that is ours to get wrong.
+ *
+ * The name is refused rather than truncated if it is not one a certificate can
+ * carry, and a refused name means no certificate, which means no encrypted
+ * transfer and nothing on the wire to say why. This is the case that fails if
+ * QUICKDC_CERTIFICATE_NAME is changed to something the generator will not take.
+ */
+EXO_TEST(security_the_name_this_client_asserts_is_one_that_can_be_generated,
+{
+	const std::string key = scratch("cert.key");
+	const std::string crt = scratch("cert.crt");
+
+	const bool made = Samurai::IO::Net::TlsFactory::generateSelfSignedCertificate(
+		key.c_str(), crt.c_str(), QUICKDC_CERTIFICATE_NAME);
+
+	const bool key_there = Samurai::IO::File(key).exists();
+	const bool crt_there = Samurai::IO::File(crt).exists();
+
+	Samurai::IO::File(key).remove();
+	Samurai::IO::File(crt).remove();
+
+	EXO_ASSERT(made);
+	EXO_ASSERT(key_there);
+	EXO_ASSERT(crt_there);
+	return 1;
+});
+
+/*
+ * And the two paths are ones the generator can resolve, which is why they are
+ * the same strings setKeys() is given: a key written beside a literal '~' would
+ * not be the key the process then reads.
+ */
+EXO_TEST(security_the_certificate_paths_are_under_the_client_directory,
+{
+	const std::string key = QUICKDC_PRIVATE_KEY_FILE;
+	const std::string crt = QUICKDC_CERTIFICATE_FILE;
+
+	EXO_ASSERT(key.compare(0, 15, "~/.quickdc/ssl/") == 0);
+	EXO_ASSERT(crt.compare(0, 15, "~/.quickdc/ssl/") == 0);
+	EXO_ASSERT(key != crt);
+
+	/* Resolved to somewhere absolute, and not to a directory called '~'. */
+	const std::string resolved = Samurai::IO::File::resolvePath(key);
+	EXO_ASSERT(!resolved.empty());
+	EXO_ASSERT(resolved[0] == '/');
+	EXO_ASSERT(resolved.find("/~/") == std::string::npos);
 	return 1;
 });

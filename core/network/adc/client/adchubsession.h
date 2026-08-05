@@ -104,6 +104,13 @@ class HubSession :
 		void sendPeerError(const char* sid, const char* code, const char* msg, const char* token, const char* protocol) override;
 
 	protected:
+		/**
+		 * Refuse a peer connection that would not be encrypted, telling both the
+		 * peer and whoever is watching this session why.
+		 */
+		void refuseUnencrypted(const char* from, const char* token,
+		                       const char* proto, const char* why);
+
 		void send(ADC::Command* cmd, bool more = false);
 		void resetIdleTimer();
 		

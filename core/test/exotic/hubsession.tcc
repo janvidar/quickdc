@@ -1032,3 +1032,209 @@ EXO_TEST(hubsession_everything_else_backs_off_to_a_ceiling_spread_either_side,
 	}
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* Whether a peer transfer has to be encrypted                               */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A peer transfer carries the file, and which protocol carries it used to be
+ * decided by one field of a message the hub relayed - so a hub, or anyone able
+ * to forge a CTM through one, chose whether the transfer that followed was
+ * encrypted. "Require encrypted transfers" takes that choice away, and defaults
+ * to on.
+ *
+ * These cases drive the two directions a peer connection is arranged in: a CTM
+ * telling us to dial the peer, and an RCM asking us to invite the peer in.
+ */
+
+namespace {
+
+/* The session under test is on a plain ADC hub, which is the interesting case:
+   a plain hub may still broker an encrypted peer connection. */
+void setRequireEncryption(bool required)
+{
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	config->setBool("Require encrypted transfers", required);
+}
+
+/* No setting at all, which is what a client that has never been configured has. */
+void forgetEncryptionSetting()
+{
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	config->remove("Require encrypted transfers");
+}
+
+/* A user for the session to be told to connect to. */
+bool announcePeer(Session& s, const char* sid)
+{
+	s.say(std::string("BINF ") + sid + " NIpeer I4127.0.0.1 U41412 SS100 SL1");
+	return true;
+}
+
+}
+
+/* On by default: a CTM naming plain ADC is refused rather than dialled. */
+EXO_TEST(hubsession_a_plain_connect_request_is_refused_when_encryption_is_required,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	setRequireEncryption(true);
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	std::string line;
+	s.hub.drain();
+	s.hub.received.clear();
+
+	/* The peer says: dial me, in the clear, on this port. */
+	s.say("DCTM BBBB AAAA ADC/1.0 1412 job1");
+
+	/* Refused, and the peer is told why rather than left waiting. */
+	/*
+	 * nextLine() waits for a line, so a refusal that never came fails here - and
+	 * the reason is asserted because a DSTA also goes back when an accepted
+	 * request is dialled and the dial fails. Only this one names encryption.
+	 */
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DSTA ") == 0);
+	EXO_ASSERT(line.find("Encryption") != std::string::npos);
+	EXO_ASSERT(line.find("job1") != std::string::npos);
+
+	/* And the local side hears about it, since a transfer that never starts is
+	   otherwise indistinguishable from a peer that is not answering. */
+	EXO_ASSERT(!s.listener.errors.empty());
+	return 1;
+});
+
+/* With the requirement off, the same request is accepted. */
+EXO_TEST(hubsession_a_plain_connect_request_is_accepted_when_encryption_is_not_required,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	setRequireEncryption(false);
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	std::string line;
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say("DCTM BBBB AAAA ADC/1.0 1412 job1");
+
+	/*
+	 * The request is accepted, so we dial - and nothing is listening on that
+	 * port, so a DSTA does come back. What matters is which one: a refusal for
+	 * being unencrypted would have been sent instead of dialling at all, so the
+	 * assertion is on the reason rather than on the absence of a report.
+	 */
+	pump([&] { return false; }, 300);
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.find("Encryption\\sis\\srequired") == std::string::npos);
+	EXO_ASSERT(s.hub.received.find("Encryption is required") == std::string::npos);
+
+	/* And the local side was told the dial failed, not that we refused it. */
+	bool refusedForEncryption = false;
+	for (const std::string& e : s.listener.errors)
+		if (e.find("unencrypted") != std::string::npos) refusedForEncryption = true;
+	EXO_ASSERT(!refusedForEncryption);
+	return 1;
+});
+
+/*
+ * An RCM asking for a plain connection is refused too. This is the direction we
+ * would otherwise answer with a CTM of our own, naming what the peer asked for -
+ * so it is the last point at which the requirement can be honoured.
+ */
+EXO_TEST(hubsession_a_plain_reverse_request_is_refused_when_encryption_is_required,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	setRequireEncryption(true);
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	std::string line;
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say("DRCM BBBB AAAA ADC/1.0 job2");
+
+	/*
+	 * nextLine() waits for a line, so a refusal that never came fails here - and
+	 * the reason is asserted because a DSTA also goes back when an accepted
+	 * request is dialled and the dial fails. Only this one names encryption.
+	 */
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DSTA ") == 0);
+	EXO_ASSERT(line.find("Encryption") != std::string::npos);
+	EXO_ASSERT(line.find("job2") != std::string::npos);
+	EXO_ASSERT(!s.listener.errors.empty());
+	return 1;
+});
+
+/*
+ * A protocol we do not speak at all is still refused whatever the setting says -
+ * the requirement narrows what is acceptable and must not widen it.
+ */
+EXO_TEST(hubsession_an_unknown_protocol_is_refused_whatever_the_setting,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	setRequireEncryption(false);
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	std::string line;
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say("DCTM BBBB AAAA SOMETHING/9.9 1412 job3");
+
+	/*
+	 * Refused for not being a protocol we speak rather than for being plaintext,
+	 * so this is the one refusal whose reason is not about encryption - and the
+	 * setting is off above, which is what makes that distinction meaningful.
+	 */
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DSTA ") == 0);
+	EXO_ASSERT(line.find("Protocol") != std::string::npos);
+	EXO_ASSERT(line.find("job3") != std::string::npos);
+	return 1;
+});
+
+/*
+ * The default, which is the whole of the change: the cases above each set the
+ * preference, so they hold whichever way it defaults and none of them would
+ * notice the default going back to permitting plaintext. This one asserts the
+ * absent setting, and it is the case that fails if it does.
+ */
+EXO_TEST(hubsession_encryption_is_required_when_nothing_says_otherwise,
+{
+	Session s;
+	EXO_ASSERT(s.login());
+	forgetEncryptionSetting();
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	std::string line;
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say("DCTM BBBB AAAA ADC/1.0 1412 job1");
+
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DSTA ") == 0);
+	EXO_ASSERT(line.find("Encryption") != std::string::npos);
+	EXO_ASSERT(line.find("job1") != std::string::npos);
+	return 1;
+});
