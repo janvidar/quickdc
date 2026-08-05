@@ -15,6 +15,9 @@
 
 #include "quickdc.h"
 #include "xml/reader.h"
+#include "xml/node.h"
+
+#include <new>
 
 #include <samurai/io/buffer.h>
 
@@ -804,5 +807,139 @@ EXO_TEST(xml_stray_end_tags_do_not_buy_extra_depth,
 		 */
 		EXO_ASSERT(rec.log.find("[fatal:") == std::string::npos);
 	
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* The DOM tree                                                              */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * removeChild() answers with the child it removed. It used to read that answer
+ * back out of the list *after* erasing from it, which for a vector means the
+ * entry has moved: the answer was the next child, or - when the child removed was
+ * the last one - a read off the end. The destructor takes children off the back,
+ * so the off-the-end case was the ordinary one.
+ */
+EXO_TEST(xml_removing_a_child_answers_with_that_child,
+{
+	XML::DOM::Node root(0, "root");
+
+	XML::DOM::Node* first = new XML::DOM::Node(&root, "first");
+	XML::DOM::Node* second = new XML::DOM::Node(&root, "second");
+	XML::DOM::Node* third = new XML::DOM::Node(&root, "third");
+
+	/* The middle one, where the wrong answer was the one after it. */
+	EXO_ASSERT_EQ_PTR(root.removeChild(second), second);
+
+	/* The last one, where the wrong answer was off the end of the vector. */
+	EXO_ASSERT_EQ_PTR(root.removeChild(third), third);
+
+	/* And the only one left. */
+	EXO_ASSERT_EQ_PTR(root.removeChild(first), first);
+	EXO_ASSERT(!root.hasChildNodes());
+
+	delete first;
+	delete second;
+	delete third;
+	return 1;
+});
+
+/*
+ * A removed child no longer has a parent, so deleting it does not ask its former
+ * parent to remove it again - which would find nothing and throw, from inside a
+ * destructor.
+ */
+EXO_TEST(xml_a_removed_child_can_then_be_deleted,
+{
+	XML::DOM::Node root(0, "root");
+	XML::DOM::Node* child = new XML::DOM::Node(&root, "child");
+
+	EXO_ASSERT(root.hasChildNodes());
+	EXO_ASSERT_EQ_PTR(root.removeChild(child), child);
+	EXO_ASSERT(!root.hasChildNodes());
+
+	/* Threw NOT_FOUND_ERR out of ~Node() before it was detached here. */
+	delete child;
+
+	EXO_ASSERT(!root.hasChildNodes());
+	return 1;
+});
+
+/* Removing something that is not a child is an error rather than an answer. */
+EXO_TEST(xml_removing_a_node_that_is_not_a_child_is_refused,
+{
+	XML::DOM::Node root(0, "root");
+	XML::DOM::Node other(0, "other");
+
+	bool threw = false;
+	try { root.removeChild(&other); }
+	catch (const XML::DOM::Exception&) { threw = true; }
+
+	EXO_ASSERT(threw);
+	return 1;
+});
+
+/*
+ * A tree tears itself down: the destructor takes each child off the back and
+ * deletes it, and each child asks to be removed on the way out. That is the path
+ * the off-the-end read was on, so it is walked here with children of children.
+ */
+EXO_TEST(xml_a_tree_of_children_is_torn_down_without_reading_past_the_end,
+{
+	XML::DOM::Node* root = new XML::DOM::Node(0, "root");
+
+	for (int n = 0; n < 8; n++)
+	{
+		XML::DOM::Node* branch = new XML::DOM::Node(root, "branch");
+		for (int m = 0; m < 4; m++)
+			new XML::DOM::Node(branch, "leaf");
+	}
+
+	EXO_ASSERT(root->hasChildNodes());
+	delete root;
+	return 1;
+});
+
+/*
+ * A node built without a parent records that it has none.
+ *
+ * The constructors set the parent only inside the branch that had one, so a root
+ * node's parent member was never written - and ~Node() asks whatever it holds to
+ * remove this child from itself. Whether that crashes depends on what happened to
+ * be in the memory, which is why this puts something there: constructed into
+ * storage filled with 0xAA, an unset parent is a wild pointer rather than a
+ * convenient zero.
+ */
+EXO_TEST(xml_a_node_built_without_a_parent_says_so,
+{
+	alignas(XML::DOM::Node) unsigned char storage[sizeof(XML::DOM::Node)];
+	memset(storage, 0xAA, sizeof(storage));
+
+	XML::DOM::Node* root = new (storage) XML::DOM::Node(0, "root");
+	EXO_ASSERT(root->getName() == "root");
+	EXO_ASSERT(!root->hasChildNodes());
+
+	/* A child, so the destructor walks the removal path on the way out. */
+	new XML::DOM::Node(root, "child");
+	EXO_ASSERT(root->hasChildNodes());
+
+	/* Dereferenced 0xAAAA... when the parent was left unwritten. */
+	root->~Node();
+	return 1;
+});
+
+/* The same for the three-argument constructor, which had it too. */
+EXO_TEST(xml_a_valued_node_built_without_a_parent_says_so,
+{
+	alignas(XML::DOM::Node) unsigned char storage[sizeof(XML::DOM::Node)];
+	memset(storage, 0xAA, sizeof(storage));
+
+	XML::DOM::Node* root = new (storage) XML::DOM::Node(0, "root", "value");
+	EXO_ASSERT(root->getName() == "root");
+	EXO_ASSERT(root->getValue() == "value");
+
+	new XML::DOM::Node(root, "child", "leaf");
+	root->~Node();
 	return 1;
 });
