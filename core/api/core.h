@@ -47,6 +47,7 @@ class DCHubSession;
 class DCServer;
 class HubManager;
 class PortForward;
+class Reachability;
 class Preferences;
 class Server;
 class ShareManager;
@@ -136,6 +137,16 @@ class Core {
 		Samurai::MessageHandler* messageHandler;
 		Samurai::IO::Net::SocketMonitor* monitor;
 		QuickDC::SecurityManager* securityManager;
+
+		/**
+		 * What is known about being reachable from outside.
+		 *
+		 * Here rather than on a hub session because it is a property of this
+		 * client's own port, not of any one hub: a connection that arrives is
+		 * evidence whichever hub sent the peer, and a front end asking whether
+		 * this client is reachable is asking one question, not one per hub.
+		 */
+		QuickDC::Reachability* reachability;
 		Samurai::IO::Net::BandwidthManager* bandwidthManager;
 
 	protected:

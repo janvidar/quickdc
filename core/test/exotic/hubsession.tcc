@@ -23,6 +23,7 @@
 #include "api/hub.h"
 #include "network/hubmanager.h"
 #include "api/server.h"
+#include "network/reachability.h"
 
 #include "fakegateway.h"
 #include "network/adc/adccommon.h"
@@ -1095,6 +1096,34 @@ bool announcePeer(Session& s, const char* sid)
  * Bound on the loopback and on whatever port the system gives, so nothing here
  * depends on 1411 being free.
  */
+/* Somewhere to point a socket that must not be answered. */
+class Ignoring final : public Samurai::IO::Net::ServerSocketEventHandler,
+                       public Samurai::IO::Net::SocketEventHandler
+{
+	public:
+		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char*) override { }
+		void EventAcceptSocket(const Samurai::IO::Net::ServerSocket*,
+			std::shared_ptr<Samurai::IO::Net::Socket>) override { }
+
+		/* Everything a socket reports has a do-nothing default; only the two
+		   above are demanded. */
+};
+
+/*
+ * A port nothing is listening on, found by taking one and letting it go.
+ *
+ * DCServer binds whatever the configuration says, so the number has to be settled
+ * before it is built for anything to be able to connect to it afterwards.
+ */
+uint16_t sparePort()
+{
+	Ignoring nobody;
+	Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
+	auto probe = Samurai::IO::Net::ServerSocket::create(&nobody, any);
+	if (!probe || probe->getFD() == -1 || !probe->listen()) return 0;
+	return probe->getLocalPort();
+}
+
 class ActiveCore
 {
 	public:
@@ -1106,11 +1135,15 @@ class ActiveCore
 			previous_active = config->getBool("Active mode");
 			config->setBool("Active mode", true);
 			config->setString("Bind", "127.0.0.1");
-			config->setNumber("Port", 0);
+
+			bound = sparePort();
+			config->setNumber("Port", bound);
 
 			server = new QuickDC::DCServer();
 			QuickDC::Core::getInstance()->server = server;
 		}
+
+		uint16_t port() const { return bound; }
 
 		~ActiveCore()
 		{
@@ -1127,6 +1160,7 @@ class ActiveCore
 
 	private:
 		QuickDC::DCServer* server = 0;
+		uint16_t bound = 0;
 		bool previous_active = false;
 };
 
@@ -1639,5 +1673,184 @@ EXO_TEST(hubsession_a_passive_client_asks_the_peer_to_invite_it,
 	EXO_ASSERT(s.hub.nextLine(line));
 	EXO_ASSERT(line.compare(0, 5, "DRCM ") == 0);
 	EXO_ASSERT(line.find("job2") != std::string::npos);
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* Withdrawing the claim that peers can reach us                             */
+/* ------------------------------------------------------------------------- */
+
+namespace {
+
+/* Enough distinct peers reporting a failure to settle the question. */
+void reportRefusals(QuickDC::Reachability* known)
+{
+	for (int n = 0; n < QUICKDC_REACHABILITY_REFUSALS; n++)
+		known->connectionRefused("CID" + std::to_string(n));
+}
+
+/*
+ * The INF this session sends when asked directly.
+ *
+ * Asked of the session rather than through the manager: this fixture's session is
+ * not one the process-wide manager drives, so going through it would skip every
+ * case here and read as coverage that is not there.
+ */
+bool announcedSupport(Session& s, std::string& out)
+{
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.session->sendClientInfo();
+
+	std::string line;
+	if (!s.hub.nextLine(line)) return false;
+	if (line.compare(0, 4, "BINF") != 0) return false;
+
+	out = line;
+	return true;
+}
+
+}
+
+/*
+ * An active client says TCP4 - a claim other clients act on by telling peers to
+ * connect here.
+ */
+EXO_TEST(hubsession_an_active_client_claims_tcp4,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Core::getInstance()->reachability->forget();
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+
+	EXO_ASSERT(inf.find("TCP4") != std::string::npos);
+	EXO_ASSERT(inf.find("UDP4") != std::string::npos);
+	return 1;
+});
+
+/*
+ * And stops once enough peers have said they could not get in. Withdrawing it is
+ * not only honesty: NATT engages only when neither side claims TCP4, so a false
+ * claim suppresses the fallback that would have worked.
+ */
+EXO_TEST(hubsession_the_tcp4_claim_is_withdrawn_once_peers_report_failing,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	known->forget();
+	reportRefusals(known);
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+
+	EXO_ASSERT(inf.find("TCP4") == std::string::npos);
+
+	/*
+	 * UDP4 stands. Nothing can disprove it - a peer that cannot reach the port has
+	 * no datagram it could send to say so - so it is not withdrawn on the strength
+	 * of what the TCP reports said.
+	 */
+	EXO_ASSERT(inf.find("UDP4") != std::string::npos);
+
+	/* Still an endpoint to publish: passive for connections, not absent. */
+	EXO_ASSERT(inf.find("I4") != std::string::npos);
+	return 1;
+});
+
+/* A connection that arrived outranks the reports, so the claim stands. */
+EXO_TEST(hubsession_a_connection_that_arrived_keeps_the_claim,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	known->forget();
+	reportRefusals(known);
+	known->inboundConnection();
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+
+	EXO_ASSERT(inf.find("TCP4") != std::string::npos);
+	return 1;
+});
+
+/* And a user who knows their own network can say so. */
+EXO_TEST(hubsession_forcing_active_mode_overrules_the_reports,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	known->forget();
+	reportRefusals(known);
+
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	config->setBool("Force active mode", true);
+
+	std::string inf;
+	const bool announced = announcedSupport(s, inf);
+
+	/* Put back before asserting, since a failed assertion leaves. */
+	config->setGroup("Network");
+	config->setBool("Force active mode", false);
+
+	EXO_ASSERT(announced);
+	EXO_ASSERT(inf.find("TCP4") != std::string::npos);
+	return 1;
+});
+
+/*
+ * A connection from this machine is not evidence of anything.
+ *
+ * The peer port being open was never the question - the question is whether
+ * anything outside can reach it, and the loopback cannot answer that. Counting it
+ * would make every client claim to be reachable the moment anything local
+ * connected, which on a machine also running a hub is immediately.
+ */
+EXO_TEST(hubsession_a_loopback_connection_is_not_evidence_of_reachability,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	ActiveCore active;
+	if (!active.port()) EXO_SKIP("could not reserve a port for the peer listener");
+
+	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	known->forget();
+	EXO_ASSERT(known->tcp() == QuickDC::Reachability::State::Unknown);
+
+	/* Straight at our own peer port, over the loopback. */
+	Ignoring nobody;
+	Samurai::IO::Net::InetAddress local("127.0.0.1");
+	auto client = Samurai::IO::Net::Socket::create(&nobody, local, active.port());
+	EXO_ASSERT(client != 0);
+	client->connect();
+
+	/* Accepted - the listener is real - and still not evidence. */
+	pump([] { return false; }, 400);
+	EXO_ASSERT(known->tcp() == QuickDC::Reachability::State::Unknown);
+
+	client.reset();
 	return 1;
 });

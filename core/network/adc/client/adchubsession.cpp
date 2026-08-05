@@ -9,6 +9,7 @@
 #include "quickdc.h"
 #include "api/core.h"
 #include "network/portforward.h"
+#include "network/reachability.h"
 #include "api/server.h"
 #include "config/preferences.h"
 #include "network/connectionmanager.h"
@@ -94,6 +95,29 @@ static bool requireEncryptedTransfers()
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	config->setGroup("Network");
 	return config->getBool("Require encrypted transfers", true);
+}
+
+/*
+ * Whether to keep claiming that a peer told to connect here will get through.
+ *
+ * Disproven is the only thing that withdraws it. Nothing here can prove the claim
+ * before somebody acts on it, so a client that waited for proof would announce
+ * passive on every start and have no way to leave that state - the proof arrives
+ * only once a peer has already tried.
+ *
+ * Overridable both ways round for the same reason the evidence is bounded: the
+ * reports come from whoever is on the hub.
+ */
+static bool reachable(QuickDC::Preferences* config)
+{
+	config->setGroup("Network");
+
+	if (config->getBool("Force active mode", false)) return true;
+
+	const QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	if (!known) return true;
+
+	return known->tcp() != QuickDC::Reachability::State::Unreachable;
 }
 
 /*
@@ -796,6 +820,11 @@ void ADC::HubSession::sendClientInfo()
 
 	QDBG("Active mode %d (server=%p)\n", endpoint.active ? 1 : 0, core->server);
 
+	/* Evidence belongs to the endpoint it was gathered for; announcing a different
+	   one discards what was known about the old. */
+	if (core->reachability && endpoint.active)
+		core->reachability->advertising(endpoint.address, endpoint.port);
+
 	/*
 	 * What we can do, as the other clients see it. Built up rather than written out
 	 * twice: the only difference between the two cases is whether anyone can connect
@@ -808,7 +837,32 @@ void ADC::HubSession::sendClientInfo()
 	{
 		cmd->addArgument("I4", endpoint.address);
 		cmd->addArgument("U4", std::to_string(endpoint.port));
-		supports += ",TCP4,UDP4";
+
+		/*
+		 * TCP4 is a claim other clients act on: it says a peer told to connect
+		 * here will get through. Withdrawn once enough peers have reported that
+		 * they could not, which is the only way this client finds out - and
+		 * withdrawing it matters beyond honesty, because NATT engages only when
+		 * neither side claims TCP4, so a false claim suppresses the fallback that
+		 * would have worked.
+		 *
+		 * Withheld only when disproven, never merely unproven: a client that waited
+		 * for proof would announce passive on every fresh start and stay that way
+		 * until somebody happened to connect, which nothing would prompt.
+		 *
+		 * The evidence can be overruled. Someone who knows their own network is
+		 * entitled to say so, and a peer that lies about failing to connect must
+		 * not be the last word.
+		 */
+		if (reachable(config))
+			supports += ",TCP4";
+
+		/*
+		 * UDP4 is not withdrawn, because nothing can disprove it: a peer that
+		 * cannot reach this port has no datagram it could send to say so. Claimed
+		 * whenever the port is open, as before.
+		 */
+		supports += ",UDP4";
 	}
 
 	supports += ",";
@@ -1329,9 +1383,35 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 				QERR("p2p connection protocol not supported");
 				break;
 
+			/*
+			 * A peer we asked to connect is telling us it could not. That is a
+			 * port check we did not have to build: a connect request is a
+			 * prediction that a connection will arrive, and this is the prediction
+			 * failing, reported by the one party in a position to know.
+			 *
+			 * Counted only for a token this client issued. Without that, anyone on
+			 * the hub could quote a token of their own invention and argue us into
+			 * being passive; a token from the queue is sixteen bytes of
+			 * secureRandom, so it cannot be guessed. The reporter is named so that
+			 * one peer repeating itself counts once - see Reachability.
+			 */
 			case ADC_CODE_PROTOCOL_CONNECT_ERROR: /* Specify: 'TO' (token), 'PR' (protocol). Context CTM/RCM */
+			{
+				const char* job = cmd->getArgument("TO", 2);
+				const char* who = cmd->getSourceID();
+
+				QuickDC::Core* core = QuickDC::Core::getInstance();
+				const bool ours = job && *job && core && core->queue
+					&& core->queue->lookupRequest(job);
+
+				if (ours && who && *who && core->reachability)
+					core->reachability->connectionRefused(who);
+				else
+					QDBG("A connect error for a job we did not ask for; ignoring it");
+
 				QERR("p2p connect error");
 				break;
+			}
 
 			case ADC_CODE_PROTOCOL_FLAG_REQUIRED: /* Specify: 'FL' (flag). Context: INF */
 				/* Should not occur */

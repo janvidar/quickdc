@@ -7,6 +7,7 @@
 
 #include <string.h>
 #include "api/core.h"
+#include "network/reachability.h"
 #include "api/server.h"
 #include "config/preferences.h"
 #include <samurai/io/net/socket.h>
@@ -65,12 +66,27 @@ void QuickDC::DCServer::EventAcceptError(const Samurai::IO::Net::ServerSocket*, 
 
 void QuickDC::DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*, std::shared_ptr<Samurai::IO::Net::Socket> socket)
 {
-#ifdef DATADUMP
 	/* Null for a peer that has already gone, which an accepted socket's may have
 	   done before anything asks where it was. */
-	QDBG("Socket accepted: %s", socket->getAddress()
-		? socket->getAddress()->toString().c_str() : "(unknown)");
+	const Samurai::IO::Net::InetAddress* from = socket->getAddress();
+
+#ifdef DATADUMP
+	QDBG("Socket accepted: %s", from ? from->toString().c_str() : "(unknown)");
 #endif
+
+	/*
+	 * Somebody reached the peer port from outside, which is the one thing that
+	 * proves it can be reached - a claim to be active rests on this and nothing
+	 * else can establish it.
+	 *
+	 * Not the loopback: a connection from this machine proves the socket is open,
+	 * which was never the question. Nor an address that cannot be read, since
+	 * there is then no telling which of the two it was.
+	 */
+	Core* core = Core::getInstance();
+	if (core && core->reachability && from && !from->isLoopback())
+		core->reachability->inboundConnection();
+
 	Connection* connection = new ProtocolProbe(socket);
 	socket->setEventHandler(connection);
 	socket->setNonBlocking(true);
