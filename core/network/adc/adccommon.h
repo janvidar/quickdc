@@ -12,7 +12,6 @@
 #include "quickdc.h"
 
 typedef uint32_t sid_t;
-typedef uint32_t bbs_message_t;
 
 #define ADC_COMPLIANCE                  "ADC/1.0"
 #define ADC_TLS_PROTO                   "ADCS/0.10"
@@ -21,7 +20,6 @@ typedef uint32_t bbs_message_t;
 #define ADC_HASH_TIGER                  "TIGR" /* tiger hash support */
 #define ADC_EXT_PING                    "PING" /* hub: pinger support */
 #define ADC_EXT_ADCS                    "ADCS" /* tls/ssl encrypted channel extension */
-#define ADC_EXT_BBS                     "BBS0" /* hub: bulletin board system */
 #define ADC_EXT_UCMD                    "UCMD" /* hub: user command extension */
 #define ADC_EXT_BZIP                    "BZIP" /* p2p: bzip compressed files.xml */
 #define ADC_EXT_ZLIG                    "ZLIG" /* p2p: zlib transfer */

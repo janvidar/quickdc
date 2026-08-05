@@ -78,10 +78,6 @@ void addSupportFlags(ADC::Command& command, bool client);
 	ADC_LOCALHUB_CMD_CLASS(HubCmdRNT);
 	ADC_LOCALHUB_CMD_CLASS(HubCmdSTA);
 	ADC_LOCALHUB_CMD_CLASS(HubCmdDSC);
-	
-	// BBS extension
-	ADC_LOCALHUB_CMD_CLASS(HubCmdMHE);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdMBO);
 
 }
 

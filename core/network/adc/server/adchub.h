@@ -70,14 +70,7 @@ namespace ADC {
 			void onDSC(ADC::Command* cmd);
 			void onPAS(ADC::Command* cmd);
 			void onSTA(ADC::Command* cmd);
-			
-			void onECO(ADC::Command* cmd);
-			void onTUN(ADC::Command* cmd);
-			
-			// BBS extension
-			void onMHE(ADC::Command* cmd);
-			void onMBO(ADC::Command* cmd);
-	
+
 			/**
 			* This method is used for sending/distributing messages to users.
 			* A command can be sent to one user, or to multiple users.

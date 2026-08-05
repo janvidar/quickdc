@@ -51,9 +51,6 @@ enum MessageID {
 	MsgTransferStopped        = 7001,   /**<< A transfer job has stopped - and should be deleted */
 	
 	/* Local hub related */
-	MsgHubUserConnected       = 8000,   /**<< A user connected to our local hub */
-	MsgHubUserDisconnected    = 8001,   /**<< A user disconnected from our local hub */
-	MsgHubUserLoggedIn        = 8002,   /**<< A user logged in to our local hub */
 	MsgHubUserRemoveUser      = 8003,   /**<< A user should be removed from the local hub. */
 	MsgHubUserAppendUser      = 8004,   /**<< A user should be added to the local hub. */
 	MsgHubUserDelayedQuit     = 8005,   /**<< A user quit (usually error), post a message and process it later */

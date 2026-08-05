@@ -140,7 +140,7 @@ EXO_TEST(adccommand_support_flags_to_a_hub,
 		ADC::Command cmd(FOURCC('H','S','U','P'));
 		ADC::addSupportFlags(cmd, false);
 		EXO_ASSERT(check("support flags to a hub",
-			"HSUP ADBASE ADBAS0 ADTIGR ADPFSR ADADCS ADPING ADBBS0 AD"
+			"HSUP ADBASE ADBAS0 ADTIGR ADPFSR ADADCS ADPING AD"
 			ADC_EXT_RICHTEXT "\n", cmd));
 	
 	return 1;

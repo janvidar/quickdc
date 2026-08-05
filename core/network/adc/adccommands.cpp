@@ -629,19 +629,6 @@ bool ADC::HubCmdDSC::invoke(ADC::Command* cmd) {
 	return true;
 }
 
-// BBS extension
-bool ADC::HubCmdMHE::invoke(ADC::Command* cmd) {
-	cmd->setPriority(ADC::Command::High);
-	hub->onMHE(cmd);
-	return true;
-}
-
-bool ADC::HubCmdMBO::invoke(ADC::Command* cmd) {
-	cmd->setPriority(ADC::Command::High);
-	hub->onMBO(cmd);
-	return true;
-}
-
 void ADC::addSupportFlags(ADC::Command& command, bool clientMode)
 {
 	command.addArgument("AD", ADC_BASE);
@@ -659,7 +646,6 @@ void ADC::addSupportFlags(ADC::Command& command, bool clientMode)
 	else
 	{
 		command.addArgument("AD", ADC_EXT_PING);
-		command.addArgument("AD", ADC_EXT_BBS);
 
 		/*
 		 * Offered by a client and answered by a hub, both of which come through here.

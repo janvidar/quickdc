@@ -61,10 +61,6 @@ class Identity {
 		bool matchCID(const char* cid);
 		bool matchName(const char* name);
 		
-		// FIXME: Make sure we have a class for encapsulating IP addresses!
-		bool matchIPv4();
-		bool matchIPv6();
-		
 	
 	protected:
 		enum IdentityType type;

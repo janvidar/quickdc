@@ -446,12 +446,6 @@ void ADC::Hub::onDSC(ADC::Command* cmd) {
 	}
 }
 
-void ADC::Hub::onMHE(ADC::Command*) {
-}
-
-void ADC::Hub::onMBO(ADC::Command*) {
-}
-
 void ADC::Hub::onPAS(ADC::Command*) {
 	// FIXME: Handle password authentication
 }

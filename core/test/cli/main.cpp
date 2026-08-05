@@ -23,8 +23,6 @@
 #include <samurai/io/file.h>
 #include <samurai/io/net/url.h>
 
-#include "network/adc/server/adchub.h"
-#include "network/adc/server/adchubuser.h"
 #include "network/connection.h"
 #include "network/connectionmanager.h"
 #include "share/searchrequest.h"

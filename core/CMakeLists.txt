@@ -3,9 +3,8 @@
 ## Copyright (c) 2001-2010, Jan Vidar Krey
 #
 
-# NOTE: two .cpp files under core/ are deliberately absent, being
-# unreferenced/unfinished:
-#   api/cli.cpp, network/adc/server/adctun.cpp
+# NOTE: one .cpp file under core/ is deliberately absent, being
+# unreferenced/unfinished: api/cli.cpp
 #
 # debug/dbg.cpp defines QuickDC_Debug/QERR/QNET, which nothing else provides;
 # samurai's own logging is under samurai_debug() and friends, so the two do not
@@ -43,7 +42,6 @@ set(QUICKDC_SOURCES
     network/dc/lock.cpp
     network/dc/tag.cpp
     network/dc/textescape.cpp
-    network/adc/adcbbs.cpp
     network/adc/adccommandparser.cpp
     network/adc/adccommandproxy.cpp
     network/adc/adccommands.cpp

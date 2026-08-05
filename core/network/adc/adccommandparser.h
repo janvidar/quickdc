@@ -3,8 +3,13 @@
  * See the file "COPYING" for licensing details.
  */
 
-#ifndef HAVE_QUICKDC_DCCOMMANDPARSER_H
-#define HAVE_QUICKDC_DCCOMMANDPARSER_H
+/*
+ * NOTE: this said HAVE_QUICKDC_DCCOMMANDPARSER_H, which is the guard
+ * network/dc/dccommandparser.h uses - so whichever of the two was included
+ * second was silently skipped, and no translation unit could hold both.
+ */
+#ifndef HAVE_QUICKDC_ADC_COMMANDPARSER_H
+#define HAVE_QUICKDC_ADC_COMMANDPARSER_H
 
 #include "network/commandparser.h"
 #include "network/adc/client/adchubsession.h"
@@ -78,4 +83,4 @@ class LocalHubParser : public ADC::CommandParser
 
 }
 
-#endif // HAVE_QUICKDC_DCCOMMANDPARSER_H
+#endif // HAVE_QUICKDC_ADC_COMMANDPARSER_H
