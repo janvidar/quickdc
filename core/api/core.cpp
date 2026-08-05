@@ -27,7 +27,7 @@
 #include "network/searchtokens.h"
 #include "network/securitymanager.h"
 #include "network/transfermanager.h"
-#include "network/adc/server/adchub.h"
+#include "network/adc/server/hub.h"
 
 #include "share/sharemanager.h"
 #include "hash/hashmanager.h"

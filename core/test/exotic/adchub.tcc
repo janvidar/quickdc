@@ -30,9 +30,9 @@
 #include "network/adc/adccommon.h"
 #include "network/adc/cid.h"
 #include "network/adc/parser.h"
-#include "network/adc/server/adchub.h"
-#include "network/adc/server/adchubservice.h"
-#include "network/adc/server/adchubuser.h"
+#include "network/adc/server/hub.h"
+#include "network/adc/server/service.h"
+#include "network/adc/server/user.h"
 #include "network/adc/server/claimcheck.h"
 
 #include <samurai/crypto/digest/tiger.h>

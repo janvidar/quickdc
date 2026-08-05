@@ -3,8 +3,8 @@
  * See the file "COPYING" for licensing details.
  */
 
-#ifndef HAVE_QUICKDC_ADCHUB_CLAIMCHECK_H
-#define HAVE_QUICKDC_ADCHUB_CLAIMCHECK_H
+#ifndef HAVE_QUICKDC_ADC_LOCALHUB_CLAIMCHECK_H
+#define HAVE_QUICKDC_ADC_LOCALHUB_CLAIMCHECK_H
 
 #include "quickdc.h"
 
@@ -161,4 +161,4 @@ class ClaimCheck : public Samurai::IO::Net::SocketEventHandler
 
 }
 
-#endif // HAVE_QUICKDC_ADCHUB_CLAIMCHECK_H
+#endif // HAVE_QUICKDC_ADC_LOCALHUB_CLAIMCHECK_H

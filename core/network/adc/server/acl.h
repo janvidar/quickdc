@@ -3,8 +3,8 @@
  * See the file "COPYING" for licensing details.
  */
 
-#ifndef HAVE_QUICKDC_ADCHUB_ACL_H
-#define HAVE_QUICKDC_ADCHUB_ACL_H
+#ifndef HAVE_QUICKDC_ADC_LOCALHUB_ACL_H
+#define HAVE_QUICKDC_ADC_LOCALHUB_ACL_H
 
 #include "quickdc.h"
 #include <samurai/timestamp.h>
@@ -214,5 +214,5 @@ class XMLReader : public Samurai::IO::XmlContentHandler {
 } // namespace ADC
 
 
-#endif // HAVE_QUICKDC_ADCHUB_ACL_H
+#endif // HAVE_QUICKDC_ADC_LOCALHUB_ACL_H
 

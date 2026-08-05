@@ -128,7 +128,7 @@ set(QUICKDC_SYSTEM  "${CMAKE_SYSTEM_NAME}")
 set(QUICKDC_CPU     "${CMAKE_SYSTEM_PROCESSOR}")
 
 # BUILD is always defined: network/adc/cid.cpp and
-# network/adc/server/adchubservice.cpp use it unconditionally. --always so that
+# network/adc/server/service.cpp use it unconditionally. --always so that
 # a tagless clone still works.
 set(QUICKDC_BUILD_ID "internal")
 

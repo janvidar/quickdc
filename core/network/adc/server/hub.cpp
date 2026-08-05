@@ -17,9 +17,9 @@
 
 #include "config/preferences.h"
 #include "network/adc/server/acl.h"
-#include "network/adc/server/adchub.h"
-#include "network/adc/server/adchubservice.h"
-#include "network/adc/server/adchubuser.h"
+#include "network/adc/server/hub.h"
+#include "network/adc/server/service.h"
+#include "network/adc/server/user.h"
 #include "network/adc/server/claimcheck.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/adccommands.h"

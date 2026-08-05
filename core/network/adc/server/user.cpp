@@ -13,8 +13,8 @@
 #include <string_view>
 #include <time.h>
 
-#include "network/adc/server/adchub.h"
-#include "network/adc/server/adchubuser.h"
+#include "network/adc/server/hub.h"
+#include "network/adc/server/user.h"
 #include "network/adc/parser.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/cid.h"

@@ -3,8 +3,8 @@
  * See the file "COPYING" for licensing details.
  */
 
-#ifndef HAVE_QUICKDC_ADCHUBSERVICE_H
-#define HAVE_QUICKDC_ADCHUBSERVICE_H
+#ifndef HAVE_QUICKDC_ADC_LOCALHUB_SERVICE_H
+#define HAVE_QUICKDC_ADC_LOCALHUB_SERVICE_H
 
 #include <map>
 #include <string>
@@ -79,4 +79,4 @@ class ServiceMap {
 
 }
 
-#endif // HAVE_QUICKDC_ADCHUBSERVICE_H
+#endif // HAVE_QUICKDC_ADC_LOCALHUB_SERVICE_H

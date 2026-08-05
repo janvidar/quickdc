@@ -8,7 +8,7 @@
 
 #include "network/adc/adccommandparser.h"
 #include "network/adc/parser.h"
-#include "network/adc/server/adchub.h"
+#include "network/adc/server/hub.h"
 
 /*
  * The commands arriving at the hub we run, as opposed to the ones a remote hub

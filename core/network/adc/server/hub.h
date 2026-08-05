@@ -3,8 +3,8 @@
  * See the file "COPYING" for licensing details.
  */
 
-#ifndef HAVE_QUICKDC_ADCHUB_H
-#define HAVE_QUICKDC_ADCHUB_H
+#ifndef HAVE_QUICKDC_ADC_LOCALHUB_H
+#define HAVE_QUICKDC_ADC_LOCALHUB_H
 
 #include "quickdc.h"
 #include <string.h>
@@ -291,4 +291,4 @@ namespace ADC {
 
 }
 
-#endif // HAVE_QUICKDC_ADCHUB_H
+#endif // HAVE_QUICKDC_ADC_LOCALHUB_H

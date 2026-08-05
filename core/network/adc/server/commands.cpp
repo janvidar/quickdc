@@ -5,7 +5,7 @@
 
 #include "debug/dbg.h"
 #include "network/adc/parser.h"
-#include "network/adc/server/adchub.h"
+#include "network/adc/server/hub.h"
 #include "network/adc/server/commands.h"
 
 ADC::LocalHubParser::LocalHubParser(CommandProxy* proxy_, Hub* hub_)

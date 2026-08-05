@@ -8,8 +8,8 @@
 #include "debug/dbg.h"
 #include "network/adc/adccommon.h"
 #include "network/adc/parser.h"
-#include "network/adc/server/adchub.h"
-#include "network/adc/server/adchubuser.h"
+#include "network/adc/server/hub.h"
+#include "network/adc/server/user.h"
 
 #include <samurai/io/net/socket.h>
 

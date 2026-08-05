@@ -14,8 +14,8 @@
 #include "test/cli/commands.h"
 #include "test/cli/util.h"
 
-#include "network/adc/server/adchub.h"
-#include "network/adc/server/adchubuser.h"
+#include "network/adc/server/hub.h"
+#include "network/adc/server/user.h"
 #include <samurai/io/net/bandwidth.h>
 #include "network/connection.h"
 #include "network/connectionmanager.h"

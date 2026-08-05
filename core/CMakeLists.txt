@@ -50,11 +50,11 @@ set(QUICKDC_SOURCES
     network/adc/client/adcclientsession.cpp
     network/adc/client/adchubsession.cpp
     network/adc/server/acl.cpp
-    network/adc/server/adchub.cpp
-    network/adc/server/adchubservice.cpp
-    network/adc/server/adchubuser.cpp
     network/adc/server/claimcheck.cpp
     network/adc/server/commands.cpp
+    network/adc/server/hub.cpp
+    network/adc/server/service.cpp
+    network/adc/server/user.cpp
     network/adc/parser.cpp
     share/dcfilelist.cpp
     share/sharedir.cpp

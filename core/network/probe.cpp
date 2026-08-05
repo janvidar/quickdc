@@ -10,7 +10,7 @@
 #include "network/dc/clientsession.h"
 #include "network/adc/client/adcclientsession.h"
 #include "network/adc/adcudp.h"
-#include "network/adc/server/adchub.h"
+#include "network/adc/server/hub.h"
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/datagram.h>
 #include <samurai/io/buffer.h>

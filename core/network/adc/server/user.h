@@ -3,8 +3,8 @@
  * See the file "COPYING" for licensing details.
  */
 
-#ifndef HAVE_QUICKDC_ADCHUBUSER_H
-#define HAVE_QUICKDC_ADCHUBUSER_H
+#ifndef HAVE_QUICKDC_ADC_LOCALHUB_USER_H
+#define HAVE_QUICKDC_ADC_LOCALHUB_USER_H
 
 #include <chrono>
 #include <memory>
@@ -163,4 +163,4 @@ class HubUser : public HubConnection {
 
 }
 
-#endif // HAVE_QUICKDC_ADCHUBUSER_H
+#endif // HAVE_QUICKDC_ADC_LOCALHUB_USER_H
