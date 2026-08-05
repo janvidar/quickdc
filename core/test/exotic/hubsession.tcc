@@ -23,6 +23,8 @@
 #include "api/hub.h"
 #include "network/hubmanager.h"
 #include "api/server.h"
+
+#include "fakegateway.h"
 #include "network/adc/adccommon.h"
 #include "network/adc/client/adchubsession.h"
 #include "network/user.h"
@@ -1552,6 +1554,65 @@ EXO_TEST(hubsession_an_active_client_asks_the_peer_to_connect_to_it,
 	config->setGroup("Network");
 	const std::string port = std::to_string(config->getNumber("Port"));
 	EXO_ASSERT(line.find(" " + port + " ") != std::string::npos);
+	return 1;
+});
+
+/*
+ * And the port it names is the one the gateway granted, not the one configured.
+ *
+ * This is the case the bug lived in and the only one that can tell the two apart:
+ * without a gateway they are the same number. The gateway here hands out 40001 for
+ * a client that asked for something else, which is exactly what a real one does
+ * when the port is already spoken for.
+ */
+EXO_TEST(hubsession_an_active_client_names_the_port_the_gateway_granted,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	FakeGateway gateway(IGD2);
+	if (!gateway.ready()) EXO_SKIP("could not listen for the gateway");
+	agreeable(gateway, 40001);
+
+	ActiveCore active;
+
+	/* Forwarded, and the granted port is not the one asked for. */
+	Recorder events;
+	QuickDC::PortForward forward(&events);
+	forward.start(1411, gateway.location());
+	EXO_ASSERT(pump([&] { return events.done(); }));
+	EXO_ASSERT(events.forwarded == 1);
+	EXO_ASSERT(events.port == 40001);
+
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::PortForward* previous = core->portforward;
+	core->portforward = &forward;
+
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+	const QuickDC::User* peer = s.session->getUser("BBBB");
+	EXO_ASSERT_NOT_NULL(peer);
+
+	s.hub.drain();
+	s.hub.received.clear();
+	s.session->sendConnectionRequest(peer, "job4");
+
+	std::string line;
+	const bool got = s.hub.nextLine(line);
+
+	/* Put the core back before asserting, since a failed assertion leaves. */
+	core->portforward = previous;
+
+	EXO_ASSERT(got);
+	EXO_ASSERT(line.compare(0, 5, "DCTM ") == 0);
+	EXO_ASSERT(line.find(" 40001 ") != std::string::npos);
+
+	/* And not the configured one, which is what it used to name. */
+	QuickDC::Preferences* config = core->config;
+	config->setGroup("Network");
+	const std::string configured = std::to_string(config->getNumber("Port"));
+	EXO_ASSERT(line.find(" " + configured + " ") == std::string::npos);
 	return 1;
 });
 
