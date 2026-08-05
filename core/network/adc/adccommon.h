@@ -8,13 +8,23 @@
 
 #include <cstdio>
 #include <string>
+#include <string_view>
 
 #include "quickdc.h"
 
 typedef uint32_t sid_t;
 
 #define ADC_COMPLIANCE                  "ADC/1.0"
-#define ADC_TLS_PROTO                   "ADCS/0.10"
+/*
+ * What the CTM protocol field says for an encrypted peer connection.
+ *
+ * ADCS/1.0 is what ADC-EXT specifies and what this client names. ADCS/0.10 is the
+ * number the extension carried while it was a draft; the DC++ family still names
+ * that one, so it is understood when read even though it is never sent - refusing
+ * it would refuse the transfer. See adc_is_tls_protocol().
+ */
+#define ADC_TLS_PROTO                   "ADCS/1.0"
+#define ADC_TLS_PROTO_DRAFT             "ADCS/0.10"
 #define ADC_BASE                        "BASE" /* the base set of commands */
 #define ADC_BASE_COMPAT                 "BAS0" /* deprectated: old ADC version */
 #define ADC_HASH_TIGER                  "TIGR" /* tiger hash support */
@@ -49,6 +59,13 @@ typedef uint32_t sid_t;
 
 #define ADC_INDEX_FILE                  "files.xml"
 #define ADC_INDEX_FILE_BZ2              "files.xml.bz2"
+
+/** Whether a CTM protocol field names an encrypted peer connection. */
+inline bool adc_is_tls_protocol(std::string_view protocol)
+{
+	return protocol == ADC_TLS_PROTO || protocol == ADC_TLS_PROTO_DRAFT;
+}
+
 
 /*
  * One status field: severity digit followed by a two digit code.

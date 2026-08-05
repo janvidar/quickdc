@@ -1998,6 +1998,120 @@ bool announcedSupport(Session& s, std::string& out)
 }
 
 /*
+ * Either spelling of the protocol is recognised as encryption.
+ *
+ * A peer naming ADCS/1.0 - the spelling ADC-EXT specifies - used to be turned away
+ * for naming a protocol we do not speak, because the comparison was against
+ * ADCS/0.10 alone. With encryption required by default that refusal was the whole
+ * transfer, in the one case where both ends wanted exactly the same thing.
+ *
+ * Asserted on the reason rather than on a connection, because this fixture has no
+ * certificate: what is being distinguished is "we understood you and cannot hold
+ * up our end" from "we have no idea what you are asking for".
+ */
+EXO_TEST(hubsession_either_spelling_of_the_encrypted_protocol_is_recognised,
+{
+	for (const char* asked : { ADC_TLS_PROTO, ADC_TLS_PROTO_DRAFT })
+	{
+		Session s;
+		if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+		EXO_ASSERT(s.ready);
+		EXO_ASSERT(s.login());
+
+		EXO_ASSERT(announcePeer(s, "BBBB"));
+
+		s.hub.drain();
+		s.hub.received.clear();
+
+		/* An RCM: the peer cannot be connected to and asks us to dial it. */
+		s.say(std::string("DRCM BBBB AAAA ") + asked + " job1");
+
+		std::string line;
+		EXO_ASSERT(s.hub.nextLine(line));
+		EXO_ASSERT(line.compare(0, 5, "DSTA ") == 0);
+		EXO_ASSERT(line.find("job1") != std::string::npos);
+
+		/* Understood as TLS - the objection is our own certificate. */
+		if (line.find("certificate") == std::string::npos)
+		{
+			const std::string why = std::string("asked for ") + asked
+				+ " and was refused with \"" + line + "\"";
+			EXO_FAIL(why.c_str());
+		}
+		EXO_ASSERT(line.find("Protocol\\snot\\ssupported") == std::string::npos);
+	}
+	return 1;
+});
+
+/* And a protocol that is neither is still not understood, which is the boundary. */
+EXO_TEST(hubsession_a_protocol_that_is_not_adc_at_all_is_still_refused,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	/* Close enough to be caught by a substring test, and not a protocol. */
+	s.say("DRCM BBBB AAAA ADCS/9.9 job1");
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DSTA ") == 0);
+	EXO_ASSERT(line.find("Protocol\\snot\\ssupported") != std::string::npos);
+	return 1;
+});
+
+/*
+ * Encryption is announced as ADCS, which is what ADC-EXT names it: "Clients
+ * supporting encrypted connections must indicate this in the INF SU field with
+ * ADCS."
+ *
+ * This said ADC0, the identifier the flag had before the extension was
+ * standardised. The DC++ family still sends that one, so it is still worth
+ * understanding when read - but it is not what this client should be claiming.
+ */
+EXO_TEST(hubsession_encryption_is_announced_as_adcs,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+
+	EXO_ASSERT(claims(inf, ADC_EXT_ADCS));
+	EXO_ASSERT(!claims(inf, "ADC0"));
+	return 1;
+});
+
+/*
+ * And the draft spelling is still understood when a peer names it. ADC-EXT settled
+ * on ADCS/1.0, which is what goes out; ADCS/0.10 is the number the extension had
+ * while it was a draft, and the DC++ family still sends it. Refusing it would
+ * refuse the transfer.
+ */
+EXO_TEST(hubsession_both_spellings_of_the_encrypted_protocol_are_understood,
+{
+	EXO_ASSERT(adc_is_tls_protocol(ADC_TLS_PROTO));
+	EXO_ASSERT(adc_is_tls_protocol(ADC_TLS_PROTO_DRAFT));
+	EXO_ASSERT(adc_is_tls_protocol("ADCS/0.10"));
+	EXO_ASSERT(adc_is_tls_protocol("ADCS/1.0"));
+
+	/* And nothing else is, least of all plain ADC. */
+	EXO_ASSERT(!adc_is_tls_protocol(ADC_COMPLIANCE));
+	EXO_ASSERT(!adc_is_tls_protocol("ADCS"));
+	EXO_ASSERT(!adc_is_tls_protocol("ADCS/2.0"));
+	EXO_ASSERT(!adc_is_tls_protocol(""));
+	return 1;
+});
+
+/*
  * An active client says TCP4 - a claim other clients act on by telling peers to
  * connect here.
  */

@@ -882,7 +882,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * to us, and a feature added to one list and forgotten in the other is a bug that
 	 * only shows in passive mode.
 	 */
-	std::string supports = "ADC0";
+	std::string supports = ADC_EXT_ADCS;
 
 	/*
 	 * The address goes out whether or not anyone can connect to it.
@@ -1753,7 +1753,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	 * connection, and vice versa. Anything else we cannot speak.
 	 */
 	const std::string_view protocol(proto ? proto : "");
-	bool peerSecure = (protocol == ADC_TLS_PROTO);
+	bool peerSecure = adc_is_tls_protocol(protocol);
 
 	/*
 	 * A plain connection is refused outright when encryption is required, and
@@ -1865,7 +1865,7 @@ bool ADC::HubSession::dialFromHubPort(const QuickDC::User* user, const char* pro
 	}
 
 	const std::string_view protocol(proto ? proto : "");
-	const bool peerSecure = (protocol == ADC_TLS_PROTO);
+	const bool peerSecure = adc_is_tls_protocol(protocol);
 
 	const char* peerKeyprint = 0;
 	if (peerSecure && user->hasKeyprint() && keyprintVerified)
@@ -1958,7 +1958,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	 * whenever we are able to - the hub's own protocol has no say in it.
 	 */
 	const std::string_view requested(proto ? proto : "");
-	bool peerSecure = (requested == ADC_TLS_PROTO);
+	bool peerSecure = adc_is_tls_protocol(requested);
 
 	/* A protocol left out means plain ADC, which is what it meant here before
 	   ADCS was an option at all. One we do not speak cannot be answered. */
