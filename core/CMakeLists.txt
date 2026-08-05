@@ -3,9 +3,9 @@
 ## Copyright (c) 2001-2010, Jan Vidar Krey
 #
 
-# NOTE: three .cpp files under core/ are deliberately absent, being
+# NOTE: two .cpp files under core/ are deliberately absent, being
 # unreferenced/unfinished:
-#   api/cli.cpp, network/adc/server/adctun.cpp, xml/parser.cpp
+#   api/cli.cpp, network/adc/server/adctun.cpp
 #
 # debug/dbg.cpp defines QuickDC_Debug/QERR/QNET, which nothing else provides;
 # samurai's own logging is under samurai_debug() and friends, so the two do not
