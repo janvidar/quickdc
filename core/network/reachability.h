@@ -96,6 +96,24 @@ class Reachability
 		 */
 		void connectionRefused(const std::string& peer);
 
+		/**
+		 * A hub we are logged in to tried the port we published and got nothing.
+		 *
+		 * Decisive on its own, where a peer's report is not, because it is not the
+		 * same kind of statement. A peer's DSTA is hearsay: it arrives through the
+		 * hub, quoting a token anyone on the hub saw, and describes a failure only
+		 * that peer witnessed. This is a party that made the attempt itself and
+		 * says so over the connection we authenticated to it.
+		 *
+		 * Trusting it grants an operator nothing new either - a hub that wanted its
+		 * users passive could simply decline to relay their connect requests.
+		 *
+		 * Still outranked by a connection that actually arrived: the check may have
+		 * run before a port mapping came up, and something arriving is not an
+		 * account of anything.
+		 */
+		void connectionCheckFailed();
+
 		State tcp() const;
 		State udp() const;
 
@@ -111,6 +129,7 @@ class Reachability
 		bool advertised = false;
 
 		bool inbound_connection = false;
+		bool check_failed = false;
 		bool inbound_datagram = false;
 		std::set<std::string> refused_by;
 };

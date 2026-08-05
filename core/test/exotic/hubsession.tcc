@@ -2007,6 +2007,163 @@ EXO_TEST(hubsession_a_passive_client_publishes_the_address_the_hub_reported,
 });
 
 /* ------------------------------------------------------------------------- */
+/* What the hub says about a connection it made itself                       */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A hub that checked the port we published and got nothing is worth more than a
+ * peer's report of the same thing, and is acted on at once rather than after three
+ * of them. A peer's DSTA is hearsay: it comes through the hub quoting a token
+ * anybody on the hub saw. This comes from the party we authenticated to, about an
+ * attempt it made itself.
+ *
+ * Told apart by two things and no new wire format: ISTA is the hub speaking, and no
+ * 'TO' means it is not the answer to any transfer we asked for.
+ */
+EXO_TEST(hubsession_a_hub_that_could_not_connect_withdraws_the_claim,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	known->forget();
+
+	/* Claimed to begin with, so what follows is a change and not the status quo. */
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+	EXO_ASSERT(claims(inf, "TCP4"));
+
+	s.say("ISTA 142 Nothing\\sanswered\\son\\sport\\s1411 PRADC/1.0");
+
+	EXO_ASSERT(announcedSupport(s, inf));
+	EXO_ASSERT(!claims(inf, "TCP4"));
+
+	/* UDP4 stands: a failed TCP connection says nothing about a datagram port. */
+	EXO_ASSERT(claims(inf, "UDP4"));
+
+	/* And there is still an address to publish, which NATT needs. */
+	EXO_ASSERT(hasField(inf, "I4"));
+	return 1;
+});
+
+/*
+ * Said again without being asked, so peers stop being told to connect to a port
+ * nothing answers on - and so NATT is no longer suppressed by a claim that was false.
+ *
+ * Asserted on the request rather than on the wire. The update is coalesced through
+ * the hub manager, which is what stops a client on five hubs from announcing five
+ * times over, and the manager does not drive this fixture's session - so a case
+ * waiting for the INF would be waiting for something that was never going to arrive
+ * here, and would pass or fail for reasons of its own.
+ */
+EXO_TEST(hubsession_a_failed_check_asks_for_the_claim_to_be_said_again,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Core::getInstance()->reachability->forget();
+
+	QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+
+	/* Long enough that nothing scheduled goes out while the case is running, so
+	   what is observed is this request and not the tail of an earlier one. */
+	hubs->setClientInfoUpdateDelay(std::chrono::seconds(30));
+	hubs->sendClientInfoToAllHubs();
+	const bool quiet = !hubs->isClientInfoUpdatePending();
+
+	s.say("ISTA 142 Nothing\\sanswered PRADC/1.0");
+
+	const bool asked = hubs->isClientInfoUpdatePending();
+
+	/* Put back before anything is asserted, since a failed assertion leaves - and
+	   flushed, so no case after this one starts with an update scheduled. */
+	hubs->setClientInfoUpdateDelay(
+		std::chrono::seconds(QUICKDC_HUB_INFO_UPDATE_DELAY_SECONDS));
+	hubs->sendClientInfoToAllHubs();
+
+	EXO_ASSERT(quiet);
+	EXO_ASSERT(asked);
+	return 1;
+});
+
+/*
+ * A status carrying a 'TO' is a peer's report relayed through, whatever context it
+ * arrives in - one peer's account of its own failure, which on its own decides
+ * nothing. Otherwise a single peer could argue us into being passive by borrowing
+ * the hub's voice.
+ */
+EXO_TEST(hubsession_a_status_naming_a_transfer_is_not_the_hubs_own_check,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Core::getInstance()->reachability->forget();
+
+	s.say("ISTA 142 Could\\snot\\sconnect TOsometoken PRADC/1.0");
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+	EXO_ASSERT(claims(inf, "TCP4"));
+	return 1;
+});
+
+/* Nor is a status from another client, whatever it says. */
+EXO_TEST(hubsession_a_status_from_a_peer_is_not_the_hubs_own_check,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Core::getInstance()->reachability->forget();
+
+	s.say("DSTA BBBB AAAA 142 Could\\snot\\sconnect PRADC/1.0");
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+	EXO_ASSERT(claims(inf, "TCP4"));
+	return 1;
+});
+
+/* And a user who knows their own network still has the last word. */
+EXO_TEST(hubsession_forcing_active_mode_overrules_the_hubs_check,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Core::getInstance()->reachability->forget();
+
+	s.say("ISTA 142 Nothing\\sanswered PRADC/1.0");
+
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	config->setBool("Force active mode", true);
+
+	std::string inf;
+	const bool announced = announcedSupport(s, inf);
+
+	config->setGroup("Network");
+	config->setBool("Force active mode", false);
+
+	EXO_ASSERT(announced);
+	EXO_ASSERT(claims(inf, "TCP4"));
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
 /* Reaching a peer that cannot be connected to either                        */
 /* ------------------------------------------------------------------------- */
 

@@ -48,16 +48,6 @@
 #include <span>
 
 
-/*
- * One field: severity digit followed by a two digit code. Sending the code on
- * its own leaves a peer reading the severity off the first digit of the code.
- */
-static std::string adc_status_code(int severity, int code)
-{
-	char buf[8];
-	snprintf(buf, sizeof(buf), "%d%02d", severity, code);
-	return std::string(buf);
-}
 
 
 /*
@@ -899,14 +889,18 @@ void ADC::HubSession::sendClientInfo()
 		 * not be the last word.
 		 */
 		if (reachable(config))
-			supports += ",TCP4";
+		{
+			supports += ",";
+			supports += ADC_EXT_TCP4;
+		}
 
 		/*
 		 * UDP4 is not withdrawn, because nothing can disprove it: a peer that
 		 * cannot reach this port has no datagram it could send to say so. Claimed
 		 * whenever the port is open, as before.
 		 */
-		supports += ",UDP4";
+		supports += ",";
+		supports += ADC_EXT_UDP4;
 	}
 
 	/*
@@ -1461,6 +1455,35 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 				const char* who = cmd->getSourceID();
 
 				QuickDC::Core* core = QuickDC::Core::getInstance();
+
+				/*
+				 * The hub reporting on a connection it made itself, rather than
+				 * relaying a peer's. ISTA is the hub speaking, and no 'TO' means
+				 * this is not the answer to any transfer we asked for - so the only
+				 * connection it can be about is the hub's own attempt at the port
+				 * we published.
+				 *
+				 * Worth more than a peer's report, and treated so: see
+				 * Reachability::connectionCheckFailed().
+				 */
+				const bool fromHub = cmd->getFourcc() == FOURCC('I','S','T','A');
+				if (fromHub && !(job && *job))
+				{
+					QERR("The hub could not connect to the port we published: %s",
+						mesg ? mesg : "no reason given");
+
+					if (core && core->reachability)
+					{
+						core->reachability->connectionCheckFailed();
+
+						/* Said again without the claim, so peers stop being told
+						   to connect somewhere nothing answers - and so NATT is
+						   no longer suppressed by a claim that was false. */
+						core->hubs->requestClientInfoUpdate();
+					}
+					break;
+				}
+
 				const bool ours = job && *job && core && core->queue
 					&& core->queue->lookupRequest(job);
 

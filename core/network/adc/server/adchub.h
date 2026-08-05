@@ -257,6 +257,16 @@ namespace ADC {
 
 			bool enabled;
 
+			/**
+			 * Whether the hub checks that a client claiming TCP4 can be connected to.
+			 *
+			 * On by default, because a client that is wrong about this fails every
+			 * transfer and cannot be told so by anything else. Off is for an operator
+			 * whose hub must make no outbound connections at all - see ClaimCheck for
+			 * what bounds the ones it does make.
+			 */
+			bool checkClaims;
+
 			sid_t availSid;
 			
 			/* Quick lookup maps */

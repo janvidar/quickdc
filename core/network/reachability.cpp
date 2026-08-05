@@ -70,6 +70,15 @@ void QuickDC::Reachability::connectionRefused(const std::string& peer)
 }
 
 
+void QuickDC::Reachability::connectionCheckFailed()
+{
+	if (!advertised) return;
+
+	QDBG("A hub could not connect to %s:%d", address.c_str(), (int) port);
+	check_failed = true;
+}
+
+
 QuickDC::Reachability::State QuickDC::Reachability::tcp() const
 {
 	/*
@@ -78,6 +87,10 @@ QuickDC::Reachability::State QuickDC::Reachability::tcp() const
 	 * malicious; a connection that arrived is not an account of anything.
 	 */
 	if (inbound_connection) return State::Reachable;
+
+	/* One hub is enough, where three peers are needed. See the header for why
+	   these two are not the same kind of report. */
+	if (check_failed) return State::Unreachable;
 
 	if (refused_by.size() >= QUICKDC_REACHABILITY_REFUSALS)
 		return State::Unreachable;
@@ -103,5 +116,6 @@ void QuickDC::Reachability::forget()
 {
 	inbound_connection = false;
 	inbound_datagram = false;
+	check_failed = false;
 	refused_by.clear();
 }

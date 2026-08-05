@@ -271,6 +271,7 @@ EXO_TEST(reachability_forgetting_leaves_nothing_behind,
 	r.inboundConnection();
 	r.inboundDatagram();
 	r.connectionRefused("CIDONE");
+	r.connectionCheckFailed();
 
 	r.forget();
 
@@ -286,5 +287,113 @@ EXO_TEST(reachability_every_state_can_be_named,
 	EXO_ASSERT(std::string(QuickDC::Reachability::toString(State::Unknown)) == "not known");
 	EXO_ASSERT(std::string(QuickDC::Reachability::toString(State::Reachable)) == "reachable");
 	EXO_ASSERT(std::string(QuickDC::Reachability::toString(State::Unreachable)) == "unreachable");
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* What a hub says about a connection it made itself                         */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A hub that tried the published port and got nothing decides it on its own, where
+ * three peers are needed. The two are not the same kind of statement: a peer's report
+ * arrives through the hub quoting a token anyone on the hub saw, and describes a
+ * failure only that peer witnessed, while this is a party that made the attempt itself
+ * and said so over the connection we authenticated to it.
+ */
+EXO_TEST(reachability_one_hub_that_could_not_connect_decides_it,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	EXO_ASSERT(r.tcp() == State::Unknown);
+	r.connectionCheckFailed();
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+	return 1;
+});
+
+/*
+ * But a connection that arrived still outranks it. The check may have run before a
+ * port mapping came up, and something that arrived is not an account of anything.
+ */
+EXO_TEST(reachability_a_connection_that_arrived_outranks_a_failed_check,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.connectionCheckFailed();
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+
+	r.inboundConnection();
+	EXO_ASSERT(r.tcp() == State::Reachable);
+	return 1;
+});
+
+/* In either order: a check that fails after a connection arrived changes nothing. */
+EXO_TEST(reachability_a_failed_check_does_not_undo_a_connection_that_arrived,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.inboundConnection();
+	r.connectionCheckFailed();
+
+	EXO_ASSERT(r.tcp() == State::Reachable);
+	return 1;
+});
+
+/* It says nothing about UDP, which nothing can speak against. */
+EXO_TEST(reachability_a_failed_tcp_check_says_nothing_about_udp,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.connectionCheckFailed();
+
+	EXO_ASSERT(r.udp() == State::Unknown);
+	return 1;
+});
+
+/*
+ * And it belongs to the endpoint it was gathered for. A new address or port is one
+ * nothing has been checked about.
+ */
+EXO_TEST(reachability_a_failed_check_is_forgotten_when_the_endpoint_changes,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+	r.connectionCheckFailed();
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+
+	r.advertising("198.51.100.9", 4111);
+	EXO_ASSERT(r.tcp() == State::Unknown);
+
+	r.connectionCheckFailed();
+	r.advertising("203.0.113.7", 4111);
+	EXO_ASSERT(r.tcp() == State::Unknown);
+	return 1;
+});
+
+/* Nothing has been advertised, so there is no endpoint for this to be about. */
+EXO_TEST(reachability_a_failed_check_before_anything_is_advertised_is_ignored,
+{
+	QuickDC::Reachability r;
+
+	r.connectionCheckFailed();
+
+	EXO_ASSERT(r.tcp() == State::Unknown);
+	return 1;
+});
+
+/* Said twice is said once. */
+EXO_TEST(reachability_a_failed_check_repeated_changes_nothing,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	for (int n = 0; n < 10; n++) r.connectionCheckFailed();
+
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+	EXO_ASSERT_EQ_UINT(r.reporters(), 0u);
 	return 1;
 });

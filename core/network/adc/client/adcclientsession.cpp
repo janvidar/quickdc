@@ -36,14 +36,6 @@
 #include <string>
 #include <string_view>
 
-/* One field: severity digit followed by a two digit code. */
-static std::string adc_status_code(int severity, int code)
-{
-	char buf[8];
-	snprintf(buf, sizeof(buf), "%d%02d", severity, code);
-	return std::string(buf);
-}
-
 ADC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* hubsession_) :
 	QuickDC::Connection(url, "ADC client"),
 	hubsession(hubsession_),

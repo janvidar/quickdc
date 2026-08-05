@@ -358,6 +358,12 @@ void ADC::HubUser::clearFeatures() {
 	features.clear();
 }
 
+std::string ADC::HubUser::getObservedAddress() const
+{
+	return peerAddress(socket.get());
+}
+
+
 bool ADC::HubUser::hasFeature(const char* feature) const {
 	/* Either of these disqualifies it; the test used to be an 'and', which meant
 	   a null feature reached strlen(). */

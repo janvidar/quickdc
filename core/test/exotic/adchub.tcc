@@ -33,6 +33,7 @@
 #include "network/adc/server/adchub.h"
 #include "network/adc/server/adchubservice.h"
 #include "network/adc/server/adchubuser.h"
+#include "network/adc/server/claimcheck.h"
 
 #include <samurai/crypto/digest/tiger.h>
 #include <samurai/io/file.h>
@@ -149,6 +150,9 @@ class TestHub : public ADC::Hub
 {
 	public:
 		using ADC::Hub::EventError;
+
+		/* What a hub does at startup, so a case can watch it read a setting. */
+		using ADC::Hub::readConfiguration;
 };
 
 /* The hub, and the listening socket that hands connections to it. */
@@ -162,6 +166,13 @@ class Server : public Samurai::IO::Net::ServerSocketEventHandler
 		Server()
 		{
 			hub.enabled = true;
+
+			/*
+			 * The record of which endpoints have been checked belongs to the
+			 * process, not to a hub, so one case's checks would otherwise be
+			 * the reason the next case's are declined.
+			 */
+			ADC::ClaimCheck::reset();
 		}
 
 		/*
@@ -299,7 +310,7 @@ class Client : public Samurai::IO::Net::SocketEventHandler
 		 * INF - which the hub echoes back to everyone, this client included, and
 		 * that echo is what says it is on.
 		 */
-		bool login(const Identity& id, const char* nick)
+		bool login(const Identity& id, const char* nick, const char* extra = 0)
 		{
 			send("HSUP ADBASE ADTIGR");
 
@@ -308,7 +319,10 @@ class Client : public Samurai::IO::Net::SocketEventHandler
 			if (line.size() < 9) return false;
 			sid = line.substr(5, 4);
 
-			send("BINF " + sid + " ID" + id.cid + " PD" + id.pid + " NI" + nick);
+			std::string inf = "BINF " + sid + " ID" + id.cid + " PD" + id.pid
+				+ " NI" + nick;
+			if (extra) { inf += " "; inf += extra; }
+			send(inf);
 
 			for (;;)
 			{
@@ -1265,5 +1279,420 @@ EXO_TEST(adchub_the_hub_says_it_relays_nat_traversal,
 	std::string line;
 	EXO_ASSERT(alice.waitFor("ISUP", line));
 	EXO_ASSERT(line.find("ADNATT") != std::string::npos);
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* Checking a reachability claim                                             */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A client announcing TCP4 asserts something every other client acts on: that a peer
+ * told to connect to it will get through. Nothing in ADC checks it, and a client that
+ * is wrong fails every transfer - worse, since NATT engages only when neither side
+ * claims TCP4, so a false claim also suppresses the fallback that would have worked.
+ *
+ * The hub can check, because it has the client's address without being told and the
+ * client's own CTM names the port. What it must not become is a way to have a hub
+ * connect wherever it is asked, which is what most of the cases below are about.
+ *
+ * The connection made here is a real one, to a real loopback port, so these are as
+ * close to the live behaviour as a single machine gets.
+ */
+
+/* Somewhere a connection can be made, and somewhere it cannot. */
+class Listener : public Samurai::IO::Net::ServerSocketEventHandler
+{
+	public:
+		std::shared_ptr<Samurai::IO::Net::ServerSocket> server;
+		size_t accepted = 0;
+
+		bool listen()
+		{
+			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
+			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			return server && server->getFD() != -1 && server->listen();
+		}
+
+		uint16_t port() const { return server ? server->getLocalPort() : 0; }
+
+		/** The port this had, given up - so nothing is listening on it now. */
+		uint16_t release()
+		{
+			const uint16_t was = port();
+			server.reset();
+			return was;
+		}
+
+		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char*) override { }
+		void EventAcceptSocket(const Samurai::IO::Net::ServerSocket*,
+			std::shared_ptr<Samurai::IO::Net::Socket>) override { accepted++; }
+};
+
+/* The status a client is sent when its claim did not hold. */
+static const char CLAIM_FAILED[] = "ISTA 142";
+
+/*
+ * Nothing there: the hub says so, naming the port in a field rather than only in the
+ * text, so a client can act on it without reading English.
+ */
+EXO_TEST(adchub_a_claim_that_nothing_answers_is_reported,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	/* A port that was ours and is not any more, so it is free and closed. */
+	Listener gone;
+	if (!gone.listen()) EXO_SKIP("could not listen on a loopback port");
+	const uint16_t closed = gone.release();
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(60), "alice", "SUADC0,TCP4,UDP4"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(61), "bob"));
+
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+		+ std::to_string(closed) + " tok1");
+
+	std::string line;
+	EXO_ASSERT(alice.waitFor("ISTA", line));
+	EXO_ASSERT(line.compare(0, strlen(CLAIM_FAILED), CLAIM_FAILED) == 0);
+
+	/* The port in the text, and 'PR' meaning what it means: the protocol from
+	   the CTM, not a port dressed up in a field that is not for one. */
+	EXO_ASSERT(line.find(std::to_string(closed)) != std::string::npos);
+	EXO_ASSERT(line.find("PRADC/1.0") != std::string::npos);
+
+	/* No 'TO': this is the hub reporting on a connection it made itself, which is
+	   what tells it apart from a peer's failure relayed through. */
+	EXO_ASSERT(line.find(" TO") == std::string::npos);
+	return 1;
+});
+
+/* And the request still goes through: the claim is wrong, not the command. */
+EXO_TEST(adchub_a_claim_check_does_not_swallow_the_request,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Listener gone;
+	if (!gone.listen()) EXO_SKIP("could not listen on a loopback port");
+	const uint16_t closed = gone.release();
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(62), "alice", "SUADC0,TCP4"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(63), "bob"));
+
+	bob.drain();
+	bob.received.clear();
+
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+		+ std::to_string(closed) + " tok1");
+
+	std::string line;
+	EXO_ASSERT(bob.waitFor("DCTM", line));
+	EXO_ASSERT(line.find("tok1") != std::string::npos);
+	return 1;
+});
+
+/*
+ * Something answers: nothing is said. A hub telling a client that its settings are
+ * correct is a message nobody needs, and one that says it anyway trains its users to
+ * ignore the case where it matters.
+ */
+EXO_TEST(adchub_a_claim_that_holds_is_not_reported,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Listener open;
+	if (!open.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(64), "alice", "SUADC0,TCP4"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(65), "bob"));
+
+	alice.drain();
+	alice.received.clear();
+
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+		+ std::to_string(open.port()) + " tok1");
+
+	/* Long enough for the connection to be made and reported on. */
+	pump([&] { return open.accepted > 0; }, 2000);
+	pump([] { return false; }, 300);
+
+	alice.drain();
+	EXO_ASSERT_EQ_UINT(open.accepted, 1u);
+	EXO_ASSERT(alice.received.find("ISTA") == std::string::npos);
+	return 1;
+});
+
+/*
+ * A client that claims nothing is not checked. It has not asserted anything, and a
+ * hub connecting to it anyway would be making an outbound connection nobody asked
+ * for - which is the thing this must not become.
+ */
+EXO_TEST(adchub_a_client_claiming_nothing_is_not_checked,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Listener open;
+	if (!open.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(66), "alice", "SUADC0,UDP4"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(67), "bob"));
+
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+		+ std::to_string(open.port()) + " tok1");
+
+	pump([] { return false; }, 700);
+	EXO_ASSERT_EQ_UINT(open.accepted, 0u);
+	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+	return 1;
+});
+
+/*
+ * A privileged port is not where a peer transfer listens, and it is where everything
+ * else does. The port is the one thing in this the client chooses, and the address it
+ * goes with is shared with whoever else is behind the same NAT - so a client naming
+ * 22 must not have the hub connect to its neighbour's ssh.
+ */
+EXO_TEST(adchub_a_claim_on_a_privileged_port_is_not_checked,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(68), "alice", "SUADC0,TCP4"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(69), "bob"));
+
+	alice.drain();
+	alice.received.clear();
+
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 22 tok1");
+
+	pump([] { return false; }, 700);
+	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+
+	/* And no report either: nothing was checked, so nothing is known. */
+	alice.drain();
+	EXO_ASSERT(alice.received.find("ISTA") == std::string::npos);
+	return 1;
+});
+
+/* Nor is a port outside the range one at all. */
+EXO_TEST(adchub_a_claim_on_an_impossible_port_is_not_checked,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(70), "alice", "SUADC0,TCP4"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(71), "bob"));
+
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 99999 tok1");
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 0 tok2");
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 -1 tok3");
+
+	pump([] { return false; }, 700);
+	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+	return 1;
+});
+
+/*
+ * One check per endpoint per interval. A client that asks for a connection every few
+ * seconds would otherwise have the hub dial it every time, which is a load the hub
+ * did not choose and the client did.
+ */
+EXO_TEST(adchub_the_same_endpoint_is_checked_once_per_interval,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Listener open;
+	if (!open.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(72), "alice", "SUADC0,TCP4"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(73), "bob"));
+
+	for (int n = 0; n < 6; n++)
+	{
+		alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+			+ std::to_string(open.port()) + " tok" + std::to_string(n));
+		pump([] { return false; }, 150);
+	}
+
+	pump([] { return false; }, 500);
+	EXO_ASSERT_EQ_UINT(open.accepted, 1u);
+	return 1;
+});
+
+/* A different port is a different endpoint, and is checked on its own. */
+EXO_TEST(adchub_a_different_port_is_a_different_endpoint,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Listener first;
+	Listener second;
+	if (!first.listen() || !second.listen())
+		EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(74), "alice", "SUADC0,TCP4"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(75), "bob"));
+
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+		+ std::to_string(first.port()) + " tok1");
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+		+ std::to_string(second.port()) + " tok2");
+
+	pump([&] { return first.accepted && second.accepted; }, 2000);
+	EXO_ASSERT_EQ_UINT(first.accepted, 1u);
+	EXO_ASSERT_EQ_UINT(second.accepted, 1u);
+	return 1;
+});
+
+/* An operator who wants the hub to make no outbound connections can say so. */
+EXO_TEST(adchub_an_operator_can_turn_claim_checking_off,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	s.hub.checkClaims = false;
+
+	Listener open;
+	if (!open.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(76), "alice", "SUADC0,TCP4"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(77), "bob"));
+
+	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+		+ std::to_string(open.port()) + " tok1");
+
+	pump([] { return false; }, 700);
+	EXO_ASSERT_EQ_UINT(open.accepted, 0u);
+
+	/* The request itself is unaffected. */
+	std::string line;
+	EXO_ASSERT(bob.sawLine({"DCTM", "tok1"}) || bob.waitFor("DCTM", line));
+	return 1;
+});
+
+/* On by default, which is the whole point: a claim nobody checks is a claim. */
+EXO_TEST(adchub_claim_checking_is_on_unless_it_is_turned_off,
+{
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Local hub");
+	config->remove("Check reachability claims");
+
+	Server s;
+	s.hub.checkClaims = false;
+	s.hub.readConfiguration();
+
+	EXO_ASSERT(s.hub.checkClaims);
+	return 1;
+});
+
+/*
+ * A client that goes away while it is being checked is not one to report to. The
+ * check outlives it - it is looking at a closed port and takes seconds to find out -
+ * so the user it names is looked up when there is something to say, not remembered.
+ */
+EXO_TEST(adchub_a_client_that_leaves_during_a_check_is_not_reported_to,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Listener gone;
+	if (!gone.listen()) EXO_SKIP("could not listen on a loopback port");
+	const uint16_t closed = gone.release();
+
+	Client bob;
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(78), "bob"));
+
+	{
+		Client alice;
+		EXO_ASSERT(alice.connect(s.port()));
+		EXO_ASSERT(alice.login(makeIdentity(79), "alice", "SUADC0,TCP4"));
+
+		alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+			+ std::to_string(closed) + " tok1");
+
+		pump([] { return ADC::ClaimCheck::running() > 0; }, 1000);
+		EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 1u);
+	}
+
+	/* Alice's socket is gone; the check finishes and finds nobody. */
+	pump([] { return ADC::ClaimCheck::running() == 0; }, 3000);
+	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+	return 1;
+});
+
+/*
+ * And a hub that goes away while a check is running takes the check with it: the
+ * check holds the hub it will report to, so one left behind reports into freed
+ * memory. Nothing to assert beyond finishing without a fault, which under the
+ * sanitizer is the assertion.
+ */
+EXO_TEST(adchub_a_hub_that_goes_away_takes_its_checks_with_it,
+{
+	Listener gone;
+	if (!gone.listen()) EXO_SKIP("could not listen on a loopback port");
+	const uint16_t closed = gone.release();
+
+	{
+		Server s;
+		if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+		Client alice;
+		Client bob;
+		EXO_ASSERT(alice.connect(s.port()));
+		EXO_ASSERT(alice.login(makeIdentity(80), "alice", "SUADC0,TCP4"));
+		EXO_ASSERT(bob.connect(s.port()));
+		EXO_ASSERT(bob.login(makeIdentity(81), "bob"));
+
+		alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
+			+ std::to_string(closed) + " tok1");
+
+		pump([] { return ADC::ClaimCheck::running() > 0; }, 1000);
+		EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 1u);
+	}
+
+	EXO_ASSERT_EQ_UINT(ADC::ClaimCheck::running(), 0u);
+
+	pump([] { return false; }, 1500);
 	return 1;
 });

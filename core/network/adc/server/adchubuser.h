@@ -105,6 +105,17 @@ class HubUser : public HubConnection {
 		void read();
 
 		sid_t getSID() const { return sid; }
+
+		/**
+		 * Where this user's connection to the hub comes from, or nothing.
+		 *
+		 * The address the hub observed, which is the only one it knows without
+		 * being told: what a client says about its own address is a claim, and
+		 * INF_CHECK_IP is what compares the two. Nothing rather than a
+		 * placeholder for a connection that has no peer - one that has already
+		 * gone - so that two unknown addresses do not compare equal.
+		 */
+		std::string getObservedAddress() const;
 		enum State getState() const { return state; };
 		enum Credentials getCredentials() const { return credentials; }
 		

@@ -6,6 +6,9 @@
 #ifndef HAVE_QUICKDC_ADC_COMMON_H
 #define HAVE_QUICKDC_ADC_COMMON_H
 
+#include <cstdio>
+#include <string>
+
 #include "quickdc.h"
 
 typedef uint32_t sid_t;
@@ -27,6 +30,16 @@ typedef uint32_t bbs_message_t;
 #define ADC_EXT_NATT                    "NATT" /* p2p: NAT traversal for two passive clients */
 
 /*
+ * What a client says it can be reached by, in INF's SU.
+ *
+ * TCP4 is the one every other client acts on: it says a peer told to connect will
+ * get through. UDP4 says the same about search results. Neither is verified by
+ * anything in base ADC, which is what ClaimCheck is about.
+ */
+#define ADC_EXT_TCP4                    "TCP4"
+#define ADC_EXT_UDP4                    "UDP4"
+
+/*
  * Rich text: markdown chat, the RT flag on MSG.
  *
  * One fourcc in two places. In SUP a client offers it with "ADRTF0" and may only send the
@@ -38,6 +51,20 @@ typedef uint32_t bbs_message_t;
 
 #define ADC_INDEX_FILE                  "files.xml"
 #define ADC_INDEX_FILE_BZ2              "files.xml.bz2"
+
+/*
+ * One status field: severity digit followed by a two digit code.
+ *
+ * Sending the code on its own leaves a peer reading the severity off the first
+ * digit of the code - 42 read as severity 4, which is not a severity at all.
+ */
+inline std::string adc_status_code(int severity, int code)
+{
+	char buf[8];
+	snprintf(buf, sizeof(buf), "%d%02d", severity, code);
+	return std::string(buf);
+}
+
 
 #define ADC_STATUS_SEVERITY_INFO        0
 #define ADC_STATUS_SEVERITY_ERROR       1 /* recoverable error */

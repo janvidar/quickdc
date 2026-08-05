@@ -20,6 +20,7 @@
 #include "network/adc/server/adchub.h"
 #include "network/adc/server/adchubservice.h"
 #include "network/adc/server/adchubuser.h"
+#include "network/adc/server/claimcheck.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/adccommands.h"
 #include "network/adc/cid.h"
@@ -132,6 +133,12 @@ ADC::Hub::~Hub() {
 	delete services;
 
 	/*
+	 * Same reasoning as the users below: a check in flight holds this hub and
+	 * reports to it seconds later, so one left behind reports into freed memory.
+	 */
+	ADC::ClaimCheck::forget(this);
+
+	/*
 	 * Deleted, not merely unmapped. A user holds the last reference to its socket
 	 * and the socket's event handler is this hub, so a user left behind here keeps
 	 * a registered socket pointing at a hub that no longer exists - and the next
@@ -180,6 +187,7 @@ void ADC::Hub::readConfiguration() {
 	handshakeTimeout = static_cast<uint32_t>(std::clamp(config->getNumber("Handshake timeout", 30), 0, 86400));
 	idleTimeout      = static_cast<uint32_t>(std::clamp(config->getNumber("Idle timeout", 900), 0, 86400));
 	enabled    = config->getBool("Enabled", false);
+	checkClaims = config->getBool("Check reachability claims", true);
 
 	/* Choking a user is a hint that it is slow; this is the point at which it is
 	   not reading at all, and holding anything more for it is pointless. */
@@ -352,6 +360,20 @@ void ADC::Hub::onCTM(ADC::Command* cmd) {
 	ADC::HubUser* target = lookupUser(ADC::SID::fromString(cmd->getTargetID()));
 	if (user->state == State_Normal && target && target->state == State_Normal) {
 		send(cmd, target);
+
+		/*
+		 * The one place a client names the TCP port it expects peers to arrive on.
+		 * INF's U4 is the UDP port and says nothing about this one, so a CTM is the
+		 * hub's only occasion to check what TCP4 asserts - and the sender has just
+		 * told a peer to connect there, so it is the moment the claim is being acted
+		 * on rather than merely advertised.
+		 */
+		if (checkClaims && user->hasFeature(ADC_EXT_TCP4)) {
+			const int port = Samurai::Util::Convert::to_int32(cmd->getArgument(1));
+			if (port > 0 && port <= 65535)
+				ADC::ClaimCheck::start(this, user, cmd->getArgument(0),
+					static_cast<uint16_t>(port));
+		}
 	}
 }
 
