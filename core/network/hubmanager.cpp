@@ -10,8 +10,10 @@
 #include <vector>
 
 #include "network/hubmanager.h"
+#include "network/searchtokens.h"
 #include "network/dc/hubsession.h"
 #include "network/usermanager.h"
+#include "api/core.h"
 #include "api/hub.h"
 
 QuickDC::HubManager::HubManager()
@@ -120,6 +122,26 @@ QuickDC::Hub* QuickDC::HubManager::lookupUserByNick(const char* nick) {
 
 size_t QuickDC::HubManager::searchAllHubs(QuickDC::Share::SearchRequest* request) {
 	if (!request) return 0;
+
+	/*
+	 * Every search goes out naming itself, and what it names is remembered.
+	 *
+	 * A datagram's source address is whatever its sender wrote, so a reply can only
+	 * be told from a stranger by what it answers. The queue draws its own token for
+	 * a source search, so one may be here already - it is remembered rather than
+	 * replaced, since it is the one the reply will quote.
+	 *
+	 * One token for all the hubs: the same search is being asked in several places,
+	 * and a reply from any of them answers it.
+	 */
+	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	if (tokens)
+	{
+		if (const char* existing = request->getToken())
+			tokens->remember(existing);
+		else
+			request->setToken(tokens->issue().c_str());
+	}
 
 	size_t sent = 0;
 	for (size_t i = 0; i < hubs.size(); i++)

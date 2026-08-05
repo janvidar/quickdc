@@ -9,6 +9,10 @@
 #include <string>
 
 #include "api/core.h"
+#include <samurai/io/net/inetaddress.h>
+#include <samurai/io/net/socketaddress.h>
+#include "network/searchtokens.h"
+#include "network/reachability.h"
 #include "api/hub.h"
 #include "network/adc/adcudp.h"
 #include "network/adc/parser.h"
@@ -40,6 +44,7 @@ void ADC::DatagramHandler::onDatagram(Samurai::IO::Net::DatagramSocket*, Samurai
 		switch (cmd.getFourcc())
 		{
 			case FOURCC('U','R','E','S'):
+				noteReachable(packet, &cmd);
 				onSearchResult(&cmd);
 				break;
 
@@ -89,6 +94,52 @@ void ADC::DatagramHandler::onPartialStatus(ADC::Command* cmd)
 
 	core->queue->onPartialSources(hub->getUrl(), id, tth, pi);
 }
+
+/*
+ * A datagram arriving on the peer port is the only thing that shows the port can be
+ * reached over UDP - no peer that fails to reach it has any way of saying so, which
+ * is why nothing else can establish it.
+ *
+ * Two things are required of it. It has to answer a search this client sent, because
+ * a source address is whatever its sender wrote and an unsolicited datagram
+ * therefore shows nothing; and it must not have come from this machine, because the
+ * loopback shows only that the socket is open, which was never the question.
+ *
+ * What the token does not establish is who sent it: a search goes to every client on
+ * the hub, so its token is public from the moment it is sent. It bounds this to "an
+ * answer to something we asked" rather than "from the peer we expected", which is as
+ * much as a datagram can be held to.
+ */
+void ADC::DatagramHandler::noteReachable(Samurai::IO::Net::DatagramPacket* packet,
+                                         ADC::Command* cmd)
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	if (!core || !core->reachability || !core->searchTokens) return;
+
+	const char* token = cmd->getArgument("TO", 2, 0);
+	if (!core->searchTokens->issued(token))
+	{
+		QDBG("A datagram answering no search of ours; not evidence of anything");
+		return;
+	}
+
+	if (!packet) return;
+
+	/*
+	 * The address is only reachable through the internet flavour of it, and a
+	 * datagram read from the socket has one - but a caller could hand this
+	 * something else, so it is asked rather than assumed.
+	 */
+	const Samurai::IO::Net::InetSocketAddress* from =
+		dynamic_cast<const Samurai::IO::Net::InetSocketAddress*>(packet->getAddress());
+	if (!from) return;
+
+	const Samurai::IO::Net::InetAddress* address = from->getAddress();
+	if (!address || address->isLoopback()) return;
+
+	core->reachability->inboundDatagram();
+}
+
 
 void ADC::DatagramHandler::onSearchResult(ADC::Command* cmd)
 {

@@ -48,6 +48,7 @@ class DCServer;
 class HubManager;
 class PortForward;
 class Reachability;
+class SearchTokens;
 class Preferences;
 class Server;
 class ShareManager;
@@ -147,6 +148,12 @@ class Core {
 		 * this client is reachable is asking one question, not one per hub.
 		 */
 		QuickDC::Reachability* reachability;
+
+		/**
+		 * The searches sent, so a datagram answering one can be told from a
+		 * stranger's. Feeds the reachability record above.
+		 */
+		QuickDC::SearchTokens* searchTokens;
 		Samurai::IO::Net::BandwidthManager* bandwidthManager;
 
 	protected:

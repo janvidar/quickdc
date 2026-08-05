@@ -44,6 +44,7 @@ set(QUICKDC_EXOTIC_TESTS
     lock.tcc
     portforward.tcc
     reachability.tcc
+    searchtokens.tcc
     queuecomplete.tcc
     zupload.tcc)
 

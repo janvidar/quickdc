@@ -33,6 +33,14 @@ namespace ADC {
 			 */
 			static void onDatagram(Samurai::IO::Net::DatagramSocket* socket, Samurai::IO::Net::DatagramPacket* packet);
 
+		/**
+		 * Record that a datagram answering one of our searches arrived from
+		 * somewhere other than this machine, which is the only thing that shows the
+		 * peer port can be reached over UDP.
+		 */
+		static void noteReachable(Samurai::IO::Net::DatagramPacket* packet,
+			ADC::Command* cmd);
+
 		protected:
 			/** URES: a peer answering one of our searches. */
 			static void onSearchResult(ADC::Command* cmd);

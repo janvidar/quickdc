@@ -24,6 +24,7 @@
 #include "network/hubmanager.h"
 #include "network/portforward.h"
 #include "network/reachability.h"
+#include "network/searchtokens.h"
 #include "network/securitymanager.h"
 #include "network/transfermanager.h"
 #include "network/adc/server/adchub.h"
@@ -176,6 +177,7 @@ QuickDC::Core::Core()
 	messageHandler = Samurai::MessageHandler::getInstance();
 	securityManager = new QuickDC::SecurityManager();
 	reachability = new QuickDC::Reachability();
+	searchTokens = new QuickDC::SearchTokens();
 
 	ensureCertificate(QUICKDC_PRIVATE_KEY_FILE, QUICKDC_CERTIFICATE_FILE);
 	Samurai::IO::Net::TlsFactory::setKeys(QUICKDC_PRIVATE_KEY_FILE, QUICKDC_CERTIFICATE_FILE);
@@ -233,6 +235,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	/* Peer sessions reach for this without checking whether there is one. */
 	securityManager = new QuickDC::SecurityManager();
 	reachability = new QuickDC::Reachability();
+	searchTokens = new QuickDC::SearchTokens();
 
 	/* Only when asked for: it reads and writes the file it is given. */
 	queue = queue_file.empty() ? 0 : new QuickDC::QueueManager(queue_file.c_str());
@@ -284,6 +287,7 @@ QuickDC::Core::~Core()
 	delete hubs; hubs = 0;
 	delete securityManager; securityManager = 0;
 	delete reachability; reachability = 0;
+	delete searchTokens; searchTokens = 0;
 	delete shares; shares = 0;
 	/* After the hubs, which borrow it and write through it on the way out. */
 	delete session; session = 0;

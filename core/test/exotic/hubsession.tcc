@@ -24,6 +24,10 @@
 #include "network/hubmanager.h"
 #include "api/server.h"
 #include "network/reachability.h"
+#include <samurai/io/net/datagram.h>
+#include "network/adc/adcudp.h"
+#include "network/adc/parser.h"
+#include "network/searchtokens.h"
 
 #include "fakegateway.h"
 #include "network/adc/adccommon.h"
@@ -2141,5 +2145,129 @@ EXO_TEST(hubsession_a_client_announces_that_it_can_traverse,
 	std::string inf;
 	EXO_ASSERT(announcedSupport(s, inf));
 	EXO_ASSERT(claims(inf, "NATT"));
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* A datagram as evidence                                                    */
+/* ------------------------------------------------------------------------- */
+
+namespace {
+
+/*
+ * A search result as it arrives on the wire, from wherever it says.
+ *
+ * Built rather than sent, because the one case that matters cannot be produced on a
+ * test machine: evidence requires a source that is not this machine, and everything
+ * a loopback test can send comes from this machine. The decision is what is under
+ * test, so the decision is what is called.
+ */
+bool arrives(const char* from, const char* token)
+{
+	const std::string line = std::string("URES AAAA FNfile.txt SI100 SL1 TO") + token;
+
+	ADC::Command cmd;
+	if (!ADC::Parser::parse(line.c_str(), line.size(), cmd)) return false;
+
+	Samurai::IO::Net::InetAddress address(from);
+	Samurai::IO::Net::InetSocketAddress source(address, 1412);
+
+	Samurai::IO::Net::DatagramPacket packet;
+	packet.setAddress(&source);
+
+	ADC::DatagramHandler::noteReachable(&packet, &cmd);
+	return true;
+}
+
+}
+
+/*
+ * A datagram answering a search of ours, from somewhere that is not this machine, is
+ * the only thing that shows the peer port can be reached over UDP - no peer that
+ * fails to reach it has any way of saying so.
+ */
+EXO_TEST(hubsession_a_datagram_answering_our_search_shows_udp_works,
+{
+	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	known->forget();
+	tokens->forget();
+
+	const std::string token = tokens->issue();
+	EXO_ASSERT(!token.empty());
+	EXO_ASSERT(known->udp() == QuickDC::Reachability::State::Unknown);
+
+	EXO_ASSERT(arrives("198.51.100.9", token.c_str()));
+
+	EXO_ASSERT(known->udp() == QuickDC::Reachability::State::Reachable);
+
+	/* And says nothing about TCP, which is a separate mapping. */
+	EXO_ASSERT(known->tcp() == QuickDC::Reachability::State::Unknown);
+	return 1;
+});
+
+/*
+ * One answering no search of ours is not evidence. A source address is whatever its
+ * sender wrote, so an unsolicited datagram shows nothing at all - anyone could send
+ * one claiming to be anywhere.
+ */
+EXO_TEST(hubsession_a_datagram_answering_nothing_is_not_evidence,
+{
+	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	known->forget();
+	tokens->forget();
+
+	tokens->issue();
+
+	EXO_ASSERT(arrives("198.51.100.9", "NOTOURSATALL"));
+
+	EXO_ASSERT(known->udp() == QuickDC::Reachability::State::Unknown);
+	return 1;
+});
+
+/*
+ * Nor is one from this machine, for the same reason a loopback connection is not:
+ * it shows the socket is open, which was never the question.
+ */
+EXO_TEST(hubsession_a_datagram_from_this_machine_is_not_evidence,
+{
+	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	known->forget();
+	tokens->forget();
+
+	const std::string token = tokens->issue();
+	EXO_ASSERT(!token.empty());
+
+	EXO_ASSERT(arrives("127.0.0.1", token.c_str()));
+
+	EXO_ASSERT(known->udp() == QuickDC::Reachability::State::Unknown);
+	return 1;
+});
+
+/* And a search that went out is one whose answer can be recognised, which is what
+   ties the two halves together. */
+EXO_TEST(hubsession_a_search_that_went_out_is_remembered,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	tokens->forget();
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	QuickDC::Share::SearchRequest request(QuickDC::Share::SearchRequest::SizeAny,
+		0, "AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A", 0, 0);
+	QuickDC::Core::getInstance()->hubs->searchAllHubs(&request);
+
+	/* Whatever token it went out with is one an answer can be checked against. */
+	const char* went = request.getToken();
+	EXO_ASSERT_NOT_NULL(went);
+	EXO_ASSERT(tokens->issued(went));
 	return 1;
 });

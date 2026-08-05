@@ -24,6 +24,7 @@ set(QUICKDC_SOURCES
     network/leafhashes.cpp
     network/portforward.cpp
     network/reachability.cpp
+    network/searchtokens.cpp
     network/probe.cpp
     network/securitymanager.cpp
     network/transfer.cpp
