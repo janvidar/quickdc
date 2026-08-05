@@ -902,12 +902,33 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	 * which is also the only case where the keyprint that protects the peer
 	 * connection could have come from anywhere trustworthy.
 	 */
-	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server)
+	/*
+	 * The same endpoint the INF advertised, rather than the configured port and a
+	 * second opinion about whether we are active.
+	 *
+	 * A CTM naming config's port sent a peer to the port we asked the gateway for,
+	 * which is not always the one it granted - PortForward says so when it happens
+	 * - so under UPnP a peer was told a port with nothing behind it. The NMDC side
+	 * has always asked peerEndpoint(); this is the odd one out.
+	 *
+	 * And deciding 'active' here from the preference and a socket meant this and
+	 * the INF could disagree: a client that told the hub it was passive could still
+	 * answer with a CTM.
+	 */
+	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
+		config->getBool("Active mode"), core->server != 0,
+		config->getString("Address", "0.0.0.0"),
+		observedAddress,
+		static_cast<uint16_t>(config->getNumber("Port")),
+		core->portforward);
+
+	if (endpoint.active)
 	{
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), localSid(), user->getID());
 		cmd->addArgument((secure && canAcceptTls()) ? ADC_TLS_PROTO : ADC_COMPLIANCE);
-		cmd->addArgument(std::to_string(config->getNumber("Port")).c_str());
+		cmd->addArgument(std::to_string(endpoint.port).c_str());
 		cmd->addArgument(token);
 		send(cmd);
 

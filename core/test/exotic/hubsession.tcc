@@ -22,6 +22,7 @@
 #include "api/core.h"
 #include "api/hub.h"
 #include "network/hubmanager.h"
+#include "api/server.h"
 #include "network/adc/adccommon.h"
 #include "network/adc/client/adchubsession.h"
 #include "network/user.h"
@@ -1080,6 +1081,53 @@ bool announcePeer(Session& s, const char* sid)
 	return true;
 }
 
+/*
+ * A peer listener on the core, which is what makes this client active.
+ *
+ * The core the rest of this file uses is built without one - it is the
+ * constructor meant for a test - and peerEndpoint() answers passive whenever
+ * there is nothing listening, however the preference is set. So everything the
+ * active side of a session does was unreachable from here, which is how a CTM
+ * naming the wrong port went unnoticed.
+ *
+ * Bound on the loopback and on whatever port the system gives, so nothing here
+ * depends on 1411 being free.
+ */
+class ActiveCore
+{
+	public:
+		ActiveCore()
+		{
+			QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+			config->setGroup("Network");
+
+			previous_active = config->getBool("Active mode");
+			config->setBool("Active mode", true);
+			config->setString("Bind", "127.0.0.1");
+			config->setNumber("Port", 0);
+
+			server = new QuickDC::DCServer();
+			QuickDC::Core::getInstance()->server = server;
+		}
+
+		~ActiveCore()
+		{
+			QuickDC::Core::getInstance()->server = 0;
+			delete server;
+
+			QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+			config->setGroup("Network");
+			config->setBool("Active mode", previous_active);
+		}
+
+		ActiveCore(const ActiveCore&) = delete;
+		ActiveCore& operator=(const ActiveCore&) = delete;
+
+	private:
+		QuickDC::DCServer* server = 0;
+		bool previous_active = false;
+};
+
 }
 
 /* On by default: a CTM naming plain ADC is refused rather than dialled. */
@@ -1458,3 +1506,77 @@ EXO_TEST(hubsession_answering_over_an_unencrypted_hub_is_reported,
 	return 1;
 });
 
+
+/* ------------------------------------------------------------------------- */
+/* The connection request we send                                            */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * An active client asks the peer to come to us, and names the endpoint the INF
+ * advertised rather than the configured port.
+ *
+ * The port used to be read straight from the configuration while the INF used
+ * peerEndpoint(), so under UPnP - where the gateway may grant a port other than
+ * the one asked for, which PortForward reports when it happens - a peer was sent
+ * to a port with nothing behind it. That the two now come from one place is what
+ * this pins; that peerEndpoint() answers with the granted port is pinned in
+ * portforward.tcc, which is where a gateway can be faked.
+ */
+EXO_TEST(hubsession_an_active_client_asks_the_peer_to_connect_to_it,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	ActiveCore active;
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	const QuickDC::User* peer = s.session->getUser("BBBB");
+	EXO_ASSERT_NOT_NULL(peer);
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.session->sendConnectionRequest(peer, "job1");
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+
+	/* A CTM, not an RCM: we can be connected to. */
+	EXO_ASSERT(line.compare(0, 5, "DCTM ") == 0);
+	EXO_ASSERT(line.find("job1") != std::string::npos);
+
+	/* And the port is the one the INF advertised. */
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	const std::string port = std::to_string(config->getNumber("Port"));
+	EXO_ASSERT(line.find(" " + port + " ") != std::string::npos);
+	return 1;
+});
+
+/* A passive client asks the other way round, and names no port at all - there is
+   nothing to name. */
+EXO_TEST(hubsession_a_passive_client_asks_the_peer_to_invite_it,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	const QuickDC::User* peer = s.session->getUser("BBBB");
+	EXO_ASSERT_NOT_NULL(peer);
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	/* No listener on the core, so passive whatever the preference says. */
+	s.session->sendConnectionRequest(peer, "job2");
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DRCM ") == 0);
+	EXO_ASSERT(line.find("job2") != std::string::npos);
+	return 1;
+});
