@@ -114,7 +114,23 @@ class HubListener
 	 * @param message  A message stating the recent event, not always used.
 	 */
 	virtual void EventNetStatus(enum StatusNetwork netstate) = 0;
-	
+
+	/**
+	 * A reconnect has been scheduled, or there will not be one.
+	 *
+	 * Reported rather than left in the log, because the wait is chosen here - it
+	 * doubles with each attempt and is spread over the upper half of that, so
+	 * nothing outside can work out when the attempt is due by repeating the sum.
+	 *
+	 * Not pure: retrying is this side's business, and a listener with nowhere to
+	 * show the wait has nothing to do here.
+	 *
+	 * @param seconds How long until the attempt, or -1 if this hub will not be
+	 *                tried again - which has to be said as plainly as a wait, or a
+	 *                listener counts down to an attempt that never comes.
+	 */
+	virtual void EventReconnectScheduled(int seconds) { (void) seconds; }
+
 	/**
 	 * Tell the UI about specific events.
 	 */

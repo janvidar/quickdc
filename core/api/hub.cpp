@@ -390,7 +390,18 @@ void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 	const int reconnect_time = (session) ? session->getReconnectTime() : -1;
 	session = 0;
 
-	if (requestedDisconnect || reconnect_time == -1) return;
+	/*
+	 * A disconnect that was asked for is reported to nobody: the listener knows it
+	 * asked, and saying there will be no attempt invites it to explain an absence
+	 * that is its own doing.
+	 */
+	if (requestedDisconnect) return;
+
+	if (reconnect_time == -1)
+	{
+		listener->EventReconnectScheduled(-1);
+		return;
+	}
 
 	attempts++;
 
@@ -398,6 +409,7 @@ void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 	if (wait < 0)
 	{
 		QDBG("Not trying '%s' again", canonicalUrl);
+		listener->EventReconnectScheduled(-1);
 		return;
 	}
 
@@ -406,5 +418,11 @@ void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 
 	delete timer;
 	timer = new Samurai::Timer(this, static_cast<time_t>(wait), true);
+
+	/*
+	 * After the timer, so that a listener told the wait can rely on the attempt
+	 * being armed - and not before, since a listener may reach back in here.
+	 */
+	listener->EventReconnectScheduled(wait);
 }
 
