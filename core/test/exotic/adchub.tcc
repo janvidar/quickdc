@@ -1039,3 +1039,122 @@ EXO_TEST(adchub_hubs_come_and_go_leaving_nothing_behind,
 	EXO_ASSERT(monitor->size() == baseline);
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* What the hub says about a claimed address                                 */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A client claiming an address the hub does not see it at is told so, and told
+ * where it actually is - which is how a client behind a carrier-grade NAT learns
+ * an address that reaches it, since its own gateway can only report the address
+ * of its own outside.
+ *
+ * The code matters as much as the message. 146 is the one that carries 'IP'; this
+ * used to answer 145, which is the feature error and asks for 'FC' - a client
+ * reading that has been told something unrecoverable rather than told its address,
+ * and QuickDC's own client stops reconnecting on it.
+ */
+EXO_TEST(adchub_a_claimed_address_the_hub_does_not_see_is_answered_with_the_real_one,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(21), "alice"));
+
+	/* Not where the hub sees her: she connected over the loopback. */
+	alice.send("BINF " + alice.sid + " I4198.51.100.9");
+
+	std::string line;
+	EXO_ASSERT(alice.waitFor("ISTA", line));
+
+	EXO_ASSERT(line.find("146") != std::string::npos);
+	EXO_ASSERT(line.find("IP127.0.0.1") != std::string::npos);
+	return 1;
+});
+
+/* And 0.0.0.0 is a question rather than a claim: the hub answers it by filling in
+   what it sees, with no complaint at all. */
+EXO_TEST(adchub_an_unspecified_address_is_replaced_rather_than_refused,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(22), "alice"));
+
+	alice.send("BINF " + alice.sid + " I40.0.0.0");
+
+	std::string line;
+	EXO_ASSERT(alice.waitFor("BINF", line));
+
+	/* Substituted, and nothing was refused. */
+	EXO_ASSERT(line.find("I4127.0.0.1") != std::string::npos);
+	EXO_ASSERT(line.find("I40.0.0.0") == std::string::npos);
+
+	/* Substituted, and nothing was refused. */
+	EXO_ASSERT(line.find("I4127.0.0.1") != std::string::npos);
+	EXO_ASSERT(line.find("I40.0.0.0") == std::string::npos);
+	return 1;
+});
+
+/*
+ * An update that changed exactly one thing reaches the other users.
+ *
+ * The relay asked for more than one argument, so a single-field INF was
+ * accumulated into what the hub holds and then told to nobody - which is most
+ * updates a running client sends: a share size changing on its own, or a
+ * description. It is also what makes the address question above answerable.
+ */
+EXO_TEST(adchub_an_update_of_a_single_field_still_reaches_everyone,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(23), "alice"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(24), "bob"));
+
+	alice.send("BINF " + alice.sid + " SS4096");
+
+	std::string line;
+	EXO_ASSERT(bob.waitFor("BINF", line));
+	EXO_ASSERT(line.find(alice.sid) != std::string::npos);
+	EXO_ASSERT(line.find("SS4096") != std::string::npos);
+	return 1;
+});
+
+/*
+ * And one that changed nothing reaches nobody. Enforced by setINF() answering
+ * with the number of fields it took rather than by the relay, which is why the
+ * relay itself is unconditional - asserted here as behaviour so it stays true
+ * whichever of the two is doing the work.
+ */
+EXO_TEST(adchub_an_update_of_nothing_is_not_relayed,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(25), "alice"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(26), "bob"));
+
+	bob.drain();
+	bob.received.clear();
+
+	alice.send("BINF " + alice.sid);
+
+	pump([] { return false; }, 300);
+	bob.drain();
+	EXO_ASSERT(bob.received.find("BINF") == std::string::npos);
+	return 1;
+});

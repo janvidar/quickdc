@@ -259,9 +259,18 @@ void ADC::Hub::onINF(ADC::Command* cmd) {
 			}
 			
 		} else {
-			if (cmd->countArguments() > 1) {
-				send(cmd);
-			}
+			/*
+			 * Relayed whatever it changed. This asked for more than one field, so
+			 * an update that changed exactly one thing was accumulated here and
+			 * told to nobody - a share size, a description, or an 'I40.0.0.0'
+			 * asking what address the hub sees, which is how a client behind a NAT
+			 * finds out.
+			 *
+			 * Unconditional because setINF() answers with the number of fields it
+			 * took, so an update that changed nothing has already failed the test
+			 * above and does not reach here.
+			 */
+			send(cmd);
 		}
 	} else {
 		

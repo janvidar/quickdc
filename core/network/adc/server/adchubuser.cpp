@@ -69,7 +69,11 @@ static std::string peerAddress(const Samurai::IO::Net::Socket* socket)
 		} else if (ip != *actualIP) { \
 			CMD->removeArgument("I4", 2); \
 			ADC::Command* x_cmd = new ADC::Command(FOURCC('I','S','T','A')); \
-			x_cmd->addArgument("145"); \
+			/* Severity 1 and ADC_CODE_PROTOCOL_IP_INF_ERROR, which is the code \
+			   that carries 'IP'. This said 145, which is the feature error and \
+			   says to specify 'FC' - and a client reading it as one has been \
+			   told something unrecoverable rather than told its own address. */ \
+			x_cmd->addArgument("146"); \
 			x_cmd->addArgument("Invalid IP"); \
 			x_cmd->addArgument("IP", actualIP->toString()); \
 			HUB->send(x_cmd, this); \
