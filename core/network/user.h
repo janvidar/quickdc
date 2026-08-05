@@ -109,6 +109,20 @@ class User {
 		bool           isOp() const;
 		bool           setOp();
 
+		/**
+		 * Whether the user says they are away.
+		 *
+		 * Both protocols carry it: ADC in the AW field of an INF, NMDC in the
+		 * status byte on the end of the speed field of a $MyINFO. Neither
+		 * distinguishes being away from being away and not reading the chat -
+		 * ADC's "extended away" - so both arrive here as away.
+		 *
+		 * A hub that says nothing about it leaves this false, which is the
+		 * ordinary case rather than a claim to be present.
+		 */
+		bool           isAway() const;
+		bool           setAway(bool);
+
 	public:
 		void dump();
 

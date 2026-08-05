@@ -600,6 +600,38 @@ EXO_TEST(dchubsession_quit_takes_the_user_and_their_share_away,
 	return 1;
 });
 
+/*
+ * The status byte on the end of the speed field, of which only the away bit is
+ * read. 0x01 is set by everybody and means nothing; 0x02 is away.
+ */
+EXO_TEST(dchubsession_myinfo_reads_the_away_bit_off_the_speed_field,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.say("$MyINFO $ALL alice x$ $DSL\x01$m@e$100$");
+	s.say("$MyINFO $ALL bob y$ $DSL\x03$m@e$200$");
+
+	QuickDC::UserManager* users = s.session->getUserManager();
+	const QuickDC::User* alice = users ? users->getUser("alice") : 0;
+	const QuickDC::User* bob = users ? users->getUser("bob") : 0;
+
+	EXO_ASSERT(alice && !alice->isAway());
+	EXO_ASSERT(bob && bob->isAway());
+
+	/* And coming back is another $MyINFO with the bit cleared. */
+	s.say("$MyINFO $ALL bob y$ $DSL\x01$m@e$200$");
+	EXO_ASSERT(bob && !bob->isAway());
+
+	/* A hub that sends no speed at all says nothing about being away either. */
+	s.say("$MyINFO $ALL carol z$ $$m@e$300$");
+	const QuickDC::User* carol = users ? users->getUser("carol") : 0;
+	EXO_ASSERT(carol && !carol->isAway());
+	return 1;
+});
+
 /* A second $MyINFO for the same nick is an update, not a new user. */
 EXO_TEST(dchubsession_a_second_myinfo_updates_rather_than_duplicates,
 {

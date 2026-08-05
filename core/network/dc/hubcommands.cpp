@@ -322,8 +322,10 @@ bool DC::LoggedIn::invoke(const char*, size_t) {
  * The AP - part tells whether or not the user is in passive or active mode.
  * This is a PtokaX hub extension.
  *
+ * Of the flags only the away bit is read; the server and fast bits are claims
+ * about a peer that nothing here acts on.
+ *
  * TODO: Add active/passive mode checks here.
- *       Add flags parser here.
  */
 bool DC::MyINFO::invoke(const char* data, size_t length) {
 	Reader line(data, length);
@@ -348,10 +350,19 @@ bool DC::MyINFO::invoke(const char* data, size_t length) {
 	else if (mode[0] == 'P'); /* PtokaX: Passive mode user */
 #endif //0
 
-	/* find and extract speed. Its last byte is the status flag described above;
-	   nothing reads either of them yet. */
+	/* find and extract speed. Its last byte is the status flag described above. */
 	std::string_view speed;
 	if (!line.field('$', speed)) return false;
+
+	/*
+	 * The status byte, which is the last of the speed field rather than a field of
+	 * its own. Only the away bit is read; a hub that sends no speed at all sends no
+	 * status either, and a user nobody has said anything about is not away.
+	 */
+	constexpr unsigned char STATUS_AWAY = 0x02;
+
+	const bool away = !speed.empty()
+		&& (static_cast<unsigned char>(speed.back()) & STATUS_AWAY) != 0;
 
 	// find and extract email
 	std::string_view emaildata;
@@ -390,6 +401,7 @@ bool DC::MyINFO::invoke(const char* data, size_t length) {
 	if (u->setDescription(description.c_str())) changed = true;
 	if (u->setEmail(email.c_str())) changed = true;
 	if (u->setSharedBytes(shared)) changed = true;
+	if (u->setAway(away)) changed = true;
 	if (tag && tag->isOK()) {
 		if (u->setUserAgent(tag->getUserAgent())) changed = true;
 		if (u->setNumSlots(tag->getSlots())) changed = true;

@@ -71,7 +71,12 @@ DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Sa
 	   Core::session. Not ours to delete, and its group is not ours to leave set. */
 	session = QuickDC::Core::getInstance()->session;
 
-	address = url->toString();
+	/*
+	 * The canonical "{scheme}://{host}:{port}" rather than the address as it was
+	 * typed: this names the group every setting for this hub is filed under, and one
+	 * hub reached two ways is still one hub. See the same line in the ADC session.
+	 */
+	address = (hub && hub->getUrl()) ? hub->getUrl() : url->toString();
 	config->setGroup("User");
 	session->setGroup(address);
 

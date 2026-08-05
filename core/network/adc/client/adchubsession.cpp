@@ -188,7 +188,18 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	   Core::session. Not ours to delete, and its group is not ours to leave set. */
 	session = QuickDC::Core::getInstance()->session;
 
-	address = url->toString();
+	/*
+	 * The canonical "{scheme}://{host}:{port}" rather than the address as it was
+	 * typed, because this names the group everything about this hub is filed under.
+	 *
+	 * A hub reached as "adcs://host:1511" and the same hub reached as
+	 * "adcs://host:1511/?kp=..." are one hub with one nickname and one password, and
+	 * keying on the typed form gave them a section each - so a keyprint pasted into
+	 * the address once was enough to lose the identity that had been set up for it.
+	 * The remembered certificate was already filed canonically for exactly this
+	 * reason; the rest of the settings were not.
+	 */
+	address = (hub && hub->getUrl()) ? hub->getUrl() : url->toString();
 	config->setGroup("User");
 	session->setGroup(address);
 
@@ -315,11 +326,9 @@ bool ADC::HubSession::verifyKeyprint()
 	const char* source = 0;
 
 	/*
-	 * A keyprint is filed under the canonical "{scheme}://{host}:{port}", while
-	 * everything else about this session lives under the address as it was typed.
-	 * Each access below selects the group it wants; nothing is restored, because
-	 * the store is shared with every other hub session and the group that was
-	 * current on entry is not necessarily ours to put back.
+	 * Each access below selects the group it wants; nothing is restored, because the
+	 * store is shared with every other hub session and the group that was current on
+	 * entry is not necessarily ours to put back.
 	 */
 	if (expectedKeyprint)
 	{
@@ -394,14 +403,15 @@ bool ADC::HubSession::verifyKeyprint()
 
 
 /**
- * Where a remembered keyprint lives. The session group is named after the
- * address as it was typed, which for these purposes is too specific: the same
- * hub with and without a 'kp' parameter is still the same certificate, so the
- * canonical "{scheme}://{host}:{port}" is what it is filed under.
+ * Where a remembered keyprint lives, which is where everything else about this hub
+ * lives: 'address' is the canonical form, so there is one group and not two.
+ *
+ * Kept as a name of its own rather than folded into its callers, because what it
+ * answers is a question about the certificate store and the reason the group has to
+ * be the canonical one was first written down here.
  */
 const char* ADC::HubSession::keyprintGroup() const
 {
-	if (hub && hub->getUrl()) return hub->getUrl();
 	return address.c_str();
 }
 

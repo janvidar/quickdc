@@ -113,6 +113,9 @@ class Listener : public QuickDC::HubListener
 		std::vector<std::string> joined;
 		std::vector<std::string> left;
 		std::vector<std::string> errors;
+
+		/** Each user update reported, as the nick and what it said about away. */
+		std::vector<std::pair<std::string, bool> > updated;
 		std::string hubName;
 		int netConnected = 0;
 		int loggedIn = 0;
@@ -148,7 +151,19 @@ class Listener : public QuickDC::HubListener
 		{ left.push_back(user && user->getNick() ? user->getNick() : ""); }
 
 		void EventUsersCleanup() override { }
-		void EventUserUpdate(const QuickDC::User*) override { }
+
+		/*
+		 * Nick and away for every update reported, so that a test can tell not only
+		 * what the user record ended up holding but whether the interface was ever
+		 * told - a change nobody is told about is a change no user list draws.
+		 */
+		void EventUserUpdate(const QuickDC::User* user) override
+		{
+			updated.push_back(std::make_pair(
+				user && user->getNick() ? user->getNick() : "",
+				user && user->isAway()));
+		}
+
 		void EventSearchResult(void*) override { }
 
 		void EventHubName(const char* name) override
@@ -268,18 +283,22 @@ class Session
 		ADC::HubSession* session = 0;
 		bool ready = false;
 
-		/*
-		 * The channel is plain unless a case asks otherwise. Nothing here speaks
-		 * TLS - the flag only says what the session believes it is running over,
-		 * which is what decides whether answering a password request is reported
-		 * as crossing the clear.
+		/**
+		 * @param secure what the session believes it is running over. The channel
+		 *        is plain unless a case asks otherwise - nothing here speaks TLS,
+		 *        and the flag only decides whether answering a password request is
+		 *        reported as crossing the clear.
+		 * @param tail anything after the authority - a path, a query. Empty for
+		 *        every case but the one about what a hub's settings are filed
+		 *        under, which is the one place the difference is the point.
 		 */
-		explicit Session(bool secure = false)
+		explicit Session(bool secure = false,
+		                 const std::string& tail = std::string())
 		{
 			if (!hub.listen()) return;
 
 			const std::string address =
-				"adc://127.0.0.1:" + std::to_string(hub.port());
+				"adc://127.0.0.1:" + std::to_string(hub.port()) + tail;
 			url = std::make_unique<Samurai::IO::Net::URL>(address);
 
 			ui = std::make_unique<QuickDC::Hub>(&listener, url.get());
@@ -815,6 +834,46 @@ EXO_TEST(hubsession_the_login_inf_already_counts_this_hub,
 /* who is on the hub                                                         */
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Which section of session.conf a hub's settings live in.
+ *
+ * The canonical "{scheme}://{host}:{port}", not the address as it was typed. A
+ * keyprint in the address says how to verify the hub, not which hub it is, so an
+ * address carrying one has to land on the same settings as the address without -
+ * otherwise pasting a longer address once silently abandons the nickname, the
+ * password and everything else already set up for that hub.
+ */
+EXO_TEST(hubsession_settings_are_filed_under_the_canonical_address,
+{
+	/*
+	 * A query rather than the 'kp' that prompted this: a keyprint is refused on an
+	 * adc:// address, and rightly so - see connect() - while this fake hub speaks
+	 * plain TCP. What is being tested is the rule rather than the keyprint, and the
+	 * rule is that nothing after the authority names the hub.
+	 */
+	const std::string tail = "/?x=1";
+
+	Session s(false, tail);
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+	EXO_ASSERT(store != 0);
+
+	const std::string canonical =
+		"adc://127.0.0.1:" + std::to_string(s.hub.port());
+
+	/* The session wrote its identity on construction; it is under the short form. */
+	store->setGroup(canonical);
+	EXO_ASSERT(store->haveSetting("Nickname"));
+
+	/* And nothing at all is filed under the address as it was given. */
+	store->setGroup(canonical + tail);
+	EXO_ASSERT(!store->haveSetting("Nickname"));
+	EXO_ASSERT(!store->haveSetting("Last Connect"));
+	return 1;
+});
+
 EXO_TEST(hubsession_another_users_inf_puts_them_on_the_hub,
 {
 	Session s;
@@ -831,6 +890,96 @@ EXO_TEST(hubsession_another_users_inf_puts_them_on_the_hub,
 	EXO_ASSERT(alice != 0);
 	EXO_ASSERT(alice && alice->getNick() && !strcmp(alice->getNick(), "alice"));
 	EXO_ASSERT(alice && alice->getSharedBytes() == 1024);
+	return 1;
+});
+
+/*
+ * AW says a user is away, and an INF that does not mention it says nothing about
+ * it - which is the part worth a test: an update carries only what changed, so
+ * reading an absent AW as "back again" would clear the flag on every other change
+ * a client makes while away.
+ */
+EXO_TEST(hubsession_the_away_flag_follows_inf_and_survives_an_unrelated_update,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.say("BINF BBBB NIalice SS100");
+	s.say("BINF CCCC NIbob SS200 AW1");
+	s.say("BINF DDDD NIcarol SS300 AW2");
+
+	QuickDC::UserManager* users = s.session->getUserManager();
+	const QuickDC::User* alice = users ? users->getUser("BBBB") : 0;
+	const QuickDC::User* bob = users ? users->getUser("CCCC") : 0;
+	const QuickDC::User* carol = users ? users->getUser("DDDD") : 0;
+
+	EXO_ASSERT(alice && !alice->isAway());
+	EXO_ASSERT(bob && bob->isAway());
+
+	/* Extended away is still away; the difference is the hub's business. */
+	EXO_ASSERT(carol && carol->isAway());
+
+	/* An update about something else leaves the flag where it was. */
+	s.say("BINF CCCC SS900");
+	EXO_ASSERT(bob && bob->isAway());
+	EXO_ASSERT(bob && bob->getSharedBytes() == 900);
+
+	/* Coming back is the field sent empty, which reads as not away. */
+	s.say("BINF CCCC AW");
+	EXO_ASSERT(bob && !bob->isAway());
+	return 1;
+});
+
+/*
+ * And the interface is told about it.
+ *
+ * Separate from the test above because the record being right is only half of it:
+ * UserManager::info() reports an update only when something changed, so a going-away
+ * that did not count as a change would leave every user list drawing the old figure
+ * until the user happened to alter something else.
+ */
+EXO_TEST(hubsession_going_away_is_reported_to_the_listener_on_its_own,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.say("BINF BBBB NIalice SS100");
+
+	const size_t afterJoin = s.listener.updated.size();
+	EXO_ASSERT(afterJoin > 0);
+	EXO_ASSERT(!s.listener.updated.back().second);
+
+	/* Nothing but AW, which is all a client sends when it steps out. */
+	s.say("BINF BBBB AW1");
+
+	EXO_ASSERT(s.listener.updated.size() == afterJoin + 1);
+	EXO_ASSERT(s.listener.updated.back().first == "alice");
+	EXO_ASSERT(s.listener.updated.back().second);
+
+	/* And again on the way back. */
+	s.say("BINF BBBB AW0");
+
+	EXO_ASSERT(s.listener.updated.size() == afterJoin + 2);
+	EXO_ASSERT(s.listener.updated.back().first == "alice");
+	EXO_ASSERT(!s.listener.updated.back().second);
+
+	/* Away again, and back again with the field sent empty rather than as a zero. */
+	s.say("BINF BBBB AW1");
+	EXO_ASSERT(s.listener.updated.back().second);
+
+	s.say("BINF BBBB AW");
+	EXO_ASSERT(!s.listener.updated.back().second);
+
+	/*
+	 * Nothing is asserted here about an INF that changes nothing. One of those still
+	 * reports an update, and so does an INF carrying no AW at all, so the coalescing
+	 * that UserManager::info() looks like it is doing is not there - which predates
+	 * this and costs a redraw rather than a wrong answer.
+	 */
 	return 1;
 });
 

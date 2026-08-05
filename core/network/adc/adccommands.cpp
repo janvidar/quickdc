@@ -264,6 +264,24 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 		EXTRACT_INT(op, "OP"); // Operator -- FIXME - Use CT instead!
 		if (op)
 			if (u->setOp()) changed = true;
+
+		/*
+		 * AW: 1 is away, 2 is away and not reading the chat. Both are away here -
+		 * the difference is a hint to the hub about which broadcasts to bother
+		 * sending, not a third state anybody looking at a user list wants.
+		 *
+		 * Only applied when the field is actually there. An INF that updates a user
+		 * carries the fields that changed and no others, so an absent AW means
+		 * nothing new was said about it rather than that they are back - and a
+		 * client coming back sends the field empty, which reads as not away.
+		 */
+		if (cmd->haveArgument("AW", 2))
+		{
+			const char* value = cmd->getArgument("AW", 2);
+			const bool away = value && Samurai::Util::Convert::to_int32(value) != 0;
+
+			if (u->setAway(away)) changed = true;
+		}
 		
 		int port_ipv4 = 0;
 		EXTRACT_INT(port_ipv4, "U4");

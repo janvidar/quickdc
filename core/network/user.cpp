@@ -61,6 +61,11 @@ void QuickDC::User::clean() {
 	port_ipv4 = 0;
 	port_ipv6 = 0;
 	access = Invalid;
+
+	/* None of the three was set anywhere, and a bool nobody assigns is not false. */
+	away = false;
+	fast = false;
+	reliable = false;
 }
 
 bool QuickDC::User::isOp() const {
@@ -70,6 +75,18 @@ bool QuickDC::User::isOp() const {
 bool QuickDC::User::setOp() {
 	bool change = (access != Operator);
 	access = Operator;
+	return change;
+}
+
+bool QuickDC::User::isAway() const {
+	return away;
+}
+
+/* Returns whether it moved, as the setters above do, so a caller can tell
+   whether the user has to be reported as changed. */
+bool QuickDC::User::setAway(bool away_) {
+	bool change = (away != away_);
+	away = away_;
 	return change;
 }
 
