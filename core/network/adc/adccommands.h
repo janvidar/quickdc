@@ -8,7 +8,6 @@
 
 #include "network/adc/adccommandparser.h"
 #include "network/adc/client/adchubsession.h"
-#include "network/adc/server/adchub.h"
 #include "network/adc/parser.h"
 #include "network/commandparser.h"
 
@@ -36,13 +35,6 @@ void addSupportFlags(ADC::Command& command, bool client);
 	};
 
 
-#define ADC_LOCALHUB_CMD_CLASS(N) \
-	class N : public ADC::LocalHubParser { \
-		public: \
-			N(ADC::CommandProxy* proxy, ADC::Hub* hub) : ADC::LocalHubParser(proxy, hub) { }; \
-			bool invoke(ADC::Command*) override; \
-	};
-
 	ADC_HUB_CMD_CLASS(CmdGetPass);
 	ADC_HUB_CMD_CLASS(CmdSupport);
 	ADC_HUB_CMD_CLASS(CmdSID);
@@ -66,19 +58,6 @@ void addSupportFlags(ADC::Command& command, bool client);
 	ADC_CLIENT_CMD_CLASS(CCmdGFI);
 	ADC_CLIENT_CMD_CLASS(CCmdRES);
 	
-	ADC_LOCALHUB_CMD_CLASS(HubCmdSUP);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdPAS);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdINF);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdMSG);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdSCH);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdRES);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdCTM);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdRCM);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdNAT);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdRNT);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdSTA);
-	ADC_LOCALHUB_CMD_CLASS(HubCmdDSC);
-
 }
 
 #endif // HAVE_QUICKDC_ADCCOMMANDS_H

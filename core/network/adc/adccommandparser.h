@@ -23,7 +23,6 @@ class CommandParser;
 namespace ADC {
 class Command;
 class CommandProxy;
-class Hub;
 
 class CommandParser : public QuickDC::CommandParser
 {
@@ -61,22 +60,6 @@ class ClientCommandParser : public ADC::CommandParser
 		
 	protected:
 		ClientSession* session;
-		CommandProxy* proxy;
-};
-
-class LocalHubParser : public ADC::CommandParser
-{
-	public:
-		LocalHubParser(CommandProxy* proxy, Hub* hub);
-		virtual ~LocalHubParser();
-
-		LocalHubParser(const LocalHubParser&) = delete;
-		LocalHubParser& operator=(const LocalHubParser&) = delete;
-		
-		virtual bool invoke(Command*) override = 0;
-		
-	protected:
-		Hub* hub;
 		CommandProxy* proxy;
 };
 

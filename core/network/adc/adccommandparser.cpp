@@ -8,7 +8,6 @@
 #include "network/commandproxy.h"
 #include "network/adc/adccommandparser.h"
 #include "network/adc/adccommandproxy.h"
-#include "network/adc/server/adchub.h"
 #include <stdio.h>
 
 ADC::HubCommandParser::HubCommandParser(ADC::CommandProxy* proxy_, ADC::HubSession* session_)
@@ -44,23 +43,5 @@ ADC::ClientCommandParser::~ClientCommandParser()
 bool ADC::ClientCommandParser::invoke(ADC::Command*)
 {
 	QDBG("HubCommandParser::invoke(): Not invented here!");
-	return false;
-}
-
-ADC::LocalHubParser::LocalHubParser(CommandProxy* proxy_, Hub* hub_)
-	: hub(hub_)
-	, proxy(proxy_)
-{
-
-}
-
-ADC::LocalHubParser::~LocalHubParser()
-{
-
-}
-
-bool ADC::LocalHubParser::invoke(ADC::Command*)
-{
-	QDBG("ADC::LocalHubParser::invoke(): Not invented here!");
 	return false;
 }

@@ -9,6 +9,7 @@
 #include "network/adc/adccommandparser.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/adccommands.h"
+#include "network/adc/server/commands.h"
 #include "network/adc/parser.h"
 #include "network/transfer.h"
 #include <map>

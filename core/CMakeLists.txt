@@ -54,6 +54,7 @@ set(QUICKDC_SOURCES
     network/adc/server/adchubservice.cpp
     network/adc/server/adchubuser.cpp
     network/adc/server/claimcheck.cpp
+    network/adc/server/commands.cpp
     network/adc/parser.cpp
     share/dcfilelist.cpp
     share/sharedir.cpp
