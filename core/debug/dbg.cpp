@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <samurai/debug/dbg.h>
 #include <samurai/io/file.h>
 
 #define DUMP_FILE_NETWORK "~/.quickdc/debug/network.log"
@@ -63,10 +64,21 @@ void QuickDC_Debug_Init() {
 	quickdc_dump_sch->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Append);
 	quickdc_dump_dbg->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
 	quickdc_dump_hub->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Append);
-	
+
+	/*
+	 * Samurai keeps its own set of sinks under ~/.samurai/debug, and each of its
+	 * log functions returns without writing until they are open. Nothing else
+	 * opens them, so a QuickDC process that did not do this here would drop
+	 * everything the socket, TLS and event layers trace - which is the half of a
+	 * disconnect that the protocol layer above cannot see. Its stderr flag is
+	 * read separately, from SAMURAI_DEBUG.
+	 */
+	samurai_debug_init();
 }
 
 void QuickDC_Debug_Fini() {
+	samurai_debug_fini();
+
 	delete quickdc_dump_sch; quickdc_dump_sch = 0;
 	delete quickdc_dump_hub; quickdc_dump_hub = 0;
 	delete quickdc_dump_dbg; quickdc_dump_dbg = 0;
