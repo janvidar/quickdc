@@ -2001,3 +2001,145 @@ EXO_TEST(hubsession_a_passive_client_publishes_the_address_the_hub_reported,
 	EXO_ASSERT(infField(inf, "I4") == "198.51.100.9");
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* Reaching a peer that cannot be connected to either                        */
+/* ------------------------------------------------------------------------- */
+
+namespace {
+
+/* A peer on the hub announcing what it can do. */
+bool announcePeerSupporting(Session& s, const char* sid, const char* su)
+{
+	s.say(std::string("BINF ") + sid + " NIpeer I4198.51.100.9 SS100 SL1 SU" + su);
+	return true;
+}
+
+}
+
+/*
+ * Two clients that can neither of them be connected to used to end here with
+ * nothing to offer each other: the reverse request came in, we could not answer it
+ * with a CTM, and the exchange stopped at "both clients are passive".
+ *
+ * With NATT there is something to offer. Both can dial, and two connections started
+ * at the same moment cross in the middle, so we name the port ours will come from.
+ */
+EXO_TEST(hubsession_two_passive_clients_arrange_to_traverse,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	EXO_ASSERT(announcePeerSupporting(s, "BBBB", "ADC0,NATT"));
+
+	setRequireEncryption(false);
+	s.hub.drain();
+	s.hub.received.clear();
+
+	/* The peer asks us to invite it, and we cannot. */
+	s.say("DRCM BBBB AAAA ADC/1.0 job1");
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DNAT ") == 0);
+	EXO_ASSERT(line.find("job1") != std::string::npos);
+	return 1;
+});
+
+/* A peer that cannot traverse still gets the old answer, because there is still
+   nothing to be done for it. */
+EXO_TEST(hubsession_a_passive_peer_without_traversal_is_told_so,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	EXO_ASSERT(announcePeerSupporting(s, "BBBB", "ADC0"));
+
+	setRequireEncryption(false);
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say("DRCM BBBB AAAA ADC/1.0 job2");
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DSTA ") == 0);
+	EXO_ASSERT(line.find("passive") != std::string::npos);
+	return 1;
+});
+
+/*
+ * A peer that named the port it will dial from is answered with ours, and answered
+ * before we dial: the two connections have to cross, so the peer must be starting
+ * at the same time rather than after us.
+ */
+EXO_TEST(hubsession_a_traversal_request_is_answered_with_our_own_port,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	EXO_ASSERT(announcePeerSupporting(s, "BBBB", "ADC0,NATT"));
+
+	setRequireEncryption(false);
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say("DNAT BBBB AAAA ADC/1.0 2000 job3");
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DRNT ") == 0);
+	EXO_ASSERT(line.find("job3") != std::string::npos);
+
+	/*
+	 * The port named is this hub connection's own. Read from the hub's side of it
+	 * rather than asked of the session, which is both independent of the code under
+	 * test and exactly what the specification means: the outbound port to the hub,
+	 * which is the port the hub sees the connection arrive from.
+	 */
+	EXO_ASSERT(s.hub.peer != 0);
+	const uint16_t mine = s.hub.peer->getPort();
+	EXO_ASSERT(mine != 0);
+	EXO_ASSERT(line.find(" " + std::to_string(mine) + " ") != std::string::npos);
+	return 1;
+});
+
+/* An answer to our own request is acted on and not answered again, or the two
+   would talk past each other for ever. */
+EXO_TEST(hubsession_a_traversal_answer_is_not_answered_again,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	EXO_ASSERT(announcePeerSupporting(s, "BBBB", "ADC0,NATT"));
+
+	setRequireEncryption(false);
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say("DRNT BBBB AAAA ADC/1.0 2000 job4");
+
+	pump([] { return false; }, 300);
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.find("DRNT") == std::string::npos);
+	EXO_ASSERT(s.hub.received.find("DNAT") == std::string::npos);
+	return 1;
+});
+
+/* And we say we can do it, so a peer knows to offer. */
+EXO_TEST(hubsession_a_client_announces_that_it_can_traverse,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+	EXO_ASSERT(claims(inf, "NATT"));
+	return 1;
+});

@@ -129,6 +129,18 @@ class HubSession :
 
 		void onActiveConnect(const char* from, const char* protocol, uint16_t port, const char* token);
 		void onPassiveConnect(const char* from, const char* protocol, const char* token);
+
+		/**
+		 * NATT: the peer named the port it will dial from, so dial it back from
+		 * ours and tell it which that is. Both sides dialling at once is what
+		 * carries the connection through two NATs.
+		 */
+		void onNatConnect(const char* from, const char* protocol, uint16_t port,
+			const char* token);
+
+		/** The answer to our own DNAT: dial, and say nothing further. */
+		void onNatReply(const char* from, const char* protocol, uint16_t port,
+			const char* token);
 		void onSearch(QuickDC::Share::SearchRequest* request);
 		void onSearchResult(QuickDC::Share::SearchResult* result) override;
 
@@ -147,6 +159,26 @@ class HubSession :
 		 */
 		void refuseUnencrypted(const char* from, const char* token,
 		                       const char* proto, const char* why);
+
+		/**
+		 * The local port of this hub connection, which is what a NATT exchange
+		 * names: the mapping our NAT made for it is the one a peer's connection
+		 * can arrive on. Zero when there is no connection to read it from, or when
+		 * it would mean nothing - a proxied socket's local port reaches the proxy.
+		 */
+		/** Whether NAT traversal is possible on this connection at all. */
+		bool canTraverse() const;
+
+		uint16_t privateEndpointPort() const;
+
+		/**
+		 * Dial a peer from this hub connection's own local port.
+		 *
+		 * @return false if the port could not be had, in which case nothing was
+		 *         started and the caller has nothing to wait for.
+		 */
+		bool dialFromHubPort(const QuickDC::User* user, const char* proto,
+			uint16_t port, const char* token);
 
 		void send(ADC::Command* cmd, bool more = false);
 		void resetIdleTimer();

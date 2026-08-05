@@ -163,4 +163,31 @@ bool        QuickDC::User::setAddressIPv6(const char* str) { return copyIfChange
 bool        QuickDC::User::setPortIPv4(uint16_t n)         COPY_NUM_IF_CHANGED(n, port_ipv4);
 bool        QuickDC::User::setPortIPv6(uint16_t n)         COPY_NUM_IF_CHANGED(n, port_ipv6);
 bool        QuickDC::User::setKeyprint(const char* str)    { return copyIfChanged(keyprint, str, 63); }
+bool        QuickDC::User::setSupports(const char* str)    { return copyIfChanged(supported, str, 255); }
+const char* QuickDC::User::getSupports() const             { return supported.c_str(); }
+
+/*
+ * One entry of the comma separated set, matched whole.
+ *
+ * A search of the string would credit a peer announcing "ADC0" with "DC0", and the
+ * question this answers decides whether a peer is told to do something it may not
+ * be able to do.
+ */
+bool QuickDC::User::supports(const char* feature) const
+{
+	if (!feature || !*feature) return false;
+
+	const std::string_view wanted(feature);
+
+	size_t at = 0;
+	while (at < supported.size())
+	{
+		size_t end = supported.find(',', at);
+		if (end == std::string::npos) end = supported.size();
+
+		if (std::string_view(supported).substr(at, end - at) == wanted) return true;
+		at = end + 1;
+	}
+	return false;
+}
 

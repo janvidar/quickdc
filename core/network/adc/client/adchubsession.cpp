@@ -909,6 +909,22 @@ void ADC::HubSession::sendClientInfo()
 		supports += ",UDP4";
 	}
 
+	/*
+	 * NATT, whether active or not: it says this client can reach a peer that cannot
+	 * be connected to, which is worth announcing either way - a peer only acts on it
+	 * when neither side claims TCP4.
+	 *
+	 * Claimed only when it could work. It rests on dialling from this connection's
+	 * own local port, so a connection with no port to read - or one through a proxy,
+	 * where the port belongs to the proxy - cannot do it, and saying otherwise would
+	 * send a peer to something that never answers.
+	 */
+	if (canTraverse())
+	{
+		supports += ",";
+		supports += ADC_EXT_NATT;
+	}
+
 	supports += ",";
 	supports += ADC_EXT_RICHTEXT;
 
@@ -1676,6 +1692,133 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 }
 
 
+/*
+ * Whether NAT traversal is possible on this connection at all.
+ *
+ * It needs a local port to dial from that a peer's connection can arrive on, which
+ * is this hub connection's own - so no port, no traversal.
+ */
+bool ADC::HubSession::canTraverse() const
+{
+	return privateEndpointPort() != 0;
+}
+
+
+uint16_t ADC::HubSession::privateEndpointPort() const
+{
+	if (!socket) return 0;
+
+	/*
+	 * Through a proxy this port reaches the proxy, and the mapping it belongs to is
+	 * the proxy's rather than ours - so there is nothing here a peer could dial.
+	 * A proxied client is passive and cannot traverse anything.
+	 */
+	if (socket->isProxied()) return 0;
+
+	return socket->getLocalPort();
+}
+
+
+/*
+ * Dial a peer from the very port this hub connection uses.
+ *
+ * That is the whole of NAT traversal: our NAT already has a mapping for this local
+ * port, made when we reached the hub, and a connection the peer starts at the same
+ * moment arrives on it. Dialling from a fresh port would make a mapping the peer
+ * has never been told about.
+ */
+bool ADC::HubSession::dialFromHubPort(const QuickDC::User* user, const char* proto,
+                                     uint16_t port, const char* token)
+{
+	const uint16_t mine = privateEndpointPort();
+	if (!mine)
+	{
+		QERR("No local port to traverse from; not dialling '%s'", user->getNick());
+		return false;
+	}
+
+	const char* ip = user->getAddressIPv4();
+	if (!ip || !*ip)
+	{
+		/* The hub is required to forward I4 for a client that uses this. */
+		QERR("The hub did not say where '%s' is; nothing to dial", user->getNick());
+		return false;
+	}
+
+	const std::string_view protocol(proto ? proto : "");
+	const bool peerSecure = (protocol == ADC_TLS_PROTO);
+
+	const char* peerKeyprint = 0;
+	if (peerSecure && user->hasKeyprint() && keyprintVerified)
+		peerKeyprint = user->getKeyprint();
+
+	QDBG("Traversing to '%s' at %s:%d from our own %d", user->getNick(), ip,
+		static_cast<int>(port), static_cast<int>(mine));
+
+	auto csock = Samurai::IO::Net::Socket::create(nullptr, ip, port);
+	if (!csock) return false;
+
+	/* Before connect(), which is the only moment a local port can be chosen. */
+	csock->setReuseLocalPort(mine);
+
+	ADC::ClientSession* connection = new ADC::ClientSession(csock, this, token,
+		user->getID(), peerSecure, peerKeyprint);
+	csock->setEventHandler(connection);
+	csock->connect();
+	return true;
+}
+
+
+/*
+ * The peer named the port it will dial from. Dial it, and answer with ours so it
+ * can do the same - neither connection succeeds alone.
+ */
+void ADC::HubSession::onNatConnect(const char* from, const char* proto,
+                                   uint16_t port, const char* token)
+{
+	if (userState != QuickDC::HubSession::StateNormal) return;
+	if (!sid.empty() && sid == from) return;
+
+	const QuickDC::User* user = users->getUser(from);
+	if (!user) return;
+
+	const uint16_t mine = privateEndpointPort();
+	if (!mine)
+	{
+		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL,
+				ADC_CODE_PROTOCOL_CONNECT_ERROR).c_str(),
+			"No port to traverse from", token, proto);
+		return;
+	}
+
+	/*
+	 * Answered before dialling, so the peer starts at the same time we do rather
+	 * than after us: the two connections have to cross.
+	 */
+	ADC::Command* cmd = new ADC::Command(FOURCC('D','R','N','T'), localSid(), user->getID());
+	cmd->addArgument(proto ? proto : ADC_COMPLIANCE);
+	cmd->addArgument(std::to_string(mine).c_str());
+	if (token) cmd->addArgument(token);
+	send(cmd);
+
+	dialFromHubPort(user, proto, port, token);
+}
+
+
+/* Our own request answered: dial, and say nothing further. */
+void ADC::HubSession::onNatReply(const char* from, const char* proto,
+                                 uint16_t port, const char* token)
+{
+	if (userState != QuickDC::HubSession::StateNormal) return;
+	if (!sid.empty() && sid == from) return;
+
+	const QuickDC::User* user = users->getUser(from);
+	if (!user) return;
+
+	dialFromHubPort(user, proto, port, token);
+}
+
+
 void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, const char* token)
 {
 	if (userState != QuickDC::HubSession::StateNormal) return;
@@ -1738,14 +1881,46 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 
 	const char* protocol = peerSecure ? ADC_TLS_PROTO : ADC_COMPLIANCE;
 
-	if (config->getBool("Active mode") && QuickDC::Core::getInstance()->server) {
+	/* The endpoint the INF advertised, for the same reason as in
+	   sendConnectionRequest(): a gateway may have granted another port. */
+	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
+		config->getBool("Active mode"), core->server != 0,
+		config->getString("Address", "0.0.0.0"),
+		observedAddress,
+		static_cast<uint16_t>(config->getNumber("Port")),
+		core->portforward);
+
+	if (endpoint.active) {
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), localSid(), user->getID());
 		cmd->addArgument(protocol);
-		cmd->addArgument(std::to_string(config->getNumber("Port")).c_str());
+		cmd->addArgument(std::to_string(endpoint.port).c_str());
 		if (token) cmd->addArgument(token);
 
 		/* Add to securitymanager */
+		QuickDC::Clearance* clearance = new QuickDC::Clearance(
+				QuickDC::Clearance::AuthorizedUser,
+				QuickDC::Clearance::ADC,
+				this,
+				reinterpret_cast<const char*>(user->getClientID()),
+				token);
+		QuickDC::Core::getInstance()->securityManager->grant(clearance);
+
+		send(cmd);
+	} else if (canTraverse() && user->supports(ADC_EXT_NATT)) {
+		/*
+		 * Neither of us can be connected to, which used to end here with nothing
+		 * to offer. Both of us can dial, though, and a connection each of us
+		 * starts at the same moment crosses in the middle - so name the port ours
+		 * will come from and wait for the peer to name its own.
+		 */
+		QDBG("Traversing to user: %s", user->getNick());
+		ADC::Command* cmd = new ADC::Command(FOURCC('D','N','A','T'), localSid(), user->getID());
+		cmd->addArgument(protocol);
+		cmd->addArgument(std::to_string(privateEndpointPort()).c_str());
+		if (token) cmd->addArgument(token);
+
 		QuickDC::Clearance* clearance = new QuickDC::Clearance(
 				QuickDC::Clearance::AuthorizedUser,
 				QuickDC::Clearance::ADC,

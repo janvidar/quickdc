@@ -255,6 +255,7 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 		if (u->setHubsRegistered(hub_cnt_reg)) changed = true;
 		if (u->setHubsRegular(hub_cnt_user)) changed = true;
 		
+		if (u->setSupports(cmd->getArgument("SU", 2))) changed = true;
 		if (u->setAddressIPv4(cmd->getArgument("I4", 2))) changed = true;
 		if (u->setAddressIPv6(cmd->getArgument("I6", 2))) changed = true;
 		if (u->setPortIPv4(port_ipv4)) changed = true;
@@ -489,6 +490,40 @@ bool ADC::CmdRCTM::invoke(ADC::Command* cmd) {
 	char* token = adc_connect_token(cmd, 1);
 	session->onPassiveConnect(cmd->getSourceID(), proto, token);
 	return true;
+}
+
+/*
+ * NATT carries the same three things a CTM does, in the same order: what to speak,
+ * which port to dial, and which job it is for. The difference is whose port it is -
+ * a NAT mapping the naming client made by talking to the hub, which only stays open
+ * while both ends dial at once.
+ */
+bool ADC::CmdNAT::invoke(ADC::Command* cmd) {
+	cmd->setPriority(ADC::Command::Normal);
+	char* proto = cmd->getArgument(0);
+	int port    = Samurai::Util::Convert::to_int32(cmd->getArgument(1));
+
+	char* token = adc_connect_token(cmd, 2);
+
+	if (port > 0 && port < 65536) {
+		session->onNatConnect(cmd->getSourceID(), proto, port, token);
+		return true;
+	}
+	return false;
+}
+
+bool ADC::CmdRNT::invoke(ADC::Command* cmd) {
+	cmd->setPriority(ADC::Command::Normal);
+	char* proto = cmd->getArgument(0);
+	int port    = Samurai::Util::Convert::to_int32(cmd->getArgument(1));
+
+	char* token = adc_connect_token(cmd, 2);
+
+	if (port > 0 && port < 65536) {
+		session->onNatReply(cmd->getSourceID(), proto, port, token);
+		return true;
+	}
+	return false;
 }
 
 /*****************************************************************************/

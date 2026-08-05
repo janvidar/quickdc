@@ -89,6 +89,22 @@ class User {
 		 */
 		bool           hasKeyprint() const;
 
+		/**
+		 * The features this user announced in the SU field of their INF, as
+		 * written - a comma separated set.
+		 */
+		bool           setSupports(const char*);
+		const char*    getSupports() const;
+
+		/**
+		 * Whether that set names a feature.
+		 *
+		 * Matched whole rather than as a substring, because the flags share their
+		 * letters: a peer announcing ADC0 must not be read as announcing DC0, and
+		 * one announcing nothing must not be credited from a neighbouring field.
+		 */
+		bool           supports(const char* feature) const;
+
 		
 		bool           isOp() const;
 		bool           setOp();
@@ -131,6 +147,7 @@ class User {
 		std::string     address_ipv4;
 		std::string     address_ipv6;
 		std::string     keyprint;
+		std::string     supported;
 		uint16_t        port_ipv4;
 		uint16_t        port_ipv6;
 		

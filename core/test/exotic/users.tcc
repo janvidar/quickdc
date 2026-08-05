@@ -301,3 +301,68 @@ EXO_TEST(users_the_hub_can_be_repopulated_after_a_cleanup,
 	
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* The features a user announced                                            */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * The SU field is a comma separated set, and what is asked of it decides whether a
+ * peer gets told to do something. A search of the string would credit a peer with
+ * whatever its flags happen to contain: "ADC0" contains "DC0", "NATT0" contains
+ * "NATT", and a peer that cannot traverse would be sent to a port nothing answers.
+ */
+EXO_TEST(users_a_feature_is_matched_whole,
+{
+	QuickDC::User u("AAAA");
+	u.setSupports("ADC0,TCP4,UDP4,NATT");
+
+	EXO_ASSERT(u.supports("ADC0"));
+	EXO_ASSERT(u.supports("TCP4"));
+	EXO_ASSERT(u.supports("NATT"));
+
+	/* Each of these is a substring of something above, and none was announced. */
+	EXO_ASSERT(!u.supports("DC0"));
+	EXO_ASSERT(!u.supports("CP4"));
+	EXO_ASSERT(!u.supports("NAT"));
+	EXO_ASSERT(!u.supports("ATT"));
+	return 1;
+});
+
+/* Nor does a longer flag count as a shorter one it starts with. */
+EXO_TEST(users_a_longer_flag_is_not_a_shorter_one,
+{
+	QuickDC::User u("AAAA");
+	u.setSupports("ADC0,NATT0");
+
+	EXO_ASSERT(!u.supports("NATT"));
+	EXO_ASSERT(u.supports("NATT0"));
+	return 1;
+});
+
+/* The first and last entries are entries too, which an implementation that only
+   looked between separators would miss. */
+EXO_TEST(users_the_first_and_last_features_count,
+{
+	QuickDC::User u("AAAA");
+	u.setSupports("FIRST,MIDDLE,LAST");
+
+	EXO_ASSERT(u.supports("FIRST"));
+	EXO_ASSERT(u.supports("MIDDLE"));
+	EXO_ASSERT(u.supports("LAST"));
+	return 1;
+});
+
+/* And a user that announced nothing supports nothing. */
+EXO_TEST(users_announcing_nothing_supports_nothing,
+{
+	QuickDC::User u("AAAA");
+
+	EXO_ASSERT(!u.supports("NATT"));
+	EXO_ASSERT(!u.supports(""));
+	EXO_ASSERT(!u.supports(0));
+
+	u.setSupports("");
+	EXO_ASSERT(!u.supports("NATT"));
+	return 1;
+});
