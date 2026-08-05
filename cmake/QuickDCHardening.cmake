@@ -13,6 +13,7 @@
 
 include(CheckCXXCompilerFlag)
 include(CheckCXXSourceCompiles)
+include(CheckCXXSourceRuns)
 if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
     include(CheckLinkerFlag)
 endif()
@@ -36,6 +37,52 @@ function(_qdc_try_compile flag var)
     # for the complaint as an error is what tells the two cases apart.
     set(CMAKE_REQUIRED_FLAGS "-Werror=unused-command-line-argument")
     check_cxx_compiler_flag("${flag}" ${cv})
+    unset(CMAKE_REQUIRED_FLAGS)
+
+    if(${cv})
+        set(${var} ${${var}} "${flag}" PARENT_SCOPE)
+    endif()
+endfunction()
+
+#
+# A codegen flag that the compiler accepts, and that leaves an exception thrown
+# in one translation unit catchable in another.
+#
+# -mbranch-protection=standard is the case this exists for. It is accepted, it
+# builds, every test passes - and on Apple clang 21 for arm64 its pac-ret half
+# signs return addresses in a way the unwinder does not follow, so a throw
+# crossing a function boundary reaches no handler at all and the process
+# terminates. Not even catch(...) sees it. bti on its own is fine.
+#
+# That is not a theoretical loss: hublist.cpp catches std::bad_alloc so that a
+# list too large to hold is refused rather than taking the client down with it,
+# and the list arrives over the network. A flag that quietly turns that catch
+# into a terminate() is worse than not hardening at all.
+#
+# The throw is in a separate function marked noinline, because the point is to
+# unwind through a frame rather than to throw and catch in one.
+#
+function(_qdc_try_compile_unwinds flag var)
+    string(MAKE_C_IDENTIFIER "QDC_UNWINDS${flag}" cv)
+
+    if(CMAKE_CROSSCOMPILING)
+        # Nothing can be run, so the question cannot be answered. Left out
+        # rather than assumed good: a build that cannot check is the build that
+        # would ship the broken case.
+        message(STATUS "Cross-compiling: leaving out ${flag}, unwinding unverifiable")
+        return()
+    endif()
+
+    set(CMAKE_REQUIRED_FLAGS "${flag} -Werror=unused-command-line-argument")
+    check_cxx_source_runs("
+        struct Boom { int code; };
+        __attribute__((noinline)) static void deep() { throw Boom{42}; }
+        int main() {
+            try { deep(); }
+            catch (const Boom& b) { return b.code == 42 ? 0 : 1; }
+            catch (...) { return 2; }
+            return 3;
+        }" ${cv})
     unset(CMAKE_REQUIRED_FLAGS)
 
     if(${cv})
@@ -102,9 +149,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     _qdc_try_compile(-ftrivial-auto-var-init=zero    QUICKDC_HARDEN_COMPILE)
 
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-        _qdc_try_compile(-mbranch-protection=standard QUICKDC_HARDEN_COMPILE)
+        # standard is bti plus pac-ret. Both are probed for unwinding rather
+        # than only for acceptance, and bti alone is the fallback when pac-ret
+        # is the half that breaks it - which keeps the protection that works.
+        _qdc_try_compile_unwinds(-mbranch-protection=standard QUICKDC_HARDEN_COMPILE)
+        if(NOT "-mbranch-protection=standard" IN_LIST QUICKDC_HARDEN_COMPILE)
+            _qdc_try_compile_unwinds(-mbranch-protection=bti QUICKDC_HARDEN_COMPILE)
+        endif()
     else()
-        _qdc_try_compile(-fcf-protection=full QUICKDC_HARDEN_COMPILE)
+        _qdc_try_compile_unwinds(-fcf-protection=full QUICKDC_HARDEN_COMPILE)
     endif()
 
     # _FORTIFY_SOURCE needs optimisation to do anything, and warns if it is
