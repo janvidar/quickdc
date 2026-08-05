@@ -260,7 +260,13 @@ class Session
 		ADC::HubSession* session = 0;
 		bool ready = false;
 
-		Session()
+		/*
+		 * The channel is plain unless a case asks otherwise. Nothing here speaks
+		 * TLS - the flag only says what the session believes it is running over,
+		 * which is what decides whether answering a password request is reported
+		 * as crossing the clear.
+		 */
+		explicit Session(bool secure = false)
 		{
 			if (!hub.listen()) return;
 
@@ -269,7 +275,7 @@ class Session
 			url = std::make_unique<Samurai::IO::Net::URL>(address);
 
 			ui = std::make_unique<QuickDC::Hub>(&listener, url.get());
-			session = new ADC::HubSession(ui.get(), &listener, url.get(), false);
+			session = new ADC::HubSession(ui.get(), &listener, url.get(), secure);
 
 			session->connect();
 			if (!hub.accepted()) return;
@@ -771,7 +777,7 @@ EXO_TEST(hubsession_a_password_request_with_none_configured_is_reported_and_answ
 	EXO_ASSERT(s.hub.nextLine(line));
 	EXO_ASSERT(line.compare(0, 4, "BINF") == 0);
 
-	s.say("IGPA SOMETOKEN");
+	s.say("IGPA ABCDEFGHIJKLMNOPQRSTUVWXYZ");
 	EXO_ASSERT(s.listener.authRequested);
 
 	EXO_ASSERT(s.hub.nextLine(line));
@@ -792,7 +798,7 @@ EXO_TEST(hubsession_answering_the_request_sends_a_digest,
 	s.say("ISID AAAA");
 	EXO_ASSERT(s.hub.nextLine(line));
 
-	s.say("IGPA ABCDEFGHIJKLMNOP");
+	s.say("IGPA ABCDEFGHIJKLMNOPQRSTUVWXYZ");
 	EXO_ASSERT(s.listener.authRequested);
 
 	/* The empty answer went first; this is the second attempt. */
@@ -831,7 +837,7 @@ EXO_TEST(hubsession_the_answer_is_derived_from_the_password_and_the_token,
 		s.say("ISID AAAA");
 		s.hub.nextLine(line);
 
-		s.say("IGPA ABCDEFGHIJKLMNOP");
+		s.say("IGPA ABCDEFGHIJKLMNOPQRSTUVWXYZ");
 		EXO_ASSERT(s.hub.nextLine(line));
 
 		s.session->sendPassword("hunter2");
@@ -856,7 +862,7 @@ EXO_TEST(hubsession_a_supplied_password_is_written_to_the_session_file,
 	s.say("ISID AAAA");
 	EXO_ASSERT(s.hub.nextLine(line));
 
-	s.say("IGPA ABCDEFGHIJKLMNOP");
+	s.say("IGPA ABCDEFGHIJKLMNOPQRSTUVWXYZ");
 	EXO_ASSERT(s.hub.nextLine(line));
 
 	s.session->sendPassword("remembered-adc");
@@ -1238,3 +1244,217 @@ EXO_TEST(hubsession_encryption_is_required_when_nothing_says_otherwise,
 	EXO_ASSERT(line.find("job1") != std::string::npos);
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* The salt a hub asks for a password with                                   */
+/* ------------------------------------------------------------------------- */
+
+namespace {
+
+/* Twenty-six base32 characters, the shortest that carries the 16 bytes now
+   required; the pair differ so that two answers can be compared. */
+const char* SALT_OK = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const char* SALT_OK2 = "234567ABCDEFGHIJKLMNOPQRST";
+
+bool warnedAbout(const Listener& listener, const char* what)
+{
+	for (const std::string& e : listener.errors)
+		if (e.find(what) != std::string::npos) return true;
+	return false;
+}
+
+/*
+ * GPA belongs to the identify phase - after the SID and our own INF, before the
+ * hub accepts it - so a case cannot get there through login().
+ */
+bool reachIdentify(Session& s)
+{
+	std::string line;
+	if (!s.hub.nextLine(line)) return false;
+	s.say("ISUP ADBASE");
+	s.say("ISID AAAA");
+	if (!s.hub.nextLine(line)) return false;
+	return line.compare(0, 4, "BINF") == 0;
+}
+
+}
+
+/*
+ * The hub picks the salt and we hash the password with it, so everything that
+ * makes the answer worth more than the password itself rests on the salt being
+ * long and fresh - and the hub is exactly who cannot be trusted with that.
+ *
+ * A single base32 character decodes to no bytes at all, which makes the answer
+ * base32(Tiger(password)): the same string every time, for ever, and replayable
+ * by anyone who ever saw one.
+ */
+EXO_TEST(hubsession_a_salt_too_short_to_matter_is_not_answered,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(reachIdentify(s));
+
+	s.hub.received.clear();
+	s.say("IGPA A");
+
+	/* Nothing is answered, and the user is told rather than left waiting. */
+	pump([] { return false; }, 300);
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.find("HPAS") == std::string::npos);
+	EXO_ASSERT(warnedAbout(s.listener, "randomness"));
+	return 1;
+});
+
+/* The floor itself is answered, so the case above is about the length. */
+EXO_TEST(hubsession_a_salt_at_the_floor_is_answered,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(reachIdentify(s));
+
+	s.say(std::string("IGPA ") + SALT_OK);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 4, "HPAS") == 0);
+	return 1;
+});
+
+/* One character short of it is not. */
+EXO_TEST(hubsession_a_salt_one_character_short_is_not_answered,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(reachIdentify(s));
+
+	const std::string just_short(SALT_OK, strlen(SALT_OK) - 1);
+	s.hub.received.clear();
+	s.say("IGPA " + just_short);
+
+	pump([] { return false; }, 300);
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.find("HPAS") == std::string::npos);
+	return 1;
+});
+
+/*
+ * A salt this hub has used before is not answered again.
+ *
+ * Seeded rather than driven by two connections, because the exchange happens once
+ * per connection: what is remembered is remembered against the hub, so a hub
+ * offering last login's salt is the case, and this is that state.
+ */
+EXO_TEST(hubsession_a_salt_this_hub_used_before_is_not_answered,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(reachIdentify(s));
+
+	/* What the previous login left behind, filed against this hub. */
+	QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+	store->setGroup(s.url->toString());
+	store->setString(QUICKDC_ADC_SALT_SETTING, SALT_OK);
+
+	s.hub.received.clear();
+	s.say(std::string("IGPA ") + SALT_OK);
+
+	pump([] { return false; }, 300);
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.find("HPAS") == std::string::npos);
+	EXO_ASSERT(warnedAbout(s.listener, "same randomness"));
+	return 1;
+});
+
+/* A salt it has not used is answered, so the case above is about the reuse. */
+EXO_TEST(hubsession_a_salt_this_hub_has_not_used_is_answered,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(reachIdentify(s));
+
+	QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+	store->setGroup(s.url->toString());
+	store->setString(QUICKDC_ADC_SALT_SETTING, SALT_OK2);
+
+	std::string line;
+	s.say(std::string("IGPA ") + SALT_OK);
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 4, "HPAS") == 0);
+	return 1;
+});
+
+/* And what was answered is remembered, or the next login would accept it again. */
+EXO_TEST(hubsession_the_salt_answered_is_remembered_against_the_hub,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(reachIdentify(s));
+
+	QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+	store->setGroup(s.url->toString());
+	store->remove(QUICKDC_ADC_SALT_SETTING);
+
+	std::string line;
+	s.say(std::string("IGPA ") + SALT_OK);
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 4, "HPAS") == 0);
+
+	/* Written where the next connection to this hub will look. */
+	store->setGroup(s.url->toString());
+	EXO_ASSERT(store->getString(QUICKDC_ADC_SALT_SETTING, "") == std::string(SALT_OK));
+	return 1;
+});
+
+/* A different salt gives a different answer, so the salt really is in the hash. */
+EXO_TEST(hubsession_a_different_salt_gives_a_different_answer,
+{
+	std::string answers[2];
+
+	for (int n = 0; n < 2; n++)
+	{
+		Session s;
+		if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+		EXO_ASSERT(s.ready);
+		EXO_ASSERT(reachIdentify(s));
+
+		QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+		store->setGroup(s.url->toString());
+		store->remove(QUICKDC_ADC_SALT_SETTING);
+
+		s.say(std::string("IGPA ") + (n == 0 ? SALT_OK : SALT_OK2));
+		EXO_ASSERT(s.hub.nextLine(answers[n]));
+		EXO_ASSERT(answers[n].compare(0, 4, "HPAS") == 0);
+	}
+
+	EXO_ASSERT(answers[0] != answers[1]);
+	return 1;
+});
+
+/*
+ * On a plain hub the answer crosses the clear, where it is not the password but
+ * is enough to try every candidate against offline at whatever rate suits.
+ * Reported rather than refused: what the user can change is the hub.
+ */
+EXO_TEST(hubsession_answering_over_an_unencrypted_hub_is_reported,
+{
+	Session s(false);
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(reachIdentify(s));
+
+	std::string line;
+	s.say(std::string("IGPA ") + SALT_OK);
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 4, "HPAS") == 0);
+
+	/* Answered, and said. */
+	EXO_ASSERT(warnedAbout(s.listener, "not encrypted"));
+	return 1;
+});
+

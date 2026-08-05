@@ -983,6 +983,72 @@ void ADC::HubSession::onUserInfo(const char* id, QuickDC::User* data, uint64_t o
 }
 
 
+/*
+ * Whether the salt a hub offered is one worth answering.
+ *
+ * The salt is the hub's contribution to the answer, and everything that makes the
+ * answer worth more than the password itself rests on it - which is awkward,
+ * because a hostile hub is precisely the case that matters. Two things can be
+ * checked from here.
+ *
+ * Its length: a short salt leaves the answer a function of the password alone. A
+ * single base32 character decodes to no bytes at all, which makes the answer the
+ * same twenty-six characters for ever, replayable by anyone who ever saw one.
+ *
+ * And whether this hub has used it before. The salt this hub last asked with is
+ * remembered against the hub, not against the connection, because the exchange
+ * happens once per connection: a hub reusing a salt does it on the next login
+ * rather than twice on this one, and the answer whoever was listening captured
+ * last time is the answer it would get again.
+ */
+bool ADC::HubSession::saltIsUsable(const std::string& salt)
+{
+	const size_t bytes = (salt.size() * 5) >> 3;
+
+	if (bytes < QUICKDC_ADC_SALT_MIN_BYTES)
+	{
+		QERR("The hub offered a %zu byte salt, and %d is the least that makes an "
+			"answer worth sending", bytes, QUICKDC_ADC_SALT_MIN_BYTES);
+		if (listener)
+			listener->EventSystemError("This hub asked for a password with too "
+				"little randomness to protect it - not logging in");
+		return false;
+	}
+
+	session->setGroup(keyprintGroup());
+
+	if (session->getString(QUICKDC_ADC_SALT_SETTING, "") == salt)
+	{
+		QERR("The hub offered the salt it last asked with; refusing to answer it twice");
+		if (listener)
+			listener->EventSystemError("This hub asked for a password with the "
+				"same randomness as last time, which would make the answer "
+				"replayable - not logging in");
+		return false;
+	}
+
+	session->setString(QUICKDC_ADC_SALT_SETTING, salt);
+	session->write();
+
+	/*
+	 * And the answer crosses whatever the session runs over. On a plain hub that
+	 * is the clear, where the answer is not the password but is enough to try
+	 * every candidate password against offline, at whatever rate the attacker
+	 * likes. Said rather than refused: this is the part the user can change, by
+	 * using a hub that offers ADCS.
+	 */
+	if (!secure)
+	{
+		QERR("Answering a password request over an unencrypted connection to '%s'",
+			address.c_str());
+		if (listener)
+			listener->EventSystemError("This hub is not encrypted, so the answer "
+				"to its password request can be captured and attacked offline");
+	}
+
+	return true;
+}
+
 void ADC::HubSession::onRequestPasword(char* token)
 {
 	if (userState != QuickDC::HubSession::StateIdentify)
@@ -994,6 +1060,8 @@ void ADC::HubSession::onRequestPasword(char* token)
 	userState = QuickDC::HubSession::StateVerify;
 
 	if (!token) return;
+
+	if (!saltIsUsable(token)) return;
 
 	passwordToken = token;
 

@@ -35,6 +35,26 @@ class SearchRequest;
 }
 
 
+/*
+ * The shortest salt this client will answer a password request with, in bytes
+ * once decoded.
+ *
+ * The hub picks the salt and we hash the password with it, so a salt with nothing
+ * in it makes the answer a function of the password alone - the same twenty-six
+ * characters every time, for ever, replayable by anyone who ever saw one. A single
+ * base32 character decodes to no bytes at all, which is exactly that case. 128
+ * bits is the floor at which the answer is worth something.
+ */
+#define QUICKDC_ADC_SALT_MIN_BYTES 16
+
+/*
+ * Where the salt a hub last asked with is filed, against that hub.
+ *
+ * One value rather than a set: the exchange happens once per connection, so a hub
+ * that reuses a salt does it on the next login rather than twice on this one.
+ */
+#define QUICKDC_ADC_SALT_SETTING "Last password salt"
+
 namespace ADC {
 class CommandProxy;
 class Command;
@@ -87,6 +107,15 @@ class HubSession :
 		                  bool richText = false);
 		void onPrivateChat(const char* to, const char* from, const char* message, const char* contextID, bool action, bool richText = false);
 		void onRequestPasword(char* token);
+
+		/**
+		 * Whether a salt is one worth answering: long enough to make the answer
+		 * depend on it, and not one this session has already answered.
+		 *
+		 * Reports through the listener when it is not, because the visible effect
+		 * otherwise is only that the login does not complete.
+		 */
+		bool saltIsUsable(const std::string& salt);
 		void sendPassword(const char* password) override;
 		void sendPasswordResponse();
 
