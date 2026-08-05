@@ -453,7 +453,7 @@ EXO_TEST(dcclientsession_the_direction_is_negotiated,
 
 	f.say("$Supports ADCGet TTHF");
 	f.say("$Direction Download 12345");
-	f.say("$Key somekey");
+	f.sayKey();
 
 	std::string line;
 	EXO_ASSERT(f.peer.expect("$Direction ", line));
@@ -469,7 +469,7 @@ EXO_TEST(dcclientsession_a_file_we_do_not_have_is_refused,
 
 	f.say("$Supports ADCGet TTHF");
 	f.say("$Direction Download 12345");
-	f.say("$Key somekey");
+	f.sayKey();
 	f.say("$ADCGET file TTH/AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A 0 -1");
 
 	std::string line;
@@ -516,7 +516,7 @@ EXO_TEST(dcclientsession_a_browse_asks_for_the_whole_list,
 				/* Ours to download: they offered to upload, so nobody loses. */
 				f.say("$Supports ADCGet TTHF XmlBZList");
 				f.say("$Direction Upload 1");
-				f.say("$Key somekey");
+				f.sayKey();
 
 				asked = f.peer.expect("$ADCGET ", line);
 			}
@@ -595,7 +595,7 @@ EXO_TEST(dcclientsession_malformed_commands_after_the_handshake_are_survived,
 
 	f.say("$Supports ADCGet TTHF");
 	f.say("$Direction Download 12345");
-	f.say("$Key somekey");
+	f.sayKey();
 
 	f.say("$ADCGET");
 	f.say("$ADCGET ");
@@ -647,3 +647,100 @@ EXO_TEST(dcclientsession_repeated_connections_leave_nothing_behind,
 	return 1;
 });
 
+/* ------------------------------------------------------------------------- */
+/* The answer to our lock                                                    */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * NMDC's key authenticates nobody and cannot: the derivation is unkeyed and
+ * invertible, and the lock it answers went out in the clear. What it does show is
+ * that the peer read the challenge we sent - so a wrong answer is a peer replaying
+ * someone else's handshake or not following ours, and the connection ends rather
+ * than going on to serve a file.
+ *
+ * Answered correctly by every other case here through sayKey(), which is what
+ * makes this one worth having: those would pass against no check at all.
+ */
+EXO_TEST(dcclientsession_a_wrong_answer_to_our_lock_ends_the_connection,
+{
+	Fixture f;
+	if (!f.ready) EXO_SKIP(NO_LOOPBACK);
+	EXO_ASSERT(f.handshake());
+
+	/* The right shape, and derived from a lock that is not the one we sent. */
+	const std::string wrong = DC::Lock::calculateKey(std::string(PEER_LOCK) + "x");
+	EXO_ASSERT(!wrong.empty());
+	EXO_ASSERT(wrong != DC::Lock::calculateKey(f.our_lock));
+
+	f.say("$Supports ADCGet TTHF");
+	f.say("$Direction Download 12345");
+	f.say("$Key " + wrong);
+
+	/* Nothing is served after it, and the request is not even answered with an
+	   error - the connection is gone. Read off the buffer rather than through
+	   expect(), which consumes what it looks past and would take one of these
+	   assertions out from under the other. */
+	f.say("$ADCGET file TTH/AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A 0 -1");
+	pump([] { return false; }, 400);
+	f.peer.drain();
+
+	EXO_ASSERT(f.peer.received.find("$ADCSND") == std::string::npos);
+	EXO_ASSERT(f.peer.received.find("$Error") == std::string::npos);
+	return 1;
+});
+
+/*
+ * And a key sent before we ever issued a lock, which answers nothing: the
+ * challenge it claims to reply to does not exist yet.
+ */
+EXO_TEST(dcclientsession_a_key_before_any_lock_ends_the_connection,
+{
+	Fixture f;
+	if (!f.ready) EXO_SKIP(NO_LOOPBACK);
+
+	/*
+	 * No $Lock from the peer, so no lock of ours has gone out to be answered -
+	 * and an empty key, because a non-empty one is already refused for not
+	 * matching. Two empty strings are what would otherwise compare equal.
+	 */
+	f.say("$MyNick peernick");
+	f.say("$Key ");
+
+	f.say("$ADCGET file TTH/AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A 0 -1");
+	pump([] { return false; }, 400);
+	f.peer.drain();
+
+	EXO_ASSERT(f.peer.received.find("$ADCSND") == std::string::npos);
+	EXO_ASSERT(f.peer.received.find("$Error") == std::string::npos);
+	return 1;
+});
+
+/* And the correct answer is accepted, so the case above is about the answer
+   being wrong rather than about any key ending the connection. */
+EXO_TEST(dcclientsession_the_right_answer_to_our_lock_is_accepted,
+{
+	Fixture f;
+	if (!f.ready) EXO_SKIP(NO_LOOPBACK);
+	EXO_ASSERT(f.handshake());
+
+	f.say("$Supports ADCGet TTHF");
+	f.say("$Direction Download 12345");
+	f.sayKey();
+	f.say("$ADCGET file TTH/AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A 0 -1");
+
+	/* Refused for not being a file we have, which is a refusal that could only
+	   be reached by getting past the key. */
+	std::string line;
+	EXO_ASSERT(f.peer.expect("$Error", line));
+
+	/*
+	 * And the clearance the hub session granted for this peer is spent. NMDC
+	 * matches it on the nickname alone, which every client on the hub was told,
+	 * so what bounds that is it authorising one connection rather than every
+	 * connection until the process ends.
+	 */
+	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+	EXO_ASSERT_NOT_NULL(security);
+	EXO_ASSERT(!security->isAuthorized(QuickDC::Clearance::NMDC, 0, 0, "peernick", 0));
+	return 1;
+});

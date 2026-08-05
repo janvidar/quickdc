@@ -116,6 +116,12 @@ class HubSession
 		
 		const char* getNick() const     { return nickname.c_str();    }
 		const char* getPassword() const { return password.c_str();    }
+
+		/**
+		 * Whether the password may go out in the clear, telling the user either
+		 * way. NMDC has no other way to send one.
+		 */
+		bool maySendPassword();
 		void sendPassword(const char* password) override;
 		const char* getDescription()    { return description.c_str(); }
 		const char* getEmail() const    { return email.c_str();       }

@@ -455,6 +455,47 @@ void DC::HubSession::sendMyInfo()
 }
 
 
+/*
+ * Whether this session may send the password, and say so if it may not.
+ *
+ * NMDC puts the password on the wire as typed. There is no hashed exchange in the
+ * protocol and no TLS path for it anywhere in this tree, so anyone between here
+ * and the hub reads it, and so does the hub itself - which for a password reused
+ * elsewhere is the part that outlasts the session. Nothing about that is
+ * apparent from the client's side, where an NMDC hub asking to log in looks like
+ * an ADC hub asking to log in, which is what this makes visible.
+ *
+ * Permitted unless the user says otherwise, because there is nothing to fall back
+ * to: refusing by default would end every registered NMDC login without offering
+ * a way to keep one. That default is the product decision this leaves open, not a
+ * claim that sending it is safe.
+ */
+bool DC::HubSession::maySendPassword()
+{
+	if (password.empty()) return true;
+
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+
+	if (!config->getBool("Allow plaintext passwords", true))
+	{
+		QERR("Refusing to send a password to '%s' in the clear", address.c_str());
+		if (listener)
+			listener->EventSystemError("This hub cannot encrypt, and sending "
+				"passwords in the clear is turned off - not logging in");
+		return false;
+	}
+
+	QERR("Sending a password to '%s' in the clear; NMDC cannot do otherwise",
+		address.c_str());
+	if (listener)
+		listener->EventSystemError("Sending your password to this hub in the "
+			"clear: NMDC has no way to encrypt it, so anyone on the path can "
+			"read it");
+
+	return true;
+}
+
 void DC::HubSession::onRequestPasword()
 {
 	state = Password;
@@ -468,6 +509,8 @@ void DC::HubSession::onRequestPasword()
 	 */
 	if (password.empty())
 		listener->EventHubAutenticate();
+
+	if (!maySendPassword()) return;
 
 	send(new DC::SendMyPass(getPassword()));
 }
@@ -486,6 +529,8 @@ void DC::HubSession::sendPassword(const char* password_)
 	session->setGroup(address);
 	session->setString("Password", password);
 	session->write();
+
+	if (!maySendPassword()) return;
 
 	send(new DC::SendMyPass(getPassword()));
 }

@@ -1300,3 +1300,133 @@ EXO_TEST(dchubsession_repeated_sessions_leave_nothing_behind,
 	EXO_ASSERT(monitor->size() == baseline);
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* The password goes out in the clear                                        */
+/* ------------------------------------------------------------------------- */
+
+namespace {
+
+void setAllowPlaintextPasswords(bool allowed)
+{
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	config->setBool("Allow plaintext passwords", allowed);
+}
+
+void forgetPlaintextPasswordSetting()
+{
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setGroup("Network");
+	config->remove("Allow plaintext passwords");
+}
+
+bool warnedAboutPlaintext(const Listener& listener)
+{
+	for (const std::string& e : listener.errors)
+		if (e.find("clear") != std::string::npos) return true;
+	return false;
+}
+
+}
+
+/*
+ * NMDC puts the password on the wire as typed - there is no hashed exchange in
+ * the protocol and no TLS path for it anywhere here - and from the client's side
+ * an NMDC hub asking to log in looks exactly like an ADC hub asking to log in.
+ * Saying so is the whole of what can be done about it.
+ */
+EXO_TEST(dchubsession_sending_a_password_in_the_clear_is_reported,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	setAllowPlaintextPasswords(true);
+
+	std::string line;
+	s.say("$GetPass");
+	EXO_ASSERT(s.hub.expect("$MyPass", line));
+
+	s.session->sendPassword("hunter2");
+	EXO_ASSERT(s.hub.expect("$MyPass ", line));
+	EXO_ASSERT(line == "$MyPass hunter2");
+
+	/* Sent, and the user was told what sending it means. */
+	EXO_ASSERT(warnedAboutPlaintext(s.listener));
+	return 1;
+});
+
+/* And a user who would rather not can say so, in which case it is not sent. */
+EXO_TEST(dchubsession_a_password_is_withheld_when_plaintext_is_refused,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	setAllowPlaintextPasswords(false);
+
+	std::string line;
+	s.say("$GetPass");
+
+	/* The empty answer still goes, carrying nothing. */
+	EXO_ASSERT(s.hub.expect("$MyPass", line));
+	s.hub.received.clear();
+
+	s.session->sendPassword("hunter2");
+
+	/*
+	 * Nothing with the password in it follows, and the user is told why. Pumped
+	 * first, because sendPassword() is called here rather than through say():
+	 * drain() reads what has arrived, and nothing arrives without the loop
+	 * running - so without this the assertion would hold whether the password
+	 * was sent or not.
+	 */
+	pump([] { return false; }, 400);
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.find("hunter2") == std::string::npos);
+	EXO_ASSERT(warnedAboutPlaintext(s.listener));
+
+	setAllowPlaintextPasswords(true);
+	return 1;
+});
+
+/*
+ * The default, which is to send it. There is nothing to fall back to on NMDC, so
+ * refusing by default would end every registered login without offering a way to
+ * keep one - the warning is what changes, not whether logging in works.
+ */
+EXO_TEST(dchubsession_a_password_is_sent_by_default,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	forgetPlaintextPasswordSetting();
+
+	std::string line;
+	s.say("$GetPass");
+	EXO_ASSERT(s.hub.expect("$MyPass", line));
+
+	s.session->sendPassword("hunter2");
+	EXO_ASSERT(s.hub.expect("$MyPass ", line));
+	EXO_ASSERT(line == "$MyPass hunter2");
+	return 1;
+});
+
+/* An empty password carries no secret, so there is nothing to warn about. */
+EXO_TEST(dchubsession_an_empty_password_is_not_reported_as_plaintext,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	setAllowPlaintextPasswords(true);
+
+	std::string line;
+	s.say("$GetPass");
+	EXO_ASSERT(s.hub.expect("$MyPass", line));
+
+	EXO_ASSERT(!warnedAboutPlaintext(s.listener));
+	return 1;
+});

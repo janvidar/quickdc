@@ -320,10 +320,34 @@ void DC::ClientSession::onLock(const char* lock_, const char* pk_)
 }
 
 
-// FIXME: Check key here
-void DC::ClientSession::onKey(const char* /* key_ */)
+/*
+ * $Key: the peer's answer to the lock we challenged them with.
+ *
+ * It authenticates nobody, and cannot: the derivation is unkeyed and fully
+ * invertible, so anyone who saw the lock can compute the answer, and the lock
+ * went out in the clear. What checking it does establish is that the peer read
+ * the challenge we sent and speaks the protocol - so a wrong answer is a peer
+ * replaying someone else's handshake or not following it at all, and neither is
+ * something to serve a file to. Not compared in constant time, deliberately:
+ * there is no secret here to leak the shape of.
+ */
+void DC::ClientSession::onKey(const char* key_)
 {
-		if (isClient)
+	if (my_key.empty())
+	{
+		QERR("A key arrived before we issued a lock; dropping the connection");
+		proxy->close();
+		return;
+	}
+
+	if (!key_ || my_key != key_)
+	{
+		QERR("The peer answered our lock with the wrong key; dropping the connection");
+		proxy->close();
+		return;
+	}
+
+	if (isClient)
 	{
 		sendDirection();
 		sendKey();
