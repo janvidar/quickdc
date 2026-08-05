@@ -323,12 +323,12 @@ void DC::ClientSession::onLock(const char* lock_, const char* pk_)
 // FIXME: Check key here
 void DC::ClientSession::onKey(const char* /* key_ */)
 {
-	if (isClient)
+		if (isClient)
 	{
 		sendDirection();
 		sendKey();
 	}
-	
+
 	/*
 	 * NMDC direction negotiation: whoever asked to download gets to. If both
 	 * asked, the higher priority wins and the loser serves instead. If we
@@ -365,6 +365,14 @@ void DC::ClientSession::onKey(const char* /* key_ */)
 			proxy->close();
 			return;
 		}
+
+		/*
+		 * Consumed, as on the ADC side. It matters more here: a clearance is
+		 * matched on the nickname alone, which every client on the hub was told,
+		 * so what bounds the damage is that it authorises one connection rather
+		 * than every connection until the process ends.
+		 */
+		security->revoke(QuickDC::Clearance::NMDC, hubsession, getNick(), 0);
 	}
 
 	if (weDownload)

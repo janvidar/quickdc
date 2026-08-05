@@ -46,6 +46,24 @@ QuickDC::Clearance* grant(QuickDC::SecurityManager& mgr,
 	return c;
 }
 
+/*
+ * A clearance that was granted a while ago.
+ *
+ * The timestamp is protected rather than settable, which is right - nothing in
+ * the client backdates one - so a subclass is how a test reaches it. The
+ * alternative would be widening the real interface, or waiting ten minutes.
+ */
+class AgedClearance : public QuickDC::Clearance
+{
+	public:
+		AgedClearance(Clearance::ClearanceProtocol protocol, const char* cid,
+				const char* token, time_t age)
+			: QuickDC::Clearance(Clearance::AuthorizedUser, protocol, 0, cid, token)
+		{
+			timestamp = Samurai::TimeStamp(time(0) - age);
+		}
+};
+
 /* Runs the event loop until the condition holds, or gives up. */
 template<typename Fn>
 bool pump(Fn done, int timeout_ms = 2000)
@@ -461,5 +479,206 @@ EXO_TEST(security_the_certificate_paths_are_under_the_client_directory,
 	EXO_ASSERT(!resolved.empty());
 	EXO_ASSERT(resolved[0] == '/');
 	EXO_ASSERT(resolved.find("/~/") == std::string::npos);
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* How long a clearance lasts                                                */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A clearance authorises one peer connection that we have just asked for, so the
+ * connection arrives in seconds. One that never arrives used to leave its
+ * clearance in the table for the life of the process, which left the token that
+ * would satisfy it worth guessing for exactly as long.
+ */
+EXO_TEST(security_a_clearance_older_than_its_lifetime_authorises_nothing,
+{
+	QuickDC::SecurityManager mgr;
+
+	/* Granted a second past the limit, and otherwise a clearance that matches. */
+	mgr.grant(new AgedClearance(Clearance::ADC, "CIDA", "t1",
+		QUICKDC_CLEARANCE_LIFETIME_SECONDS + 1));
+
+	EXO_ASSERT(!mgr.isAuthorized(Clearance::ADC, 0, 0, "CIDA", "t1"));
+	return 1;
+});
+
+/* And one inside it still does, so the case above is about the age. */
+EXO_TEST(security_a_clearance_within_its_lifetime_still_authorises,
+{
+	QuickDC::SecurityManager mgr;
+
+	mgr.grant(new AgedClearance(Clearance::ADC, "CIDA", "t1",
+		QUICKDC_CLEARANCE_LIFETIME_SECONDS - 5));
+
+	EXO_ASSERT(mgr.isAuthorized(Clearance::ADC, 0, 0, "CIDA", "t1"));
+	return 1;
+});
+
+/* The same for NMDC, which is matched on the nickname alone. */
+EXO_TEST(security_an_expired_nmdc_clearance_authorises_nothing,
+{
+	QuickDC::SecurityManager mgr;
+
+	mgr.grant(new AgedClearance(Clearance::NMDC, "peernick", 0,
+		QUICKDC_CLEARANCE_LIFETIME_SECONDS + 1));
+
+	EXO_ASSERT(!mgr.isAuthorized(Clearance::NMDC, 0, 0, "peernick", 0));
+	return 1;
+});
+
+/* Expired ones are removed rather than merely ignored, or the table grows for
+   the life of the process whether they are honoured or not. */
+EXO_TEST(security_an_expired_clearance_is_swept_rather_than_kept,
+{
+	QuickDC::SecurityManager mgr;
+
+	mgr.grant(new AgedClearance(Clearance::ADC, "CIDA", "t1",
+		QUICKDC_CLEARANCE_LIFETIME_SECONDS + 1));
+	EXO_ASSERT_EQ_UINT(mgr.pending(), 1u);
+
+	EXO_ASSERT_EQ_UINT(mgr.expire(), 1u);
+	EXO_ASSERT_EQ_UINT(mgr.pending(), 0u);
+
+	/* Sweeping again sweeps nothing. */
+	EXO_ASSERT_EQ_UINT(mgr.expire(), 0u);
+	return 1;
+});
+
+/*
+ * And they do not pile up while the client runs, because granting sweeps: a hub
+ * that asks for connections nobody makes leaves the table the size of what is
+ * actually outstanding rather than the size of everything ever asked for.
+ */
+EXO_TEST(security_expired_clearances_do_not_accumulate,
+{
+	QuickDC::SecurityManager mgr;
+
+	for (int n = 0; n < 64; n++)
+	{
+		const std::string cid = "CID" + std::to_string(n);
+		mgr.grant(new AgedClearance(Clearance::ADC, cid.c_str(), "t1",
+			QUICKDC_CLEARANCE_LIFETIME_SECONDS + 1));
+
+		/* Each grant sweeps what came before it, so one is all that is ever held. */
+		if (mgr.pending() > 1)
+		{
+			const std::string why = "the table holds " + std::to_string(mgr.pending())
+				+ " expired clearances";
+			EXO_FAIL(why.c_str());
+		}
+	}
+
+	for (int n = 0; n < 3; n++)
+	{
+		const std::string cid = "FRESH" + std::to_string(n);
+		grant(mgr, cid.c_str(), "t1");
+	}
+
+	/* Only the three that are still good. */
+	EXO_ASSERT_EQ_UINT(mgr.pending(), 3u);
+	EXO_ASSERT_EQ_UINT(mgr.expire(), 0u);
+	EXO_ASSERT(mgr.isAuthorized(Clearance::ADC, 0, 0, "FRESH0", "t1"));
+	return 1;
+});
+
+/* Granting is what makes the table grow, so granting is what sweeps it. */
+EXO_TEST(security_granting_sweeps_what_has_expired,
+{
+	QuickDC::SecurityManager mgr;
+
+	mgr.grant(new AgedClearance(Clearance::ADC, "OLD", "t1",
+		QUICKDC_CLEARANCE_LIFETIME_SECONDS + 1));
+	EXO_ASSERT_EQ_UINT(mgr.pending(), 1u);
+
+	grant(mgr, "NEW", "t2");
+
+	/* The old one went as the new one arrived, rather than accumulating. */
+	EXO_ASSERT_EQ_UINT(mgr.pending(), 1u);
+	EXO_ASSERT(mgr.isAuthorized(Clearance::ADC, 0, 0, "NEW", "t2"));
+	EXO_ASSERT(!mgr.isAuthorized(Clearance::ADC, 0, 0, "OLD", "t1"));
+	return 1;
+});
+
+/*
+ * A hub decides how many connections it asks us to make, so the table's size is
+ * not ours alone to control. The newest survives: it is what the user just did.
+ */
+EXO_TEST(security_the_table_does_not_grow_past_its_bound,
+{
+	QuickDC::SecurityManager mgr;
+
+	for (int n = 0; n < QUICKDC_CLEARANCE_MAX + 32; n++)
+	{
+		const std::string cid = "CID" + std::to_string(n);
+		grant(mgr, cid.c_str(), "t1");
+		if (mgr.pending() > QUICKDC_CLEARANCE_MAX)
+		{
+			const std::string why = "the table reached "
+				+ std::to_string(mgr.pending()) + " clearances";
+			EXO_FAIL(why.c_str());
+		}
+	}
+
+	EXO_ASSERT_EQ_UINT(mgr.pending(), (size_t) QUICKDC_CLEARANCE_MAX);
+
+	/* The last one granted is still there; the first is long gone. */
+	const std::string last = "CID" + std::to_string(QUICKDC_CLEARANCE_MAX + 31);
+	EXO_ASSERT(mgr.isAuthorized(Clearance::ADC, 0, 0, last.c_str(), "t1"));
+	EXO_ASSERT(!mgr.isAuthorized(Clearance::ADC, 0, 0, "CID0", "t1"));
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* Spending a clearance that carries no token                                */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * NMDC carries no token, so its clearance is matched on the nickname alone and
+ * used to be unspendable: revoke() required a token and skipped anything without
+ * one, which meant every NMDC clearance lasted for the life of the process.
+ */
+EXO_TEST(security_an_nmdc_clearance_can_be_spent,
+{
+	QuickDC::SecurityManager mgr;
+	grant(mgr, "peernick", 0, Clearance::NMDC);
+
+	EXO_ASSERT(mgr.isAuthorized(Clearance::NMDC, 0, 0, "peernick", 0));
+	EXO_ASSERT(mgr.revoke(Clearance::NMDC, 0, "peernick", 0));
+
+	/* Once, and once only. */
+	EXO_ASSERT(!mgr.isAuthorized(Clearance::NMDC, 0, 0, "peernick", 0));
+	EXO_ASSERT(!mgr.revoke(Clearance::NMDC, 0, "peernick", 0));
+	return 1;
+});
+
+/*
+ * And a caller naming no token cannot spend a clearance that has one: an ADC
+ * transfer is authorised by a secret, and a nickname is not it.
+ */
+EXO_TEST(security_a_nameless_revoke_does_not_spend_a_token_clearance,
+{
+	QuickDC::SecurityManager mgr;
+	grant(mgr, "CIDA", "t1", Clearance::ADC);
+
+	EXO_ASSERT(!mgr.revoke(Clearance::ADC, 0, "CIDA", 0));
+	EXO_ASSERT(!mgr.revoke(Clearance::ADC, 0, "CIDA", ""));
+
+	/* Untouched, and still spendable by something that knows the token. */
+	EXO_ASSERT(mgr.isAuthorized(Clearance::ADC, 0, 0, "CIDA", "t1"));
+	EXO_ASSERT(mgr.revoke(Clearance::ADC, 0, "CIDA", "t1"));
+	return 1;
+});
+
+/* Nor the other way about: a token must not spend a clearance granted without
+   one, or an ADC token would end an NMDC peer's authorisation. */
+EXO_TEST(security_a_token_does_not_spend_a_tokenless_clearance,
+{
+	QuickDC::SecurityManager mgr;
+	grant(mgr, "peernick", 0, Clearance::NMDC);
+
+	EXO_ASSERT(!mgr.revoke(Clearance::NMDC, 0, "peernick", "t1"));
+	EXO_ASSERT(mgr.isAuthorized(Clearance::NMDC, 0, 0, "peernick", 0));
 	return 1;
 });

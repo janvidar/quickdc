@@ -24,7 +24,9 @@
 #include "api/hub.h"
 #include "network/dc/hubsession.h"
 #include "network/dc/clientsession.h"
+#include "network/dc/lock.h"
 #include "network/downloadqueue.h"
+#include "network/securitymanager.h"
 #include "network/user.h"
 #include "network/usermanager.h"
 
@@ -310,6 +312,9 @@ class Fixture
 			return hubsession->isLoggedIn();
 		}
 
+		/* The lock we challenged the peer with, so it can be answered. */
+		std::string our_lock;
+
 		/* The peer speaks first: its nick, then its lock. */
 		bool handshake()
 		{
@@ -317,7 +322,24 @@ class Fixture
 			say("$Lock " PEER_LOCK " Pk=PEER");
 
 			std::string line;
-			return peer.expect("$MyNick ", line) && peer.expect("$Lock ", line);
+			if (!peer.expect("$MyNick ", line)) return false;
+			if (!peer.expect("$Lock ", line)) return false;
+
+			/* "$Lock <lock> Pk=<pk>" - kept because the answer to it is checked,
+			   so a case has to reply as a peer would rather than with anything. */
+			const size_t start = strlen("$Lock ");
+			const size_t end = line.find(" Pk=", start);
+			if (end == std::string::npos) return false;
+
+			our_lock = line.substr(start, end - start);
+			return !our_lock.empty();
+		}
+
+		/* The answer to that lock, derived the way the peer at the other end
+		   would derive it. */
+		void sayKey()
+		{
+			say("$Key " + DC::Lock::calculateKey(our_lock));
 		}
 };
 
@@ -624,3 +646,4 @@ EXO_TEST(dcclientsession_repeated_connections_leave_nothing_behind,
 	EXO_ASSERT(monitor->size() == baseline);
 	return 1;
 });
+

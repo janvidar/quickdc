@@ -747,3 +747,64 @@ EXO_TEST(clientsession_repeated_connections_leave_nothing_behind,
 	EXO_ASSERT(monitor->size() == baseline);
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* What a wrong token costs                                                  */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A clearance is spent by the connection it authorised, and only by that one.
+ *
+ * Our CID goes out in every INF, so anyone on the hub can dial our peer port and
+ * name us correctly - the token is the whole of the secret. What must not follow
+ * from a wrong guess is the loss of the clearance a real transfer is waiting on,
+ * because that would be a far cheaper way to stop a transfer than guessing
+ * sixteen bytes is to steal one.
+ */
+EXO_TEST(clientsession_a_wrong_token_does_not_spend_the_clearance,
+{
+	Session s;
+	if (!s.ready) EXO_SKIP(CANNOT_CONNECT);
+
+	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+	EXO_ASSERT_NOT_NULL(security);
+
+	/*
+	 * Granted here rather than by the fixture: the fixture's token is also the
+	 * session's own, and a session holding one uses it instead of whatever the
+	 * peer quotes - so there would be no way for the peer to quote a wrong one.
+	 */
+	security->grant(new QuickDC::Clearance(QuickDC::Clearance::AuthorizedUser,
+		QuickDC::Clearance::ADC, 0, PEER_CID, "realjob"));
+
+	EXO_ASSERT(s.handshake());
+	s.say("CINF ID" PEER_CID " TOwrongjob");
+	pump([] { return false; }, 200);
+
+	/* Still there, and still the only thing that authorises the transfer. */
+	const bool survived = security->isAuthorized(QuickDC::Clearance::ADC,
+		0, 0, PEER_CID, "realjob");
+
+	security->revoke(QuickDC::Clearance::ADC, 0, PEER_CID, "realjob");
+	EXO_ASSERT(survived);
+	return 1;
+});
+
+/* And the right one does spend it, so the case above is about the token being
+   wrong rather than about clearances never being spent. */
+EXO_TEST(clientsession_the_right_token_spends_the_clearance,
+{
+	Session s("realjob");
+	if (!s.ready) EXO_SKIP(CANNOT_CONNECT);
+
+	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+	EXO_ASSERT_NOT_NULL(security);
+
+	EXO_ASSERT(s.handshake());
+	s.say("CINF ID" PEER_CID);
+	pump([] { return false; }, 200);
+
+	EXO_ASSERT(!security->isAuthorized(QuickDC::Clearance::ADC,
+		0, 0, PEER_CID, "realjob"));
+	return 1;
+});

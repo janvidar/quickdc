@@ -171,8 +171,16 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 		QDBG("Neither side named a token; nothing to do on this connection");
 	}
 
-	/* The clearance covered setting this connection up, and it is now here. */
-	if (cid && job)
+	/*
+	 * The clearance covered setting this connection up, and it is now here - so
+	 * it is spent, and one connection is all it authorises.
+	 *
+	 * Spent only when it authorised this connection. revoke() matches the token
+	 * as well as the CID, so a peer quoting the wrong one already matched no
+	 * clearance and took nothing with it; this says so at the call rather than
+	 * leaving it resting on how revoke() happens to match.
+	 */
+	if (upload_approved && cid && job)
 		security->revoke(QuickDC::Clearance::ADC, hubsession, cid, job);
 
 	/* The token is also what ties this connection to a queued download. */
