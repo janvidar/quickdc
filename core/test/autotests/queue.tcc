@@ -9,6 +9,8 @@
 #include <stdlib.h>
 
 #include <samurai/io/file.h>
+#include <string>
+#include <unistd.h>
 
 #include "network/filesource.h"
 #include "network/downloadqueue.h"
@@ -24,15 +26,45 @@
  * all it takes to keep these tests away from the real one.
  * ------------------------------------------------------------------------- */
 
-#define QUEUE_TEST_HOME "/tmp/quickdc-autotest-queue"
+/* It carries the process id, because under DISCOVER each case is a process of
+   its own - and every one of them removes the queue file on the way in, so a
+   home they all shared meant one case deleting the queue another was partway
+   through writing. */
+static const std::string QUEUE_TEST_HOME =
+	"/tmp/quickdc-autotest-queue-" + std::to_string((int) getpid());
 
 static bool queue_test_setup()
 {
-	if (setenv("HOME", QUEUE_TEST_HOME, 1) != 0) return false;
-	Samurai::IO::File::mkdir(QUEUE_TEST_HOME, 0700);
+	if (setenv("HOME", QUEUE_TEST_HOME.c_str(), 1) != 0) return false;
+	Samurai::IO::File::mkdir(QUEUE_TEST_HOME.c_str(), 0700);
 	Samurai::IO::File::mkdir("~/.quickdc", 0700);
 	Samurai::IO::File(QUICKDC_QUEUE_FILE).remove();
 	return true;
+}
+
+namespace {
+
+/*
+ * And it goes again when the process does.
+ *
+ * A name of its own per process is what keeps two cases from treading on each
+ * other, and it is also what would leave a directory behind for every case in
+ * the suite. A destructor rather than a line at the end of each test, because a
+ * case that fails returns early and would skip one.
+ */
+struct QueueTestHome
+{
+	~QueueTestHome()
+	{
+		Samurai::IO::File(QUICKDC_QUEUE_FILE).remove();
+		Samurai::IO::File(QUICKDC_QUEUE_FILE_NEW).remove();
+		Samurai::IO::File::rmdir((QUEUE_TEST_HOME + "/.quickdc").c_str());
+		Samurai::IO::File::rmdir(QUEUE_TEST_HOME.c_str());
+	}
+};
+
+QueueTestHome queue_test_home;
+
 }
 
 EXO_TEST(queue_save_and_load_roundtrip, {

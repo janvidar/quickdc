@@ -8,6 +8,8 @@
 #include <stdlib.h>
 
 #include <samurai/io/file.h>
+#include <string>
+#include <unistd.h>
 
 #include "network/filesource.h"
 #include "network/downloadqueue.h"
@@ -23,15 +25,37 @@
  * it takes to keep the one test below that needs a queue away from the real one.
  */
 
-#define QUEUE_TEST_HOME "/tmp/quickdc-autotest-queue"
+/* It carries the process id, because under DISCOVER each case is a process of
+   its own, and the setup below removes the queue file it finds there. */
+static const std::string QUEUE_TEST_HOME =
+	"/tmp/quickdc-autotest-queue-" + std::to_string((int) getpid());
 
 static bool queue_test_setup()
 {
-	if (setenv("HOME", QUEUE_TEST_HOME, 1) != 0) return false;
-	Samurai::IO::File::mkdir(QUEUE_TEST_HOME, 0700);
+	if (setenv("HOME", QUEUE_TEST_HOME.c_str(), 1) != 0) return false;
+	Samurai::IO::File::mkdir(QUEUE_TEST_HOME.c_str(), 0700);
 	Samurai::IO::File::mkdir("~/.quickdc", 0700);
 	Samurai::IO::File(QUICKDC_QUEUE_FILE).remove();
 	return true;
+}
+
+namespace {
+
+/* And it goes again when the process does, or a name of its own per process
+   would leave a directory behind for every case that asked for one. */
+struct QueueTestHome
+{
+	~QueueTestHome()
+	{
+		Samurai::IO::File(QUICKDC_QUEUE_FILE).remove();
+		Samurai::IO::File(QUICKDC_QUEUE_FILE_NEW).remove();
+		Samurai::IO::File::rmdir((QUEUE_TEST_HOME + "/.quickdc").c_str());
+		Samurai::IO::File::rmdir(QUEUE_TEST_HOME.c_str());
+	}
+};
+
+QueueTestHome queue_test_home;
+
 }
 
 EXO_TEST(nmdc_adcget_file_wire_format, {

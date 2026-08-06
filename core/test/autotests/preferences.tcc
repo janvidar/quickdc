@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <string>
+#include <unistd.h>
 
 #include "config/preferences.h"
 
@@ -16,9 +17,20 @@
  * These cover the invariants that arrangement depends on.
  */
 
+/*
+ * One path per process, and the same one throughout it.
+ *
+ * Not a counter as the scratch paths elsewhere use, because every case here
+ * writes a file and then reads it back and so asks for the name more than once.
+ * The process is what has to be in it: each case is registered as a CTest entry
+ * of its own and runs on its own, and a name they all shared meant one case
+ * unlinking a file another was halfway through writing.
+ */
 static std::string prefs_test_path()
 {
-	return std::string("/tmp/quickdc_prefs_test.conf");
+	static const std::string path =
+		"/tmp/quickdc_prefs_test_" + std::to_string((int) getpid()) + ".conf";
+	return path;
 }
 
 static void prefs_test_unlink()

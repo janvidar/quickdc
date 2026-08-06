@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <unistd.h>
 
 #define TTH1 "MWXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A"
 #define TTH2 "AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A"
@@ -39,11 +40,19 @@
 #define HUB "adc://hub.example:412"
 #define CID "AAAABBBBCCCCDDDD"
 
-/* Scratch paths, named by counter so a run is reproducible. */
+/*
+ * Scratch paths, named by process as well as by counter.
+ *
+ * The counter alone is not enough to tell two of these apart: every case in this
+ * file is registered as a CTest entry of its own and so runs as its own process,
+ * where a static counter starts again at zero - so a parallel run had two cases
+ * writing, reading and unlinking the same path at once.
+ */
 static std::string scratch(const char* leaf)
 {
 	static int counter = 0;
-	return "/tmp/quickdc_src_test_" + std::to_string(counter++) + "_" + leaf;
+	return "/tmp/quickdc_src_test_" + std::to_string((int) getpid())
+		+ "_" + std::to_string(counter++) + "_" + leaf;
 }
 
 static bool write_file(const std::string& path, const std::string& content)

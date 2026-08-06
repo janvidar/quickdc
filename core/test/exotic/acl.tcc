@@ -24,11 +24,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <unistd.h>
 
+/*
+ * Named by process as well as by counter, because each case here runs as a
+ * process of its own and a static counter starts again at zero in every one of
+ * them - which under a parallel run is two cases sharing a path.
+ */
 static std::string aclPath()
 {
 	static int counter = 0;
-	return "/tmp/quickdc_acl_test_" + std::to_string(counter++) + ".xml";
+	return "/tmp/quickdc_acl_test_" + std::to_string((int) getpid())
+		+ "_" + std::to_string(counter++) + ".xml";
 }
 
 static void writeFile(const std::string& path, const char* content)
@@ -360,11 +367,21 @@ EXO_TEST(acl_empty_file,
 /* A missing file leaves an empty table rather than anything worse. */
 EXO_TEST(acl_a_missing_file_leaves_an_empty_table,
 {
-	ADC::LocalHub::ACL::Table table("/tmp/quickdc_acl_does_not_exist_4711.xml");
-	EXO_ASSERT(table.countUsers() == 0);
-	EXO_ASSERT(table.getUser(0) == 0);
+	/*
+	 * A path nothing has written, and the table has to be out of scope before
+	 * it is removed: a Table writes itself out on the way down, so a removal
+	 * taken while one is still alive leaves the file there - and the next run
+	 * would not be testing a missing file at all.
+	 */
+	const std::string path = aclPath();
 
-	Samurai::IO::File("/tmp/quickdc_acl_does_not_exist_4711.xml").remove();
+	{
+		ADC::LocalHub::ACL::Table table(path.c_str());
+		EXO_ASSERT(table.countUsers() == 0);
+		EXO_ASSERT(table.getUser(0) == 0);
+	}
+
+	Samurai::IO::File(path).remove();
 	return 1;
 });
 

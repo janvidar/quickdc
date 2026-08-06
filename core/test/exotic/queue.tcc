@@ -27,15 +27,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <unistd.h>
 
 /* 39 base32 characters, which is what the reader insists on. */
 #define TTH1 "MWXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A"
 #define TTH2 "AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A"
 
+/*
+ * Named by process as well as by counter, because each case here runs as a
+ * process of its own and a static counter starts again at zero in every one of
+ * them - which under a parallel run is two cases sharing a path.
+ */
 static std::string queuePath()
 {
 	static int counter = 0;
-	return "/tmp/quickdc_queue_test_" + std::to_string(counter++) + ".xml";
+	return "/tmp/quickdc_queue_test_" + std::to_string((int) getpid())
+		+ "_" + std::to_string(counter++) + ".xml";
 }
 
 static void writeFile(const std::string& path, const char* content)

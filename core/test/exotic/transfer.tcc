@@ -59,10 +59,16 @@ class Listener : public QuickDC::PrivateTransferListener
 		QuickDC::Transfer* last;
 };
 
+/*
+ * Named by process as well as by counter, because each case here runs as a
+ * process of its own and a static counter starts again at zero in every one of
+ * them - which under a parallel run is two cases sharing a path.
+ */
 static std::string scratch(const char* leaf)
 {
 	static int counter = 0;
-	return "/tmp/quickdc_transfer_" + std::to_string(counter++) + "_" + leaf;
+	return "/tmp/quickdc_transfer_" + std::to_string((int) getpid())
+		+ "_" + std::to_string(counter++) + "_" + leaf;
 }
 
 static bool writeFile(const std::string& path, const std::string& content)
