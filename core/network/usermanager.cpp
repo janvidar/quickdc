@@ -6,6 +6,9 @@
 #include "usermanager.h"
 #include "user.h"
 
+#include <samurai/io/net/inetaddress.h>
+
+#include <string.h>
 #include <string_view>
 
 namespace QuickDC {
@@ -119,14 +122,41 @@ void UserManager::setOperators(const std::vector<std::string>& nicks) {
 	}
 }
 
-void UserManager::ip(const char* id, const char* /*ip*/) {
-	if (!id) return;
+void UserManager::ip(const char* id, const char* address) {
+	if (!id || !address) return;
 
-	if (users.count(id)) {
-		User* u = users[std::string(id)];
-		// FIXME: u->setIP(ip);
-		if (event) event->EventUserInfo(u);
-	}
+	const auto found = users.find(id);
+	if (found == users.end()) return;
+
+	/*
+	 * Refused unless it reads as an address literal. This is whatever the hub
+	 * chose to send, and the setters below only cap the length - so anything
+	 * else would be stored cut to fifteen characters and shown as an address
+	 * from then on. Parsed rather than pattern matched, which also settles the
+	 * notations that are read two ways: a leading zero in an octet is octal to
+	 * some readers and decimal to others, and is refused here.
+	 *
+	 * Nothing is resolved. An InetAddress built from a string only starts a
+	 * lookup when it is asked to, and a hub naming every user at once would be
+	 * a lookup apiece if it did.
+	 */
+	if (!Samurai::IO::Net::InetAddress(address).isValid()) return;
+
+	/*
+	 * One field carries either family, so the colon is what tells them apart:
+	 * a dotted quad never holds one and every IPv6 literal does.
+	 */
+	User* u = found->second;
+	const bool changed = strchr(address, ':')
+		? u->setAddressIPv6(address)
+		: u->setAddressIPv4(address);
+
+	/*
+	 * Only a change is worth reporting. A hub answers $UserIP2 with the whole
+	 * hub at once and resends it as people arrive, so most of what arrives here
+	 * says what was already known.
+	 */
+	if (changed && event) event->EventUserInfo(u);
 }
 
 size_t UserManager::countUsers() const {

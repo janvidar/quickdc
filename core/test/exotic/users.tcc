@@ -103,6 +103,7 @@ EXO_TEST(users_a_null_id_is_refused_everywhere,
 		users.join(0);
 		users.quit(0);
 		users.ip(0, "127.0.0.1");
+		users.ip("AAAA", 0);
 		users.info(0, make("x"), 0, true);
 
 		EXO_ASSERT(users.countUsers() == 0);
@@ -334,6 +335,97 @@ EXO_TEST(users_without_an_operator_list_nobody_is_demoted,
 
 		users.info("AAAA", alice, 0, false);
 		EXO_ASSERT(users.getUser("AAAA")->isOp());
+
+	return 1;
+});
+
+/* ---- addresses ---- */
+
+/* One $UserIP field carries either family, so each has to land in its own. */
+EXO_TEST(users_an_address_is_filed_by_its_family,
+{
+		QuickDC::UserManager users(0);
+		users.info("alice", make("alice"), 0, true);
+		users.info("bob", make("bob"), 0, true);
+
+		users.ip("alice", "192.168.0.7");
+		EXO_ASSERT(!strcmp(users.getUser("alice")->getAddressIPv4(), "192.168.0.7"));
+		EXO_ASSERT(!strcmp(users.getUser("alice")->getAddressIPv6(), ""));
+
+		users.ip("bob", "2001:db8::1");
+		EXO_ASSERT(!strcmp(users.getUser("bob")->getAddressIPv6(), "2001:db8::1"));
+		EXO_ASSERT(!strcmp(users.getUser("bob")->getAddressIPv4(), ""));
+
+		/* A user may be reachable both ways, and one must not clear the other. */
+		users.ip("alice", "2001:db8::2");
+		EXO_ASSERT(!strcmp(users.getUser("alice")->getAddressIPv4(), "192.168.0.7"));
+		EXO_ASSERT(!strcmp(users.getUser("alice")->getAddressIPv6(), "2001:db8::2"));
+
+	return 1;
+});
+
+/*
+ * Anything that is not an address is dropped rather than stored short. The
+ * setter caps a v4 address at fifteen characters, so a hostname or a sentence
+ * would otherwise be kept as its first fifteen and shown as where somebody is.
+ */
+EXO_TEST(users_something_that_is_not_an_address_is_refused,
+{
+		QuickDC::UserManager users(0);
+		users.info("alice", make("alice"), 0, true);
+
+		users.ip("alice", "not.an.address.example.org");
+		users.ip("alice", "999.1.1.1");
+		users.ip("alice", "1.2.3");
+		users.ip("alice", "");
+		users.ip("alice", "0.0.0.0");
+
+		EXO_ASSERT(!strcmp(users.getUser("alice")->getAddressIPv4(), ""));
+
+		/* A leading zero in an octet is octal to some readers and decimal to
+		   others, so it names two different hosts and is refused. */
+		users.ip("alice", "010.1.1.1");
+		EXO_ASSERT(!strcmp(users.getUser("alice")->getAddressIPv4(), ""));
+
+		/* And the good one still goes in afterwards. */
+		users.ip("alice", "10.1.1.1");
+		EXO_ASSERT(!strcmp(users.getUser("alice")->getAddressIPv4(), "10.1.1.1"));
+
+	return 1;
+});
+
+/* A hub answers $UserIP2 with everybody and resends it, so most of what
+   arrives says what was already known. */
+EXO_TEST(users_an_unchanged_address_reports_nothing,
+{
+		Events events;
+		QuickDC::UserManager users(&events);
+		users.info("alice", make("alice"), 0, true);
+
+		const size_t reported = events.info.size();
+
+		users.ip("alice", "192.168.0.7");
+		EXO_ASSERT(events.info.size() == reported + 1);
+
+		users.ip("alice", "192.168.0.7");
+		EXO_ASSERT(events.info.size() == reported + 1);
+
+		users.ip("alice", "192.168.0.8");
+		EXO_ASSERT(events.info.size() == reported + 2);
+
+	return 1;
+});
+
+/* A name the hub mentions that is not on the hub. */
+EXO_TEST(users_an_address_for_somebody_unknown_is_dropped,
+{
+		Events events;
+		QuickDC::UserManager users(&events);
+
+		users.ip("nobody", "192.168.0.7");
+
+		EXO_ASSERT(users.countUsers() == 0);
+		EXO_ASSERT(events.info.empty());
 
 	return 1;
 });

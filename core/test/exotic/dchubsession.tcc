@@ -632,6 +632,79 @@ EXO_TEST(dchubsession_myinfo_reads_the_away_bit_off_the_speed_field,
 	return 1;
 });
 
+/*
+ * $UserIP names where somebody is. One field carries either family, and the hub
+ * may answer for one user or for the whole hub at once.
+ */
+EXO_TEST(dchubsession_userip_files_an_address_against_the_user,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.say("$MyINFO $ALL alice x$ $DSL\x01$m@e$100$");
+	s.say("$MyINFO $ALL bob y$ $DSL\x01$m@e$200$");
+
+	QuickDC::UserManager* users = s.session->getUserManager();
+	const QuickDC::User* alice = users ? users->getUser("alice") : 0;
+	const QuickDC::User* bob = users ? users->getUser("bob") : 0;
+
+	/* The list form, which is how a hub answers $UserIP2. */
+	s.say("$UserIP alice 192.168.0.7$$bob 2001:db8::1$$");
+
+	EXO_ASSERT(alice && !strcmp(alice->getAddressIPv4(), "192.168.0.7"));
+	EXO_ASSERT(bob && !strcmp(bob->getAddressIPv6(), "2001:db8::1"));
+
+	/* And the single form, for somebody who arrived afterwards. */
+	s.say("$UserIP alice 10.0.0.9");
+	EXO_ASSERT(alice && !strcmp(alice->getAddressIPv4(), "10.0.0.9"));
+
+	/* A hub may send anything; only an address is kept. */
+	s.say("$UserIP alice hostname.example.org");
+	EXO_ASSERT(alice && !strcmp(alice->getAddressIPv4(), "10.0.0.9"));
+	return 1;
+});
+
+/*
+ * $OpList is the whole list of operators rather than one name, and the hub
+ * resends it entire whenever it changes.
+ */
+EXO_TEST(dchubsession_oplist_marks_the_operators_and_only_those,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.say("$MyINFO $ALL alice x$ $DSL\x01$m@e$100$");
+	s.say("$MyINFO $ALL bob y$ $DSL\x01$m@e$200$");
+
+	QuickDC::UserManager* users = s.session->getUserManager();
+	const QuickDC::User* alice = users ? users->getUser("alice") : 0;
+	const QuickDC::User* bob = users ? users->getUser("bob") : 0;
+
+	s.say("$OpList alice$$");
+	EXO_ASSERT(alice && alice->isOp());
+	EXO_ASSERT(bob && !bob->isOp());
+
+	/* A resend without a name is how the hub says they have lost it. */
+	s.say("$OpList bob$$");
+	EXO_ASSERT(alice && !alice->isOp());
+	EXO_ASSERT(bob && bob->isOp());
+
+	/*
+	 * A name can be in the list before their info is: the client asks after
+	 * each nick separately and the answers arrive when they arrive.
+	 */
+	s.say("$OpList bob$$carol$$");
+	s.say("$MyINFO $ALL carol z$ $DSL\x01$m@e$300$");
+
+	const QuickDC::User* carol = users ? users->getUser("carol") : 0;
+	EXO_ASSERT(carol && carol->isOp());
+	return 1;
+});
+
 /* A second $MyINFO for the same nick is an update, not a new user. */
 EXO_TEST(dchubsession_a_second_myinfo_updates_rather_than_duplicates,
 {
@@ -1120,7 +1193,12 @@ EXO_TEST(dchubsession_userip_needs_the_prefix_it_takes_off,
 	EXO_ASSERT(h.call("$UserIP", "$UserIP alice 10.0.0.1"));
 	EXO_ASSERT(s.listener.userUpdates == before + 1);
 
-	EXO_ASSERT(h.call("$UserIP", "$UserIP alice 10.0.0.1$$bob 10.0.0.2$$"));
+	/*
+	 * Both entries of the list are reached, which is what the count is here to
+	 * show. Each names an address its user did not already have, since one that
+	 * changes nothing is not reported.
+	 */
+	EXO_ASSERT(h.call("$UserIP", "$UserIP alice 10.0.0.3$$bob 10.0.0.2$$"));
 	EXO_ASSERT(s.listener.userUpdates == before + 3);
 	EXO_ASSERT(everyHandlerFound(h));
 	return 1;

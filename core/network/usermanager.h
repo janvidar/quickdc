@@ -100,9 +100,14 @@ class UserManager {
 		void setOperators(const std::vector<std::string>& nicks);
 		
 		/**
-		 * Set IP address for a given user.
+		 * Where a user is, as the hub says in a $UserIP.
+		 *
+		 * Filed as the v4 or the v6 address by what the text is, since the one
+		 * field carries either. Ignored unless it reads as an address at all -
+		 * a hub is free to send anything, and this is shown to the user and
+		 * used to reach a peer.
 		 */
-		void ip(const char* id, const char* ip);
+		void ip(const char* id, const char* address);
 
 		/**
 		 * Cleanup user database - Clear all pointers.
