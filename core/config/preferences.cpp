@@ -111,6 +111,83 @@ bool Preferences::haveSetting(const std::string& key) {
 	return (settings.find(key) != settings.end());
 }
 
+const std::string* Preferences::find(const std::string& group, const std::string& key) const {
+	auto section = groups.find(group);
+	if (section == groups.end()) return nullptr;
+
+	auto setting = section->second.find(key);
+	if (setting == section->second.end()) return nullptr;
+
+	return &setting->second;
+}
+
+std::vector<std::string> Preferences::groupNames() const {
+	std::vector<std::string> names;
+	names.reserve(groups.size());
+
+	for (const auto& section : groups)
+		names.push_back(section.first);
+
+	return names;
+}
+
+std::vector<std::string> Preferences::keysIn(const std::string& group) const {
+	std::vector<std::string> keys;
+
+	auto section = groups.find(group);
+	if (section == groups.end()) return keys;
+
+	keys.reserve(section->second.size());
+	for (const auto& setting : section->second)
+		keys.push_back(setting.first);
+
+	return keys;
+}
+
+void Preferences::setNumber(const std::string& group, const std::string& key, int val) {
+	groups[group][key] = std::to_string(val);
+	dirty = true;
+}
+
+void Preferences::setString(const std::string& group, const std::string& key, const std::string& val) {
+	groups[group][key] = val;
+	dirty = true;
+}
+
+void Preferences::setBool(const std::string& group, const std::string& key, bool val) {
+	groups[group][key] = std::string(val ? "true" : "false");
+	dirty = true;
+}
+
+void Preferences::remove(const std::string& group, const std::string& key) {
+	auto section = groups.find(group);
+	if (section == groups.end()) return;
+
+	if (section->second.erase(key))
+		dirty = true;
+}
+
+bool Preferences::haveSetting(const std::string& group, const std::string& key) const {
+	return find(group, key) != nullptr;
+}
+
+int Preferences::peekNumber(const std::string& group, const std::string& key, int defval) const {
+	const std::string* val = find(group, key);
+	return val ? Samurai::Util::Convert::to_int32(val->c_str()) : defval;
+}
+
+std::string Preferences::peekString(const std::string& group, const std::string& key, const std::string& defval) const {
+	const std::string* val = find(group, key);
+	return val ? *val : defval;
+}
+
+bool Preferences::peekBool(const std::string& group, const std::string& key, bool defval) const {
+	const std::string* val = find(group, key);
+	if (!val) return defval;
+
+	return ((*val == "true") || (*val == "1"));
+}
+
 bool Preferences::read() {
 	if (!IniParser::read()) return false;
 	return true;
