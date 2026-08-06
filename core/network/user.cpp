@@ -72,10 +72,13 @@ bool QuickDC::User::isOp() const {
 	return access == Operator;
 }
 
-bool QuickDC::User::setOp() {
-	bool change = (access != Operator);
-	access = Operator;
-	return change;
+/* Returns whether it moved, as the setters below do. Somebody who was never an
+   operator and is told they are not stays as they were, so a hub that names no
+   operators does not decide what everybody else is. */
+bool QuickDC::User::setOp(bool op) {
+	if (isOp() == op) return false;
+	access = op ? Operator : Regular;
+	return true;
 }
 
 bool QuickDC::User::isAway() const {

@@ -107,7 +107,16 @@ class User {
 
 		
 		bool           isOp() const;
-		bool           setOp();
+
+		/**
+		 * Whether the hub grants this user operator rights.
+		 *
+		 * Takes the answer rather than only the promotion, because both protocols
+		 * can withdraw it while the user stays where they are: an ADC INF arrives
+		 * with a new CT, and an NMDC $OpList is resent whole with the name left
+		 * out.
+		 */
+		bool           setOp(bool);
 
 		/**
 		 * Whether the user says they are away.

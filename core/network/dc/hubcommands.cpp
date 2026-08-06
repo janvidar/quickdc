@@ -456,12 +456,20 @@ bool DC::OpList::invoke(const char* data, size_t length) {
 	Reader line(data, length);
 	if (!line.skip("$OpList ")) return true;
 
+	/*
+	 * Gathered and handed over whole rather than a name at a time, because the
+	 * list is the hub's complete answer: somebody who was an operator and is not
+	 * named this time has lost it, which no single name can say.
+	 */
+	std::vector<std::string> ops;
+
 	std::string_view nick;
 	while (line.field("$$", nick)) {
 		if (nick.empty()) continue;
-		const std::string op(nick);
-		session->users->op(op.c_str());
+		ops.emplace_back(nick);
 	}
+
+	session->users->setOperators(ops);
 	return true;
 }
 

@@ -182,7 +182,7 @@ bool ADC::LocalHub::User::setINF(ADC::Command* cmd, ADC::LocalHub::Hub* hub) {
 	
 	/* These parameters can only be set by the hub, and must
 	   therefore be removed */
-	INF_STRIP_ARGUMENT(cmd, "OP");
+	INF_STRIP_ARGUMENT(cmd, "CT");
 	INF_STRIP_ARGUMENT(cmd, "HI");
 	INF_STRIP_ARGUMENT(cmd, "HU");
 	INF_STRIP_ARGUMENT(cmd, "BO");
@@ -310,14 +310,17 @@ bool ADC::LocalHub::User::setINF(ADC::Command* cmd, ADC::LocalHub::Hub* hub) {
 		 * how the hub checks the CID is the PID's hash - so every hub the local
 		 * client has ever visited held the value that used to be enough to become
 		 * administrator here. That comparison was not constant time either, and
-		 * its outcome was echoed straight back in the OP flag.
+		 * its outcome was echoed straight back in the type flag.
 		 */
 		const Samurai::IO::Net::InetAddress* from = socket->getAddress();
 		if (from && from->isLoopback()) {
 			QERR("SECURITY: making a loopback client an administrator of this hub, "
 				"because this build has QUICKDC_ALLOW_LOOPBACK_AUTH");
 			credentials = Cred_Admin;
-			cmd->addArgument("OP", "1");
+
+			/* Owner, super user and operator together: the spec has each of the
+			   upper two imply the ones below it, and says to send them so. */
+			cmd->addArgument("CT", "28");
 		}
 #endif
 

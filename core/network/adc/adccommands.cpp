@@ -260,10 +260,25 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 		int hub_cnt_user = 0;
 		EXTRACT_INT(hub_cnt_user, "HN");
 		
-		int op = 0;
-		EXTRACT_INT(op, "OP"); // Operator -- FIXME - Use CT instead!
-		if (op)
-			if (u->setOp()) changed = true;
+		/*
+		 * CT: what the hub says the user is, as a set of bits - a bot, someone
+		 * registered, an operator, and so on. Only the operator bit is read. A
+		 * super user and a hub owner are required to set it alongside their own,
+		 * so it alone answers the one question a user list asks.
+		 *
+		 * Only applied when the field is there, for the reason given for AW below:
+		 * an INF updating a user carries the fields that changed and no others, so
+		 * an absent CT would otherwise read as a demotion.
+		 */
+		if (cmd->haveArgument("CT", 2))
+		{
+			constexpr int CT_OPERATOR = 0x04;
+
+			const char* type = cmd->getArgument("CT", 2);
+			const int flags = type ? Samurai::Util::Convert::to_int32(type) : 0;
+
+			if (u->setOp((flags & CT_OPERATOR) != 0)) changed = true;
+		}
 
 		/*
 		 * AW: 1 is away, 2 is away and not reading the chat. Both are away here -

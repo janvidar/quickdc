@@ -83,6 +83,13 @@ void UserManager::quit(const char* id, const char* msg) {
 void UserManager::info(const char* id, User* data, uint64_t oldShare, bool changed) {
 	if (!id || !data) return;
 
+	/*
+	 * Whether they are an operator is the hub's word rather than their own, and
+	 * on NMDC it arrives as a command of its own - so it is applied here, where
+	 * both orders of arrival meet, instead of wherever the info was parsed.
+	 */
+	if (haveOperatorList && data->setOp(operators.contains(id))) changed = true;
+
 	if (!users.count(id)) {
 		users.insert(std::pair<std::string, User*>(std::string(id), data));
 		if (!data->getNick()) QERR("---------------- PANIC -----------------");
@@ -95,13 +102,20 @@ void UserManager::info(const char* id, User* data, uint64_t oldShare, bool chang
 	if (event && changed) event->EventUserInfo(data);
 }
 
-void UserManager::op(const char* id) {
-	if (!id) return;
+void UserManager::setOperators(const std::vector<std::string>& nicks) {
+	operators.clear();
+	operators.insert(nicks.begin(), nicks.end());
+	haveOperatorList = true;
 
-	if (users.count(id)) {
-		User* u = users[std::string(id)];
-		// FIXME: u->setOp(true);
-		if (event) event->EventUserInfo(u);
+	/*
+	 * Everybody is told, not only the names in the list: a resend is how the hub
+	 * says somebody has been demoted, and there is nothing in it to point at.
+	 * Only those whose answer actually moved are reported onwards, so the usual
+	 * resend of an unchanged list costs the user list nothing.
+	 */
+	for (const auto& entry : users) {
+		if (entry.second->setOp(operators.contains(entry.first)) && event)
+			event->EventUserInfo(entry.second);
 	}
 }
 

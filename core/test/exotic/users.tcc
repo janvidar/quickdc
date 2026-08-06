@@ -102,7 +102,6 @@ EXO_TEST(users_a_null_id_is_refused_everywhere,
 		QuickDC::UserManager users(0);
 		users.join(0);
 		users.quit(0);
-		users.op(0);
 		users.ip(0, "127.0.0.1");
 		users.info(0, make("x"), 0, true);
 
@@ -255,18 +254,87 @@ EXO_TEST(users_operators_are_counted_and_stop_being_counted_on_quit,
 		EXO_ASSERT(users.countOperators() == 0);
 
 		QuickDC::User* bob = (QuickDC::User*) users.getUser("BBBB");
-		bob->setOp();
+		bob->setOp(true);
 
 		EXO_ASSERT(bob->isOp());
 		EXO_ASSERT(users.countOperators() == 1);
 
 		QuickDC::User* alice = (QuickDC::User*) users.getUser("AAAA");
-		alice->setOp();
+		alice->setOp(true);
 		EXO_ASSERT(users.countOperators() == 2);
 
 		users.quit("AAAA");
 		EXO_ASSERT(users.countOperators() == 1);
-	
+
+	return 1;
+});
+
+/* $OpList is the whole answer, so it demotes as well as promotes. */
+EXO_TEST(users_an_operator_list_promotes_and_demotes,
+{
+		QuickDC::UserManager users(0);
+		users.info("alice", make("alice"), 0, true);
+		users.info("bob", make("bob"), 0, true);
+
+		users.setOperators({"alice"});
+		EXO_ASSERT(users.getUser("alice")->isOp());
+		EXO_ASSERT(!users.getUser("bob")->isOp());
+
+		users.setOperators({"bob"});
+		EXO_ASSERT(!users.getUser("alice")->isOp());
+		EXO_ASSERT(users.getUser("bob")->isOp());
+
+		users.setOperators({});
+		EXO_ASSERT(users.countOperators() == 0);
+
+	return 1;
+});
+
+/* The list can name somebody whose info has not been answered for yet. */
+EXO_TEST(users_an_operator_named_before_arriving_is_still_marked,
+{
+		QuickDC::UserManager users(0);
+		users.setOperators({"carol"});
+
+		users.info("carol", make("carol"), 0, true);
+		EXO_ASSERT(users.getUser("carol")->isOp());
+
+	return 1;
+});
+
+/* A hub resends the list unchanged; nothing moved, so nobody is reported. */
+EXO_TEST(users_an_unchanged_operator_list_reports_nothing,
+{
+		Events events;
+		QuickDC::UserManager users(&events);
+		users.info("alice", make("alice"), 0, true);
+		users.info("bob", make("bob"), 0, true);
+
+		users.setOperators({"alice"});
+		const size_t reported = events.info.size();
+
+		users.setOperators({"alice"});
+		EXO_ASSERT(events.info.size() == reported);
+
+	return 1;
+});
+
+/*
+ * ADC says it in each user's own info and sends no list at all, so a manager
+ * that has never been given one must leave what was set there alone.
+ */
+EXO_TEST(users_without_an_operator_list_nobody_is_demoted,
+{
+		QuickDC::UserManager users(0);
+		QuickDC::User* alice = make("alice");
+		alice->setOp(true);
+
+		users.info("AAAA", alice, 0, true);
+		EXO_ASSERT(users.getUser("AAAA")->isOp());
+
+		users.info("AAAA", alice, 0, false);
+		EXO_ASSERT(users.getUser("AAAA")->isOp());
+
 	return 1;
 });
 

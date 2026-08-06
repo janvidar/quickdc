@@ -983,6 +983,47 @@ EXO_TEST(hubsession_going_away_is_reported_to_the_listener_on_its_own,
 	return 1;
 });
 
+/*
+ * CT says what the hub takes a user for, and the operator bit of it is the other
+ * thing a user list draws. Read for the same reasons AW is: an update carries only
+ * what changed, so an absent CT must not read as a demotion.
+ */
+EXO_TEST(hubsession_the_operator_flag_follows_the_ct_field_of_an_inf,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.say("BINF BBBB NIalice SS100");
+	s.say("BINF CCCC NIbob SS200 CT4");
+	s.say("BINF DDDD NIcarol SS300 CT2");
+
+	QuickDC::UserManager* users = s.session->getUserManager();
+	const QuickDC::User* alice = users ? users->getUser("BBBB") : 0;
+	const QuickDC::User* bob = users ? users->getUser("CCCC") : 0;
+	const QuickDC::User* carol = users ? users->getUser("DDDD") : 0;
+
+	EXO_ASSERT(alice && !alice->isOp());
+	EXO_ASSERT(bob && bob->isOp());
+
+	/* Registered, which is a bit of its own and not the operator one. */
+	EXO_ASSERT(carol && !carol->isOp());
+
+	/* A hub owner sets the operator bit alongside their own. */
+	s.say("BINF DDDD CT28");
+	EXO_ASSERT(carol && carol->isOp());
+
+	/* An update about something else leaves the flag where it was. */
+	s.say("BINF CCCC SS900");
+	EXO_ASSERT(bob && bob->isOp());
+
+	/* And a CT without the bit is a demotion. */
+	s.say("BINF CCCC CT2");
+	EXO_ASSERT(bob && !bob->isOp());
+	return 1;
+});
+
 EXO_TEST(hubsession_a_qui_takes_the_user_and_their_share_away,
 {
 	Session s;

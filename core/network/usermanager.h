@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_USERMANAGER_H
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include "quickdc.h"
@@ -84,9 +85,19 @@ class UserManager {
 		void info(const char* id, User* data, uint64_t oldShare, bool changed);
 		
 		/**
-		 * Mark a user as operator
+		 * The hub's operators, all of them.
+		 *
+		 * NMDC names them in an $OpList of its own rather than in each user's
+		 * info, and resends the list entire whenever it changes - so this is the
+		 * answer about everybody at once: a name in it is an operator and a name
+		 * absent from it is not.
+		 *
+		 * Remembered as well as applied, because the list can arrive before the
+		 * users named in it do - their info is asked for and answered as separate
+		 * commands, and the replies may land afterwards. info() consults what was
+		 * remembered, so somebody arriving late is still marked.
 		 */
-		void op(const char* id);
+		void setOperators(const std::vector<std::string>& nicks);
 		
 		/**
 		 * Set IP address for a given user.
@@ -110,6 +121,17 @@ class UserManager {
 		std::map<std::string, User*> users;
 		std::map<std::string, User*>::iterator userIterator;
 		uint64_t shared;
+
+		/**
+		 * Who setOperators() last named, and whether it has ever been called.
+		 *
+		 * Kept apart because an empty list and no list are different answers: a
+		 * hub with no operators says so, while ADC never says anything here at
+		 * all - it carries the same fact in each user's own info, and a user
+		 * marked from there must not be unmarked for missing a list nobody sent.
+		 */
+		std::set<std::string> operators;
+		bool haveOperatorList = false;
 
 		UserEventHandler* event;
 };
