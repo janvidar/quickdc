@@ -275,6 +275,28 @@ bool DC::HubName::invoke(const char* data, size_t length) {
 }
 
 /**
+ * Parse the $HubTopic command
+ * Syntax: $HubTopic {string}
+ * Smallest possible string:
+ * "$HubTopic a" 11 bytes.
+ *
+ * Not part of base NMDC. Hub software that has it usually sends it only to a
+ * client that asked for it in $Supports, which this one does not - so this is
+ * here for the hubs that send it regardless, and asking for it is a separate
+ * decision: a hub told that we understand it stops putting the topic in the
+ * $HubName, which would change what every such hub is called here.
+ */
+bool DC::HubTopic::invoke(const char* data, size_t length) {
+	Reader line(data, length);
+	if (!line.skip("$HubTopic ")) return false;
+	if (line.empty()) return false;
+
+	const std::string topic(line.rest());
+	session->onHubTopic(topic.c_str());
+	return true;
+}
+
+/**
  * Parse the $Lock command
  *
  * Syntax: $Lock {data} Pk={data}

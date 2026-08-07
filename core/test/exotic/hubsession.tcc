@@ -122,6 +122,7 @@ class Listener : public QuickDC::HubListener
 		/** Each user update reported, as the nick and what it said about away. */
 		std::vector<std::pair<std::string, bool> > updated;
 		std::string hubName;
+		std::string hubDescription;
 		int netConnected = 0;
 		int loggedIn = 0;
 		bool authRequested = false;
@@ -174,6 +175,9 @@ class Listener : public QuickDC::HubListener
 
 		void EventHubName(const char* name) override
 		{ hubName = name ? name : ""; }
+
+		void EventHubDescription(const char* description) override
+		{ hubDescription = description ? description : ""; }
 
 		bool EventHubRedirect(const char*, uint16_t) override { return false; }
 		void EventHubAutenticate() override { authRequested = true; }
@@ -1211,8 +1215,36 @@ EXO_TEST(hubsession_the_hubs_name_reaches_the_interface,
 	s.hub.nextLine(line);
 	s.say("ISUP ADBASE");
 	s.say("ISID AAAA");
-	s.say("IINF NIMy\\sHub DEwelcome");
+	s.say("IINF NIMy\\sHub DEa\\sfriendly\\splace");
 
+	EXO_ASSERT(s.listener.hubName == "My Hub");
+	EXO_ASSERT(s.listener.hubDescription == "a friendly place");
+	return 1;
+});
+
+/*
+ * A hub changes its topic by sending the one field again. The name is not in that
+ * INF, and an update that carried it away would leave the interface naming the hub
+ * by its address a minute after it learned better.
+ */
+EXO_TEST(hubsession_a_hubs_description_can_change_without_its_name,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	std::string line;
+	s.hub.nextLine(line);
+	s.say("ISUP ADBASE");
+	s.say("ISID AAAA");
+	s.say("IINF NIMy\\sHub DEfirst");
+
+	EXO_ASSERT(s.listener.hubName == "My Hub");
+	EXO_ASSERT(s.listener.hubDescription == "first");
+
+	s.say("IINF DEsecond");
+
+	EXO_ASSERT(s.listener.hubDescription == "second");
 	EXO_ASSERT(s.listener.hubName == "My Hub");
 	return 1;
 });

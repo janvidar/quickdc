@@ -1444,6 +1444,10 @@ void ADC::HubSession::onHubName(char* txt)
 void ADC::HubSession::onHubDesc(char* txt)
 {
 	hubdesc = txt;
+
+	/* As onHubName does above. Kept and reported to nobody, the description was
+	   known to the session and to nothing that could draw it. */
+	listener->EventHubDescription(hubdesc.c_str());
 }
 
 

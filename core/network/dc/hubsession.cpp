@@ -257,6 +257,12 @@ void DC::HubSession::onHubName(const char* hubname_)
 	listener->EventHubName(hubname.c_str());
 }
 
+void DC::HubSession::onHubTopic(const char* topic)
+{
+	hubtopic = topic;
+	listener->EventHubDescription(hubtopic.c_str());
+}
+
 void DC::HubSession::onPublicChat(const char* from, const char* message)
 {
 	/* NMDC carries no timestamp, so arrival is the best that can be said. */

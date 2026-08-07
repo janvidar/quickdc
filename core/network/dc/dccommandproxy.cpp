@@ -45,6 +45,7 @@ DC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket,
 	new DC::MyINFO(this, session);
 	new DC::OpList(this, session);
 	new DC::HubName(this, session);
+	new DC::HubTopic(this, session);
 	new DC::GetPass(this, session);
 	new DC::BadPass(this, session);
 	new DC::LoggedIn(this, session);

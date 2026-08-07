@@ -75,6 +75,7 @@ class HubSession
 		
 		// Events triggered by the server (hub)
 		void onHubName(const char* hubname);
+		void onHubTopic(const char* topic);
 		void onLock(const char* lock, const char* pk);
 		void onPublicChat(const char* from, const char* message);
 		void onActionChat(const char* from, const char* message);
@@ -169,6 +170,7 @@ class HubSession
 		std::string description;
 		std::string email;
 		std::string hubname;
+		std::string hubtopic;
 		std::string lock;
 		std::string key;
 		char flags;

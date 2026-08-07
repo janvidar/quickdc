@@ -61,6 +61,7 @@ class Tag;
 	DC_HCMD_CLASS(Hello,          "$Hello");
 	DC_HCMD_CLASS(HubIsFull,      "$HubIsFull");
 	DC_HCMD_CLASS(HubName,        "$HubName");
+	DC_HCMD_CLASS(HubTopic,       "$HubTopic");
 	DC_HCMD_CLASS(LockParser,     "$Lock");
 	DC_HCMD_CLASS(LoggedIn,       "$LogedIn"); /* protocol typo */
 	DC_HCMD_CLASS(MyINFO,         "$MyINFO");

@@ -105,6 +105,7 @@ class Listener : public QuickDC::HubListener
 		std::vector<std::string> left;
 		std::vector<std::string> errors;
 		std::string hubName;
+		std::string hubDescription;
 		int netConnected = 0;
 		bool authRequested = false;
 
@@ -147,6 +148,9 @@ class Listener : public QuickDC::HubListener
 
 		void EventHubName(const char* name) override
 		{ hubName = name ? name : ""; }
+
+		void EventHubDescription(const char* description) override
+		{ hubDescription = description ? description : ""; }
 
 		bool EventHubRedirect(const char* host, uint16_t port) override
 		{
@@ -801,6 +805,32 @@ EXO_TEST(dchubsession_the_hubs_name_reaches_the_interface,
 	return 1;
 });
 
+/*
+ * The topic, where a hub sends one. Not asked for in $Supports - see the parser -
+ * so this is only the hubs that send it to everybody.
+ */
+EXO_TEST(dchubsession_a_hub_topic_is_reported_as_the_description,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+
+	s.say("$Lock " HUB_LOCK " Pk=TESTHUB");
+	s.say("$HubName My Hub");
+	s.say("$HubTopic films, music and a place to argue about them");
+
+	EXO_ASSERT(s.listener.hubName == "My Hub");
+	EXO_ASSERT(s.listener.hubDescription
+		== "films, music and a place to argue about them");
+
+	/* Nothing after the keyword is not a topic of nothing. */
+	s.say("$HubTopic");
+
+	EXO_ASSERT(s.listener.hubDescription
+		== "films, music and a place to argue about them");
+	return 1;
+});
+
 /* ---- what a hub can throw at a client ---- */
 
 EXO_TEST(dchubsession_malformed_and_unknown_commands_are_survived,
@@ -820,6 +850,7 @@ EXO_TEST(dchubsession_malformed_and_unknown_commands_are_survived,
 	s.say("$MyINFO");
 	s.say("$NickList");
 	s.say("$HubName");
+	s.say("$HubTopic");
 	s.say("$Lock");
 	s.say("$To:");
 

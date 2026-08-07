@@ -225,7 +225,20 @@ class HubListener
 	 * This holds the hubname, or often topic of the hub.
 	 */
 	virtual void EventHubName(const char* hubname) = 0;
-	
+
+	/**
+	 * The hub's own description, under its name.
+	 *
+	 * Separate from EventHubName() because ADC carries the two apart, in the
+	 * NI and DE fields of the hub's INF. NMDC has one field for both, so a
+	 * hub there says whatever it wants to say in the name and this arrives
+	 * only from the $HubTopic some hub software sends as well.
+	 *
+	 * Not pure: this arrived after the interface did, and a listener with
+	 * nowhere to show a description has nothing to do here.
+	 */
+	virtual void EventHubDescription(const char* description) { (void) description; }
+
 	/**
 	 * The hub announced an extension in its SUP reply.
 	 *
