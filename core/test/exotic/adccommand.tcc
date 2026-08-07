@@ -19,11 +19,13 @@
 
 #include <samurai/io/buffer.h>
 
+#include <fcntl.h>
 #include <new>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <unistd.h>
 
 /*
  * Counting every allocation in the binary is what makes the abandoned-command
@@ -313,5 +315,115 @@ EXO_TEST(adccommand_parsed_command_keeps_its_line,
 		EXO_ASSERT(std::string(cmd.getRawCommand()) == "BMSG AAAA hello\n");
 		EXO_ASSERT(cmd.getSize() == strlen("BMSG AAAA hello\n"));
 	
+	return 1;
+});
+
+static bool empty_command_from_poisoned_storage(unsigned char poison)
+{
+	alignas(ADC::Command) unsigned char storage[sizeof(ADC::Command)];
+	memset(storage, poison, sizeof(storage));
+
+	ADC::Command* cmd = new (static_cast<void*>(storage)) ADC::Command();
+	const std::string wire = written(*cmd);
+	cmd->~Command();
+
+	if (wire == "\n") return true;
+
+	printf("FAIL empty command over 0x%02x: gave '%s' (%zu bytes), expected a newline\n",
+		poison, wire.c_str(), wire.size());
+	return false;
+}
+
+EXO_TEST(adccommand_empty_command_is_a_bare_newline,
+{
+		ADC::Command cmd;
+		EXO_ASSERT(check("empty command", "\n", cmd));
+
+	return 1;
+});
+
+EXO_TEST(adccommand_empty_command_ignores_what_its_storage_held,
+{
+		EXO_ASSERT(empty_command_from_poisoned_storage('I'));
+		EXO_ASSERT(empty_command_from_poisoned_storage('H'));
+		EXO_ASSERT(empty_command_from_poisoned_storage('B'));
+		EXO_ASSERT(empty_command_from_poisoned_storage('E'));
+		EXO_ASSERT(empty_command_from_poisoned_storage(0xff));
+
+	return 1;
+});
+
+static std::string capture_stderr_of(void (*body)())
+{
+	const std::string path = "/tmp/quickdc_adccommand_"
+		+ std::to_string((int) getpid()) + ".stderr";
+
+	fflush(stderr);
+	const int saved = dup(2);
+	const int fd = open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0600);
+	if (saved < 0 || fd < 0) return std::string();
+	dup2(fd, 2);
+	close(fd);
+
+	body();
+
+	fflush(stderr);
+	dup2(saved, 2);
+	close(saved);
+
+	std::string out;
+	FILE* fh = fopen(path.c_str(), "rb");
+	if (fh)
+	{
+		char buf[4096];
+		size_t got;
+		while ((got = fread(buf, 1, sizeof(buf), fh)) > 0) out.append(buf, got);
+		fclose(fh);
+	}
+	unlink(path.c_str());
+	return out;
+}
+
+static size_t occurrences(const std::string& haystack, const char* needle)
+{
+	size_t seen = 0;
+	for (size_t at = haystack.find(needle); at != std::string::npos;
+	     at = haystack.find(needle, at + 1))
+		seen++;
+	return seen;
+}
+
+static void ask_an_abandoned_command_for_its_bytes()
+{
+	ADC::Command cmd(FOURCC('B','I','N','F'));
+	for (int n = 0; n < 100; n++)
+	{
+		cmd.getSize();
+		cmd.getRawCommand();
+	}
+}
+
+EXO_TEST(adccommand_an_abandoned_command_is_reported,
+{
+		const std::string log = capture_stderr_of(ask_an_abandoned_command_for_its_bytes);
+
+		EXO_ASSERT(log.find("BINF") != std::string::npos);
+		EXO_ASSERT(log.find("it has no source ID") != std::string::npos);
+
+	return 1;
+});
+
+EXO_TEST(adccommand_an_abandoned_command_is_reported_only_once,
+{
+		const std::string log = capture_stderr_of(ask_an_abandoned_command_for_its_bytes);
+		const size_t seen = occurrences(log, "was not sent");
+
+		if (seen != 1)
+		{
+			const std::string why = "200 calls on one abandoned command reported it "
+				+ std::to_string(seen) + " times, expected once";
+			EXO_FAIL(why.c_str());
+		}
+
 	return 1;
 });

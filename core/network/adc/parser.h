@@ -221,7 +221,10 @@ class Command : public QuickDC::CommandBase
 
 
 	protected:
-		uint32_t fourcc;
+		void reportAbandoned(const char* missing);
+
+		bool reported_abandoned = false;
+		uint32_t fourcc = 0;
 		char* source_id;
 		char* target_id;
 		std::vector<char*> features_include;

@@ -433,6 +433,27 @@ const char* ADC::Command::getRawCommand()
 }
 
 
+void ADC::Command::reportAbandoned(const char* missing)
+{
+	if (reported_abandoned) return;
+	reported_abandoned = true;
+
+	char prefix[4 * 4 + 1];
+	size_t at = 0;
+	for (int shift = 24; shift >= 0; shift -= 8)
+	{
+		const unsigned char c = (unsigned char) ((fourcc >> shift) & 0xff);
+		if (c >= 0x20 && c < 0x7f)
+			at += snprintf(&prefix[at], sizeof(prefix) - at, "%c", c);
+		else
+			at += snprintf(&prefix[at], sizeof(prefix) - at, "\\x%02x", c);
+	}
+
+	QERR("ADC command '%s' cannot be serialised and was not sent: %s",
+		prefix, missing);
+}
+
+
 void ADC::Command::write(Samurai::IO::Buffer* stream_)
 {
 	/* Owned by this call when the caller supplied no buffer, so that it also
@@ -459,7 +480,7 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 	
 		case 'B':
 		case 'U':
-			if (!source_id) return;
+			if (!source_id) { reportAbandoned("it has no source ID"); return; }
 			stream->appendBinary(fourcc, Samurai::IO::Buffer::BinaryMode::BigEndian);
 			stream->append(' ');
 			stream->append(source_id);
@@ -467,7 +488,12 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 		
 		case 'E':
 		case 'D':
-			if (!source_id || !target_id) return;
+			if (!source_id || !target_id)
+			{
+				reportAbandoned(!source_id ? "it has no source ID"
+				                           : "it has no target ID");
+				return;
+			}
 			stream->appendBinary(fourcc, Samurai::IO::Buffer::BinaryMode::BigEndian);
 			stream->append(' ');
 			stream->append(source_id);
@@ -478,7 +504,12 @@ void ADC::Command::write(Samurai::IO::Buffer* stream_)
 		case 'F':
 			/* One list or the other is enough; a search that excludes nothing
 			   is the ordinary case. */
-			if (!source_id || (features_include.empty() && features_exclude.empty())) return;
+			if (!source_id || (features_include.empty() && features_exclude.empty()))
+			{
+				reportAbandoned(!source_id ? "it has no source ID"
+				                           : "it names no features");
+				return;
+			}
 			stream->appendBinary(fourcc, Samurai::IO::Buffer::BinaryMode::BigEndian);
 			stream->append(' ');
 			stream->append(source_id);
