@@ -18,11 +18,12 @@ class HubConnection : public QuickDC::Hub, public QuickDC::HubListener {
 		void EventHubStatus(enum StatusHub) override;
 		void EventSystemError(const char*) override;
 
-		void EventChat(const QuickDC::User* user, const char* message, bool, bool) override;
+		void EventChat(const QuickDC::User* user, const char* message, bool, bool,
+		               uint64_t) override;
 		
-		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action, bool richText) override;
+		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action, bool richText, uint64_t) override;
 		void EventHubMessage(const char* user, const char* message, bool action,
-		                     bool richText) override;
+		                     bool richText, uint64_t) override;
 		
 		void EventUserJoin(const char* user) override;
 		void EventUserLeave(const QuickDC::User* user, const char* message, bool) override;

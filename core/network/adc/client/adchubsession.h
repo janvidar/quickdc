@@ -133,8 +133,10 @@ class HubSession :
 		void onStatus(ADC::Command* cmd);
 
 		void onPublicChat(const char* from, const char* message, bool action,
-		                  bool richText = false);
-		void onPrivateChat(const char* to, const char* from, const char* message, const char* contextID, bool action, bool richText = false);
+		                  bool richText, uint64_t timestamp);
+		void onPrivateChat(const char* to, const char* from, const char* message,
+		                   const char* contextID, bool action, bool richText,
+		                   uint64_t timestamp);
 		void onRequestPasword(char* token);
 
 		/**

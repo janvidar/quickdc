@@ -97,7 +97,7 @@ void HubConnection::EventSystemError(const char* msg)
 }
 
 void HubConnection::EventChat(const QuickDC::User* user, const char* message, bool action,
-                              bool richText)
+                              bool richText, uint64_t)
 {
 	/* A console shows the markers as they arrived; that is markdown degrading. */
 	(void) richText;
@@ -112,7 +112,7 @@ void HubConnection::EventChat(const QuickDC::User* user, const char* message, bo
 	}
 }
 
-void HubConnection::EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action, bool richText) {
+void HubConnection::EventPrivateChat(const QuickDC::User* from, const QuickDC::User* to, const char* message, const char* context, bool action, bool richText, uint64_t) {
 	(void) richText;
 
 	
@@ -123,7 +123,7 @@ void HubConnection::EventPrivateChat(const QuickDC::User* from, const QuickDC::U
 }
 
 void HubConnection::EventHubMessage(const char* user, const char* message, bool action,
-                                    bool richText) {
+                                    bool richText, uint64_t) {
 	/* A console shows the markers as they arrived; that is markdown degrading. */
 	(void) richText;
 

@@ -1673,21 +1673,31 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 
 
 void ADC::HubSession::onPublicChat(const char* from, const char* message, bool action,
-                                  bool richText)
+                                  bool richText, uint64_t timestamp)
 {
 	const QuickDC::User* u = users->getUser(from);
+	/*
+	 * Not reported when the transcript already held it. A hub replaying its
+	 * history hands back lines this client wrote down the first time round, and
+	 * the conversation on screen was filled from that same transcript as it
+	 * opened - so passing them on would show everything twice.
+	 */
 	if (u)
 	{
-		listener->EventChat(u, message, action, richText);
+		if (recordChat(u, 0, message, 0, action, richText, timestamp))
+			listener->EventChat(u, message, action, richText, timestamp);
 	}
 	else
 	{
-		listener->EventHubMessage(hubname.c_str(), message, action, richText);
+		if (recordChat(0, hubname.c_str(), message, 0, action, richText, timestamp))
+			listener->EventHubMessage(hubname.c_str(), message, action, richText, timestamp);
 	}
 }
 
 
-void ADC::HubSession::onPrivateChat(const char* to, const char* from, const char* message, const char* context, bool action, bool richText) {
+void ADC::HubSession::onPrivateChat(const char* to, const char* from, const char* message,
+                                    const char* context, bool action, bool richText,
+                                    uint64_t timestamp) {
 
 	const QuickDC::User* u = users->getUser(from);
 	const QuickDC::User* u2 = users->getUser(to);
@@ -1707,7 +1717,19 @@ void ADC::HubSession::onPrivateChat(const char* to, const char* from, const char
 		(void) context;
 		const bool mine = !sid.empty() && sid == from;
 
-		listener->EventPrivateChat(u, u2, message, mine ? to : from, action, richText);
+		/*
+		 * Filed against whoever is not us, by the id that outlasts the session
+		 * rather than by the one it is routed with - see recordChat().
+		 */
+		const QuickDC::User* other = mine ? u2 : u;
+		const char* cid = reinterpret_cast<const char*>(other->getClientID());
+		const char* with = (cid && *cid) ? cid : other->getNick();
+
+		if (recordChat(u, 0, message, with, action, richText, timestamp))
+		{
+			listener->EventPrivateChat(u, u2, message, mine ? to : from, action,
+			                           richText, timestamp);
+		}
 	}
 }
 

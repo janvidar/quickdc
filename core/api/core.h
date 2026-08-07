@@ -19,6 +19,9 @@
 #define QUICKDC_CERTIFICATE_FILE  "~/.quickdc/ssl/quickdc.crt"
 #define QUICKDC_CERTIFICATE_NAME  "quickdc"
 
+/* Where the chat transcripts live; one file per conversation. */
+#define QUICKDC_CHAT_DIR          "~/.quickdc/chat"
+
 namespace Samurai {
 	namespace IO {
 		namespace Net {
@@ -53,6 +56,7 @@ class Preferences;
 class Server;
 class ShareManager;
 class TransferManager;
+class ChatArchive;
 class QueueManager;
 class SecurityManager;
 
@@ -125,6 +129,17 @@ class Core {
 		QuickDC::QueueManager* queue;
 
 		/**
+		 * What was said on every hub, so a conversation outlives the session it
+		 * happened in.
+		 *
+		 * Written as the chat arrives rather than by whoever is displaying it: a
+		 * transcript is the client's record of the hub, and a client with no
+		 * window open on a conversation is still in it. Null in a core built
+		 * without one, which every caller checks for as it does for the queue.
+		 */
+		QuickDC::ChatArchive* chat;
+
+		/**
 		 * Asks the internet gateway to forward the peer port, or null when the
 		 * core was built without a listening socket to forward to.
 		 *
@@ -178,9 +193,15 @@ class Core {
 		 * peer sessions consult without checking for either. A download queue is built only if a file is
 		 * named for it; the sessions that use one check first. Every other
 		 * member is null.
+		 *
+		 * @param chat_dir where to keep the chat transcripts, or empty for a core
+		 *        that keeps none. Empty by default for the same reason the queue
+		 *        is: a core built to stay out of the user's files must not start
+		 *        writing their conversations into them.
 		 */
 		Core(const std::string& config_file, const std::string& session_file,
-		     const std::string& queue_file = std::string());
+		     const std::string& queue_file = std::string(),
+		     const std::string& chat_dir = std::string());
 
 		virtual ~Core();
 

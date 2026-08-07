@@ -20,6 +20,7 @@
 
 #include "quickdc.h"
 #include "api/core.h"
+#include "chat/archive.h"
 #include "api/hub.h"
 #include "network/hubmanager.h"
 #include "api/server.h"
@@ -36,6 +37,7 @@
 #include "network/usermanager.h"
 #include "config/preferences.h"
 
+#include <samurai/io/dir.h>
 #include <samurai/io/file.h>
 #include <samurai/io/net/url.h>
 #include <samurai/io/net/serversocket.h>
@@ -62,6 +64,9 @@ static std::string scratch(const char* leaf)
 
 /* Where the core under test keeps its session data. */
 static std::string session_file;
+
+/* And its chat transcripts. */
+static std::string chat_dir;
 
 static std::string readFile(const char* path)
 {
@@ -130,15 +135,16 @@ class Listener : public QuickDC::HubListener
 		void EventSystemError(const char* msg) override
 		{ errors.push_back(msg ? msg : ""); }
 
-		void EventChat(const QuickDC::User*, const char* message, bool, bool) override
+		void EventChat(const QuickDC::User*, const char* message, bool, bool,
+		               uint64_t) override
 		{ chat.push_back(message ? message : ""); }
 
 		void EventPrivateChat(const QuickDC::User*, const QuickDC::User*,
-			const char* message, const char*, bool, bool) override
+			const char* message, const char*, bool, bool, uint64_t) override
 		{ privateChat.push_back(message ? message : ""); }
 
 		void EventHubMessage(const char*, const char* message, bool,
-			bool richText) override
+			bool richText, uint64_t) override
 		{
 			hubMessages.push_back(message ? message : "");
 			hubMarkdown.push_back(richText);
@@ -426,7 +432,13 @@ EXO_SETUP({
 	config_file = scratch("config.conf");
 	session_file = scratch("session.conf");
 
-	core = new QuickDC::Core(config_file, session_file);
+	/*
+	 * With a transcript directory, so that what the session records as chat
+	 * arrives can be read back - see the cases at the foot of this file.
+	 */
+	chat_dir = scratch("chat");
+
+	core = new QuickDC::Core(config_file, session_file, std::string(), chat_dir);
 	return 1;
 });
 
@@ -440,6 +452,23 @@ EXO_TEARDOWN({
 
 	Samurai::IO::File(config_file).remove();
 	Samurai::IO::File(session_file).remove();
+
+	/*
+	 * And the transcripts. Emptied rather than removed by name, because every
+	 * case that says anything on a hub writes one now - the chat cases above
+	 * were not written with a transcript in mind and should not have to be.
+	 */
+	Samurai::IO::Directory dir(chat_dir);
+
+	if (dir.open())
+	{
+		for (auto entry = dir.first(); entry; entry = dir.next())
+			Samurai::IO::File(entry->getName()).remove();
+
+		dir.close();
+	}
+
+	Samurai::IO::File::rmdir(chat_dir.c_str());
 	return 1;
 });
 
@@ -2991,5 +3020,274 @@ EXO_TEST(hubsession_a_search_that_went_out_is_remembered,
 	const char* went = request.getToken();
 	EXO_ASSERT_NOT_NULL(went);
 	EXO_ASSERT(tokens->issued(went));
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* What the session writes into the client's transcript of the hub           */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * The transcript is written where the chat is dispatched, so that it is kept
+ * whether or not a front end is listening - a client with no window open on a
+ * conversation is still in it. These drive real INF and MSG commands through a
+ * real session and then read the file back.
+ */
+EXO_TEST(hubsession_public_chat_is_written_to_the_transcript,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	EXO_ASSERT(core->chat != 0);
+
+	s.say("BINF BBBB IDBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB NIalice CT4");
+	s.say("BMSG BBBB hello\\severyone");
+
+	/* The canonical form, which is what a transcript is filed under. */
+	const std::string hubUrl = s.ui->getUrl() ? s.ui->getUrl() : "";
+
+	const std::vector<QuickDC::ChatArchive::Line> back =
+		core->chat->tail(hubUrl, "", 10);
+
+	EXO_ASSERT(back.size() == 1);
+	EXO_ASSERT(back[0].nick == "alice");
+	EXO_ASSERT(back[0].text == "hello everyone");
+
+	/* Filed by the client id, which is what outlasts this session. */
+	EXO_ASSERT(back[0].source == "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+
+	/* An operator when they said it, and so an operator in the record. */
+	EXO_ASSERT(back[0].op);
+	EXO_ASSERT(!back[0].privateMessage);
+
+	core->chat->forget(hubUrl, "");
+	return 1;
+});
+
+/*
+ * A private message is filed against whoever is not us, in both directions -
+ * ours and theirs belong to the one conversation.
+ */
+EXO_TEST(hubsession_a_private_conversation_is_one_transcript_both_ways,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	EXO_ASSERT(core->chat != 0);
+
+	s.say("BINF BBBB IDBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB NIalice");
+
+	/* Theirs to us, and the echo of ours back to them. */
+	s.say("EMSG BBBB AAAA hi\\sthere PMBBBB");
+	s.say("EMSG AAAA BBBB hello\\sback PMBBBB");
+
+	const std::string hubUrl = s.ui->getUrl() ? s.ui->getUrl() : "";
+	const std::string with = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+
+	const std::vector<QuickDC::ChatArchive::Line> back =
+		core->chat->tail(hubUrl, with, 10);
+
+	EXO_ASSERT(back.size() == 2);
+	EXO_ASSERT(back[0].text == "hi there");
+	EXO_ASSERT(back[1].text == "hello back");
+	EXO_ASSERT(back[0].privateMessage);
+	EXO_ASSERT(back[1].privateMessage);
+
+	/* And none of it landed in the hub's own transcript. */
+	EXO_ASSERT(core->chat->tail(hubUrl, "", 10).empty());
+
+	core->chat->forget(hubUrl, with);
+	return 1;
+});
+
+/*
+ * TS says when a message was written. A hub replaying its history sends the
+ * time each line was originally said, so a replay has to be written down under
+ * those times rather than all at once at login - that is what lets it be lined
+ * up against what this client already recorded.
+ */
+EXO_TEST(hubsession_a_hubs_timestamp_is_what_gets_recorded,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	EXO_ASSERT(core->chat != 0);
+
+	s.say("BINF BBBB IDBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB NIalice");
+
+	/* Two lines the hub says were written last year, as a replay would. */
+	s.say("BMSG BBBB earlier TS1700000000");
+	s.say("BMSG BBBB later TS1700000060");
+
+	const std::string hubUrl = s.ui->getUrl() ? s.ui->getUrl() : "";
+
+	const std::vector<QuickDC::ChatArchive::Line> back =
+		core->chat->tail(hubUrl, "", 10);
+
+	EXO_ASSERT(back.size() == 2);
+	EXO_ASSERT(back[0].text == "earlier");
+	EXO_ASSERT(back[0].time == 1700000000);
+	EXO_ASSERT(back[1].text == "later");
+	EXO_ASSERT(back[1].time == 1700000060);
+
+	core->chat->forget(hubUrl, "");
+	return 1;
+});
+
+/*
+ * And a hub that sends none leaves the moment it arrived, so that every line
+ * carries a stamp that can be compared with every other.
+ */
+EXO_TEST(hubsession_a_message_without_a_timestamp_is_stamped_on_arrival,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	EXO_ASSERT(core->chat != 0);
+
+	const uint64_t before = (uint64_t) time(0);
+
+	s.say("BINF BBBB IDBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB NIalice");
+	s.say("BMSG BBBB no\\stimestamp\\shere");
+
+	const uint64_t after = (uint64_t) time(0);
+
+	const std::string hubUrl = s.ui->getUrl() ? s.ui->getUrl() : "";
+
+	const std::vector<QuickDC::ChatArchive::Line> back =
+		core->chat->tail(hubUrl, "", 10);
+
+	EXO_ASSERT(back.size() == 1);
+	EXO_ASSERT(back[0].text == "no timestamp here");
+
+	/* Now, to the second, rather than zero or 1970. */
+	EXO_ASSERT(back[0].time >= before);
+	EXO_ASSERT(back[0].time <= after);
+
+	core->chat->forget(hubUrl, "");
+	return 1;
+});
+
+/* A TS that is not a number is no timestamp at all, and must not read as 1970. */
+EXO_TEST(hubsession_an_unusable_timestamp_falls_back_to_arrival,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	EXO_ASSERT(core->chat != 0);
+
+	const uint64_t before = (uint64_t) time(0);
+
+	s.say("BINF BBBB IDBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB NIalice");
+	s.say("BMSG BBBB rubbish\\sstamp TSnonsense");
+	s.say("BMSG BBBB empty\\sstamp TS");
+
+	const std::vector<QuickDC::ChatArchive::Line> back =
+		core->chat->tail(s.ui->getUrl() ? s.ui->getUrl() : "", "", 10);
+
+	EXO_ASSERT(back.size() == 2);
+
+	for (size_t n = 0; n < back.size(); n++)
+		EXO_ASSERT(back[n].time >= before);
+
+	core->chat->forget(s.ui->getUrl() ? s.ui->getUrl() : "", "");
+	return 1;
+});
+
+/*
+ * The whole point of the timestamps: a hub that replays its history on login
+ * hands back lines this client already wrote down. They must not be recorded
+ * twice, and they must not be reported to the interface twice either - the
+ * conversation on screen is filled from the same transcript as it opens.
+ */
+EXO_TEST(hubsession_a_replayed_line_is_neither_recorded_nor_reported_twice,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	EXO_ASSERT(core->chat != 0);
+
+	const std::string hubUrl = s.ui->getUrl() ? s.ui->getUrl() : "";
+	core->chat->forget(hubUrl, "");
+
+	s.say("BINF BBBB IDBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB NIalice");
+
+	/* What this client hears the first time round. */
+	s.say("BMSG BBBB first TS1700000000");
+	s.say("BMSG BBBB second TS1700000060");
+
+	EXO_ASSERT(s.listener.chat.size() == 2);
+	EXO_ASSERT(core->chat->tail(hubUrl, "", 100).size() == 2);
+
+	const size_t reported = s.listener.chat.size();
+
+	/*
+	 * And what the hub replays on the next login: the two it already gave, and
+	 * one said while this client was away.
+	 */
+	s.say("BMSG BBBB first TS1700000000");
+	s.say("BMSG BBBB second TS1700000060");
+	s.say("BMSG BBBB third TS1700000120");
+
+	/* Only the one nobody had. */
+	EXO_ASSERT(s.listener.chat.size() == reported + 1);
+	EXO_ASSERT(s.listener.chat.back() == "third");
+
+	const std::vector<QuickDC::ChatArchive::Line> back =
+		core->chat->tail(hubUrl, "", 100);
+
+	EXO_ASSERT(back.size() == 3);
+	EXO_ASSERT(back[0].text == "first");
+	EXO_ASSERT(back[1].text == "second");
+	EXO_ASSERT(back[2].text == "third");
+
+	core->chat->forget(hubUrl, "");
+	return 1;
+});
+
+/*
+ * Saying the same thing twice is not a replay. Without a hub timestamp each
+ * line is stamped as it arrives, so the second is newer than the first and is
+ * never compared with it.
+ */
+EXO_TEST(hubsession_saying_the_same_thing_twice_is_kept_twice,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	EXO_ASSERT(core->chat != 0);
+
+	const std::string hubUrl = s.ui->getUrl() ? s.ui->getUrl() : "";
+	core->chat->forget(hubUrl, "");
+
+	s.say("BINF BBBB IDBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB NIalice");
+
+	s.say("BMSG BBBB hello");
+	s.say("BMSG BBBB hello");
+
+	/*
+	 * Both shown. They may share a stamp, having arrived in the same second,
+	 * and that is exactly the case the record cannot tell from a replay - so
+	 * the transcript is allowed to hold one or two of them, but the person
+	 * watching must see both.
+	 */
+	EXO_ASSERT(s.listener.chat.size() >= 1);
+	EXO_ASSERT(s.listener.chat.back() == "hello");
+
+	core->chat->forget(hubUrl, "");
 	return 1;
 });

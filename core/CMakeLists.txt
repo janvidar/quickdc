@@ -10,6 +10,7 @@
 # samurai's own logging is under samurai_debug() and friends, so the two do not
 # collide.
 set(QUICKDC_SOURCES
+    chat/archive.cpp
     network/chunkmap.cpp
     network/commandparser.cpp
     network/commandproxy.cpp
@@ -18,6 +19,7 @@ set(QUICKDC_SOURCES
     network/downloadqueue.cpp
     network/filesource.cpp
     network/hublist.cpp
+    network/hubsession.cpp
     network/hubmanager.cpp
     network/keyprint.cpp
     network/leafhashes.cpp

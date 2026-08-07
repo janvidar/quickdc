@@ -181,6 +181,35 @@ class HubSession {
 		
 		
 	protected:
+		/**
+		 * Write one line of chat into the client's transcript of this hub.
+		 *
+		 * Called where the line is dispatched to the listener, so that what is
+		 * kept is what the hub actually said - and so that it is kept whether or
+		 * not anything is listening. A front end with no window open on a
+		 * conversation is still in it.
+		 *
+		 * @param user who spoke, or null for a line the hub generated itself.
+		 * @param hubName what to call the hub when 'user' is null.
+		 * @param conversation who a private message is with, in the form that
+		 *        outlasts the session - the client id on ADC, the nickname on
+		 *        NMDC. Empty for public chat, which is the hub's own transcript.
+		 * @param timestamp when it was said, in seconds since the epoch - the
+		 *        hub's own TS where it sent one. Taken rather than read from the
+		 *        clock here, so that a hub replaying its history is written down
+		 *        under the times it gives rather than all at once on login.
+		 *
+		 * @return false when this line was already in the transcript, which is
+		 *         what a hub replaying history it has already been given looks
+		 *         like. The caller should not report it onwards either: it was
+		 *         shown when it first arrived, and the conversation it belongs to
+		 *         was filled from the same transcript on the way in.
+		 */
+		bool recordChat(const User* user, const char* hubName, const char* message,
+		                const char* conversation, bool action, bool richText,
+		                uint64_t timestamp);
+
+	protected:
 		enum UserAccessLevel access;
 		Hub* hub;
 		int reconnect_time;

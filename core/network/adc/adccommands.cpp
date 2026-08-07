@@ -368,26 +368,45 @@ bool ADC::CmdMessage::invoke(ADC::Command* cmd) {
 
 	char* privat = cmd->getArgument("PM", 2, 1);
 	char* msg = cmd->getArgument(0);
-	
-	
+
+	/*
+	 * TS: when the hub says the message was written, in seconds since the epoch.
+	 * A hub replaying its history stamps each line with the time it was
+	 * originally said, which is the whole point of the field - without it a
+	 * replay would read as everything having been said at once, on login.
+	 *
+	 * A hub that sends none, or one this cannot make sense of, leaves the moment
+	 * it arrived here. Every message carries a stamp either way, so what was
+	 * replayed can be lined up against what was written down before.
+	 */
+	uint64_t timestamp = 0;
+
+	if (cmd->haveArgument("TS", 2))
+	{
+		const char* when = cmd->getArgument("TS", 2);
+		if (when) timestamp = Samurai::Util::Convert::to_uint64(when);
+	}
+
+	if (!timestamp) timestamp = static_cast<uint64_t>(time(0));
+
 	if (cmd->isCommandBroadcast() || cmd->isCommandFeature()) {
 		
 		/* broadcast message */
-		session->onPublicChat(cmd->getSourceID(), msg, action, richText);
+		session->onPublicChat(cmd->getSourceID(), msg, action, richText, timestamp);
 		return true;
 		
 	} else if (cmd->isCommandHubInfo()) {
 		
 		/* hub info message */
-		session->onPublicChat(0, cmd->getArgument(0), action, richText);
+		session->onPublicChat(0, cmd->getArgument(0), action, richText, timestamp);
 		return true;
 		
 	} else if (cmd->isCommandDirect() || cmd->isCommandEcho()) {
 		/* direct message */
 		if (privat) {
-			session->onPrivateChat(cmd->getTargetID(), cmd->getSourceID(), msg, privat, action, richText);
+			session->onPrivateChat(cmd->getTargetID(), cmd->getSourceID(), msg, privat, action, richText, timestamp);
 		} else {
-			session->onPublicChat(cmd->getSourceID(), msg, action, richText);
+			session->onPublicChat(cmd->getSourceID(), msg, action, richText, timestamp);
 		}
 		return true;
 	}

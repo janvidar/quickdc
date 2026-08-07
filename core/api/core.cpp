@@ -18,6 +18,7 @@
 
 #include "api/core.h"
 #include "api/server.h"
+#include "chat/archive.h"
 #include "config/preferences.h"
 #include "network/connectionmanager.h"
 #include "network/downloadqueue.h"
@@ -198,6 +199,7 @@ QuickDC::Core::Core()
 	timers = Samurai::TimerManager::getInstance();
 	localHub = new ADC::LocalHub::Hub();
 	queue = new QuickDC::QueueManager();
+	chat = new QuickDC::ChatArchive(QUICKDC_CHAT_DIR);
 
 	portforward = new PortForward(&portforward_listener);
 
@@ -216,7 +218,7 @@ QuickDC::Core::Core()
 
 
 QuickDC::Core::Core(const std::string& config_file, const std::string& session_file,
-                    const std::string& queue_file)
+                    const std::string& queue_file, const std::string& chat_dir)
 {
 	startup = time(0);
 	references = 0;
@@ -239,6 +241,13 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 
 	/* Only when asked for: it reads and writes the file it is given. */
 	queue = queue_file.empty() ? 0 : new QuickDC::QueueManager(queue_file.c_str());
+
+	/*
+	 * Only where it was told to. This constructor exists so a caller can have a
+	 * core that stays out of the user's own files, and writing their
+	 * conversations into the real directory would be the very thing it avoids.
+	 */
+	chat = chat_dir.empty() ? 0 : new QuickDC::ChatArchive(chat_dir);
 
 	/* Consulted before an upload starts, to count the ones in flight. */
 	transfers = new TransferManager();
@@ -274,6 +283,9 @@ QuickDC::Core::~Core()
 
 	/* Then the queue, which flushes itself to disk as it goes. */
 	delete queue; queue = 0;
+
+	/* After the hubs above, which write a line into it as one arrives. */
+	delete chat; chat = 0;
 
 	/*
 	 * Before the socket monitor is left behind, and deliberately without asking

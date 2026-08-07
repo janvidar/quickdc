@@ -149,9 +149,12 @@ class HubListener
 	 * @param richText The sender flagged the text as markdown (ADC's RT1). Without
 	 *                 it the message is literal, which is what lets an asterisk
 	 *                 stay an asterisk.
+	 * @param timestamp When it was said, in seconds since the epoch. Always set:
+	 *                  the hub's own TS where it sent one, and otherwise the
+	 *                  moment it arrived here. See the note on EventHubMessage().
 	 */
-	virtual void EventChat(const User* user, const char* message, bool action = false,
-	                       bool richText = false) = 0;
+	virtual void EventChat(const User* user, const char* message, bool action,
+	                       bool richText, uint64_t timestamp) = 0;
 
 	/**
 	 * 'user' sent you a private message.
@@ -162,8 +165,11 @@ class HubListener
 	 * @param userContextID an ID that identifies the context of a chat message (window, tab, etc). Usually the same as a user's nick name.
 	 * @param action The message is to be considered as a action chat message.
 	 * @param richText The message is markdown; see EventChat().
+	 * @param timestamp When it was said; see EventChat().
 	 */
-	virtual void EventPrivateChat(const User* from, const User* to, const char* message, const char* userContextID, bool action, bool richText = false) = 0;
+	virtual void EventPrivateChat(const User* from, const User* to, const char* message,
+	                              const char* userContextID, bool action, bool richText,
+	                              uint64_t timestamp) = 0;
 
 	/**
 	 * A fake user sent a message. Usually a message from the hub upon login.
@@ -174,9 +180,16 @@ class HubListener
 	 * @param richText The message is markdown; see EventChat(). A hub is as entitled
 	 *                 to formatting as anybody on it, and is the party that decided
 	 *                 rich text is carried at all.
+	 * @param timestamp When it was said, in seconds since the epoch.
+	 *
+	 * A hub replaying its history stamps each line with TS, so a replayed line
+	 * carries the time it was originally said rather than the time it was sent
+	 * again. A hub that says nothing gets the moment of arrival instead, so that
+	 * every line has a comparable stamp - which is what lets a replay be lined up
+	 * against what this client already wrote down.
 	 */
 	virtual void EventHubMessage(const char* fakeuser, const char* message,
-	                             bool action = false, bool richText = false) = 0;
+	                             bool action, bool richText, uint64_t timestamp) = 0;
 	
 	/**
 	* A user joined the hub. At this point, we don't have any user 

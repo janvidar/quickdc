@@ -81,10 +81,10 @@ class Listener : public QuickDC::HubListener
 		void EventNetStatus(enum StatusNetwork) override { }
 		void EventHubStatus(enum StatusHub) override { }
 		void EventSystemError(const char*) override { }
-		void EventChat(const QuickDC::User*, const char*, bool, bool) override { }
+		void EventChat(const QuickDC::User*, const char*, bool, bool, uint64_t) override { }
 		void EventPrivateChat(const QuickDC::User*, const QuickDC::User*,
-			const char*, const char*, bool, bool) override { }
-		void EventHubMessage(const char*, const char*, bool, bool) override { }
+			const char*, const char*, bool, bool, uint64_t) override { }
+		void EventHubMessage(const char*, const char*, bool, bool, uint64_t) override { }
 		void EventUserJoin(const char*) override { }
 		void EventUserLeave(const QuickDC::User*, const char*, bool) override { }
 		void EventUsersCleanup() override { }

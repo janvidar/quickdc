@@ -145,7 +145,10 @@ void DC::HubSession::sendPrivateChatMessage(const QuickDC::User* user, const cha
 	
 	// Since a NMDC hub does not reflect priv messages back to us, we need
 	// to do it here manually.
-	listener->EventPrivateChat(me, user, msg, user->getNick(), false);
+	const uint64_t now = static_cast<uint64_t>(time(0));
+
+	if (recordChat(me, 0, msg, user->getNick(), false, false, now))
+		listener->EventPrivateChat(me, user, msg, user->getNick(), false, false, now);
 }
 
 void DC::HubSession::sendChatMessage(const char* msg, bool richText)
@@ -256,42 +259,58 @@ void DC::HubSession::onHubName(const char* hubname_)
 
 void DC::HubSession::onPublicChat(const char* from, const char* message)
 {
+	/* NMDC carries no timestamp, so arrival is the best that can be said. */
+	const uint64_t now = static_cast<uint64_t>(time(0));
+
 	const QuickDC::User* u = users->getUser(from);
 	if (u)
 	{
-		listener->EventChat(u, message);
+		if (recordChat(u, 0, message, 0, false, false, now))
+			listener->EventChat(u, message, false, false, now);
 	}
 	else
 	{
-		listener->EventHubMessage(from, message);
+		if (recordChat(0, from, message, 0, false, false, now))
+			listener->EventHubMessage(from, message, false, false, now);
 	}
 }
 
 void DC::HubSession::onActionChat(const char* from, const char* message)
 {
+	/* NMDC carries no timestamp, so arrival is the best that can be said. */
+	const uint64_t now = static_cast<uint64_t>(time(0));
+
 	const QuickDC::User* u = users->getUser(from);
 		
 	if (u)
 	{
-		listener->EventChat(u, message, true);
+		if (recordChat(u, 0, message, 0, true, false, now))
+			listener->EventChat(u, message, true, false, now);
 	}
 	else
 	{
-		listener->EventHubMessage(from, message);
+		if (recordChat(0, from, message, 0, true, false, now))
+			listener->EventHubMessage(from, message, false, false, now);
 	}
 }
 
 void DC::HubSession::onPrivateChat(const char* to, const char* from, const char* message)
 {
+	/* NMDC carries no timestamp, so arrival is the best that can be said. */
+	const uint64_t now = static_cast<uint64_t>(time(0));
+
 	const QuickDC::User* u = users->getUser(from);
 	const QuickDC::User* u2 = users->getUser(to);
 	if (u)
 	{
-		listener->EventPrivateChat(u, u2, message, u->getNick(), false);
+		/* No client id on NMDC, so the nickname is what lasts. */
+		if (recordChat(u, 0, message, u->getNick(), false, false, now))
+			listener->EventPrivateChat(u, u2, message, u->getNick(), false, false, now);
 	}
 	else
 	{
-		listener->EventHubMessage(from, message);
+		if (recordChat(0, from, message, 0, false, false, now))
+			listener->EventHubMessage(from, message, false, false, now);
 	}
 }
 
