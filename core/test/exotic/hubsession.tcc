@@ -3291,3 +3291,130 @@ EXO_TEST(hubsession_saying_the_same_thing_twice_is_kept_twice,
 	core->chat->forget(hubUrl, "");
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* Staying connected, and coming back                                        */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Whether a keepalive is among what arrived.
+ *
+ * An empty ADC command is a line with nothing on it, so it is a newline either
+ * at the very start of the stream or straight after the one that ended the
+ * command before it. Looked for rather than assumed to be the only thing there:
+ * the client sends its own info from time to time, and a case that asserted
+ * nothing else had been said would fail whenever one of those landed in the
+ * same second.
+ */
+static bool sent_a_keepalive(const std::string& stream)
+{
+	if (stream.empty()) return false;
+	if (stream[0] == '\n') return true;
+
+	return stream.find("\n\n") != std::string::npos;
+}
+
+/*
+ * A connection nothing has crossed for a while is one a connection tracking
+ * firewall quietly forgets, and the next thing sent over it is answered with a
+ * reset rather than delivered. So a newline goes over an idle connection - ADC
+ * reserves the empty command for exactly this - and finding the connection gone
+ * costs a newline rather than something somebody typed.
+ *
+ * The interval is [Network] Keep alive interval, which is what lets this run in
+ * a second rather than in the two minutes the default asks for.
+ */
+EXO_TEST(hubsession_an_idle_connection_is_kept_alive_with_a_newline,
+{
+	core->config->setGroup("Network");
+	core->config->setNumber("Keep alive interval", 1);
+
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	/*
+	 * Nothing is said by either side from here. What arrives can only be the
+	 * keepalive, and an empty ADC command is a line with nothing on it.
+	 */
+	const bool got = pump([&] {
+		s.hub.drain();
+		return sent_a_keepalive(s.hub.received);
+	}, 4000);
+
+	core->config->setGroup("Network");
+	core->config->setNumber("Keep alive interval", 120);
+
+	if (!got) EXO_FAIL("no keepalive arrived within four seconds");
+	return 1;
+});
+
+/* Turned off by asking for none, for anyone who would rather find out the hard way. */
+EXO_TEST(hubsession_a_zero_interval_sends_no_keepalive,
+{
+	core->config->setGroup("Network");
+	core->config->setNumber("Keep alive interval", 0);
+
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	pump([] { return false; }, 1500);
+	s.hub.drain();
+
+	core->config->setGroup("Network");
+	core->config->setNumber("Keep alive interval", 120);
+
+	/*
+	 * No keepalive, rather than nothing at all: the client is entitled to send
+	 * its own info in this window and that is not what this is about.
+	 */
+	EXO_ASSERT(!sent_a_keepalive(s.hub.received));
+	return 1;
+});
+
+/*
+ * The backoff has to start again after a connection that worked, or a client
+ * idle on a hub for hours and then cut off waits out the ceiling to come back.
+ *
+ * The session is what remembers, because by the time the disconnection is
+ * reported isLoggedIn() says no: every path that ends a session clears the
+ * state first, which is why asking that question never reset anything.
+ */
+EXO_TEST(hubsession_a_session_remembers_that_it_logged_in,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	/* Connected, but not yet through the handshake. */
+	EXO_ASSERT(!s.session->wasEstablished());
+
+	EXO_ASSERT(s.login());
+
+	EXO_ASSERT(s.session->wasEstablished());
+
+	/*
+	 * And it still says so once the state has been cleared, which is the whole
+	 * point: this is read after the session has been torn down.
+	 */
+	s.session->disconnect();
+	EXO_ASSERT(!s.session->isLoggedIn());
+	EXO_ASSERT(s.session->wasEstablished());
+	return 1;
+});
+
+/* How long is long enough to count as having worked. */
+EXO_TEST(hubsession_only_a_connection_that_lasted_resets_the_backoff,
+{
+	EXO_ASSERT(!QuickDC::Hub::connectionHeld(0));
+	EXO_ASSERT(!QuickDC::Hub::connectionHeld(1));
+	EXO_ASSERT(!QuickDC::Hub::connectionHeld(QUICKDC_HUB_STABLE - 1));
+
+	EXO_ASSERT(QuickDC::Hub::connectionHeld(QUICKDC_HUB_STABLE));
+	EXO_ASSERT(QuickDC::Hub::connectionHeld(QUICKDC_HUB_STABLE + 1));
+	EXO_ASSERT(QuickDC::Hub::connectionHeld(100000));
+	return 1;
+});

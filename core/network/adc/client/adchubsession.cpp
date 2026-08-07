@@ -164,6 +164,7 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	, proxy(0)
 	, listener(listener_)
 	, infoTimer(0)
+	, keepAlive(QUICKDC_ADC_KEEPALIVE)
 	, secure(secure_)
 	, keyprintVerified(false)
 {
@@ -183,6 +184,21 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	users = new QuickDC::UserManager(this);
 
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+
+	/*
+	 * Read once rather than per timer: a connection tracking firewall forgets a
+	 * connection nothing has crossed for a few minutes, and it forgets it for
+	 * the whole of this session or none of it.
+	 *
+	 * Zero turns the newline off, for anyone who would rather find out the hard
+	 * way. Anything else is taken as given, including a value low enough to be
+	 * rude to the hub - it is the user's own configuration file.
+	 */
+	config->setGroup("Network");
+	keepAlive = static_cast<time_t>(
+		config->getNumber("Keep alive interval", QUICKDC_ADC_KEEPALIVE));
+
+	if (keepAlive < 0) keepAlive = QUICKDC_ADC_KEEPALIVE;
 
 	/* Borrowed from the core, and shared with every other hub session; see
 	   Core::session. Not ours to delete, and its group is not ours to leave set. */
@@ -610,6 +626,7 @@ void ADC::HubSession::EventUserInfo(const QuickDC::User* data)
 				access = QuickDC::HubSession::AccessNormal;
 			}
 			userState = QuickDC::HubSession::StateNormal;
+			markEstablished();
 			listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
 			/* One more hub we are on, which the others were told a count of. */
 			QuickDC::Core::getInstance()->hubs->requestClientInfoUpdate();
@@ -622,12 +639,31 @@ void ADC::HubSession::EventUserInfo(const QuickDC::User* data)
 void ADC::HubSession::resetIdleTimer()
 {
 	delete infoTimer;
-	infoTimer = new Samurai::Timer(this, 300, false);
+	infoTimer = 0;
+
+	if (!keepAlive) return;
+
+	/*
+	 * Started again on every read and every write, so it only ever expires on a
+	 * connection nothing has crossed - and it repeats, so a hub that says
+	 * nothing back still gets one of these every interval.
+	 */
+	infoTimer = new Samurai::Timer(this, keepAlive, false);
 }
 
 
 void ADC::HubSession::EventTimeout(Samurai::Timer* /* timer */)
 {
+	/*
+	 * A command with no name at all, which goes out as the single newline ADC
+	 * reserves for exactly this. It asks the hub for nothing and tells it
+	 * nothing; the point is the packet, not the content.
+	 *
+	 * Sent because a connection nobody has used is one a firewall between here
+	 * and the hub will quietly forget, and the first thing sent afterwards is
+	 * answered with a reset rather than delivered. Better to find that out on a
+	 * newline than on something somebody typed.
+	 */
 	ADC::Command* empty = new ADC::Command();
 	send(empty);
 }
@@ -1202,6 +1238,7 @@ void ADC::HubSession::onUserInfo(const char* id, QuickDC::User* data, uint64_t o
 		case QuickDC::HubSession::StateIdentify:
 		case QuickDC::HubSession::StateVerify:
 			userState = QuickDC::HubSession::StateNormal;
+			markEstablished();
 
 			/* This is the transition, so this is where it gets reported.
 			   EventUserInfo() also tries to, and cannot: it is reached through

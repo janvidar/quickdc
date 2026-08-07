@@ -58,6 +58,15 @@ class SearchRequest;
  */
 #define QUICKDC_ADC_SALT_SETTING "Last password salt"
 
+/**
+ * How long an ADC connection may sit silent before a newline is sent over it.
+ *
+ * Two minutes, which is inside the idle timeout of every connection tracking
+ * firewall this is meant to survive - they commonly forget a TCP connection
+ * after five. Overridden by [Network] Keep alive interval; zero turns it off.
+ */
+#define QUICKDC_ADC_KEEPALIVE 120
+
 namespace ADC {
 class CommandProxy;
 class Command;
@@ -277,7 +286,19 @@ class HubSession :
 
 		ADC::CommandProxy* proxy;
 		QuickDC::HubListener* listener;
+
+		/**
+		 * Sends a newline when nothing else has been sent or received for a
+		 * while; see resetIdleTimer().
+		 */
 		Samurai::Timer* infoTimer;
+
+		/**
+		 * How long the connection may be silent before that newline goes, in
+		 * seconds. [Network] Keep alive interval, and 120 when it says nothing.
+		 */
+		time_t keepAlive;
+
 		enum UserState userState;
 		
 	protected:

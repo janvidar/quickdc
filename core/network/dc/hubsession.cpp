@@ -340,6 +340,7 @@ void DC::HubSession::onBadPassword()
 void DC::HubSession::onLoggedIn()
 {
 	state = Idle;
+	markEstablished();
 
 	/* As ADC does. Without it a client cannot tell a hub it has merely reached
 	   from one it is actually logged in to. */

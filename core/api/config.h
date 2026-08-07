@@ -26,7 +26,9 @@
  *   [User]        Nickname, Description, E-mail, Password, Client ID,
  *                 Private ID
  *   [Network]     Port (1411), Bind (0.0.0.0), Address, Active mode,
- *                 Slots (3), Chunk size (1 MiB), Max downloads (3)
+ *                 Slots (3), Chunk size (1 MiB), Max downloads (3),
+ *                 Keep alive interval (120) - seconds an ADC connection may sit
+ *                 silent before a newline is sent over it, zero to send none
  *   [Shares]      Total shares, Share 0 .. Share N
  *   [Chat media]  Fetch automatically, Maximum size, Keep pasted for days - all
  *                 read by the user interface, none by the core.

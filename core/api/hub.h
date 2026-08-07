@@ -290,6 +290,19 @@ class DCServerListener
 #define QUICKDC_HUB_RETRY_MAX 300
 
 /**
+ * How long a connection has to last before it counts as having worked.
+ *
+ * A connection that lasted this long starts the backoff again from the
+ * beginning, however many attempts it took to get there: a hub this client sat
+ * on for hours and was then cut off from is not a hub that is refusing it, and
+ * making it wait five minutes to come back would be answering the wrong
+ * question. Shorter than this and the connection is not evidence of anything -
+ * a hub that accepts and immediately drops would otherwise be hammered at the
+ * base interval for ever.
+ */
+#define QUICKDC_HUB_STABLE 30
+
+/**
  * A host that could not be reached is retried this soon, and only once.
  *
  * Short because the usual cause is a route, or a permission, that was a moment
@@ -417,6 +430,15 @@ class Hub
 		 * Static so that the policy can be read and tested on its own.
 		 */
 		static int retryDelay(HubListener::StatusNetwork why, size_t attempts);
+
+		/**
+		 * Whether a connection that lasted this many seconds counts as having
+		 * worked, and so starts the backoff again from the beginning.
+		 *
+		 * Its own function so that the rule can be read, and tested, without
+		 * waiting out a real connection to apply it to.
+		 */
+		static bool connectionHeld(uint64_t seconds);
 
 
 	protected:

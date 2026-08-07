@@ -372,6 +372,11 @@ int QuickDC::Hub::retryDelay(HubListener::StatusNetwork why, size_t attempts)
 	return static_cast<int>(wait - spread) + Samurai::Util::pseudoRandom(0, spread);
 }
 
+bool QuickDC::Hub::connectionHeld(uint64_t seconds)
+{
+	return seconds >= QUICKDC_HUB_STABLE;
+}
+
 void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 {
 	if (session && session->getUserManager())
@@ -381,11 +386,17 @@ void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 	}
 
 	/*
-	 * A connection that was up and has gone starts the backoff again from the
-	 * beginning: whatever the trouble was, it was not that this hub cannot be
-	 * reached at all.
+	 * A connection that lasted starts the backoff again from the beginning:
+	 * whatever the trouble was, it was not that this hub cannot be reached.
+	 *
+	 * Asked of how long the session was logged in rather than of whether it
+	 * still is. Every path that ends a session clears its state before reporting
+	 * the disconnection, so isLoggedIn() is false by the time this runs and the
+	 * backoff went on doubling however long the connection had held - a client
+	 * idle on a hub for hours, cut off by a firewall that had forgotten the
+	 * connection, came back only after the five minute ceiling.
 	 */
-	if (session && session->isLoggedIn()) attempts = 0;
+	if (session && connectionHeld(session->establishedFor())) attempts = 0;
 
 	const int reconnect_time = (session) ? session->getReconnectTime() : -1;
 	session = 0;

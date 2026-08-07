@@ -13,6 +13,25 @@
 
 #include <time.h>
 
+void QuickDC::HubSession::markEstablished()
+{
+	if (!established) established = time(0);
+}
+
+bool QuickDC::HubSession::wasEstablished() const
+{
+	return established != 0;
+}
+
+uint64_t QuickDC::HubSession::establishedFor() const
+{
+	if (!established) return 0;
+
+	const time_t now = time(0);
+
+	return now > established ? static_cast<uint64_t>(now - established) : 0;
+}
+
 bool QuickDC::HubSession::recordChat(const User* user, const char* hubName,
                                      const char* message, const char* conversation,
                                      bool action, bool richText, uint64_t timestamp)

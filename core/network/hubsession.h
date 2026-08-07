@@ -6,6 +6,10 @@
 #ifndef HAVE_QUICKDC_HUBSESSION_H
 #define HAVE_QUICKDC_HUBSESSION_H
 
+/* Named below, and this header is otherwise reached only through others that
+   happen to have included them first. */
+#include <stdint.h>
+#include <time.h>
 
 namespace QuickDC {
 class Hub;
@@ -23,7 +27,7 @@ namespace Share {
  */
 class HubSession {
 	public:
-		HubSession(Hub* ui) : hub(ui), reconnect_time(-1) { }
+		HubSession(Hub* ui) : hub(ui), reconnect_time(-1), established(0) { }
 		virtual ~HubSession() { }
 
 		HubSession(const HubSession&) = delete;
@@ -209,10 +213,36 @@ class HubSession {
 		                const char* conversation, bool action, bool richText,
 		                uint64_t timestamp);
 
+	public:
+		/**
+		 * How long this session has been logged in, in seconds, or zero if it
+		 * never got that far.
+		 *
+		 * Asked as the connection ends, to decide whether it lasted long enough
+		 * to count as having worked - see QUICKDC_HUB_STABLE. Kept here rather
+		 * than read from isLoggedIn(), which by then says no: every path that
+		 * ends a session clears the state before reporting the disconnection.
+		 */
+		uint64_t establishedFor() const;
+
+		/**
+		 * Whether this session ever got as far as being logged in.
+		 *
+		 * Distinct from establishedFor() being zero, which is also what a session
+		 * logged in less than a second ago reports.
+		 */
+		bool wasEstablished() const;
+
 	protected:
+		/** Note that this session is now logged in. Called once, on getting there. */
+		void markEstablished();
+
 		enum UserAccessLevel access;
 		Hub* hub;
 		int reconnect_time;
+
+		/** When markEstablished() was called, or zero; see establishedFor(). */
+		time_t established;
 		
 	friend class HubManager;
 };
