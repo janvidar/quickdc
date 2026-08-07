@@ -1562,8 +1562,13 @@ EXO_TEST(hubsession_everything_else_backs_off_to_a_ceiling_spread_either_side,
 			}
 		}
 
-		/* Twelve doublings from five seconds is well past the ceiling. */
-		if (QuickDC::Hub::retryDelay(reasons[r], 12) <= QUICKDC_HUB_RETRY_MAX / 2)
+		/*
+		 * Twelve doublings from five seconds is well past the ceiling. Half of it
+		 * is the bound, and it is exclusive: a wait at the ceiling is spread over
+		 * the upper half, so the smallest answer this can give is exactly half and
+		 * that is still the ceiling being reached.
+		 */
+		if (QuickDC::Hub::retryDelay(reasons[r], 12) < QUICKDC_HUB_RETRY_MAX / 2)
 		{
 			const std::string why = which + " never reaches the ceiling";
 			EXO_FAIL(why.c_str());
