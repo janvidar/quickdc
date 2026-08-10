@@ -615,8 +615,6 @@ void ADC::addSupportFlags(ADC::Command& command, bool clientMode)
 	}
 	else
 	{
-		command.addArgument("AD", ADC_EXT_PING);
-
 		/*
 		 * Offered by a client and answered by a hub, both of which come through here.
 		 * A peer to peer session has no use for it: a message carrying the RT flag

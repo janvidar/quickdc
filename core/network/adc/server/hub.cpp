@@ -222,6 +222,13 @@ void ADC::LocalHub::Hub::onSUP(ADC::Command* cmd) {
 		 */
 		c_sup->addArgument("AD", ADC_EXT_NATT);
 
+		/*
+		 * And PING for the same reason: it says this hub will answer a pinger asking
+		 * what it is and who is on it, which is a thing only a hub can offer. A
+		 * client that claimed it would be advertising a service it does not run.
+		 */
+		c_sup->addArgument("AD", ADC_EXT_PING);
+
 		ADC::Command* c_sid = new ADC::Command(FOURCC('I','S','I','D'));
 		c_sid->addArgument(ADC::SID::toString(user->sid));
 		send(c_sup, user, true);

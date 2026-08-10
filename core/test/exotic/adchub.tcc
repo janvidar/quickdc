@@ -479,6 +479,33 @@ EXO_TEST(adchub_a_line_that_is_never_terminated_closes_the_connection,
 });
 
 /* The features a user may advertise, and what happens when it advertises none. */
+/*
+ * What the hub claims of itself. PING and NATT say it answers a pinger and relays a
+ * traversal, both of which are services a hub runs and a client has no business
+ * offering - so neither comes out of the shared support flags, and this is where they
+ * are said instead.
+ */
+EXO_TEST(adchub_the_hub_offers_to_answer_pingers,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client c;
+	EXO_ASSERT(c.connect(s.port()));
+
+	c.send("HSUP ADBASE ADTIGR");
+
+	std::string sup;
+	EXO_ASSERT(c.waitFor("ISUP", sup));
+
+	EXO_ASSERT(sup.find("AD" ADC_EXT_PING) != std::string::npos);
+	EXO_ASSERT(sup.find("AD" ADC_EXT_NATT) != std::string::npos);
+
+	/* And the rich text a hub answers with, which is not ours to claim alone. */
+	EXO_ASSERT(sup.find("AD" ADC_EXT_RICHTEXT) != std::string::npos);
+	return 1;
+});
+
 EXO_TEST(adchub_a_user_advertises_at_most_max_user_features,
 {
 	Server s;

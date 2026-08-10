@@ -136,14 +136,32 @@ EXO_TEST(adccommand_rich_text_broadcast,
 	 * The support flags. Rich text is a hub extension, so it belongs in the SUP a
 	 * client sends to a hub and in the one a hub answers with, and nowhere in the
 	 * one a client sends to another client - the RT flag only travels via a hub.
+	 *
+	 * PING is in none of them. It says the sender answers a pinger, which only a hub
+	 * does, so our own hub adds it to its ISUP itself - as it does NATT, and for the
+	 * same reason.
 	 */
 EXO_TEST(adccommand_support_flags_to_a_hub,
 {
 		ADC::Command cmd(FOURCC('H','S','U','P'));
 		ADC::addSupportFlags(cmd, false);
 		EXO_ASSERT(check("support flags to a hub",
-			"HSUP ADBASE ADBAS0 ADTIGR ADPFSR ADADCS ADPING AD"
+			"HSUP ADBASE ADBAS0 ADTIGR ADPFSR ADADCS AD"
 			ADC_EXT_RICHTEXT "\n", cmd));
+	
+	return 1;
+});
+
+/* Connecting to a hub does not claim to be one. */
+EXO_TEST(adccommand_a_client_does_not_offer_to_answer_pingers,
+{
+		ADC::Command hub(FOURCC('H','S','U','P'));
+		ADC::addSupportFlags(hub, false);
+		EXO_ASSERT(written(hub).find("AD" ADC_EXT_PING) == std::string::npos);
+
+		ADC::Command peer(FOURCC('C','S','U','P'));
+		ADC::addSupportFlags(peer, true);
+		EXO_ASSERT(written(peer).find("AD" ADC_EXT_PING) == std::string::npos);
 	
 	return 1;
 });

@@ -518,6 +518,13 @@ EXO_TEST(hubsession_it_opens_with_hsup,
 	EXO_ASSERT(line.find("AD" ADC_EXT_ADCS) != std::string::npos);
 	EXO_ASSERT(line.find("AD" ADC_EXT_PFSR) != std::string::npos);
 	EXO_ASSERT(line.find("AD" ADC_EXT_RICHTEXT) != std::string::npos);
+
+	/*
+	 * And PING is not among them. It says the sender answers a pinger asking what
+	 * hub this is and who is on it, which is something only a hub does - a client
+	 * claiming it advertises a service nothing here runs.
+	 */
+	EXO_ASSERT(line.find("AD" ADC_EXT_PING) == std::string::npos);
 	return 1;
 });
 
