@@ -104,6 +104,9 @@ class ClientSession :
 
 		void sendINF();
 
+		/** Refuse what the peer asked for, there being nothing here to send. */
+		void sendFileError();
+
 		/**
 		 * Ask the peer for the next thing the download queue wants from it,
 		 * and drop the connection when there is nothing left to ask for.

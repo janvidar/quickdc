@@ -112,14 +112,20 @@ class Manager
 		 */
 		bool lookup(const Samurai::IO::File& file, QuickDC::Hash::CacheEntry*& cache);
 		
+		/** A fresh handle onto the cache file. The caller owns it. */
 		Samurai::IO::File* getCacheFile();
 
 		/**
 		 * Where a shared file's leaf hashes sit inside the cache file, for
 		 * serving them to a peer.
 		 *
-		 * @return the cache file, which the manager owns, or 0 if we have no
-		 *         leaves for it.
+		 * The offset and length delimit one record inside a file that holds
+		 * every other one too, each carrying the local path of what it was
+		 * hashed from - so a caller serving this to a peer has to hold the
+		 * transfer to that range.
+		 *
+		 * @return a handle onto the cache file, which the caller owns, or 0 if
+		 *         we have no leaves for it.
 		 */
 		Samurai::IO::File* getLeafData(const Samurai::IO::File& file, uint64_t& offset, uint64_t& length);
 		

@@ -128,6 +128,14 @@ void ADC::ClientSession::sendINF()
 	send(cmd);
 }
 
+void ADC::ClientSession::sendFileError()
+{
+	ADC::Command* cmd = new ADC::Command(FOURCC('C','S','T','A'));
+	cmd->addArgument(adc_status_code(ADC_STATUS_SEVERITY_ERROR, ADC_CODE_TRANSFER_FILE_ERROR).c_str());
+	cmd->addArgument(ADC_STR_TRANSFER_FILE_ERROR);
+	send(cmd);
+}
+
 #define STATECHANGE(newstate, existingstate) \
 	if (state == existingstate) { \
 		state = newstate; \
@@ -602,7 +610,10 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 			Samurai::IO::File* shared = sharemgr->getFileByTTH(&fn[4]);
 			if (shared)
 			{
+				/* The cache is the hash manager's, but the handle onto it is
+				   made for this request and nobody else will close it. */
 				file = hashmgr->getLeafData(*shared, internal_offset, internal_length);
+				if (file) ownsFile = true;
 			}
 			else
 			{
@@ -643,8 +654,6 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 			}
 		}
 	
-		if (file && !internal_length) internal_length = file->size();
-
 	} else {
 		QDBG("Unexpected GET type: %x type, expected %x or %x.", type,  FOURCC('l','i','s','t'),  FOURCC('f','i','l','e'));
 	}
@@ -662,12 +671,39 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	if (file)
 	{
 		QDBG("Found file");
-			
+
+		if (!internal_length) internal_length = file->size();
+
+		/*
+		 * Only the region the lookup named may go out. The leaves of a shared
+		 * file are one record inside the hash cache, and that cache holds the
+		 * local path, size and time of every file ever hashed - so an offset
+		 * reaching past the record hands the peer the rest of it.
+		 */
+		if (offset > internal_length)
+		{
+			QDBG("Asked for %d of '%s', which is past what there is to send", static_cast<int>(offset), fn);
+			sendFileError();
+			return;
+		}
+
+		/* Taken away from the bound rather than added to the offset, so that a
+		   length near the top of the range cannot wrap past the very bound it
+		   is being measured against. */
+		const uint64_t available = internal_length - offset;
+		chunk_length = (length < 0 || static_cast<uint64_t>(length) > available)
+			? static_cast<int64_t>(available)
+			: length;
+
+		if (chunk_length <= 0)
+		{
+			QDBG("Nothing of '%s' left to send at %d", fn, static_cast<int>(offset));
+			sendFileError();
+			return;
+		}
+
 		chunk_offset = internal_offset + offset;
-		chunk_length = length;
-		if (chunk_length == -1)
-			chunk_length = internal_length - offset;
-		
+
 		ADC::Command* cmd = new ADC::Command(FOURCC('C','S','N','D'));
 		switch (type)
 		{
@@ -705,10 +741,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	else
 	{
 		QDBG("File not found");
-		ADC::Command* cmd = new ADC::Command(FOURCC('C','S','T','A'));
-		cmd->addArgument(adc_status_code(ADC_STATUS_SEVERITY_ERROR, ADC_CODE_TRANSFER_FILE_ERROR).c_str());
-		cmd->addArgument(ADC_STR_TRANSFER_FILE_ERROR);
-		send(cmd);
+		sendFileError();
 	}
 }
 

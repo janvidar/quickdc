@@ -902,7 +902,10 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 			Samurai::IO::File* shared = sharemgr->getFileByTTH(&fn[4]);
 			if (shared)
 			{
+				/* The cache is the hash manager's, but the handle onto it is
+				   made for this request and nobody else will close it. */
 				file = core->hash->getLeafData(*shared, internal_offset, servable);
+				if (file) ownsFile = true;
 			}
 			else
 			{
