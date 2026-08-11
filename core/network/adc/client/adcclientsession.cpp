@@ -203,9 +203,6 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 		QDBG("This connection is for a queued download (token=%s)", token.c_str());
 	}
 
-	/* A peer that identified without answering our CSUP still gets an answer. */
-	sendINF();
-
 	if (download_approved)
 		requestNextChunk();
 }
