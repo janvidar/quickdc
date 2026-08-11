@@ -169,6 +169,12 @@ class ClientSession :
 		 */
 		std::optional<std::string> expected_keyprint;
 
+		/**
+		 * Whether we have identified ourselves yet, so that a peer repeating
+		 * its CSUP does not have us say who we are twice.
+		 */
+		bool inf_sent;
+
 	protected: /* transfer related */
 
 		/** Tear down the current transfer, and the file if we own it. */

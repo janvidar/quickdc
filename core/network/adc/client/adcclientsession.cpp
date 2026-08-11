@@ -82,6 +82,7 @@ void ADC::ClientSession::initialize()
 	upload_approved   = false;
 	download_approved = false;
 	fetchingLeaves    = false;
+	inf_sent          = false;
 	state             = StateNone;
 }
 
@@ -117,6 +118,9 @@ void ADC::ClientSession::send(ADC::Command* cmd, bool more)
 
 void ADC::ClientSession::sendINF()
 {
+	if (inf_sent) return;
+	inf_sent = true;
+
 	ADC::Command* cmd = new ADC::Command(FOURCC('C','I','N','F'));
 	cmd->addArgument("ID", ADC::CID::getInstance()->getCID());
 	cmd->addArgument("VE", PRODUCT " " VERSION);
@@ -129,6 +133,11 @@ void ADC::ClientSession::sendINF()
 		state = newstate; \
 	}
 
+/*
+ * The support exchange is over, so both sides say who they are: the side that was
+ * dialled answers the CSUP first, and each then sends its CINF without waiting for
+ * the other's - neither can, since both are waiting for the same thing.
+ */
 void ADC::ClientSession::onSUP()
 {
 	if (!isClient)
@@ -136,9 +145,10 @@ void ADC::ClientSession::onSUP()
 		ADC::Command* cmd = new ADC::Command(FOURCC('C','S','U','P'));
 		ADC::addSupportFlags(*cmd, true);
 		send(cmd, true);
-		sendINF();
-		state = StateIdentify;
 	}
+
+	sendINF();
+	state = StateIdentify;
 }
 
 void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
@@ -185,8 +195,8 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 		QDBG("This connection is for a queued download (token=%s)", token.c_str());
 	}
 
-	if (isClient)
-		sendINF();
+	/* A peer that identified without answering our CSUP still gets an answer. */
+	sendINF();
 
 	if (download_approved)
 		requestNextChunk();
