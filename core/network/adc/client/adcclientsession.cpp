@@ -415,10 +415,24 @@ void ADC::ClientSession::onStartServer()
 }
 
 
+/*
+ * A peer names its features once, in the CSUP the support exchange is made of,
+ * and the set is kept for the life of the connection - so anything arriving
+ * outside that exchange has nowhere to go but a table that only grows. A four
+ * letter word costs seven bytes to send and a good deal more to hold, and ADC
+ * has nothing like this many extensions to name.
+ */
+static constexpr size_t MAX_SUPPORT_FLAGS = 64;
+
 void ADC::ClientSession::addSupport(const char* feature)
 {
+	if (!feature) return;
+
+	if (state != StateNone && state != StateProtocol) return;
+	if (extensions.size() >= MAX_SUPPORT_FLAGS) return;
+
 	QDBG("Adding support for '%s'", feature);
-	if (feature) extensions.insert(feature);
+	extensions.insert(feature);
 }
 
 bool ADC::ClientSession::supports(const char* feature)
