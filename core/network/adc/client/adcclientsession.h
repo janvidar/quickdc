@@ -121,6 +121,9 @@ class ClientSession :
 		void addSupport(const char* features);
 		bool supports(const char* feature);
 
+		/** Whether the handshake is done and the peer has named itself. */
+		bool isEstablished() const;
+
 	protected:
 		void EventHostLookup(const Samurai::IO::Net::Socket*) override;
 		void EventHostFound(const Samurai::IO::Net::Socket*) override;

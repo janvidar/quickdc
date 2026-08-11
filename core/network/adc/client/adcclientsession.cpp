@@ -107,6 +107,9 @@ void ADC::ClientSession::releaseTransfer()
 
 	chunk_offset = 0;
 	chunk_length = 0;
+
+	/* A download had the socket to itself; commands are read from it again. */
+	if (state == StateData) state = StateNormal;
 }
 
 void ADC::ClientSession::send(ADC::Command* cmd, bool more)
@@ -136,10 +139,15 @@ void ADC::ClientSession::sendFileError()
 	send(cmd);
 }
 
-#define STATECHANGE(newstate, existingstate) \
-	if (state == existingstate) { \
-		state = newstate; \
-	}
+/*
+ * Whether the handshake is behind us, and a command that presumes it may be
+ * acted on. Both sides have named themselves by then, which is what decides
+ * whether anything on this connection is allowed at all.
+ */
+bool ADC::ClientSession::isEstablished() const
+{
+	return state == StateNormal || state == StateData;
+}
 
 /*
  * The support exchange is over, so both sides say who they are: the side that was
@@ -148,6 +156,13 @@ void ADC::ClientSession::sendFileError()
  */
 void ADC::ClientSession::onSUP()
 {
+	/* Once, and only while it is still due. */
+	if (state != StateNone && state != StateProtocol)
+	{
+		QDBG("Ignoring a CSUP that arrives after the support exchange");
+		return;
+	}
+
 	if (!isClient)
 	{
 		ADC::Command* cmd = new ADC::Command(FOURCC('C','S','U','P'));
@@ -162,6 +177,19 @@ void ADC::ClientSession::onSUP()
 void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 {
 	QDBG("ADC::ClientSession::onINF(): client=%d. got cid='%s', token='%s'", static_cast<int>(isClient), cid, remote_token);
+
+	/*
+	 * Only where one is due: this is what spends a clearance and decides what
+	 * the connection may do, and neither is a thing to hand a peer that has not
+	 * been through the support exchange - or to hand it twice.
+	 */
+	if (state != StateIdentify)
+	{
+		QDBG("Ignoring a CINF that arrives outside the identify phase");
+		return;
+	}
+
+	state = StateNormal;
 
 	/* Remember who this is; a FileSource is keyed on the CID, not the SID. */
 	if (cid) remote_cid = cid;
@@ -542,6 +570,13 @@ Samurai::IO::File* ADC::ClientSession::openQueuedFile(const char* tth, uint64_t 
 void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, int64_t length, bool compress)
 {
 	QDBG("Requested file: '%s' (type=%d), offset=%d, length=%d", fn, static_cast<int>(type), static_cast<int>(offset), static_cast<int>(length));
+
+	if (!isEstablished())
+	{
+		QDBG("A file was asked for before the handshake finished; ignoring");
+		return;
+	}
+
 	if (!upload_approved)
 	{
 		QDBG("Client requested a file to be sent, however no upload is approved. Ignoring request...");
@@ -751,7 +786,7 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	QuickDC::TransferManager* xfrmgr = (core) ? core->transfers : 0;
 
-	if (!download_approved || !queue || !xfrmgr || token.empty())
+	if (!isEstablished() || !download_approved || !queue || !xfrmgr || token.empty())
 	{
 		QERR("Unexpected ADCSND; no download is in progress on this connection");
 		return;
