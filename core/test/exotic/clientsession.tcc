@@ -161,7 +161,10 @@ class Peer :
 		void EventConnected(const Samurai::IO::Net::Socket*) override { connected = true; }
 		void EventTimeout(const Samurai::IO::Net::Socket*) override { }
 		void EventDisconnected(const Samurai::IO::Net::Socket*) override { }
-		void EventDataAvailable(const Samurai::IO::Net::Socket*) override { }
+		/* Read as soon as it is offered rather than only when a case asks for it:
+		   the monitor is level triggered, so a socket left unread is reported on
+		   every pass and the loop spins until something takes the bytes off it. */
+		void EventDataAvailable(const Samurai::IO::Net::Socket*) override { drain(); }
 		void EventCanWrite(const Samurai::IO::Net::Socket*) override { }
 		void EventTLSConnected(const Samurai::IO::Net::Socket*) override { }
 		void EventTLSDisconnected(const Samurai::IO::Net::Socket*) override { }

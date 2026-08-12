@@ -57,6 +57,7 @@ exotic_add_tests(quickdc_autotest
         queue.tcc
         queuefile.tcc
         securitymanager.tcc
+        socketmonitor.tcc
         stdc.tcc
         user.tcc
     LIBRARIES quickdc::quickdc)
