@@ -255,13 +255,25 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	server = 0;
 	/* Nothing to forward to without a listening socket. */
 	portforward = 0;
-	timers = 0;
 	localHub = 0;
 	bandwidthManager = 0;
 
-	/* Borrowed singletons, not ours; the destructor must not release them. */
+	/*
+	 * Borrowed singletons, not ours; the destructor must not release them.
+	 *
+	 * The message handler is not optional, whatever this constructor leaves out.
+	 * Deletion of a dropped connection is deferred through it - a session is
+	 * retired from inside its own socket's callback, and cannot be freed there -
+	 * so a core that never drains it never frees a peer session or the socket it
+	 * holds. Every connection made through such a core leaked itself and a
+	 * descriptor, and nothing said so.
+	 *
+	 * Timers are drained by SocketMonitor::wait() rather than from here, so a
+	 * core with none of its own still has working ones.
+	 */
 	monitor = Samurai::IO::Net::SocketMonitor::getInstance();
-	messageHandler = 0;
+	messageHandler = Samurai::MessageHandler::getInstance();
+	timers = Samurai::TimerManager::getInstance();
 
 	quickdc_core = this;
 }

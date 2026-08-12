@@ -8,6 +8,8 @@
 
 #include "quickdc.h"
 #include <samurai/io/net/socket.h>
+#include <cstdint>
+#include <map>
 #include <vector>
 
 namespace QuickDC {
@@ -35,7 +37,8 @@ class ConnectionManager
 
 		/**
 		 * Forget a connection without deleting it, for a connection that is
-		 * already being destroyed.
+		 * already being destroyed. This also cancels a deletion remove() has
+		 * queued for it, so a connection its owner frees first is not freed twice.
 		 */
 		virtual void detach(Connection* conn);
 
@@ -53,9 +56,30 @@ class ConnectionManager
 	protected:
 		bool EventMessage(const Samurai::Message*) override;
 
+		/** Cancel every queued deletion naming this connection. */
+		void forget(Connection* conn);
+
+		/** Whether a deletion is already queued for this connection. */
+		bool isPending(const Connection* conn) const;
+
 	protected:
 		std::vector<Connection*> connections;
 		std::vector<Connection*>::iterator connectionIterator;
+
+		/*
+		 * Connections waiting to be deleted, named by a ticket rather than carried
+		 * as a pointer in the message itself.
+		 *
+		 * The message handler is a process-wide singleton and outlives any one
+		 * manager, so a message posted from here can be delivered after the
+		 * connection it named has gone another way: its owner deleted it first, or
+		 * this manager was destroyed with it still queued. A ticket that no longer
+		 * resolves is an instruction to do nothing, and this map is what makes it
+		 * stop resolving; a pointer in the message would have been a delete of
+		 * freed memory either way. Same reasoning, and the same shape, as the
+		 * pending map in ADC::LocalHub::Hub.
+		 */
+		std::map<uint64_t, Connection*> pending;
 };
 
 }
