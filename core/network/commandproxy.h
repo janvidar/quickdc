@@ -54,7 +54,22 @@ class CommandProxy {
 		 * Read from socket and call the apropriate parser functions.
 		 */
 		virtual bool read() = 0;
-		
+
+		/**
+		 * Take whatever has arrived off the socket and throw it away.
+		 *
+		 * For a connection that is being closed and whose remaining input is not
+		 * going to be acted on. Not reading it is not an option: the socket monitor
+		 * is level triggered, so unread input is reported as readable on every pass
+		 * of the event loop, and a handler that answers by doing nothing turns that
+		 * into a busy loop for as long as the connection lasts.
+		 *
+		 * @return false once the socket has nothing further to give - end of
+		 *         stream, or an error - which is the caller's cue that waiting for
+		 *         anything more is pointless.
+		 */
+		virtual bool discard();
+
 		/**
 		 * Close the connection
 		 */

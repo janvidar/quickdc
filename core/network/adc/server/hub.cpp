@@ -186,6 +186,8 @@ void ADC::LocalHub::Hub::readConfiguration() {
 	maxHandshake  = static_cast<uint32_t>(std::clamp(config->getNumber("Max connections in handshake", 32), 1, 65536));
 	handshakeTimeout = static_cast<uint32_t>(std::clamp(config->getNumber("Handshake timeout", 30), 0, 86400));
 	idleTimeout      = static_cast<uint32_t>(std::clamp(config->getNumber("Idle timeout", 900), 0, 86400));
+	lingerTimeout    = static_cast<uint32_t>(std::clamp(
+		config->getNumber("Linger timeout", static_cast<int>(HUB_LINGER_TIMEOUT)), 0, 86400));
 	enabled    = config->getBool("Enabled", false);
 	checkClaims = config->getBool("Check reachability claims", true);
 
@@ -633,21 +635,31 @@ void ADC::LocalHub::Hub::expire(ADC::LocalHub::User* user, const char* code, con
 }
 
 
+void ADC::LocalHub::Hub::drop(ADC::LocalHub::User* user) {
+	/*
+	 * Deferred rather than immediate: disconnect() reports EventDisconnected
+	 * synchronously, which lands in onQuit() and deletes the user - while every
+	 * caller here still holds it, and setINF() goes on to read the kicked user's
+	 * SID.
+	 */
+	if (user->disconnecting) return;
+
+	user->disconnecting = true;
+	Samurai::postMessage(QuickDC::MsgHubUserDisconnect, 0, static_cast<size_t>(deferFor(user)), 0);
+}
+
 void ADC::LocalHub::Hub::kick(ADC::LocalHub::User* user) {
 	user->state = State_WaitDisconnect;
 
-	if (user->getSendQueueSize() == 0 && !user->disconnecting) {
-		/*
-		 * Deferred rather than immediate: disconnect() reports EventDisconnected
-		 * synchronously, which lands in onQuit() and deletes the user - while
-		 * every caller here still holds it, and setINF() goes on to read the
-		 * kicked user's SID. Anything still queued is left to EventCanWrite,
-		 * which comes back here once it has drained, so the kick message itself
-		 * still reaches the user.
-		 */
-		user->disconnecting = true;
-		Samurai::postMessage(QuickDC::MsgHubUserDisconnect, 0, static_cast<size_t>(deferFor(user)), 0);
-	}
+	/*
+	 * Anything still queued is left to EventCanWrite, which comes back here once
+	 * it has drained, so the kick message itself still reaches the user - but only
+	 * for lingerTimeout, since that event depends on the peer reading and a peer
+	 * that has stopped would otherwise hold the connection for good. The sweep in
+	 * EventTimeout() is what ends the wait.
+	 */
+	if (user->getSendQueueSize() == 0)
+		drop(user);
 }
 
 
@@ -944,7 +956,20 @@ void ADC::LocalHub::Hub::EventTimeout(Samurai::Timer*) {
 
 	for (size_t n = 0; n < snapshot.size(); n++) {
 		User* user = snapshot[n];
-		if (user->state == State_WaitDisconnect) continue;
+
+		/*
+		 * A user on its way out is waiting for room to send the rest of its kick
+		 * into, which is not something it can be asked to hurry along - and if the
+		 * peer has stopped reading altogether, room never appears and the wait is
+		 * forever. This is the end of it: the connection goes and whatever is still
+		 * queued goes with it. Skipping the state outright is what left a kicked
+		 * user in the hub's tables for the life of the process.
+		 */
+		if (user->state == State_WaitDisconnect) {
+			if (lingerTimeout && user->getIdleTime() >= static_cast<time_t>(lingerTimeout))
+				drop(user);
+			continue;
+		}
 
 		/* Two limits, because the two are not the same wait: a client that has
 		   not finished identifying itself is doing something that takes seconds,
@@ -960,54 +985,78 @@ void ADC::LocalHub::Hub::EventTimeout(Samurai::Timer*) {
 }
 
 bool ADC::LocalHub::Hub::EventMessage(const Samurai::Message* msg) {
-	if (!processing) {
-		/*
-		 * The user is named by a ticket rather than carried as a pointer, so a
-		 * user deleted between the post and here resolves to nothing instead of
-		 * to freed memory. takePending() consumes the ticket either way.
-		 */
-		if (msg->getID() == QuickDC::MsgHubUserRemoveUser)
-		{
-			ADC::LocalHub::User* user = takePending(static_cast<uint64_t>(msg->getArg1()));
-			if (user) userRemove(user);
-			return true;
-		}
+	const size_t id = msg->getID();
 
-		if (msg->getID() == QuickDC::MsgHubUserAppendUser)
-		{
-			ADC::LocalHub::User* user = takePending(static_cast<uint64_t>(msg->getArg1()));
-			if (user) userAdd(user);
-			return true;
-		}
+	const bool ours = (id == QuickDC::MsgHubUserRemoveUser
+	                || id == QuickDC::MsgHubUserAppendUser
+	                || id == QuickDC::MsgHubUserDelayedQuit
+	                || id == QuickDC::MsgHubUserDisconnect);
 
-		if (msg->getID() == QuickDC::MsgHubUserDelayedQuit)
-		{
-			ADC::LocalHub::User* user = takePending(static_cast<uint64_t>(msg->getArg1()));
-			if (user) onQuit(user, "Delayed quit");
-			return true;
-		}
+	if (!ours) return false;
 
-		if (msg->getID() == QuickDC::MsgHubUserDisconnect)
-		{
-			ADC::LocalHub::User* user = takePending(static_cast<uint64_t>(msg->getArg1()));
-			if (user)
-			{
-				user->disconnecting = false;
-				/*
-				 * Nothing up the stack is holding the user, so it is safe to let
-				 * it go here - but the socket is held over the call: disconnect()
-				 * reports EventDisconnected synchronously, which retires the
-				 * user, and the user is the last owner of its socket, so the
-				 * socket would be freed underneath the call running on it.
-				 */
-				std::shared_ptr<Samurai::IO::Net::Socket> socket = user->socket;
-				socket->disconnect();
-			}
-			return true;
-		}
-
-	} else {
-		QHUB("Parsing messages while processing...");
+	/*
+	 * Put back rather than dropped.
+	 *
+	 * All four of these mutate the tables a broadcast walks, which is why they
+	 * are not run while one is in progress. Returning without running them lost
+	 * them: the ticket stays in 'pending' and nothing else ever posts it again, so
+	 * a user queued for removal was never removed - and one queued for
+	 * disconnection sat in State_WaitDisconnect for the life of the process, with
+	 * its socket readable and nothing willing to read it.
+	 *
+	 * Reposting is safe and terminates: a message posted while the handler is busy
+	 * is carried over to its next pass, and that pass is not inside a broadcast.
+	 */
+	if (processing) {
+		QHUB("A hub message arrived during a broadcast; deferring it to the next pass");
+		Samurai::postMessage(id, msg->getData(), msg->getArg1(), msg->getArg2());
+		return true;
 	}
+
+	/*
+	 * The user is named by a ticket rather than carried as a pointer, so a user
+	 * deleted between the post and here resolves to nothing instead of to freed
+	 * memory. takePending() consumes the ticket either way.
+	 */
+	if (id == QuickDC::MsgHubUserRemoveUser)
+	{
+		ADC::LocalHub::User* user = takePending(static_cast<uint64_t>(msg->getArg1()));
+		if (user) userRemove(user);
+		return true;
+	}
+
+	if (id == QuickDC::MsgHubUserAppendUser)
+	{
+		ADC::LocalHub::User* user = takePending(static_cast<uint64_t>(msg->getArg1()));
+		if (user) userAdd(user);
+		return true;
+	}
+
+	if (id == QuickDC::MsgHubUserDelayedQuit)
+	{
+		ADC::LocalHub::User* user = takePending(static_cast<uint64_t>(msg->getArg1()));
+		if (user) onQuit(user, "Delayed quit");
+		return true;
+	}
+
+	if (id == QuickDC::MsgHubUserDisconnect)
+	{
+		ADC::LocalHub::User* user = takePending(static_cast<uint64_t>(msg->getArg1()));
+		if (user)
+		{
+			user->disconnecting = false;
+
+			/*
+			 * Nothing up the stack is holding the user, so it is safe to let it go
+			 * here - but the socket is held over the call: disconnect() retires the
+			 * user through EventDisconnected, and the user is the last owner of its
+			 * socket, so the socket would be freed underneath the call running on it.
+			 */
+			std::shared_ptr<Samurai::IO::Net::Socket> socket = user->socket;
+			socket->disconnect();
+		}
+		return true;
+	}
+
 	return false;
 }

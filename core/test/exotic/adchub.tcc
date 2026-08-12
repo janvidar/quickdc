@@ -340,7 +340,10 @@ class Client : public Samurai::IO::Net::SocketEventHandler
 		void EventConnected(const Samurai::IO::Net::Socket*) override { connected = true; }
 		void EventTimeout(const Samurai::IO::Net::Socket*) override { }
 		void EventDisconnected(const Samurai::IO::Net::Socket*) override { disconnected = true; }
-		void EventDataAvailable(const Samurai::IO::Net::Socket*) override { }
+		/* Read as soon as it is offered rather than only when a case asks for it:
+		   the monitor is level triggered, so a socket left unread is reported on
+		   every pass and the loop spins until something takes the bytes off it. */
+		void EventDataAvailable(const Samurai::IO::Net::Socket*) override { drain(); }
 		void EventCanWrite(const Samurai::IO::Net::Socket*) override { }
 		void EventTLSConnected(const Samurai::IO::Net::Socket*) override { }
 		void EventTLSDisconnected(const Samurai::IO::Net::Socket*) override { }
@@ -890,6 +893,108 @@ EXO_TEST(adchub_a_logged_in_user_that_goes_quiet_is_swept_away,
 
 	EXO_ASSERT(pump([&] { return c.disconnected; }, 6000));
 	EXO_ASSERT(pump([&] { return s.hub.users.empty(); }));
+	return 1;
+});
+
+/*
+ * A user on its way out, and what becomes of what it goes on sending.
+ *
+ * kick() leaves a user that still has something queued to EventCanWrite, so that
+ * the message saying why it was kicked reaches it. Until that happens the user is
+ * in State_WaitDisconnect - and read() used to answer a readiness report from one
+ * of those by returning, which left the input where it was. The monitor is level
+ * triggered, so it was reported again on the next pass and on every pass after
+ * that: the hub burned a processor for as long as the user sat there.
+ */
+static ADC::LocalHub::User* userFor(ADC::LocalHub::Hub& hub, const std::string& sid,
+                                    const Samurai::IO::Net::Socket*& peer)
+{
+	const sid_t want = ADC::SID::fromString(sid.c_str());
+
+	std::map<const Samurai::IO::Net::Socket*, ADC::LocalHub::User*>::iterator it;
+	for (it = hub.socket_map.begin(); it != hub.socket_map.end(); it++)
+	{
+		if ((*it).second->getSID() != want) continue;
+		peer = (*it).first;
+		return (*it).second;
+	}
+	return 0;
+}
+
+/*
+ * Queued without being flushed, which is the state kick() defers: with nothing
+ * outstanding it posts the disconnect and the user is gone before a case can look
+ * at it. Nothing arms the write notifier either, so the queue stays put - which is
+ * exactly the peer that never reads, without needing one.
+ */
+static void kickWithSomethingQueued(ADC::LocalHub::Hub& hub, ADC::LocalHub::User* user)
+{
+	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
+	msg->addArgument("still\\squeued");
+	hub.send(msg, user, true);
+	hub.kick(user);
+}
+
+EXO_TEST(adchub_a_kicked_user_does_not_leave_its_input_on_the_socket,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(40), "alice"));
+
+	const Samurai::IO::Net::Socket* peer = 0;
+	ADC::LocalHub::User* user = userFor(s.hub, alice.sid, peer);
+	EXO_ASSERT(user != 0 && peer != 0);
+
+	kickWithSomethingQueued(s.hub, user);
+	EXO_ASSERT(user->getSendQueueSize() != 0);
+	EXO_ASSERT(user->getState() == ADC::LocalHub::State_WaitDisconnect);
+
+	/* Nothing it says now will be acted on, which is the point of the state - but
+	   it has to come off the socket all the same. */
+	alice.send("BMSG " + alice.sid + " nobody\\sis\\slistening");
+	pump([&] { return false; }, 300);
+
+	/* Still the user this is about, and its input is gone from the hub's end. */
+	EXO_ASSERT(user->getState() == ADC::LocalHub::State_WaitDisconnect);
+
+	char peeked = 0;
+	EXO_ASSERT(::recv(peer->getFD(), &peeked, 1, MSG_PEEK | MSG_DONTWAIT) < 0);
+	return 1;
+});
+
+/*
+ * And the wait has an end to it.
+ *
+ * What kick() defers to depends on the peer making room by reading, so a peer that
+ * has stopped reading never produces it - and the sweep used to skip the state
+ * outright, which left such a user in the hub's tables, holding a descriptor and a
+ * session ID, for the life of the process.
+ */
+EXO_TEST(adchub_a_kicked_user_that_never_takes_its_message_goes_anyway,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	s.hub.handshakeTimeout = 0;
+	s.hub.idleTimeout = 0;
+	s.hub.lingerTimeout = 1;
+	s.sweepEvery(std::chrono::milliseconds(50));
+
+	Client alice;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(41), "alice"));
+
+	const Samurai::IO::Net::Socket* peer = 0;
+	ADC::LocalHub::User* user = userFor(s.hub, alice.sid, peer);
+	EXO_ASSERT(user != 0);
+
+	kickWithSomethingQueued(s.hub, user);
+	EXO_ASSERT(user->getSendQueueSize() != 0);
+
+	EXO_ASSERT(pump([&] { return s.hub.users.empty(); }, 6000));
 	return 1;
 });
 

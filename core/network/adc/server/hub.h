@@ -48,6 +48,18 @@ namespace LocalHub {
 	/** How often the hub looks over its connections for ones that have gone quiet. */
 	inline constexpr time_t HUB_SWEEP_INTERVAL = 10;
 
+	/**
+	 * How long a user that has been kicked may take to accept what is queued for
+	 * it before the connection goes anyway.
+	 *
+	 * kick() leaves a user with something still queued to EventCanWrite, so that
+	 * the message saying why it was kicked reaches it. That event arrives when the
+	 * peer makes room by reading - which a peer that has stopped reading never
+	 * does, and a peer whose queue overflowed is exactly one of those, so the wait
+	 * needs an end to it.
+	 */
+	inline constexpr time_t HUB_LINGER_TIMEOUT = 30;
+
 	/** A SID is 20 bits, which is what SID::toString() renders and nothing more. */
 	inline constexpr sid_t SID_MASK = 0xFFFFF;
 
@@ -232,6 +244,14 @@ namespace LocalHub {
 			*/
 			void expire(User* user, const char* code, const char* reason);
 
+			/**
+			* Close a kicked user's connection now, whatever is still queued for it.
+			*
+			* Deferred rather than immediate, and only ever queued once; see kick(),
+			* which is where the reasoning for both lives.
+			*/
+			void drop(User* user);
+
 		public:
 			char* hubname;
 			char* hubdesc;
@@ -256,6 +276,12 @@ namespace LocalHub {
 
 			/** Seconds a logged in user may be silent for, 0 to allow forever. */
 			uint32_t idleTimeout;
+
+			/**
+			 * Seconds a kicked user may take to accept what is still queued for it,
+			 * 0 to allow forever. See HUB_LINGER_TIMEOUT.
+			 */
+			uint32_t lingerTimeout;
 
 			bool enabled;
 

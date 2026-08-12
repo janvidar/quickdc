@@ -402,10 +402,27 @@ bool ADC::LocalHub::User::send(ADC::Command* cmd, bool more) {
 }
 
 void ADC::LocalHub::User::read() {
-	if (proxy && state != State_WaitDisconnect) {
-		locked = true;
-		proxy->read();
-		resetTimer();
-		locked = false;
+	if (!proxy) return;
+
+	/*
+	 * Whatever a user awaiting disconnection sends is thrown away rather than
+	 * left on the socket. Not acting on it is the whole point of the state - the
+	 * hub has finished with this user and is only waiting for the kick to go out -
+	 * but the socket monitor is level triggered, so a socket nobody reads is
+	 * reported readable on every pass of the event loop and the hub spins at full
+	 * speed for as long as the user sits there. Returning here was that spin.
+	 *
+	 * Deliberately without resetTimer(): a peer that goes on sending must not be
+	 * able to hold itself in this state, which is what the sweep's linger deadline
+	 * measures - see Hub::EventTimeout().
+	 */
+	if (state == State_WaitDisconnect) {
+		proxy->discard();
+		return;
 	}
+
+	locked = true;
+	proxy->read();
+	resetTimer();
+	locked = false;
 }

@@ -6,6 +6,7 @@
 #include "quickdc.h"
 #include <samurai/debug/dbg.h>
 #include <samurai/io/buffer.h>
+#include <samurai/io/net/socket.h>
 #include "network/commandproxy.h"
 #include "network/commandparser.h"
 
@@ -44,6 +45,35 @@ QuickDC::CommandProxy::~CommandProxy()
 void QuickDC::CommandProxy::invoke(const char*, size_t)
 {
 
+}
+
+bool QuickDC::CommandProxy::discard()
+{
+	/*
+	 * Until the socket says there is no more, rather than one read and out: a peer
+	 * sending faster than one buffer per pass would otherwise keep the descriptor
+	 * readable no matter how often this ran.
+	 */
+	for (;;)
+	{
+		char scratch[4096];
+		size_t got = 0;
+		std::error_code ec;
+
+		switch (socket->read(scratch, sizeof(scratch), got, ec))
+		{
+			case Samurai::IO::ReadResult::Ok:
+				if (!got) return true;
+				break;
+
+			case Samurai::IO::ReadResult::WouldBlock:
+				return true;
+
+			case Samurai::IO::ReadResult::EndOfFile:
+			case Samurai::IO::ReadResult::Error:
+				return false;
+		}
+	}
 }
 
 QuickDC::QueuedCommand::QueuedCommand(QuickDC::CommandBase* cmd)
