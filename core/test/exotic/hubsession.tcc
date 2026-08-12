@@ -1799,6 +1799,70 @@ EXO_TEST(hubsession_a_plain_connect_request_is_refused_when_encryption_is_requir
 	return 1;
 });
 
+/*
+ * The refusal names the peer and the protocol it asked for.
+ *
+ * This message repeats - once per request from every client that cannot do ADCS -
+ * and without a name it says only that something was refused, which cannot tell one
+ * peer trying over and over from half a hub each trying once. Neither can be worked
+ * out from anywhere else afterwards: the request is gone by the time it is read.
+ */
+EXO_TEST(hubsession_an_unencrypted_refusal_names_the_peer_it_refused,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	setRequireEncryption(true);
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say("DCTM BBBB AAAA ADC/1.0 1412 job1");
+
+	bool named = false;
+	for (const std::string& e : s.listener.errors)
+		if (e.find("'peer'") != std::string::npos
+			&& e.find(ADC_COMPLIANCE) != std::string::npos) named = true;
+
+	if (!named)
+	{
+		const std::string why = s.listener.errors.empty()
+			? std::string("nothing was reported at all")
+			: std::string("reported \"") + s.listener.errors.front() + "\"";
+		EXO_FAIL(why.c_str());
+	}
+	return 1;
+});
+
+/* And a peer the hub has said nothing about is still identified, by the session
+   the request arrived from - the case where there is no nick to give. */
+EXO_TEST(hubsession_a_refusal_falls_back_to_the_session_id,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	setRequireEncryption(true);
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	/* Announced with no NI at all, so the user record carries no nick. */
+	s.say("BINF CCCC I4127.0.0.1 U41412 SS100 SL1");
+	s.say("DCTM CCCC AAAA ADC/1.0 1412 job2");
+
+	bool named = false;
+	for (const std::string& e : s.listener.errors)
+		if (e.find("CCCC") != std::string::npos) named = true;
+	EXO_ASSERT(named);
+	return 1;
+});
+
 /* With the requirement off, the same request is accepted. */
 EXO_TEST(hubsession_a_plain_connect_request_is_accepted_when_encryption_is_not_required,
 {

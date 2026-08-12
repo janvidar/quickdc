@@ -165,15 +165,35 @@ std::string ADC::HubSession::announcedAddress(const QuickDC::PeerEndpoint& endpo
  * Refuse a peer connection that would not be encrypted, and say so where a user
  * can see it: a transfer that never starts is otherwise indistinguishable from a
  * peer that is simply not answering.
+ *
+ * Named, and with the protocol the peer asked for, because the refusal repeats:
+ * every request from a client that cannot do ADCS produces one, and a line that
+ * says only that something was refused leaves a user with no way to tell one
+ * peer trying over and over from half the hub each trying once. The nick is what
+ * the user list shows, so it is the identifier that can be acted on; the session
+ * identifier stands in when the user has already gone.
  */
 void ADC::HubSession::refuseUnencrypted(const char* from, const char* token,
                                         const char* proto, const char* why)
 {
-	QERR("Refusing an unencrypted peer connection: %s", why);
+	const QuickDC::User* user = users ? users->getUser(from) : 0;
+	const char* nick = user ? user->getNick() : 0;
+	const std::string who = (nick && *nick) ? nick
+	                      : (from && *from ? std::string("session ") + from
+	                                       : std::string("an unnamed peer"));
+
+	/* An absent protocol field is a case of its own, and one worth being able to
+	   see: it is not the same as a peer that named plain ADC. */
+	const std::string named = (proto && *proto) ? std::string("'") + proto + "'"
+	                                            : std::string("no protocol");
+
+	QERR("Refusing an unencrypted peer connection with '%s' (%s): %s",
+		who.c_str(), named.c_str(), why);
 
 	if (listener)
 	{
-		const std::string msg = std::string("Refused an unencrypted transfer: ") + why;
+		const std::string msg = "Refused an unencrypted transfer with '" + who
+			+ "' (" + named + "): " + why;
 		listener->EventSystemError(msg.c_str());
 	}
 
@@ -1251,14 +1271,20 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	{
 		/*
 		 * Said out loud rather than logged, because the whole of it from a user's
-		 * side is a download that never starts.
+		 * side is a download that never starts - and named, for the same reason
+		 * refuseUnencrypted() names its peer.
 		 */
+		const char* nick = user->getNick();
 		QERR("Cannot ask '%s' for a connection: this hub requires encryption and "
-			"there is no certificate to accept it with", user->getNick());
+			"there is no certificate to accept it with", nick ? nick : "");
 
 		if (listener)
-			listener->EventSystemError("Cannot arrange an encrypted transfer: "
-				"no certificate to accept one with");
+		{
+			const std::string msg = std::string("Cannot arrange an encrypted "
+				"transfer with '") + (nick ? nick : "an unnamed peer")
+				+ "': no certificate to accept one with";
+			listener->EventSystemError(msg.c_str());
+		}
 		return;
 	}
 
