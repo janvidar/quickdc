@@ -67,24 +67,49 @@ static bool canAcceptTls()
 }
 
 /*
- * Whether a peer transfer has to be encrypted.
+ * Whether a peer transfer has to be encrypted on a hub that is not itself.
  *
- * On by default. A peer transfer carries the file and, on the NMDC side of this
- * client, nothing about it is protected at all; on the ADC side the protection
- * was previously decided by a single string in a message the hub relayed, so a
- * hub - or anyone who could forge a CTM through it - chose whether the transfer
- * that followed was encrypted. Requiring it takes that choice away from them.
+ * Off unless asked for, and only consulted for a hub reached over plain ADC - see
+ * mustEncryptPeers(), where an ADCS hub decides this for itself and does not ask.
+ * What is left here is the case where the requirement buys the least: a plain hub
+ * relays the KP field a peer connection is held to, so it can rewrite it, and
+ * encryption there hides the transfer from an observer without establishing who is
+ * at the other end of it.
  *
- * The cost is real and is the reason this is a setting rather than a constant: a
- * peer that does not offer ADCS cannot be transferred with at all, and on a
- * plain ADC hub keyprints cannot be trusted anyway, so there the requirement
- * buys confidentiality against an observer but not authentication of the peer.
+ * Against that stands what the requirement costs, which is every peer that does not
+ * offer ADCS at all - on a plain hub that is a transfer refused rather than a
+ * transfer downgraded, since ADC/1.0 is what those clients have. Whoever would
+ * rather have neither can say so here.
  */
 static bool requireEncryptedTransfers()
 {
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	config->setGroup("Network");
-	return config->getBool("Require encrypted transfers", true);
+	return config->getBool("Require encrypted transfers", false);
+}
+
+/*
+ * Which encrypted peer protocol a user's INF says they will speak, or nothing at
+ * all if it names neither spelling.
+ *
+ * The flag decides the protocol string rather than the other way round, because a
+ * peer recognises the one it announced and no other; see ADC_TLS_PROTO. ADCS is
+ * preferred where a peer announces both, that being the spelling ADC-EXT settled
+ * on, and the draft is what the rest of the network answers to.
+ */
+static const char* peerTlsProtocol(const QuickDC::User* user)
+{
+	if (!user) return 0;
+	if (user->supports(ADC_EXT_ADCS)) return ADC_TLS_PROTO;
+	if (user->supports(ADC_EXT_ADCS_DRAFT)) return ADC_TLS_PROTO_DRAFT;
+	return 0;
+}
+
+/* Both spellings of the traversal flag, and for the same reason: a client that
+   announces only the draft can still take part. */
+static bool peerCanTraverse(const QuickDC::User* user)
+{
+	return user && (user->supports(ADC_EXT_NATT) || user->supports(ADC_EXT_NATT_DRAFT));
 }
 
 /*
@@ -928,7 +953,31 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * to us, and a feature added to one list and forgotten in the other is a bug that
 	 * only shows in passive mode.
 	 */
-	std::string supports = ADC_EXT_ADCS;
+	std::string supports;
+
+	/* The separator belongs between two flags rather than in front of each, since
+	   any one of them may be the first this client has to claim. */
+	const auto claim = [&supports](const char* flag)
+	{
+		if (!supports.empty()) supports += ",";
+		supports += flag;
+	};
+
+	/*
+	 * Encryption, in both spellings, and only where a peer dialling us could
+	 * actually be answered: this is the flag other clients read to decide whether to
+	 * ask for ADCS at all, so claiming it without a certificate to present sends
+	 * them at a handshake that cannot complete and costs them the transfer. A
+	 * certificate is generated at startup, so the claim is the ordinary case.
+	 *
+	 * ADCS first because it is the one ADC-EXT specifies; ADC0 because the DC++
+	 * family looks for that one and for nothing else.
+	 */
+	if (canAcceptTls())
+	{
+		claim(ADC_EXT_ADCS);
+		claim(ADC_EXT_ADCS_DRAFT);
+	}
 
 	/*
 	 * The address goes out whether or not anyone can connect to it.
@@ -971,19 +1020,14 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 		 * entitled to say so, and a peer that lies about failing to connect must
 		 * not be the last word.
 		 */
-		if (reachable(config))
-		{
-			supports += ",";
-			supports += ADC_EXT_TCP4;
-		}
+		if (reachable(config)) claim(ADC_EXT_TCP4);
 
 		/*
 		 * UDP4 is not withdrawn, because nothing can disprove it: a peer that
 		 * cannot reach this port has no datagram it could send to say so. Claimed
 		 * whenever the port is open, as before.
 		 */
-		supports += ",";
-		supports += ADC_EXT_UDP4;
+		claim(ADC_EXT_UDP4);
 	}
 
 	/*
@@ -995,15 +1039,18 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * own local port, so a connection with no port to read - or one through a proxy,
 	 * where the port belongs to the proxy - cannot do it, and saying otherwise would
 	 * send a peer to something that never answers.
+	 *
+	 * In both spellings, as with encryption: NATT is what ADC-EXT names, NAT0 is
+	 * what the clients that implement it look for, and a peer that reads neither
+	 * flag falls back to telling us that we are both passive.
 	 */
 	if (canTraverse())
 	{
-		supports += ",";
-		supports += ADC_EXT_NATT;
+		claim(ADC_EXT_NATT);
+		claim(ADC_EXT_NATT_DRAFT);
 	}
 
-	supports += ",";
-	supports += ADC_EXT_RICHTEXT;
+	claim(ADC_EXT_RICHTEXT);
 
 	fields.emplace_back("SU", supports);
 }
@@ -1125,6 +1172,40 @@ void ADC::HubSession::sendSearchRequest(QuickDC::Share::SearchRequest* request)
 }
 
 
+bool ADC::HubSession::mustEncryptPeers() const
+{
+	return secure || requireEncryptedTransfers();
+}
+
+
+const char* ADC::HubSession::peerConnectProtocol(const QuickDC::User* user, bool listening) const
+{
+	const char* tls = peerTlsProtocol(user);
+
+	/*
+	 * A peer that announced neither flag is still asked for encryption where this
+	 * hub demands it, in the spelling the specification gives. SU is a claim a
+	 * client has to remember to make, and treating silence as "cannot" would turn
+	 * every under-announcing peer into a transfer refused outright rather than one
+	 * attempt that may yet be answered.
+	 */
+	if (!tls && mustEncryptPeers()) tls = ADC_TLS_PROTO;
+
+	if (!tls) return ADC_COMPLIANCE;
+
+	/*
+	 * Naming encryption on the end that will be dialled promises a handshake we
+	 * have to complete, and without a certificate there is nothing to answer with.
+	 * Where the requirement stands that is the end of it; where it does not, plain
+	 * ADC is still a transfer.
+	 */
+	if (listening && !canAcceptTls())
+		return mustEncryptPeers() ? 0 : ADC_COMPLIANCE;
+
+	return tls;
+}
+
+
 void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const char* token)
 {
 	if (!user) return;
@@ -1133,19 +1214,6 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
 	config->setGroup("Network");
 
-	/*
-	 * Which protocol to name depends on who is going to dial whom:
-	 *
-	 *  - CTM tells the peer to connect to us, so we have to be able to accept
-	 *    whatever we name - see canAcceptTls().
-	 *
-	 *  - RCM asks the peer to send us a CTM, so we dial out, and outbound TLS
-	 *    is handled by ADC::ClientSession.
-	 *
-	 * Either way encryption is only volunteered on a hub we reached over ADCS,
-	 * which is also the only case where the keyprint that protects the peer
-	 * connection could have come from anywhere trustworthy.
-	 */
 	/*
 	 * The same endpoint the INF advertised, rather than the configured port and a
 	 * second opinion about whether we are active.
@@ -1167,11 +1235,38 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 		static_cast<uint16_t>(config->getNumber("Port")),
 		core->portforward);
 
+	/*
+	 * Which protocol to name depends on what the peer said it speaks, and on who is
+	 * going to dial whom:
+	 *
+	 *  - CTM tells the peer to connect to us, so we have to be able to accept
+	 *    whatever we name - see canAcceptTls().
+	 *
+	 *  - RCM asks the peer to send us a CTM, so we dial out, and outbound TLS is
+	 *    handled by ADC::ClientSession, which needs no certificate of our own.
+	 */
+	const char* protocol = peerConnectProtocol(user, endpoint.active);
+
+	if (!protocol)
+	{
+		/*
+		 * Said out loud rather than logged, because the whole of it from a user's
+		 * side is a download that never starts.
+		 */
+		QERR("Cannot ask '%s' for a connection: this hub requires encryption and "
+			"there is no certificate to accept it with", user->getNick());
+
+		if (listener)
+			listener->EventSystemError("Cannot arrange an encrypted transfer: "
+				"no certificate to accept one with");
+		return;
+	}
+
 	if (endpoint.active)
 	{
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), localSid(), user->getID());
-		cmd->addArgument((secure && canAcceptTls()) ? ADC_TLS_PROTO : ADC_COMPLIANCE);
+		cmd->addArgument(protocol);
 		cmd->addArgument(std::to_string(endpoint.port).c_str());
 		cmd->addArgument(token);
 		send(cmd);
@@ -1191,7 +1286,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 		QDBG("Requesting passive connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','R','C','M'), localSid(), user->getID());
 
-		cmd->addArgument(secure ? ADC_TLS_PROTO : ADC_COMPLIANCE);
+		cmd->addArgument(protocol);
 		cmd->addArgument(token);
 
 		/* Add to securitymanager */
@@ -1829,27 +1924,22 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	bool peerSecure = adc_is_tls_protocol(protocol);
 
 	/*
-	 * A plain connection is refused outright when encryption is required, and
-	 * also when we ourselves asked for ADCS - our own request is a floor. The
-	 * second case is the downgrade this closes: the protocol field arrives in a
-	 * message the hub relayed, so accepting a weaker one than we named let
-	 * whoever could write that field decide for us.
+	 * A plain connection is refused where this hub requires encryption, which on an
+	 * ADCS hub is unconditional. That is also the downgrade this closes: the
+	 * protocol field arrives in a message the hub relayed, so accepting a weaker one
+	 * than we asked for would let whoever could write that field decide for us.
+	 *
+	 * On a plain ADC hub it stands or falls with the setting, and by default plain
+	 * ADC/1.0 is a peer connection like any other - it is what a client without
+	 * ADCS has to offer, and refusing it there refuses the transfer without
+	 * protecting anything a plain hub could not already reach.
 	 */
-	if (!peerSecure && protocol == ADC_COMPLIANCE)
+	if (!peerSecure && protocol == ADC_COMPLIANCE && mustEncryptPeers())
 	{
-		if (requireEncryptedTransfers())
-		{
-			refuseUnencrypted(from, token, proto,
-				"the peer answered with plain ADC");
-			return;
-		}
-
-		if (secure && canAcceptTls())
-		{
-			refuseUnencrypted(from, token, proto,
-				"we asked for ADCS and the peer answered with plain ADC");
-			return;
-		}
+		refuseUnencrypted(from, token, proto,
+			secure ? "this hub was reached over ADCS and the peer answered with plain ADC"
+			       : "the peer answered with plain ADC");
+		return;
 	}
 
 	if (!peerSecure && protocol != ADC_COMPLIANCE)
@@ -1984,6 +2074,18 @@ void ADC::HubSession::onNatConnect(const char* from, const char* proto,
 	}
 
 	/*
+	 * A traversed connection is a peer connection like any other, and the protocol
+	 * it names is held to the same requirement - otherwise the one path a passive
+	 * pair has left would also be the one way around it.
+	 */
+	if (!adc_is_tls_protocol(proto ? proto : "") && mustEncryptPeers())
+	{
+		refuseUnencrypted(from, token, proto,
+			"the peer offered to traverse in the clear");
+		return;
+	}
+
+	/*
 	 * Answered before dialling, so the peer starts at the same time we do rather
 	 * than after us: the two connections have to cross.
 	 */
@@ -2006,6 +2108,15 @@ void ADC::HubSession::onNatReply(const char* from, const char* proto,
 
 	const QuickDC::User* user = users->getUser(from);
 	if (!user) return;
+
+	/* The protocol our own DNAT named is the floor, as it is for a CTM answering
+	   an RCM: an answer that drops the encryption we asked for is not an answer. */
+	if (!adc_is_tls_protocol(proto ? proto : "") && mustEncryptPeers())
+	{
+		refuseUnencrypted(from, token, proto,
+			"the peer answered our traversal request in the clear");
+		return;
+	}
 
 	dialFromHubPort(user, proto, port, token);
 }
@@ -2057,7 +2168,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	 * honoured. Without a certificate we cannot name ADCS at all, which is a
 	 * different failure from the peer refusing it and is reported as such.
 	 */
-	if (!peerSecure && requireEncryptedTransfers())
+	if (!peerSecure && mustEncryptPeers())
 	{
 		if (!canAcceptTls())
 		{
@@ -2071,7 +2182,17 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 		return;
 	}
 
-	const char* protocol = peerSecure ? ADC_TLS_PROTO : ADC_COMPLIANCE;
+	/*
+	 * The protocol the peer asked for, in the peer's own words.
+	 *
+	 * A CTM answering an RCM has to name what the RCM named: the peer dials on the
+	 * strength of that field and compares it against the protocols it knows, so a
+	 * client that asked for ADCS/0.10 and is answered with ADCS/1.0 reads the answer
+	 * as a protocol it does not speak and refuses the connection it asked for. Both
+	 * spellings mean the same TLS, and this end has no preference to express - it
+	 * was invited.
+	 */
+	const char* protocol = requested.empty() ? ADC_COMPLIANCE : proto;
 
 	/* The endpoint the INF advertised, for the same reason as in
 	   sendConnectionRequest(): a gateway may have granted another port. */
@@ -2100,7 +2221,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 		QuickDC::Core::getInstance()->securityManager->grant(clearance);
 
 		send(cmd);
-	} else if (canTraverse() && user->supports(ADC_EXT_NATT)) {
+	} else if (canTraverse() && peerCanTraverse(user)) {
 		/*
 		 * Neither of us can be connected to, which used to end here with nothing
 		 * to offer. Both of us can dial, though, and a connection each of us

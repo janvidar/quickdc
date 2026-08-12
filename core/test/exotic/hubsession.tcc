@@ -39,6 +39,7 @@
 
 #include <samurai/io/dir.h>
 #include <samurai/io/file.h>
+#include <samurai/io/net/tlsfactory.h>
 #include <samurai/io/net/url.h>
 #include <samurai/io/net/serversocket.h>
 #include <samurai/io/net/socket.h>
@@ -271,7 +272,10 @@ class FakeHub :
 		void EventConnected(const Samurai::IO::Net::Socket*) override { }
 		void EventTimeout(const Samurai::IO::Net::Socket*) override { }
 		void EventDisconnected(const Samurai::IO::Net::Socket*) override { disconnected = true; }
-		void EventDataAvailable(const Samurai::IO::Net::Socket*) override { }
+		/* Read as soon as it is offered rather than only when a case asks for it:
+		   the monitor is level triggered, so a socket left unread is reported on
+		   every pass and the loop spins until something takes the bytes off it. */
+		void EventDataAvailable(const Samurai::IO::Net::Socket*) override { drain(); }
 		void EventCanWrite(const Samurai::IO::Net::Socket*) override { }
 		void EventTLSConnected(const Samurai::IO::Net::Socket*) override { }
 		void EventTLSDisconnected(const Samurai::IO::Net::Socket*) override { }
@@ -1618,6 +1622,59 @@ void forgetEncryptionSetting()
 	config->remove("Require encrypted transfers");
 }
 
+/*
+ * A certificate for this client to present.
+ *
+ * The fixture core does not make one - it is the constructor meant for a test, and
+ * it stays out of the user's own ssl directory - so everything this client will
+ * only claim or accept when it could answer a TLS handshake is unavailable without
+ * one, which is most of what encryption is negotiated for.
+ *
+ * Held for the length of a case and pointed away again afterwards, so that the
+ * cases about what a client with no certificate says still see none.
+ */
+class Certificate
+{
+	public:
+		Certificate()
+		{
+			key = scratch("peer.key");
+			crt = scratch("peer.crt");
+
+			/* Neither file is overwritten by the generator, so one left behind
+			   by an earlier run is used as it stands rather than regenerated -
+			   a 3072 bit key is not cheap. */
+			if (!Samurai::IO::File(key).exists() || !Samurai::IO::File(crt).exists())
+			{
+				Samurai::IO::File(key).remove();
+				Samurai::IO::File(crt).remove();
+				Samurai::IO::Net::TlsFactory::generateSelfSignedCertificate(
+					key.c_str(), crt.c_str(), QUICKDC_CERTIFICATE_NAME);
+			}
+
+			usable = Samurai::IO::File(key).exists() && Samurai::IO::File(crt).exists();
+			if (usable)
+				Samurai::IO::Net::TlsFactory::setKeys(key.c_str(), crt.c_str());
+		}
+
+		~Certificate()
+		{
+			/* Pointed at a pair that is not there, keys being replaceable but not
+			   removable from outside the factory. */
+			Samurai::IO::Net::TlsFactory::setKeys(scratch("none.key").c_str(),
+				scratch("none.crt").c_str());
+		}
+
+		Certificate(const Certificate&) = delete;
+		Certificate& operator=(const Certificate&) = delete;
+
+		bool usable = false;
+
+	private:
+		std::string key;
+		std::string crt;
+};
+
 /* A user for the session to be told to connect to. */
 bool announcePeer(Session& s, const char* sid)
 {
@@ -1845,28 +1902,84 @@ EXO_TEST(hubsession_an_unknown_protocol_is_refused_whatever_the_setting,
 });
 
 /*
- * The default, which is the whole of the change: the cases above each set the
- * preference, so they hold whichever way it defaults and none of them would
- * notice the default going back to permitting plaintext. This one asserts the
- * absent setting, and it is the case that fails if it does.
+ * A hub reached over ADCS requires its peer connections to be encrypted too, and
+ * does not ask the preference: a client that took the trouble to reach the hub
+ * encrypted has said what it wants, and the files a peer connection carries are the
+ * same ones the session does. The setting is off below, which is what makes this
+ * the hub's decision rather than a default being read.
  */
-EXO_TEST(hubsession_encryption_is_required_when_nothing_says_otherwise,
+EXO_TEST(hubsession_an_adcs_hub_requires_encrypted_peer_connections,
+{
+	/*
+	 * Asked of a session rather than driven over the wire, because a session that
+	 * believes it is on an ADCS hub opens with a TLS handshake and the hub here is
+	 * a plain socket - there is no logging in to one. What the rule decides is
+	 * asserted on the plain hub in the cases either side of this; what is left to
+	 * establish is that an ADCS hub does not consult the preference, and the
+	 * preference is off below.
+	 */
+	class Probe : public ADC::HubSession
+	{
+		public:
+			Probe(QuickDC::Hub* ui, QuickDC::HubListener* l,
+			      Samurai::IO::Net::URL* url, bool secure)
+				: ADC::HubSession(ui, l, url, secure) { }
+
+			using ADC::HubSession::mustEncryptPeers;
+	};
+
+	setRequireEncryption(false);
+
+	Listener listener;
+	Samurai::IO::Net::URL url("adcs://127.0.0.1:1511");
+	QuickDC::Hub ui(&listener, &url);
+
+	Probe encrypted(&ui, &listener, &url, true);
+	EXO_ASSERT(encrypted.mustEncryptPeers());
+
+	/* And a plain hub is the one that asks. */
+	Probe plain(&ui, &listener, &url, false);
+	EXO_ASSERT(!plain.mustEncryptPeers());
+
+	setRequireEncryption(true);
+	EXO_ASSERT(plain.mustEncryptPeers());
+	return 1;
+});
+
+/*
+ * And a plain ADC hub does not, which is the other half of the same rule: ADC/1.0
+ * is what a client without ADCS has to offer, and a client that reached this hub in
+ * the clear is not owed a stricter peer connection than the one it is using. The
+ * setting is absent here rather than off, since the default is the claim.
+ */
+EXO_TEST(hubsession_a_plain_hub_accepts_plain_adc_when_nothing_says_otherwise,
 {
 	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
 	EXO_ASSERT(s.login());
+
 	forgetEncryptionSetting();
 	EXO_ASSERT(announcePeer(s, "BBBB"));
 
-	std::string line;
 	s.hub.drain();
 	s.hub.received.clear();
 
 	s.say("DCTM BBBB AAAA ADC/1.0 1412 job1");
 
-	EXO_ASSERT(s.hub.nextLine(line));
-	EXO_ASSERT(line.compare(0, 5, "DSTA ") == 0);
-	EXO_ASSERT(line.find("Encryption") != std::string::npos);
-	EXO_ASSERT(line.find("job1") != std::string::npos);
+	/*
+	 * Accepted, so we dial - and nothing is listening on that port, so a DSTA does
+	 * come back. Which one it is, is the whole of the case: a refusal for being
+	 * unencrypted would have gone out instead of dialling at all.
+	 */
+	pump([&] { return false; }, 300);
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.find("Encryption\\sis\\srequired") == std::string::npos);
+
+	bool refusedForEncryption = false;
+	for (const std::string& e : s.listener.errors)
+		if (e.find("unencrypted") != std::string::npos) refusedForEncryption = true;
+	EXO_ASSERT(!refusedForEncryption);
 	return 1;
 });
 
@@ -2330,16 +2443,20 @@ EXO_TEST(hubsession_a_protocol_that_is_not_adc_at_all_is_still_refused,
 });
 
 /*
- * Encryption is announced as ADCS, which is what ADC-EXT names it: "Clients
- * supporting encrypted connections must indicate this in the INF SU field with
- * ADCS."
+ * Encryption is announced in both spellings.
  *
- * This said ADC0, the identifier the flag had before the extension was
- * standardised. The DC++ family still sends that one, so it is still worth
- * understanding when read - but it is not what this client should be claiming.
+ * ADCS is what ADC-EXT names: "Clients supporting encrypted connections must
+ * indicate this in the INF SU field with ADCS." ADC0 is what the flag was called
+ * before the extension was standardised, and a fourcc in SU is matched whole - so
+ * to the DC++ family, which looks for ADC0 and for nothing else, a client claiming
+ * ADCS alone is a client with no encryption at all, and it arranges a plaintext
+ * transfer or none.
  */
-EXO_TEST(hubsession_encryption_is_announced_as_adcs,
+EXO_TEST(hubsession_encryption_is_announced_in_both_spellings,
 {
+	Certificate cert;
+	if (!cert.usable) EXO_SKIP("could not generate a certificate");
+
 	Session s;
 	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
 	EXO_ASSERT(s.ready);
@@ -2349,7 +2466,32 @@ EXO_TEST(hubsession_encryption_is_announced_as_adcs,
 	EXO_ASSERT(announcedSupport(s, inf));
 
 	EXO_ASSERT(claims(inf, ADC_EXT_ADCS));
-	EXO_ASSERT(!claims(inf, "ADC0"));
+	EXO_ASSERT(claims(inf, ADC_EXT_ADCS_DRAFT));
+	return 1;
+});
+
+/*
+ * And neither spelling without a certificate, because this is the flag a peer reads
+ * to decide whether to ask for ADCS: claiming it with nothing to present sends the
+ * peer at a handshake that cannot complete, which costs it the transfer it would
+ * otherwise have had in the clear.
+ */
+EXO_TEST(hubsession_encryption_is_not_announced_without_a_certificate,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+
+	EXO_ASSERT(!claims(inf, ADC_EXT_ADCS));
+	EXO_ASSERT(!claims(inf, ADC_EXT_ADCS_DRAFT));
+
+	/* The rest of the field is still there, so this is a flag withheld rather
+	   than an INF that says nothing. */
+	EXO_ASSERT(claims(inf, ADC_EXT_RICHTEXT));
 	return 1;
 });
 
@@ -2929,7 +3071,9 @@ EXO_TEST(hubsession_a_traversal_answer_is_not_answered_again,
 	return 1;
 });
 
-/* And we say we can do it, so a peer knows to offer. */
+/* And we say we can do it, so a peer knows to offer - in both spellings, for the
+   same reason encryption is claimed in both: NATT is what ADC-EXT names and NAT0
+   is what the clients that implement it look for. */
 EXO_TEST(hubsession_a_client_announces_that_it_can_traverse,
 {
 	Session s;
@@ -2939,7 +3083,191 @@ EXO_TEST(hubsession_a_client_announces_that_it_can_traverse,
 
 	std::string inf;
 	EXO_ASSERT(announcedSupport(s, inf));
-	EXO_ASSERT(claims(inf, "NATT"));
+	EXO_ASSERT(claims(inf, ADC_EXT_NATT));
+	EXO_ASSERT(claims(inf, ADC_EXT_NATT_DRAFT));
+	return 1;
+});
+
+/* Read the same way round: a peer that claims only the draft flag is one to
+   traverse to, that being the flag the clients doing this in practice send. */
+EXO_TEST(hubsession_a_peer_claiming_only_the_draft_traversal_flag_is_traversed_to,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	EXO_ASSERT(announcePeerSupporting(s, "BBBB", "ADC0,NAT0"));
+
+	setRequireEncryption(false);
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say("DRCM BBBB AAAA ADC/1.0 job1");
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DNAT ") == 0);
+	EXO_ASSERT(line.find("job1") != std::string::npos);
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* Which protocol a peer connection is arranged in                           */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A CTM answering an RCM names what the RCM named, spelling and all.
+ *
+ * The peer dials on the strength of that field and compares it against the
+ * protocols it knows, so a client that asked for ADCS/0.10 - which is what the DC++
+ * family asks for - and is answered with ADCS/1.0 reads the answer as a protocol it
+ * does not speak and refuses the connection it asked for itself. Both spellings
+ * mean the same TLS, and this end was invited rather than asked.
+ */
+EXO_TEST(hubsession_a_reverse_request_is_answered_in_the_spelling_it_asked_for,
+{
+	for (const char* asked : { ADC_TLS_PROTO, ADC_TLS_PROTO_DRAFT })
+	{
+		Certificate cert;
+		if (!cert.usable) EXO_SKIP("could not generate a certificate");
+
+		Session s;
+		if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+		EXO_ASSERT(s.ready);
+		ActiveCore active;
+		EXO_ASSERT(s.login());
+		EXO_ASSERT(announcePeerSupporting(s, "BBBB", "ADCS,ADC0"));
+
+		s.hub.drain();
+		s.hub.received.clear();
+
+		s.say(std::string("DRCM BBBB AAAA ") + asked + " job1");
+
+		std::string line;
+		EXO_ASSERT(s.hub.nextLine(line));
+
+		if (line.compare(0, 5, "DCTM ") != 0
+			|| line.find(std::string(" ") + asked + " ") == std::string::npos)
+		{
+			const std::string why = std::string("asked for ") + asked
+				+ " and was answered with \"" + line + "\"";
+			EXO_FAIL(why.c_str());
+		}
+	}
+	return 1;
+});
+
+/*
+ * And a request we make ourselves names what the peer said it speaks, the same rule
+ * read the other way round: SU is where a client says which spelling it answers to,
+ * and it is the only thing that says so before the connection exists.
+ */
+EXO_TEST(hubsession_a_connect_request_names_what_the_peer_announced,
+{
+	struct Case { const char* su; const char* expected; };
+	const Case cases[] = {
+		{ "ADCS,ADC0,TCP4", ADC_TLS_PROTO },
+		{ "ADCS,TCP4",      ADC_TLS_PROTO },
+		{ "ADC0,TCP4",      ADC_TLS_PROTO_DRAFT },
+		{ "TCP4",           ADC_COMPLIANCE },
+	};
+
+	for (const Case& c : cases)
+	{
+		Certificate cert;
+		if (!cert.usable) EXO_SKIP("could not generate a certificate");
+
+		Session s;
+		if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+		EXO_ASSERT(s.ready);
+		ActiveCore active;
+		EXO_ASSERT(s.login());
+
+		/* Off, so that a peer announcing nothing is asked for what it can do
+		   rather than refused - which is the last case. */
+		setRequireEncryption(false);
+		EXO_ASSERT(announcePeerSupporting(s, "BBBB", c.su));
+
+		s.hub.drain();
+		s.hub.received.clear();
+
+		const QuickDC::User* peer = s.session->getUserManager()->getUser("BBBB");
+		EXO_ASSERT(peer != 0);
+		s.session->sendConnectionRequest(peer, "job1");
+		pump([] { return false; }, 60);
+
+		std::string line;
+		EXO_ASSERT(s.hub.nextLine(line));
+
+		if (line.compare(0, 5, "DCTM ") != 0
+			|| line.find(std::string(" ") + c.expected + " ") == std::string::npos)
+		{
+			const std::string why = std::string("a peer announcing ") + c.su
+				+ " was sent \"" + line + "\"";
+			EXO_FAIL(why.c_str());
+		}
+	}
+	return 1;
+});
+
+/*
+ * The same when it is the peer that will dial: an RCM carries a protocol too, and a
+ * passive client needs no certificate of its own to name encryption - it is the end
+ * that connects out, and the certificate belongs to whoever answers.
+ */
+EXO_TEST(hubsession_a_reverse_request_names_what_the_peer_announced,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	setRequireEncryption(false);
+	EXO_ASSERT(announcePeerSupporting(s, "BBBB", "ADC0,TCP4"));
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	const QuickDC::User* peer = s.session->getUserManager()->getUser("BBBB");
+	EXO_ASSERT(peer != 0);
+	s.session->sendConnectionRequest(peer, "job1");
+	pump([] { return false; }, 60);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DRCM ") == 0);
+	EXO_ASSERT(line.find(std::string(" ") + ADC_TLS_PROTO_DRAFT + " ") != std::string::npos);
+	return 1;
+});
+
+/*
+ * A peer that announced no encryption at all is still asked for it where the hub
+ * requires it, in the spelling the specification gives. SU is a claim a client has
+ * to remember to make, and treating silence as "cannot" would turn every
+ * under-announcing peer into a transfer refused before it was attempted.
+ */
+EXO_TEST(hubsession_a_silent_peer_is_still_asked_for_encryption_where_it_is_required,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	setRequireEncryption(true);
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	const QuickDC::User* peer = s.session->getUserManager()->getUser("BBBB");
+	EXO_ASSERT(peer != 0);
+	s.session->sendConnectionRequest(peer, "job1");
+	pump([] { return false; }, 60);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "DRCM ") == 0);
+	EXO_ASSERT(line.find(std::string(" ") + ADC_TLS_PROTO + " ") != std::string::npos);
 	return 1;
 });
 

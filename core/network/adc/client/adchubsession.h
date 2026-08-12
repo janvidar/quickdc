@@ -193,6 +193,32 @@ class HubSession :
 		                       const char* proto, const char* why);
 
 		/**
+		 * Whether a peer connection arranged through this hub has to be encrypted.
+		 *
+		 * A hub reached over ADCS answers yes and is not asked anything further:
+		 * the peer connections it brokers carry the same files the session does,
+		 * and a client that took the trouble to reach the hub encrypted has said
+		 * what it wants. Plaintext there is a refusal rather than a fallback,
+		 * which is why this is not a preference in that case.
+		 *
+		 * A plain ADC hub leaves it to the setting, which is off; there ADC/1.0 is
+		 * what a peer without ADCS has, and it is accepted.
+		 */
+		bool mustEncryptPeers() const;
+
+		/**
+		 * The protocol to name in a CTM or RCM for this user, read off the SU
+		 * field of their INF.
+		 *
+		 * @param listening whether we are the end that will be dialled, in which
+		 *        case naming encryption also requires a certificate to answer
+		 *        with - see canAcceptTls(). Dialling out needs none.
+		 * @return the protocol, or 0 when nothing can be arranged that this hub
+		 *         allows, which is the case the caller has to abandon.
+		 */
+		const char* peerConnectProtocol(const QuickDC::User* user, bool listening) const;
+
+		/**
 		 * The local port of this hub connection, which is what a NATT exchange
 		 * names: the mapping our NAT made for it is the one a peer's connection
 		 * can arrive on. Zero when there is no connection to read it from, or when

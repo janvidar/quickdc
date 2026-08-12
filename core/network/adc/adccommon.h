@@ -18,10 +18,13 @@ typedef uint32_t sid_t;
 /*
  * What the CTM protocol field says for an encrypted peer connection.
  *
- * ADCS/1.0 is what ADC-EXT specifies and what this client names. ADCS/0.10 is the
- * number the extension carried while it was a draft; the DC++ family still names
- * that one, so it is understood when read even though it is never sent - refusing
- * it would refuse the transfer. See adc_is_tls_protocol().
+ * ADCS/1.0 is what ADC-EXT specifies. ADCS/0.10 is the number the extension
+ * carried while it was a draft, and the DC++ family still names that one - so both
+ * are understood when read, and which of them is sent follows what the peer said it
+ * speaks rather than what this client would rather use. A peer only recognises the
+ * spelling it announced: answering a client that knows the draft alone with
+ * ADCS/1.0 names a protocol it has never heard of, and it refuses its own transfer.
+ * See adc_is_tls_protocol() and ADC::peerTlsProtocol().
  */
 #define ADC_TLS_PROTO                   "ADCS/1.0"
 #define ADC_TLS_PROTO_DRAFT             "ADCS/0.10"
@@ -36,6 +39,23 @@ typedef uint32_t sid_t;
 #define ADC_EXT_ZLIF                    "ZLIF" /* full compressed connection (zon, zoff) */
 #define ADC_EXT_PFSR                    "PFSR" /* partial file sharing (PSR) */
 #define ADC_EXT_NATT                    "NATT" /* p2p: NAT traversal for two passive clients */
+
+/*
+ * The same two extensions as their drafts named them in SU, and the names most of
+ * the network still reads.
+ *
+ * A fourcc in SU is matched whole, so ADCS and ADC0 are two unrelated words to
+ * every client on the hub: one that only knows ADC0 - which is the DC++ family, and
+ * so most of what is out there - sees a client announcing ADCS alone as one with no
+ * encryption at all, and arranges a plaintext transfer or none. Announcing both
+ * costs five bytes in an INF and is the difference between being offered an
+ * encrypted connection and not.
+ *
+ * Read the same way round: either flag is taken as the extension being supported,
+ * and which one the peer announced decides what is named back at it.
+ */
+#define ADC_EXT_ADCS_DRAFT              "ADC0" /* p2p: ADCS, as the draft named it */
+#define ADC_EXT_NATT_DRAFT              "NAT0" /* p2p: NATT, as the draft named it */
 
 /*
  * What a client says it can be reached by, in INF's SU.
