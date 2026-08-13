@@ -18,6 +18,7 @@
 #include "network/keyprint.h"
 #include "network/securitymanager.h"
 #include "network/usermanager.h"
+#include "network/adc/adcbbs.h"
 #include "network/adc/adccommon.h"
 #include "network/adc/adccommandproxy.h"
 #include "network/adc/adccommands.h"
@@ -345,6 +346,17 @@ void ADC::HubSession::EventConnected(const Samurai::IO::Net::Socket*)
 		userState = QuickDC::HubSession::StateProtocol;
 		ADC::Command* cmd = new ADC::Command(FOURCC('H','S','U','P'));
 		ADC::addSupportFlags(*cmd, false);
+
+		/*
+		 * Added here rather than in addSupportFlags(), which the hub in this tree
+		 * introduces itself through the same call: offering to read a board and
+		 * offering to host one are different claims that happen to share a fourcc,
+		 * exactly as with the NATT and PING a hub adds after the same call. A hub
+		 * announcing BBS0 says it keeps an index and will serve it; a client says
+		 * only that it implements the post document and will verify what it
+		 * displays, which is the whole of what this promises.
+		 */
+		cmd->addArgument("AD", ADC_EXT_BULLETIN);
 		send(cmd);
 
 		listener->EventNetStatus(QuickDC::HubListener::NetConnected);
@@ -507,6 +519,11 @@ void ADC::HubSession::EventTLSConnected(const Samurai::IO::Net::Socket*)
 		userState = QuickDC::HubSession::StateProtocol;
 		ADC::Command* cmd = new ADC::Command(FOURCC('H','S','U','P'));
 		ADC::addSupportFlags(*cmd, false);
+
+		/* And on this path too, for the reason given at the other one: an ADCS hub
+		   is offered the same set as a plain one, encryption having nothing to do
+		   with whether a client reads bulletins. */
+		cmd->addArgument("AD", ADC_EXT_BULLETIN);
 		send(cmd);
 		listener->EventNetStatus(QuickDC::HubListener::NetConnected);
 	} else {
@@ -1584,6 +1601,24 @@ void ADC::HubSession::onSupports()
 
 	for (const auto& feature : extensions)
 		listener->EventHubExtension(feature.c_str());
+
+	/*
+	 * And the one question that cannot be answered by naming what arrived.
+	 *
+	 * The loop above reports the whole set after every SUP, so a listener hears a
+	 * feature it already knew about again, and it never hears of one being taken
+	 * away - there is no shape in that notification for a withdrawal. Bulletin
+	 * boards are the first feature where the difference matters: an interface with
+	 * a board open has to close it when the hub withdraws BBS0, since every
+	 * subscription went with it.
+	 *
+	 * So availability is re-derived from what the hub currently claims and stated
+	 * outright, rather than inferred from what this SUP happened to mention. Stated
+	 * every time and not only on a change: a current answer is idempotent, which is
+	 * what makes it safe to repeat, and a listener drawing on it compares against
+	 * what it last drew - see the Qt bridge, which does exactly that for rich text.
+	 */
+	listener->EventBoardsAvailable(supportsBulletins());
 }
 
 
@@ -1597,6 +1632,153 @@ bool ADC::HubSession::supports(const char* feature) const
 bool ADC::HubSession::supportsRichText() const
 {
 	return supports(ADC_EXT_RICHTEXT);
+}
+
+
+bool ADC::HubSession::mayUseBulletins() const
+{
+	return supportsBulletins() && userState == QuickDC::HubSession::StateNormal;
+}
+
+
+/*
+ * BBL, which asks for entries: the whole of a board from a point in time, one
+ * entry by its hash, or nothing further.
+ *
+ * TS is written whatever it is, a resumption from the beginning included. The
+ * extension reads an absent TS as zero, so the two say the same thing, and saying
+ * it costs three bytes and makes a capture read the way the request was meant.
+ *
+ * TR and TS may not both appear, and here they cannot: a subscription writes TS
+ * and never TR, a request for one entry writes TR and never TS. That is the
+ * invariant rather than a check, because the two are separate functions - a
+ * single one taking both would have to refuse half of what it was given.
+ */
+bool ADC::HubSession::subscribeBoard(const char* board, uint64_t timestamp)
+{
+	if (!mayUseBulletins()) return false;
+	if (!board || !ADC::isValidBoardName(board)) return false;
+
+	ADC::Command* cmd = new ADC::Command(FOURCC('H','B','B','L'));
+	cmd->addArgument("BD", board);
+	cmd->addArgument("TS", std::to_string(timestamp));
+	send(cmd);
+	return true;
+}
+
+
+bool ADC::HubSession::unsubscribeBoard(const char* board)
+{
+	if (!mayUseBulletins()) return false;
+	if (!board || !ADC::isValidBoardName(board)) return false;
+
+	ADC::Command* cmd = new ADC::Command(FOURCC('H','B','B','L'));
+	cmd->addArgument("BD", board);
+	cmd->addArgument("RM", "1");
+	send(cmd);
+	return true;
+}
+
+
+bool ADC::HubSession::requestEntry(const char* board, const char* tth)
+{
+	if (!mayUseBulletins()) return false;
+	if (!board || !ADC::isValidBoardName(board)) return false;
+	if (!tth || !ADC::isValidTTH(tth)) return false;
+
+	ADC::Command* cmd = new ADC::Command(FOURCC('H','B','B','L'));
+	cmd->addArgument("BD", board);
+	cmd->addArgument("TR", tth);
+	send(cmd);
+	return true;
+}
+
+
+/*
+ * BBP, which submits a post the caller has already composed, hashed and made
+ * servable.
+ *
+ * Four fields are the hub's to fill in and are never sent: the author, the
+ * nickname it went out under, the thread root and the timestamp. A hub discards
+ * them rather than refusing the command, as it discards PD from an INF, so this
+ * is not about being accepted - it is that every one of them is a claim this end
+ * is not entitled to make. ID and NI would be a client naming somebody else as
+ * the author; TS would be a client choosing its own place in a board's order,
+ * which is the order every cursor is made of; TH is not the client's to work out,
+ * the hub knowing the thread of the post named by PA and a post without one
+ * starting a thread whose root is its own hash.
+ *
+ * The subject is sent to match the document and is refused rather than repaired
+ * where it carries a newline. A document whose subject contains one is refused by
+ * every reader, so the post being submitted is one nobody could ever display, and
+ * flattening it here would leave the index saying something the document does not.
+ */
+bool ADC::HubSession::submitPost(const char* tth, uint64_t size, const char* board,
+                                 const char* subject, const char* parent)
+{
+	if (!mayUseBulletins()) return false;
+	if (!tth || !ADC::isValidTTH(tth)) return false;
+	if (!board || !ADC::isValidBoardName(board)) return false;
+
+	/* A post document is a header and the newline that ends it at the very least,
+	   so nothing that could be hashed is this long. */
+	if (!size) return false;
+
+	if (parent && *parent && !ADC::isValidTTH(parent)) return false;
+
+	const std::string_view text(subject ? subject : "");
+	if (text.find_first_of("\r\n") != std::string_view::npos) return false;
+
+	ADC::Command* cmd = new ADC::Command(FOURCC('H','B','B','P'));
+	cmd->addArgument("TR", tth);
+	cmd->addArgument("SI", std::to_string(size));
+	cmd->addArgument("BD", board);
+	if (parent && *parent) cmd->addArgument("PA", parent);
+
+	/* An empty subject is left out rather than sent as a field with nothing in
+	   it: a post that starts a thread is required to have one and a reply is not,
+	   and an empty SJ says a post has a subject which is the empty string. */
+	if (!text.empty()) cmd->addArgument("SJ", subject);
+
+	send(cmd);
+	return true;
+}
+
+
+/*
+ * And withdrawal, which is the same command carrying RM1 and the hash of the post
+ * to take out of the index.
+ *
+ * No size, and no subject: what is being named is an entry the hub already holds,
+ * and the fields that describe a post describe this one no longer - the subject of
+ * a withdrawn post is usually the reason it was withdrawn.
+ */
+bool ADC::HubSession::withdrawPost(const char* tth, const char* board)
+{
+	if (!mayUseBulletins()) return false;
+	if (!tth || !ADC::isValidTTH(tth)) return false;
+	if (!board || !ADC::isValidBoardName(board)) return false;
+
+	ADC::Command* cmd = new ADC::Command(FOURCC('H','B','B','P'));
+	cmd->addArgument("TR", tth);
+	cmd->addArgument("BD", board);
+	cmd->addArgument("RM", "1");
+	send(cmd);
+	return true;
+}
+
+
+void ADC::HubSession::onBoardDescription(const QuickDC::Board& board)
+{
+	if (!listener) return;
+	listener->EventBoardDescribed(board);
+}
+
+
+void ADC::HubSession::onBoardEntry(const QuickDC::BoardEntry& entry)
+{
+	if (!listener) return;
+	listener->EventBoardEntry(entry);
 }
 
 
@@ -1648,6 +1830,60 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 			default:
 				QERR("Invalid status code: %s (unknown severity, expected 0-2)", code);
 				return;
+		}
+
+		/*
+		 * A refusal of something this client said about a board, told apart from
+		 * every other status by 'FC' and passed on whole.
+		 *
+		 * Taken before the switch below rather than as cases within it, because
+		 * most of the codes a board is refused with are ones ADC already had for
+		 * something else: a board this session may not post on and a login denied
+		 * arrive as the same 25, and only the command named in FC distinguishes
+		 * them. The five codes the extension asked for of its own are not in that
+		 * switch at all and would come out as an unknown code in the log, which is
+		 * where a rate limit and a board that no longer exists would have ended.
+		 *
+		 * Severity 1 only. Every one of these is recoverable by definition - none
+		 * of them is a reason to disconnect a client - so a fatal status that
+		 * happens to name BBL is about the connection and belongs with the rest of
+		 * them below.
+		 *
+		 * And from the hub only. A DSTA is another client talking, and no other
+		 * client is a party to a bulletin board at any point: this extension is
+		 * spoken between a client and its hub, so a refusal from anywhere else is
+		 * somebody on the hub inventing an answer to a post they know nothing
+		 * about. It is not conditioned on the hub still announcing BBS0, though -
+		 * a refusal may be the last thing said before the feature is withdrawn, and
+		 * dropping that one would leave a submission pending for ever with nothing
+		 * to explain it.
+		 */
+		if (code[0] == '1' && cmd->getFourcc() == FOURCC('I','S','T','A'))
+		{
+			const char* context = cmd->getArgument("FC", 2);
+
+			if (context && (!strcmp(context, "BBL") || !strcmp(context, "BBP")))
+			{
+				const char* board = cmd->getArgument("BD", 2);
+				const char* tth = cmd->getArgument("TR", 2);
+
+				/*
+				 * Neither is passed on unless it is what it claims to be. A board
+				 * name is protocol text that reaches a user interface and is never
+				 * a path, and a hash that is not one names no post - see
+				 * ADC::isValidBoardName(). A refusal is still worth reporting
+				 * without them: the code and the hub's words are the message.
+				 */
+				if (board && !ADC::isValidBoardName(board)) board = 0;
+				if (tth && !ADC::isValidTTH(tth)) tth = 0;
+
+				QERR("The hub refused a bulletin board command: %s ('%s')",
+					code, mesg ? mesg : "no reason given");
+
+				listener->EventBoardRefused(Samurai::Util::Convert::to_int32(&code[1]),
+					mesg ? mesg : "", board ? board : "", tth ? tth : "");
+				return;
+			}
 		}
 
 		switch (Samurai::Util::Convert::to_int32(&code[1]))

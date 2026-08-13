@@ -164,6 +164,107 @@ class HubSession {
 		 virtual bool supportsRichText() const { return false; }
 
 		/**
+		 * Returns true if this hub has agreed to carry bulletin boards.
+		 *
+		 * False by default for the reason supportsRichText() is: it takes a
+		 * negotiated extension to send a bulletin at all, and NMDC can negotiate
+		 * nothing of the kind. Asked again wherever it matters rather than
+		 * remembered anywhere, because the hub's answer is authoritative for the
+		 * connection and may change while it lasts - a hub may announce the
+		 * feature in a later SUP than its first, and may take it back.
+		 */
+		 virtual bool supportsBulletins() const { return false; }
+
+		/*
+		 * The five things a client says about a bulletin board, each doing nothing
+		 * and answering false where the protocol has no way to say it.
+		 *
+		 * False means nothing was sent, and it is not an error: a hub without
+		 * boards is the ordinary case, on NMDC it is the only case, and an
+		 * interface that offered the user a board on such a hub is the thing that
+		 * was wrong. Reporting it as a system error would put a message on screen
+		 * about a hub that behaved perfectly.
+		 *
+		 * Every name here is protocol text and is checked before anything goes out;
+		 * see the ADC implementation. A board is named rather than held, because a
+		 * board belongs to one hub and the caller may know of several.
+		 */
+
+		/**
+		 * Subscribe to a board, replaying it from 'timestamp' onwards.
+		 *
+		 * The backlog and the live feed are one stream and are not distinguished:
+		 * every entry the hub holds from that second onwards arrives, and so does
+		 * every entry it accepts afterwards, until the subscription is cancelled or
+		 * the connection ends. Nothing marks the end of the backlog, because there
+		 * is no end to it.
+		 *
+		 * @param timestamp the highest timestamp already held, and deliberately not
+		 *        one second past it: timestamps are not unique, so a cursor moved
+		 *        beyond the last entry received skips every post the hub accepted
+		 *        in that same second. The price is that the final second arrives a
+		 *        second time, which a caller keyed on the tth discards. Zero asks
+		 *        for the whole board.
+		 */
+		virtual bool subscribeBoard(const char* board, uint64_t timestamp)
+		{ (void) board; (void) timestamp; return false; }
+
+		/**
+		 * Cancel a subscription. Nothing confirms it, so a caller that wants to
+		 * know it has stopped receiving a board has only the absence of entries.
+		 */
+		virtual bool unsubscribeBoard(const char* board)
+		{ (void) board; return false; }
+
+		/**
+		 * Ask for the single index entry of one post, without subscribing.
+		 *
+		 * What an orphaned reply is chased with: the parent named by a post already
+		 * held may be on a board this session cannot see, withdrawn, or from
+		 * another hub, and this is the question that tells the three apart. The
+		 * answer is one entry, or a refusal saying the hub holds no such post.
+		 */
+		virtual bool requestEntry(const char* board, const char* tth)
+		{ (void) board; (void) tth; return false; }
+
+		/**
+		 * Submit a post that has already been composed, hashed and made servable.
+		 *
+		 * The caller is the only source of the document until the first reader has
+		 * fetched it, so it must be prepared to serve it before this is called: an
+		 * author who submits a post and disconnects has published nothing.
+		 *
+		 * There is no success message. The hub sends the resulting index entry back
+		 * - to this session whether or not it subscribes to the board - and that
+		 * entry is the acknowledgement, so nothing may be shown as published until
+		 * it arrives.
+		 *
+		 * @param size  the document's length in bytes, which the hub weighs against
+		 *              the board's limit.
+		 * @param parent the tth of the post being replied to, or null for a post
+		 *              that starts a thread. The thread root is not passed, because
+		 *              it is not the client's to work out.
+		 */
+		virtual bool submitPost(const char* tth, uint64_t size, const char* board,
+		                        const char* subject, const char* parent)
+		{
+			(void) tth; (void) size; (void) board; (void) subject; (void) parent;
+			return false;
+		}
+
+		/**
+		 * Withdraw a post from a board.
+		 *
+		 * Withdrawal is not deletion and the word is chosen for that: it removes an
+		 * index entry from one hub, while the document is held by every client that
+		 * read it and goes on being served by them. What arrives is a tombstone
+		 * carrying a new timestamp, which is what puts it in front of every cursor
+		 * that had already moved past the post.
+		 */
+		virtual bool withdrawPost(const char* tth, const char* board)
+		{ (void) tth; (void) board; return false; }
+
+		/**
 		 * Supply a password after EventHubAutenticate() asked for one.
 		 *
 		 * Ignored unless the hub actually asked. A password is only meaningful

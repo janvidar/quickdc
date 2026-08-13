@@ -50,6 +50,14 @@ void addSupportFlags(ADC::Command& command, bool client);
 	ADC_HUB_CMD_CLASS(CmdNAT);
 	ADC_HUB_CMD_CLASS(CmdRNT);
 
+	/*
+	 * The two bulletin board commands a hub sends: BBD describing a board, BBL
+	 * carrying one entry of one. There is no third - BBP travels the other way, and
+	 * a hub that sent one would be talking to itself.
+	 */
+	ADC_HUB_CMD_CLASS(CmdBoardDesc);
+	ADC_HUB_CMD_CLASS(CmdBoardEntry);
+
 	ADC_CLIENT_CMD_CLASS(CCmdSUP);
 	ADC_CLIENT_CMD_CLASS(CCmdINF);
 	ADC_CLIENT_CMD_CLASS(CCmdSTA);

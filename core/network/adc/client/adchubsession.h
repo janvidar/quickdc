@@ -7,12 +7,14 @@
 #define HAVE_QUICKDC_ADCHUBSESSION_H
 
 #include <string.h>
+#include "network/adc/adccommon.h"
 #include "network/connection.h"
 #include "network/hubsession.h"
 #include "network/user.h"
 #include "network/usermanager.h"
 #include "share/searchrequest.h"
 #include "config/preferences.h"
+#include "api/bulletins.h"
 #include "api/hub.h"
 
 #include <samurai/timer.h>
@@ -108,6 +110,29 @@ class HubSession :
 		void sendSearchRequest(QuickDC::Share::SearchRequest* request) override;
 		void sendConnectionRequest(const QuickDC::User*, const char* token) override;
 
+		/*
+		 * The bulletin board commands a client sends: BBL to read a board and BBP
+		 * to write to one.
+		 *
+		 * Each refuses unless the hub has announced BBS0 and the session is in the
+		 * NORMAL state, and each checks its own arguments before writing anything.
+		 * The hub's announcement is what makes the commands legal on this
+		 * connection at all - a client that sends them on a hub which has said
+		 * nothing is speaking a protocol nobody agreed to - and the state is
+		 * because a board is not a thing that exists during a login.
+		 *
+		 * The arguments are checked here rather than left for the hub to refuse
+		 * because a malformed board name or hash reaching this point is a fault in
+		 * this client, and the answer to one is not a status message from a stranger
+		 * describing it.
+		 */
+		bool subscribeBoard(const char* board, uint64_t timestamp) override;
+		bool unsubscribeBoard(const char* board) override;
+		bool requestEntry(const char* board, const char* tth) override;
+		bool submitPost(const char* tth, uint64_t size, const char* board,
+		                const char* subject, const char* parent) override;
+		bool withdrawPost(const char* tth, const char* board) override;
+
 		/**
 		 * Forget what this hub was told, so the next INF is a whole one again.
 		 *
@@ -147,6 +172,27 @@ class HubSession :
 
 		void onUserInfo(const char* id, QuickDC::User* data, uint64_t oldShare, bool changed);
 		void onStatus(ADC::Command* cmd);
+
+		/**
+		 * BBD: the hub describing one of its boards, or saying that one is gone.
+		 *
+		 * A descriptor says what there is to subscribe to and subscribes nobody to
+		 * anything. Its absence is the whole of the mechanism for hiding a board, so
+		 * a board never described is one this session may not see rather than one
+		 * that does not exist.
+		 */
+		void onBoardDescription(const QuickDC::Board& board);
+
+		/**
+		 * BBL: one index entry, arriving because this session subscribed to the
+		 * board, asked for the single post, or wrote it.
+		 *
+		 * Reported as it arrives and in the order it arrived. Nothing here decides
+		 * what a board looks like: entries are keyed on the tth by whoever keeps
+		 * them, since resuming a subscription deliberately replays the second it
+		 * resumed from, and a withdrawal is a second entry for a tth already held.
+		 */
+		void onBoardEntry(const QuickDC::BoardEntry& entry);
 
 		void onPublicChat(const char* from, const char* message, bool action,
 		                  bool richText, uint64_t timestamp);
@@ -192,6 +238,18 @@ class HubSession :
 		void sendPeerError(const char* sid, const char* code, const char* msg, const char* token, const char* protocol) override;
 
 	protected:
+		/**
+		 * Whether this session may say anything about a board at all.
+		 *
+		 * Two conditions, and both of them are the hub's. It must have announced
+		 * BBS0 - the announcement is authoritative for the connection, is not
+		 * cached across one, and may be withdrawn while one lasts - and the session
+		 * must have reached the NORMAL state, which is where the hub has a user to
+		 * attribute a post to and boards to attribute it on. A client that asks
+		 * anyway is refused once per command for as long as it keeps asking.
+		 */
+		bool mayUseBulletins() const;
+
 		/**
 		 * Refuse a peer connection that would not be encrypted, telling both the
 		 * peer and whoever is watching this session why.
@@ -277,6 +335,7 @@ class HubSession :
 		virtual bool isLoggedIn() const override;
 		virtual bool isSecure() const override;
 		virtual bool supportsRichText() const override;
+		bool supportsBulletins() const override { return supports(ADC_EXT_BULLETIN); }
 
 		/**
 		 * Check if the server supports a given feature.

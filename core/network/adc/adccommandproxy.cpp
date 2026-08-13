@@ -53,6 +53,8 @@ ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket
 	FOURCC_REG('D','R','C','M', new ADC::CmdRCTM(this, session));
 	FOURCC_REG('D','N','A','T', new ADC::CmdNAT(this, session));
 	FOURCC_REG('D','R','N','T', new ADC::CmdRNT(this, session));
+	FOURCC_REG('I','B','B','D', new ADC::CmdBoardDesc(this, session));
+	FOURCC_REG('I','B','B','L', new ADC::CmdBoardEntry(this, session));
 }
 
 ADC::CommandProxy::CommandProxy(std::shared_ptr<Samurai::IO::Net::Socket> socket, ADC::LocalHub::Hub* hub) : QuickDC::CommandProxy(std::move(socket)), handover(0)

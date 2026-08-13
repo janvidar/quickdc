@@ -5,6 +5,7 @@
 
 #include "share/searchrequest.h"
 #include "share/searchresult.h"
+#include "network/adc/adcbbs.h"
 #include "network/adc/adccommands.h"
 #include "network/adc/cid.h"
 #include "network/keyprint.h"
@@ -603,6 +604,42 @@ bool ADC::CmdRNT::invoke(ADC::Command* cmd) {
 		return true;
 	}
 	return false;
+}
+
+/*
+ * Both of these are dropped on a hub that never announced BBS0, and dropped
+ * silently: the extension requires it, and the reason is worth stating where the
+ * check is. A descriptor is what puts a board in front of the user, so a hub that
+ * has not agreed to the extension can otherwise announce boards to a client that
+ * offered it and never heard back - and an entry is a claim about a post, which is
+ * a claim nobody asked this hub for.
+ *
+ * Answered as handled rather than as a parse failure, since ignoring a command is
+ * what was meant to happen: reporting it would put an unhandled command in the log
+ * for a hub behaving exactly as it should.
+ */
+bool ADC::CmdBoardDesc::invoke(ADC::Command* cmd) {
+	cmd->setPriority(ADC::Command::Normal);
+
+	if (!session->supportsBulletins()) return true;
+
+	QuickDC::Board board;
+	if (!ADC::readBoard(cmd, board)) return false;
+
+	session->onBoardDescription(board);
+	return true;
+}
+
+bool ADC::CmdBoardEntry::invoke(ADC::Command* cmd) {
+	cmd->setPriority(ADC::Command::Normal);
+
+	if (!session->supportsBulletins()) return true;
+
+	QuickDC::BoardEntry entry;
+	if (!ADC::readEntry(cmd, entry)) return false;
+
+	session->onBoardEntry(entry);
+	return true;
 }
 
 void ADC::addSupportFlags(ADC::Command& command, bool clientMode)

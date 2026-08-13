@@ -13,6 +13,7 @@
 #include <samurai/timer.h>
 
 
+#include "api/bulletins.h"
 #include "network/hubsession.h"
 #include "network/user.h"
 #include "config/preferences.h"
@@ -251,6 +252,95 @@ class HubListener
 	virtual void EventHubExtension(const char* fourcc) { (void) fourcc; }
 
 	/**
+	 * Whether this hub has bulletin boards, as it stands.
+	 *
+	 * Said after every SUP the hub sends, whether or not the answer has changed,
+	 * and the current answer each time rather than a difference. That is not
+	 * laziness: a hub may announce BBS0 in a later SUP than its first and may
+	 * withdraw it with RMBBS0, so there is nothing to remember between the two -
+	 * and a listener that had to work the state out from a stream of additions
+	 * would have no shape at all in which to hear a withdrawal. A listener that
+	 * draws on this compares it against what it last drew and does nothing when
+	 * the two agree.
+	 *
+	 * False also cancels: every subscription this session held is gone with the
+	 * feature, and nothing else will say so.
+	 *
+	 * Not pure, like the two above: a listener with nowhere to show a board has
+	 * nothing to do here.
+	 */
+	virtual void EventBoardsAvailable(bool available) { (void) available; }
+
+	/**
+	 * The hub described one of its boards, or said that one no longer exists.
+	 *
+	 * One of these arrives per board on login and again whenever any field of a
+	 * board changes - including what this session may do on it, which is stated
+	 * per session because "what may *you* do here" is a question only the hub can
+	 * answer. A descriptor subscribes nobody to anything; it says what there is
+	 * to subscribe to.
+	 *
+	 * A board that is never described is the way a board is hidden, so there is no
+	 * event for that and there cannot be one: what a listener holds is every board
+	 * it has been told about, and the hub's silence is the rest of the answer.
+	 *
+	 * @param board with 'removed' set where the board has ceased to exist, which
+	 *              also cancels any subscription this session held on it.
+	 */
+	virtual void EventBoardDescribed(const QuickDC::Board& board) { (void) board; }
+
+	/**
+	 * One index entry on a board: a post, or the tombstone of one.
+	 *
+	 * The whole of what a hub sends about a post, and it arrives for three
+	 * reasons that are deliberately not distinguished - the backlog of a
+	 * subscription, a post accepted from somebody since, or a post this client
+	 * submitted. That last is why there is no separate acknowledgement of a
+	 * submission and no success status message anywhere in this extension: the
+	 * entry is the acknowledgement, the hub sends it to the author whether or not
+	 * the author subscribes, and until it arrives a post is not published.
+	 *
+	 * Nothing about it is evidence. Everything the hub says here is a claim about
+	 * a document that may not exist, and the fields copied out of that document -
+	 * the parent and the subject - are hints until it has been fetched and hashed;
+	 * see api/bulletins.h, which is where that is written down at length.
+	 *
+	 * Entries are keyed on the tth by whoever keeps them. A resumed subscription
+	 * replays the second it resumed from, so a duplicate is ordinary, and a
+	 * withdrawal arrives as a second entry for a tth already held carrying a later
+	 * timestamp.
+	 */
+	virtual void EventBoardEntry(const QuickDC::BoardEntry& entry) { (void) entry; }
+
+	/**
+	 * The hub refused something said about a board.
+	 *
+	 * Named by the board or by the hash rather than by a token, because this
+	 * extension has none: a submission is answered either by the entry or by a
+	 * refusal quoting the same hash, and the two are told apart that way. So both
+	 * are passed on, and a listener matches on whichever of them it was waiting
+	 * for.
+	 *
+	 * @param code    the ADC status code, the severity stripped off. 71 is a board
+	 *                that is not there and can be dropped from the interface, 72 a
+	 *                post larger than the board allows, 75 a rate limit, 76 a post
+	 *                the hub holds no entry for and which can stop being asked
+	 *                for. Everything else is a condition to report and not to act
+	 *                on, including the codes ADC already had a better word for - a
+	 *                missing permission among them, since what a board descriptor
+	 *                says a session may do is not a security boundary and the hub
+	 *                re-checks every operation as it arrives.
+	 * @param message the hub's own words, which are remote text bound for a user
+	 *                interface and are neither trusted nor this side's to shorten.
+	 * @param board   the board named, or empty where the refusal named none or
+	 *                named one that is not a board name at all.
+	 * @param tth     the post named, or empty on the same terms.
+	 */
+	virtual void EventBoardRefused(int code, const char* message, const char* board,
+	                               const char* tth)
+	{ (void) code; (void) message; (void) board; (void) tth; }
+
+	/**
 	 * The hub has redirected you to another hub.
 	 * @return true to follow redirect, or false to ignore it
 	 */
@@ -399,6 +489,36 @@ class Hub
 		 * a hub that did not announce the extension.
 		 */
 		bool supportsRichText() const;
+
+		/**
+		 * Whether this hub has bulletin boards.
+		 *
+		 * False until the hub's SUP reply has been read, and asked again every time
+		 * rather than remembered: the answer is the hub's to change while the
+		 * session lasts, and EventBoardsAvailable() is where it says so.
+		 */
+		bool supportsBulletins() const;
+
+		/*
+		 * What a client says about a board, forwarded to the session that knows
+		 * whether the hub will hear it.
+		 *
+		 * False means nothing was sent, and it is deliberately not reported as a
+		 * system error the way an attempt to chat without a session is: a hub with
+		 * no boards is the ordinary case rather than a fault, and the interface
+		 * asking is the thing that was mistaken. Every argument is checked in the
+		 * session before anything goes out.
+		 *
+		 * See network/hubsession.h for what each of them means, and in particular
+		 * why a subscription resumes from the highest timestamp already held and
+		 * not from one second after it.
+		 */
+		bool subscribeBoard(const char* board, uint64_t timestamp);
+		bool unsubscribeBoard(const char* board);
+		bool requestEntry(const char* board, const char* tth);
+		bool submitPost(const char* tth, uint64_t size, const char* board,
+		                const char* subject, const char* parent);
+		bool withdrawPost(const char* tth, const char* board);
 
 		const User* getLocalUser() const;
 		UserManager* getUserManager() const;

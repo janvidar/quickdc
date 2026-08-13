@@ -298,6 +298,43 @@ bool QuickDC::Hub::supportsRichText() const
 	return session && session->supportsRichText();
 }
 
+bool QuickDC::Hub::supportsBulletins() const
+{
+	return session && session->supportsBulletins();
+}
+
+/*
+ * Each of the five refuses on its own account when there is no session, rather
+ * than through a shared guard, so that the answer is the same false a hub without
+ * boards gives - one caller, one question, one answer. Nothing is said to the
+ * listener: see the note in the header.
+ */
+bool QuickDC::Hub::subscribeBoard(const char* board, uint64_t timestamp)
+{
+	return session && session->subscribeBoard(board, timestamp);
+}
+
+bool QuickDC::Hub::unsubscribeBoard(const char* board)
+{
+	return session && session->unsubscribeBoard(board);
+}
+
+bool QuickDC::Hub::requestEntry(const char* board, const char* tth)
+{
+	return session && session->requestEntry(board, tth);
+}
+
+bool QuickDC::Hub::submitPost(const char* tth, uint64_t size, const char* board,
+                              const char* subject, const char* parent)
+{
+	return session && session->submitPost(tth, size, board, subject, parent);
+}
+
+bool QuickDC::Hub::withdrawPost(const char* tth, const char* board)
+{
+	return session && session->withdrawPost(tth, board);
+}
+
 const QuickDC::User* QuickDC::Hub::getLocalUser() const
 {
 	return (session) ? session->getLocalUser() : 0;
