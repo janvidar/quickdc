@@ -104,6 +104,16 @@ static QuickDC::BoardEntry posted(unsigned n, uint64_t timestamp)
 	return entry;
 }
 
+/* A tombstone carries the hash and the time of the withdrawal and nothing else. */
+static QuickDC::BoardEntry retracted(unsigned n, uint64_t timestamp)
+{
+	QuickDC::BoardEntry entry;
+	entry.tth = root(n);
+	entry.timestamp = timestamp;
+	entry.removed = true;
+	return entry;
+}
+
 static QuickDC::Board described(const char* name, uint64_t oldest)
 {
 	QuickDC::Board board;
@@ -325,6 +335,441 @@ EXO_TEST(boardindex_the_entries_are_ordered_by_the_timestamp_the_hub_assigned,
 	EXO_ASSERT(back[0].tth == root(2));
 	EXO_ASSERT(back[1].tth == root(3));
 	EXO_ASSERT(back[2].tth == root(1));
+
+	index.forget(A_HUB, A_BOARD);
+	return 1;
+});
+
+/* ---- what the user has read ---- */
+
+/*
+ * Read state is this client's own and is on no wire. It is persisted because a
+ * board a user has not opened for a week must still say so after a restart, which
+ * is what an unread count held in an interface cannot do.
+ *
+ * The whole of the design is in the case below about the same second: the
+ * watermark means strictly below, for the reason the cursor is not one past the
+ * highest either.
+ */
+
+EXO_TEST(boardindex_a_post_that_was_read_is_still_read_after_a_restart,
+{
+	QuickDC::BoardIndex index(INDEX_HOME);
+	index.forget(A_HUB, A_BOARD);
+
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(1, 1786439000)));
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(2, 1786439100)));
+
+	EXO_ASSERT(!index.isRead(A_HUB, A_BOARD, root(1)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 2);
+
+	EXO_ASSERT(index.markRead(A_HUB, A_BOARD, root(1)));
+	EXO_ASSERT(index.isRead(A_HUB, A_BOARD, root(1)));
+
+	/* Opened again, and there is nothing new to write down. */
+	const off_t after = Samurai::IO::File(index.pathFor(A_HUB, A_BOARD)).size();
+
+	EXO_ASSERT(!index.markRead(A_HUB, A_BOARD, root(1)));
+	EXO_ASSERT(Samurai::IO::File(index.pathFor(A_HUB, A_BOARD)).size() == after);
+
+	/* And the file is all a second run of the client has to go on. */
+	{
+		QuickDC::BoardIndex second(INDEX_HOME);
+
+		EXO_ASSERT(second.isRead(A_HUB, A_BOARD, root(1)));
+		EXO_ASSERT(!second.isRead(A_HUB, A_BOARD, root(2)));
+		EXO_ASSERT(second.unread(A_HUB, A_BOARD) == 1);
+	}
+
+	/* A hash that names no post is not something a reading pane opened, and it
+	   must not reach a record any more than it may reach a filename. */
+	EXO_ASSERT(!index.markRead(A_HUB, A_BOARD, "../../etc/passwd"));
+	EXO_ASSERT(!index.isRead(A_HUB, A_BOARD, "../../etc/passwd"));
+	EXO_ASSERT(!index.markRead(A_HUB, A_BOARD, std::string()));
+
+	/* A mark for a post no entry is held for is that mark and nothing more: it
+	   counts towards nothing, because a badge counts entries. */
+	EXO_ASSERT(index.markRead(A_HUB, A_BOARD, root(9)));
+	EXO_ASSERT(index.isRead(A_HUB, A_BOARD, root(9)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 1);
+
+	index.forget(A_HUB, A_BOARD);
+	return 1;
+});
+
+EXO_TEST(boardindex_the_unread_count_falls_as_the_posts_are_read,
+{
+	QuickDC::BoardIndex index(INDEX_HOME);
+	index.forget(A_HUB, A_BOARD);
+
+	/* A board nothing has arrived for has nothing to be read. */
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
+
+	for (unsigned n = 1; n <= 5; n++)
+		EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(n, 1786439000 + n)));
+
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 5);
+
+	for (unsigned n = 1; n <= 5; n++)
+	{
+		EXO_ASSERT(index.markRead(A_HUB, A_BOARD, root(n)));
+		EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 5 - n);
+	}
+
+	/* And reading what has been read again does not take it below what is there. */
+	for (unsigned n = 1; n <= 5; n++)
+		EXO_ASSERT(!index.markRead(A_HUB, A_BOARD, root(n)));
+
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
+
+	/* A post arriving on a board that was read through is one unread post. */
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(6, 1786439600)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 1);
+
+	index.forget(A_HUB, A_BOARD);
+	return 1;
+});
+
+/*
+ * Dismissing a board is one thing said about the board, so it is one record and
+ * not one per post - which is the whole reason for the watermark. Asserted on the
+ * file, since what is being avoided is bytes rather than time.
+ */
+EXO_TEST(boardindex_marking_a_whole_board_read_costs_one_record,
+{
+	QuickDC::BoardIndex index(INDEX_HOME);
+	index.forget(A_HUB, A_BOARD);
+
+	const unsigned total = 200;
+
+	for (unsigned n = 1; n <= total; n++)
+		EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(n, 1786439000 + n)));
+
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == total);
+
+	const std::string path = index.pathFor(A_HUB, A_BOARD);
+	const off_t before = Samurai::IO::File(path).size();
+
+	index.markAllRead(A_HUB, A_BOARD);
+
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
+
+	/* The watermark, and a mark for the one entry standing at the second it names
+	   - which the watermark deliberately does not reach. */
+	const std::string watermark = "R TS" + std::to_string(1786439000 + total) + "\n";
+	const std::string standing = "R TR" + root(total) + "\n";
+
+	const off_t written = Samurai::IO::File(path).size() - before;
+
+	EXO_ASSERT(written == (off_t) (watermark.size() + standing.size()));
+
+	/* Which is fewer bytes than a board of two hundred has posts, never mind
+	   records: this is what must not grow with the board. */
+	EXO_ASSERT(written < (off_t) total);
+
+	/* Dismissed again with nothing having arrived, there is nothing to say. */
+	const off_t settled = Samurai::IO::File(path).size();
+
+	index.markAllRead(A_HUB, A_BOARD);
+	EXO_ASSERT(Samurai::IO::File(path).size() == settled);
+
+	/* And every post of it reads as read from the file alone. */
+	QuickDC::BoardIndex second(INDEX_HOME);
+
+	EXO_ASSERT(second.unread(A_HUB, A_BOARD) == 0);
+	EXO_ASSERT(second.isRead(A_HUB, A_BOARD, root(1)));
+	EXO_ASSERT(second.isRead(A_HUB, A_BOARD, root(total / 2)));
+	EXO_ASSERT(second.isRead(A_HUB, A_BOARD, root(total)));
+
+	index.forget(A_HUB, A_BOARD);
+	return 1;
+});
+
+/*
+ * THE CASE THE DESIGN TURNS ON. Timestamps are seconds and are not unique, so a
+ * watermark of "the highest seen plus one" would mark as read a post the hub
+ * accepts later in that same second, which nobody has seen - the cursor + 1
+ * mistake from the other end. The watermark therefore means strictly below, and
+ * the entries standing at that second are marked one at a time.
+ */
+EXO_TEST(boardindex_a_post_arriving_in_the_same_second_as_the_watermark_is_not_read,
+{
+	QuickDC::BoardIndex index(INDEX_HOME);
+	index.forget(A_HUB, A_BOARD);
+
+	/* Three posts, two of them in the second the board is caught up to. */
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(1, 1786439000)));
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(2, 1786439662)));
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(3, 1786439662)));
+
+	index.markAllRead(A_HUB, A_BOARD);
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
+
+	/* And now the post the hub accepted in that same second, arriving after the
+	   user dismissed the board. Nobody has seen it. */
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(4, 1786439662)));
+
+	EXO_ASSERT(!index.isRead(A_HUB, A_BOARD, root(4)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 1);
+
+	/* Which is decided by what is on disk and not by this process having watched
+	   it happen: the same answer from a file and nothing else. */
+	{
+		QuickDC::BoardIndex second(INDEX_HOME);
+
+		EXO_ASSERT(second.isRead(A_HUB, A_BOARD, root(1)));
+		EXO_ASSERT(second.isRead(A_HUB, A_BOARD, root(2)));
+		EXO_ASSERT(second.isRead(A_HUB, A_BOARD, root(3)));
+		EXO_ASSERT(!second.isRead(A_HUB, A_BOARD, root(4)));
+		EXO_ASSERT(second.unread(A_HUB, A_BOARD) == 1);
+	}
+
+	/* Dismissed again, it is a mark of its own that takes it. The watermark has
+	   not moved, because the highest timestamp on the board has not. */
+	const std::string path = index.pathFor(A_HUB, A_BOARD);
+	const off_t before = Samurai::IO::File(path).size();
+
+	index.markAllRead(A_HUB, A_BOARD);
+
+	EXO_ASSERT(index.isRead(A_HUB, A_BOARD, root(4)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
+
+	const std::string standing = "R TR" + root(4) + "\n";
+
+	EXO_ASSERT(Samurai::IO::File(path).size() - before == (off_t) standing.size());
+
+	index.forget(A_HUB, A_BOARD);
+	return 1;
+});
+
+/*
+ * A withdrawn post must not sit in a badge for ever asking to be opened, so a
+ * tombstone arriving for an unread post makes the count fall - and one arriving
+ * for a post that was read leaves the count where it was rather than taking it
+ * below what is on the board.
+ */
+EXO_TEST(boardindex_a_tombstone_takes_an_unread_post_out_of_the_count,
+{
+	QuickDC::BoardIndex index(INDEX_HOME);
+	index.forget(A_HUB, A_BOARD);
+
+	for (unsigned n = 1; n <= 3; n++)
+		EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(n, 1786439000 + n)));
+
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 3);
+	EXO_ASSERT(index.markRead(A_HUB, A_BOARD, root(3)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 2);
+
+	/* Withdrawn without having been read: one fewer to be read. */
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, retracted(2, 1786443100)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 1);
+
+	/* And withdrawn having been read: nothing was counting it, so nothing is
+	   discounted and the count does not go under. */
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, retracted(3, 1786443200)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 1);
+
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, retracted(1, 1786443300)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
+
+	/* The entries are all still there as their tombstones - it is the badge they
+	   have left, not the board. */
+	EXO_ASSERT(index.entries(A_HUB, A_BOARD).size() == 3);
+
+	{
+		QuickDC::BoardIndex second(INDEX_HOME);
+		EXO_ASSERT(second.unread(A_HUB, A_BOARD) == 0);
+	}
+
+	/* Dismissing a board of nothing but tombstones writes the watermark and no
+	   marks: nobody read a post that is no longer on the board. */
+	const std::string path = index.pathFor(A_HUB, A_BOARD);
+	const off_t before = Samurai::IO::File(path).size();
+	const std::string watermark = "R TS1786443300\n";
+
+	index.markAllRead(A_HUB, A_BOARD);
+
+	EXO_ASSERT(Samurai::IO::File(path).size() - before == (off_t) watermark.size());
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
+
+	index.forget(A_HUB, A_BOARD);
+	return 1;
+});
+
+/* A read record is a record like any other, so a process that went down in the
+   middle of writing one costs that mark and nothing before it. */
+EXO_TEST(boardindex_read_state_survives_a_half_written_record,
+{
+	QuickDC::BoardIndex index(INDEX_HOME);
+	index.forget(A_HUB, A_BOARD);
+
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(1, 1786439000)));
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(2, 1786439100)));
+	EXO_ASSERT(index.markRead(A_HUB, A_BOARD, root(1)));
+
+	Samurai::IO::File file(index.pathFor(A_HUB, A_BOARD));
+	EXO_ASSERT(file.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Append));
+	/* Cut in the middle of the hash, which is where a mark stops being one. */
+	const std::string cut = "R TR" + root(3).substr(0, 20);
+	file.write(cut.data(), cut.size());
+	file.close();
+
+	QuickDC::BoardIndex reading(INDEX_HOME);
+
+	EXO_ASSERT(reading.isRead(A_HUB, A_BOARD, root(1)));
+	EXO_ASSERT(!reading.isRead(A_HUB, A_BOARD, root(3)));
+	EXO_ASSERT(reading.unread(A_HUB, A_BOARD) == 1);
+	EXO_ASSERT(reading.cursor(A_HUB, A_BOARD) == 1786439100);
+
+	/* And the next mark appends onto it rather than being lost with it. */
+	EXO_ASSERT(reading.markRead(A_HUB, A_BOARD, root(2)));
+	EXO_ASSERT(reading.unread(A_HUB, A_BOARD) == 0);
+
+	{
+		QuickDC::BoardIndex third(INDEX_HOME);
+		EXO_ASSERT(third.isRead(A_HUB, A_BOARD, root(1)));
+		EXO_ASSERT(third.isRead(A_HUB, A_BOARD, root(2)));
+		EXO_ASSERT(third.unread(A_HUB, A_BOARD) == 0);
+	}
+
+	/*
+	 * A watermark cut in half is a smaller number, since the digits go from the
+	 * right: it marks fewer entries read and never more, which is the direction a
+	 * half written record has to fail in.
+	 */
+	index.forget(A_HUB, A_BOARD);
+
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(1, 1786439000)));
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(2, 1786439100)));
+
+	Samurai::IO::File half(index.pathFor(A_HUB, A_BOARD));
+	EXO_ASSERT(half.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Append));
+	const std::string truncated = "R TS1786439";
+	half.write(truncated.data(), truncated.size());
+	half.close();
+
+	QuickDC::BoardIndex after(INDEX_HOME);
+
+	EXO_ASSERT(after.unread(A_HUB, A_BOARD) == 2);
+	EXO_ASSERT(!after.isRead(A_HUB, A_BOARD, root(1)));
+	EXO_ASSERT(!after.isRead(A_HUB, A_BOARD, root(2)));
+
+	index.forget(A_HUB, A_BOARD);
+	return 1;
+});
+
+/* A board thrown away and subscribed to again is a board nobody has read: the
+   read state is in the file that went. */
+EXO_TEST(boardindex_forget_clears_the_read_state,
+{
+	QuickDC::BoardIndex index(INDEX_HOME);
+	index.forget(A_HUB, A_BOARD);
+
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(1, 1786439000)));
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(2, 1786439100)));
+	EXO_ASSERT(index.markRead(A_HUB, A_BOARD, root(1)));
+
+	index.markAllRead(A_HUB, A_BOARD);
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
+
+	index.forget(A_HUB, A_BOARD);
+
+	EXO_ASSERT(!index.isRead(A_HUB, A_BOARD, root(1)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
+
+	/* Not held from what was thrown away, either in memory or on disk. */
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(1, 1786439000)));
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(2, 1786439100)));
+
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 2);
+	EXO_ASSERT(!index.isRead(A_HUB, A_BOARD, root(1)));
+
+	QuickDC::BoardIndex second(INDEX_HOME);
+	EXO_ASSERT(second.unread(A_HUB, A_BOARD) == 2);
+
+	index.forget(A_HUB, A_BOARD);
+	return 1;
+});
+
+/*
+ * A file belonging to another key is somebody else's, and its read state is no
+ * more this board's than its entries are - a hub picks its own board names, and
+ * one that landed on another hub's file must not be able to say what has been
+ * read there either.
+ */
+EXO_TEST(boardindex_the_read_state_of_a_foreign_file_is_ignored,
+{
+	QuickDC::BoardIndex index(INDEX_HOME);
+	index.forget(A_HUB, A_BOARD);
+
+	const std::string path = index.pathFor(A_HUB, A_BOARD);
+
+	EXO_ASSERT(writeFile(path,
+		std::string("K HU") + B_HUB + " BDsomewhere\\selse\n"
+		"E TR" + root(9) + " TS1786439000\n"
+		"R TS1786500000\n"
+		"R TR" + root(9) + "\n"));
+
+	const off_t before = Samurai::IO::File(path).size();
+
+	QuickDC::BoardIndex reading(INDEX_HOME);
+
+	/* Nothing is read out of it, so no other board's marks are reported here. */
+	EXO_ASSERT(!reading.isRead(A_HUB, A_BOARD, root(9)));
+	EXO_ASSERT(reading.unread(A_HUB, A_BOARD) == 0);
+
+	/* And nothing is written into it: neither a mark of its own nor a watermark. */
+	EXO_ASSERT(!reading.markRead(A_HUB, A_BOARD, root(1)));
+	reading.markAllRead(A_HUB, A_BOARD);
+
+	EXO_ASSERT(Samurai::IO::File(path).size() == before);
+
+	Samurai::IO::File(path).remove();
+	return 1;
+});
+
+/*
+ * Read state is local and changes nothing about the subscription it was read out
+ * of. A mark that moved the cursor would cost the entries of a second the next
+ * time this client resumed, which is the one thing this must not touch.
+ */
+EXO_TEST(boardindex_a_read_marker_does_not_move_the_cursor,
+{
+	QuickDC::BoardIndex index(INDEX_HOME);
+	index.forget(A_HUB, A_BOARD);
+
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(1, 1786439000)));
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(2, 1786439662)));
+	index.describe(A_HUB, described(A_BOARD, 1767225600));
+
+	const uint64_t was = index.cursor(A_HUB, A_BOARD);
+
+	EXO_ASSERT(index.markRead(A_HUB, A_BOARD, root(1)));
+	index.markAllRead(A_HUB, A_BOARD);
+
+	EXO_ASSERT(index.cursor(A_HUB, A_BOARD) == was);
+	EXO_ASSERT(index.view(A_HUB, A_BOARD) == QuickDC::BoardIndex::View::Complete);
+
+	const std::vector<QuickDC::BoardEntry> back = index.entries(A_HUB, A_BOARD);
+
+	EXO_ASSERT(back.size() == 2);
+	EXO_ASSERT(back[0].tth == root(1));
+	EXO_ASSERT(back[1].tth == root(2));
+
+	{
+		QuickDC::BoardIndex second(INDEX_HOME);
+		EXO_ASSERT(second.cursor(A_HUB, A_BOARD) == was);
+		EXO_ASSERT(second.entries(A_HUB, A_BOARD).size() == 2);
+	}
+
+	/* And resuming from it behaves as it did: the entries of that second arrive
+	   again and are discarded, and a post that shares it is accepted - unread. */
+	EXO_ASSERT(!index.append(A_HUB, A_BOARD, posted(2, index.cursor(A_HUB, A_BOARD))));
+	EXO_ASSERT(index.append(A_HUB, A_BOARD, posted(5, index.cursor(A_HUB, A_BOARD))));
+
+	EXO_ASSERT(index.cursor(A_HUB, A_BOARD) == was);
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 1);
+	EXO_ASSERT(!index.isRead(A_HUB, A_BOARD, root(5)));
 
 	index.forget(A_HUB, A_BOARD);
 	return 1;
@@ -710,6 +1155,14 @@ EXO_TEST(boardindex_an_unusable_directory_is_harmless,
 
 	index.describe(A_HUB, described(A_BOARD, 1767225600));
 	EXO_ASSERT(index.view(A_HUB, A_BOARD) == QuickDC::BoardIndex::View::Unknown);
+
+	/* False, because no read state is kept either, so nothing a caller asks about
+	   ever changes and a badge it repaints on true never needs to be. */
+	EXO_ASSERT(!index.markRead(A_HUB, A_BOARD, root(1)));
+	index.markAllRead(A_HUB, A_BOARD);
+
+	EXO_ASSERT(!index.isRead(A_HUB, A_BOARD, root(1)));
+	EXO_ASSERT(index.unread(A_HUB, A_BOARD) == 0);
 
 	index.forget(A_HUB, A_BOARD);
 	return 1;

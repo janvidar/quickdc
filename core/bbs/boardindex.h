@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,12 @@ namespace QuickDC {
  * cost the second of them its cache rather than giving it the first one's entries
  * - which matters here in a way it does not for a chat transcript, since a hub
  * chooses its own board names and could otherwise aim one at another hub's file.
+ *
+ * One thing kept here is this client's own rather than a hub's: which posts the
+ * user has read. It is in nothing this client sends and in nothing the extension
+ * defines, which is right - it discloses nothing, and no hub has any business in
+ * it - and it is kept in this file because a badge is about one board on one hub,
+ * which is what this file is. See markRead().
  *
  * Nothing here is evidence. Every record is one hub's claim, kept as it was made;
  * see api/bulletins.h for what may and may not be shown to a user on the strength
@@ -163,6 +170,94 @@ class BoardIndex {
 		uint64_t cursor(const std::string& hubUrl, const std::string& board) const;
 
 		/**
+		 * Mark one post read, meaning the user opened it in the reading pane.
+		 *
+		 * Not "the document was fetched", which is a different fact kept in a
+		 * different place. PostStore records what arrived and whether it verified,
+		 * and fetching a post is visible to whoever answered for it, while opening
+		 * an entry that is already held is visible to nobody. The two records are
+		 * easy to take for one, and a caller that marked a post read on fetching it
+		 * would be marking whatever it fetched ahead of the reader.
+		 *
+		 * Kept per hub and per board, keyed by the hash that identifies the post,
+		 * because that is what a badge is about and because one hub's assertions
+		 * about a board are not another's. Verification sits the other way round -
+		 * in PostStore, keyed by hash alone and shared across every hub - because it
+		 * is a property of the bytes, while this is a property of one person's
+		 * relationship to one board. Different scopes, different owners,
+		 * deliberately.
+		 *
+		 * @return false when the post was already read and nothing was written,
+		 *         which is also the answer where nothing can be kept at all: an
+		 *         index with nowhere to write holds no read state, so nothing it is
+		 *         asked about ever changes and a caller repainting on true never
+		 *         needs to. A hash that is not a tiger tree root names no post and
+		 *         is refused the same way.
+		 */
+		bool markRead(const std::string& hubUrl, const std::string& board,
+		              const std::string& tth);
+
+		/**
+		 * Mark everything held for a board read.
+		 *
+		 * A record per post is what this must not be: dismissing a board of five
+		 * thousand would write five thousand records to say one thing about the
+		 * board as a whole. What is written instead is a watermark - every entry
+		 * below this timestamp has been read - and a mark of its own for each entry
+		 * standing at it, which is one record and a handful.
+		 *
+		 * The watermark means strictly below, for the reason cursor() above is not
+		 * one past the highest either. Timestamps are seconds and are not unique, so
+		 * a watermark of "the highest seen plus one" would reach over a post the hub
+		 * accepts later in that same second and mark as read something nobody has
+		 * seen - the mirror image of a cursor that skips it, and the same mistake.
+		 * The entries of that second are therefore marked one at a time, and the
+		 * next post of it arrives unread. Whoever comes to change either of these
+		 * will meet the trap twice, which is why the two notes are together.
+		 *
+		 * A watermark is a statement about a moment, so an entry that turns up
+		 * afterwards carrying an older timestamp falls under it and reads as read.
+		 * Nothing enters a hub's index in the past, so that takes a re-subscription
+		 * from zero filling a hole in this client's view - see View::Gap - and what
+		 * it costs is a badge that does not count posts the user was never shown.
+		 * That is the price of one record instead of five thousand, and a badge is
+		 * not evidence.
+		 *
+		 * Which is why nothing else moves the watermark. A run of individually read
+		 * entries is not absorbed into it, though it could be: the reaching above is
+		 * tolerable because a user drew the line, and a line this file inferred on
+		 * its own would reach over posts nobody ever dismissed. What it would save
+		 * is a handful of records on a board somebody read post by post.
+		 */
+		void markAllRead(const std::string& hubUrl, const std::string& board);
+
+		/**
+		 * Whether the user has opened this post; see markRead().
+		 *
+		 * A hash no entry is held for is read only where it was marked read by
+		 * hash. There is no timestamp to hold against the watermark, and the
+		 * watermark is a claim about the entries of a board rather than about
+		 * hashes.
+		 */
+		bool isRead(const std::string& hubUrl, const std::string& board,
+		            const std::string& tth) const;
+
+		/**
+		 * How many of a board's entries have not been read, which is what a badge
+		 * counts.
+		 *
+		 * Counted from what is held rather than carried as a running total, so that
+		 * it cannot drift out of step with the entries it is counting and cannot go
+		 * negative however arrivals and markings interleave.
+		 *
+		 * A tombstone is not counted, which decides the question both ways round: a
+		 * withdrawn post nobody read must not sit in a badge for ever asking to be
+		 * opened, so a withdrawal arriving for an unread post makes the count fall,
+		 * and one arriving for a post that was read leaves it where it was.
+		 */
+		size_t unread(const std::string& hubUrl, const std::string& board) const;
+
+		/**
 		 * Record what the hub says the board is, as of now.
 		 *
 		 * Only Board::oldest is kept, because it is the only field of a descriptor
@@ -194,7 +289,13 @@ class BoardIndex {
 		/** Whether anything has been written for this board on this hub. */
 		bool contains(const std::string& hubUrl, const std::string& board) const;
 
-		/** Throw a board's cached index away. Documents are not touched. */
+		/**
+		 * Throw a board's cached index away. Documents are not touched.
+		 *
+		 * Which takes the read state with it, since it is in the same file and is
+		 * about these entries: a board thrown away and subscribed to again is a
+		 * board nobody has read.
+		 */
 		void forget(const std::string& hubUrl, const std::string& board);
 
 		/** Where a board's index is. Public so a test can look. */
@@ -212,6 +313,25 @@ class BoardIndex {
 
 			/** The highest of them, which is the cursor. */
 			uint64_t highest = 0;
+
+			/**
+			 * The hashes whose newest record is a tombstone.
+			 *
+			 * The withdrawn as a set rather than a flag on every entry, because a
+			 * board has few of them and unread() is the only thing that asks.
+			 */
+			std::set<std::string> withdrawn;
+
+			/**
+			 * Which posts have been read; see markRead().
+			 *
+			 * The watermark means strictly below it, and 0 is the whole of "nothing
+			 * has been marked" because no entry is below that. The entries standing
+			 * at the watermark's own second are in 'readByHash' one at a time, which
+			 * is what keeps a post the hub accepts later in that second unread.
+			 */
+			uint64_t readBelow = 0;
+			std::set<std::string> readByHash;
 
 			/** OT as the hub last declared it, and whether it ever did. */
 			uint64_t oldest = 0;
@@ -235,6 +355,14 @@ class BoardIndex {
 			 * somebody else's and nothing is read from or written to it.
 			 */
 			bool foreign = false;
+
+			/**
+			 * Whether the post this hash names has been read, by either half of it.
+			 *
+			 * In one place, because three callers ask and the strictly-below is the
+			 * one thing about the watermark that must not be got wrong twice.
+			 */
+			bool wasRead(const std::string& tth) const;
 		};
 
 		/** Fills the entry for a board from what is on disk, once. */

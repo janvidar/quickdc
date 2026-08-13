@@ -20,17 +20,24 @@ namespace {
 constexpr size_t CHUNK = 64 * 1024;
 
 /**
- * The three kinds of record, named by the first character of a line.
+ * The four kinds of record, named by the first character of a line.
  *
  * One file holds all of them because they are all one board's: the key it was
- * made for, the entries the hub has sent, and the oldest timestamp the hub says
- * it will replay. A reader that does not know a letter skips the line, so a later
- * revision can add one without the files it wrote becoming unreadable to this
- * one.
+ * made for, the entries the hub has sent, the oldest timestamp the hub says it
+ * will replay, and which of the entries the user has read. A reader that does not
+ * know a letter skips the line, so a later revision can add one without the files
+ * it wrote becoming unreadable to this one.
+ *
+ * A read record is one of two things and says which by the field it carries: TS
+ * is a watermark, everything below that timestamp having been read, and TR is one
+ * post read on its own. One kind rather than two because they are one fact stored
+ * two ways, and a reader that met a record carrying both would be reading a file
+ * this never wrote.
  */
 constexpr char RECORD_KEY = 'K';
 constexpr char RECORD_ENTRY = 'E';
 constexpr char RECORD_OLDEST = 'O';
+constexpr char RECORD_READ = 'R';
 
 /**
  * What identifies one board on one hub, and what everything here is kept by.
@@ -177,6 +184,10 @@ struct Record {
 
 	/* RECORD_OLDEST. */
 	uint64_t oldest = 0;
+
+	/* RECORD_READ: the hash of one post, or the watermark where there is none. */
+	std::string read;
+	uint64_t below = 0;
 };
 
 /**
@@ -255,6 +266,15 @@ std::vector<Record> read_records(const std::string& path, bool* terminated = 0)
 
 			case RECORD_OLDEST:
 				record.oldest = number(parts, "OT");
+				break;
+
+			case RECORD_READ:
+				record.read = field(parts, "TR");
+
+				/* A mark for something that is not a tiger tree root names no post. */
+				if (!record.read.empty() && !ADC::isValidTTH(record.read)) continue;
+
+				record.below = number(parts, "TS");
 				break;
 
 			default:
@@ -340,7 +360,18 @@ QuickDC::BoardIndex::remember(const std::string& hubUrl,
 				uint64_t& held = state.held[record.entry.tth];
 
 				/* Whichever record for a hash is the newest is the one that counts. */
-				if (record.entry.timestamp >= held) held = record.entry.timestamp;
+				if (record.entry.timestamp >= held)
+				{
+					held = record.entry.timestamp;
+
+					/* Including whether it is the withdrawal of the post, by the
+					   same rule and for the same reason. */
+					if (record.entry.removed)
+						state.withdrawn.insert(record.entry.tth);
+					else
+						state.withdrawn.erase(record.entry.tth);
+				}
+
 				if (record.entry.timestamp > state.highest)
 					state.highest = record.entry.timestamp;
 				break;
@@ -349,6 +380,18 @@ QuickDC::BoardIndex::remember(const std::string& hubUrl,
 			case RECORD_OLDEST:
 				state.described = true;
 				state.oldest = record.oldest;
+				break;
+
+			case RECORD_READ:
+				/*
+				 * A mark for one post where the record names one, and otherwise the
+				 * watermark - which only ever moves up, so the records may be read
+				 * in any order and a file holding several says the newest thing.
+				 */
+				if (!record.read.empty())
+					state.readByHash.insert(record.read);
+				else if (record.below > state.readBelow)
+					state.readBelow = record.below;
 				break;
 
 			default:
@@ -365,11 +408,33 @@ QuickDC::BoardIndex::remember(const std::string& hubUrl,
 	{
 		state.held.clear();
 		state.highest = 0;
+		state.withdrawn.clear();
+		state.readBelow = 0;
+		state.readByHash.clear();
 		state.described = false;
 		state.oldest = 0;
 	}
 
 	return state;
+}
+
+bool QuickDC::BoardIndex::Cached::wasRead(const std::string& tth) const
+{
+	if (readByHash.find(tth) != readByHash.end()) return true;
+
+	const std::map<std::string, uint64_t>::const_iterator entry = held.find(tth);
+
+	/*
+	 * Strictly below the watermark, which is the whole of the rule: an entry
+	 * standing at that second is one the watermark was written without, since the
+	 * hub may accept another post in the same second and a boundary that took in
+	 * that second would mark as read a post nobody has seen.
+	 *
+	 * A hash no entry is held for is therefore read only by a mark of its own.
+	 * There is nothing to hold against the watermark, and the watermark is a claim
+	 * about the entries of a board rather than about hashes.
+	 */
+	return entry != held.end() && entry->second < readBelow;
 }
 
 bool QuickDC::BoardIndex::write(const std::string& path, Cached& state,
@@ -468,6 +533,12 @@ bool QuickDC::BoardIndex::append(const std::string& hubUrl, const std::string& b
 	state.held[entry.tth] = entry.timestamp;
 	if (entry.timestamp > state.highest) state.highest = entry.timestamp;
 
+	/* And what unread() needs of it: whether the newest record is a withdrawal. */
+	if (entry.removed)
+		state.withdrawn.insert(entry.tth);
+	else
+		state.withdrawn.erase(entry.tth);
+
 	return true;
 }
 
@@ -528,6 +599,124 @@ uint64_t QuickDC::BoardIndex::cursor(const std::string& hubUrl,
 	if (!usable) return 0;
 
 	return remember(hubUrl, board).highest;
+}
+
+bool QuickDC::BoardIndex::markRead(const std::string& hubUrl, const std::string& board,
+                                   const std::string& tth)
+{
+	/* Nothing is kept, so nothing it is asked about will ever have changed. */
+	if (!usable) return false;
+
+	/* Not a post, so not something a reading pane could have opened. */
+	if (!ADC::isValidTTH(tth)) return false;
+
+	const std::string path = pathFor(hubUrl, board);
+	Cached& state = remember(hubUrl, board);
+
+	if (state.foreign) return false;
+
+	if (state.wasRead(tth)) return false;
+
+	const std::string out = std::string(1, RECORD_READ) + " TR" + escape(tth) + "\n";
+
+	if (!write(path, state, hubUrl, board, out)) return false;
+
+	state.readByHash.insert(tth);
+
+	return true;
+}
+
+void QuickDC::BoardIndex::markAllRead(const std::string& hubUrl,
+                                      const std::string& board)
+{
+	if (!usable) return;
+
+	const std::string path = pathFor(hubUrl, board);
+	Cached& state = remember(hubUrl, board);
+
+	if (state.foreign) return;
+
+	std::string out;
+
+	/*
+	 * Below the highest timestamp held and not below one past it; see the note on
+	 * markAllRead(). Only where it moves, as describe() writes only where OT moved:
+	 * a board dismissed twice with nothing arriving in between says nothing new.
+	 */
+	const bool moves = state.highest > state.readBelow;
+
+	if (moves)
+		out += std::string(1, RECORD_READ) + " TS"
+			+ std::to_string(state.highest) + "\n";
+
+	/*
+	 * And the entries standing at that second one at a time, since the watermark
+	 * deliberately does not reach them. A tombstone is not among them: unread()
+	 * does not count one, and nobody read a post that is no longer on the board.
+	 */
+	std::vector<std::string> standing;
+
+	for (const std::pair<const std::string, uint64_t>& entry : state.held)
+	{
+		if (entry.second != state.highest) continue;
+		if (state.withdrawn.find(entry.first) != state.withdrawn.end()) continue;
+		if (state.wasRead(entry.first)) continue;
+
+		standing.push_back(entry.first);
+		out += std::string(1, RECORD_READ) + " TR" + escape(entry.first) + "\n";
+	}
+
+	if (out.empty()) return;
+
+	/*
+	 * One append for the watermark and the marks of that second together, which is
+	 * also the safe order to lose half of: the watermark does not reach the second
+	 * it names, so a write torn after it leaves those entries unread rather than
+	 * leaving them read without anybody having read them.
+	 */
+	if (!write(path, state, hubUrl, board, out)) return;
+
+	if (moves) state.readBelow = state.highest;
+
+	for (const std::string& tth : standing)
+		state.readByHash.insert(tth);
+}
+
+bool QuickDC::BoardIndex::isRead(const std::string& hubUrl, const std::string& board,
+                                 const std::string& tth) const
+{
+	if (!usable) return false;
+
+	const Cached& state = remember(hubUrl, board);
+
+	return !state.foreign && state.wasRead(tth);
+}
+
+size_t QuickDC::BoardIndex::unread(const std::string& hubUrl,
+                                   const std::string& board) const
+{
+	if (!usable) return 0;
+
+	const Cached& state = remember(hubUrl, board);
+
+	if (state.foreign) return 0;
+
+	size_t count = 0;
+
+	/*
+	 * Counted rather than kept, so that it cannot drift out of step with the
+	 * entries it is counting and cannot go negative however arrivals and markings
+	 * interleave. A tombstone is not an entry a badge may ask to have opened.
+	 */
+	for (const std::pair<const std::string, uint64_t>& entry : state.held)
+	{
+		if (state.withdrawn.find(entry.first) != state.withdrawn.end()) continue;
+		if (state.wasRead(entry.first)) continue;
+
+		count++;
+	}
+
+	return count;
 }
 
 void QuickDC::BoardIndex::describe(const std::string& hubUrl, const Board& board)
