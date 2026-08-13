@@ -585,6 +585,35 @@ EXO_TEST(bbs_hub_a_hub_with_no_boards_announces_nothing,
 /* ------------------------------------------------------------------------- */
 
 /*
+ * A descriptor comes after the session's own INF has been sent back to it, and
+ * this is the case that says so.
+ *
+ * That echo is what tells a client its login finished, and a client is entitled
+ * to refuse a descriptor arriving before it - a hub naming a board to a session
+ * it has not accepted yet is the thing being refused. Sent a moment early, every
+ * descriptor is dropped and the whole extension goes quiet on a client that is
+ * behaving correctly, which is a failure no amount of testing either side on its
+ * own would find.
+ */
+EXO_TEST(bbs_hub_a_descriptor_comes_after_the_session_has_had_its_own_inf,
+{
+	configureBoard("ordered", 15);
+
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client c;
+	EXO_ASSERT(c.connect(s.port()));
+
+	/* Stops at its own INF, so anything read past here followed it. */
+	EXO_ASSERT(c.login(makeIdentity(2), "reader"));
+
+	std::string bbd;
+	EXO_ASSERT(c.waitForLine({"IBBD", "BDordered"}, bbd));
+	return 1;
+});
+
+/*
  * One descriptor per board, after the INF exchange, to a session that asked for
  * them - the pattern by which a hub sends the INF of every user at login.
  */
@@ -599,11 +628,18 @@ EXO_TEST(bbs_hub_a_session_that_offered_the_extension_is_told_what_there_is,
 	EXO_ASSERT(c.connect(s.port()));
 	EXO_ASSERT(c.login(makeIdentity(1), "reader"));
 
+	/*
+	 * Waited for rather than looked for among what login already read: a
+	 * descriptor goes out after the session's own INF has been sent back to it,
+	 * which is the point login() returns at.
+	 */
+	std::string bbd;
+
 	/* One line, carrying the lot: what the session may do, the largest post the
 	   board will take, where the board is now, how far back it will replay, and
 	   how much it holds. */
-	EXO_ASSERT(c.sawLine({"IBBD", "BDdescribed", "PE15", "MS262144",
-		"TS0", "OT0", "NP0"}));
+	EXO_ASSERT(c.waitForLine({"IBBD", "BDdescribed", "PE15", "MS262144",
+		"TS0", "OT0", "NP0"}, bbd));
 	return 1;
 });
 
@@ -703,7 +739,14 @@ EXO_TEST(bbs_hub_a_board_without_permission_to_subscribe_is_not_described,
 	EXO_ASSERT(c.connect(s.port()));
 	EXO_ASSERT(c.login(makeIdentity(3), "reader"));
 
-	EXO_ASSERT(c.sawLine({"IBBD", "BDvisible"}));
+	/*
+	 * The visible one is waited for first, and the hidden one is only then said
+	 * to be absent. Both go out in one pass, so having seen the second is what
+	 * makes the absence of the first mean anything - asked before the pass, every
+	 * board is equally undescribed and the case would pass for the wrong reason.
+	 */
+	std::string bbd;
+	EXO_ASSERT(c.waitForLine({"IBBD", "BDvisible"}, bbd));
 	EXO_ASSERT(!c.sawLine({"IBBD", "BDhidden"}));
 
 	/* And it is refused, with the code for a board that is not there. */
@@ -1522,7 +1565,8 @@ EXO_TEST(bbs_hub_a_board_survives_the_hub_being_restarted,
 		EXO_ASSERT(bob.login(makeIdentity(33), "bob"));
 
 		/* The descriptor already says the board is not empty. */
-		EXO_ASSERT(bob.sawLine({"IBBD", "BDpersistent", "NP1"}));
+		std::string bbd;
+		EXO_ASSERT(bob.waitForLine({"IBBD", "BDpersistent", "NP1"}, bbd));
 
 		bob.send("HBBL BDpersistent TS0");
 
@@ -1608,7 +1652,8 @@ EXO_TEST(bbs_hub_a_damaged_index_does_not_stop_the_hub,
 		EXO_ASSERT(bob.connect(s.port()));
 		EXO_ASSERT(bob.login(makeIdentity(35), "bob"));
 
-		EXO_ASSERT(bob.sawLine({"IBBD", "BDdamaged", "NP1"}));
+		std::string bbd;
+		EXO_ASSERT(bob.waitForLine({"IBBD", "BDdamaged", "NP1"}, bbd));
 
 		bob.send("HBBL BDdamaged TS0");
 

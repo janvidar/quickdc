@@ -379,7 +379,18 @@ void ADC::LocalHub::Hub::onINF(ADC::Command* cmd) {
 				
 				user->state = State_Normal;
 				send(user->command_inf);
-				
+
+				/*
+				 * After the session's own INF has gone back to it, and not with the
+				 * rest of the welcome: that echo is what tells a client its login
+				 * finished, and a client is entitled to refuse a board descriptor
+				 * that arrives before it - a hub putting a board's title in front of
+				 * a session it has not yet accepted is exactly what such a client is
+				 * guarding against. The extension asks for these after the INF
+				 * exchange, and the exchange is not over until this has been sent.
+				 */
+				sendBoardDescriptors(user);
+
 				// FIXME: If hub is full and an operator/admin was accepted here. Kick some unsuspecting user!
 			}
 			
@@ -1312,10 +1323,6 @@ void ADC::LocalHub::Hub::onWelcome(ADC::LocalHub::User* user) {
 	fake->setSocket(user->socket.get());
 	fake->addArgument("+motd");
 	services->invoke(fake.get());
-
-	/* And what there is to read here, which is the last thing a login owes a
-	   session that asked for it. */
-	sendBoardDescriptors(user);
 }
 
 void ADC::LocalHub::Hub::onQuit(ADC::LocalHub::User* user, const char* msg) {
