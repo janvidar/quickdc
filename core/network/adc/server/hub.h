@@ -13,6 +13,7 @@
 #include <vector>
 #include <deque>
 #include <string>
+#include "api/bulletins.h"
 #include "network/adc/adccommon.h"
 #include "network/clientsession.h"
 #include <samurai/io/net/socketevent.h>
@@ -41,6 +42,7 @@ namespace ADC {
  */
 namespace LocalHub {
 
+	class BoardStore;
 	class Hub;
 	class ServiceMap;
 	class User;
@@ -91,6 +93,29 @@ namespace LocalHub {
 			void onDSC(ADC::Command* cmd);
 			void onPAS(ADC::Command* cmd);
 			void onSTA(ADC::Command* cmd);
+
+			/**
+			 * A bulletin board subscription, a cancellation, or a question about
+			 * one entry.
+			 *
+			 * All three arrive as BBL, and which of them it is depends on the
+			 * fields: RM1 cancels, TR asks after a single entry and changes no
+			 * subscription either way, and anything else subscribes from TS
+			 * onwards - or from the beginning of the board, TS being absent
+			 * meaning zero. TR and TS together are none of those and are refused.
+			 */
+			void onBBL(ADC::Command* cmd);
+
+			/**
+			 * A post submitted to a board, or a post withdrawn from one.
+			 *
+			 * There is no success status message for either: the index entry is
+			 * the acknowledgement, and it goes to the submitting session whether
+			 * or not that session subscribes to the board, so that acceptance is
+			 * signalled the same way in every case. A refusal is a status of
+			 * severity 1 naming the hash it refused.
+			 */
+			void onBBP(ADC::Command* cmd);
 
 			/**
 			* This method is used for sending/distributing messages to users.
@@ -245,6 +270,76 @@ namespace LocalHub {
 			void expire(User* user, const char* code, const char* reason);
 
 			/**
+			* Send a command this hub composed to one session, and let go of it.
+			*
+			* A send queue takes a reference of its own when it accepts a command,
+			* so one that nothing accepted - a session already at its ceiling - has
+			* nobody left holding it and would never be freed. Every bulletin the
+			* hub composes for one recipient goes out through here for that reason.
+			*/
+			void sendOwned(ADC::Command* cmd, User* user, bool more = false);
+
+			/**
+			* Whether this hub has bulletin boards to offer at all.
+			*
+			* What decides whether BBS0 is announced, and therefore whether any of
+			* it is reachable: a store whose directory could not be made cannot
+			* keep an index, and a hub with no boards configured has nothing to
+			* subscribe to - so both would be announcing something the hub cannot
+			* do. Adding the first board to the configuration is how an operator
+			* turns the feature on.
+			*/
+			bool hasBoards() const;
+
+			/**
+			* Send a session the descriptor of every board it may subscribe to.
+			*
+			* One per board, on entry to the NORMAL state, to a session that
+			* offered BBS0 - the pattern by which a hub sends the INF of every
+			* user at login. A board the session lacks permission 1 on is not
+			* described at all: withholding the descriptor is the whole of the
+			* mechanism for hiding a board, so there is nothing else to get right.
+			*/
+			void sendBoardDescriptors(User* user);
+
+			/**
+			* Tell every session that can see a board that something about it has
+			* changed.
+			*
+			* Sent per session, because PE is per session and so a descriptor is
+			* not one message broadcast but one message each. A session that may
+			* no longer subscribe is told nothing and loses the subscription it
+			* held, which is what a change removing permission 1 has to do.
+			*/
+			void announceBoard(const std::string& board);
+
+			/** And that a board has ceased to exist, cancelling every subscription. */
+			void announceBoardRemoved(const std::string& board);
+
+			/**
+			* Send one index entry to every session subscribed to its board, and to
+			* 'author' whether it is subscribed or not.
+			*
+			* The entry is the acknowledgement of a submission and there is no
+			* other, so the session that submitted one has to receive it even where
+			* it follows nothing.
+			*/
+			void sendEntry(const QuickDC::BoardEntry& entry, User* author);
+
+			/**
+			* Refuse a bulletin command.
+			*
+			* Always severity 1 - none of these is a reason to disconnect a client -
+			* and always naming what it refused: the fourcc in FC, the hash of the
+			* offending post where there is one, and the board where a subscription
+			* was refused. This extension has no token, so naming the hash or the
+			* board is how a client matches a refusal to what it asked for.
+			*/
+			void refuseBulletin(User* user, int code, const char* reason,
+			                    const char* fourcc, const char* board, const char* tth,
+			                    const char* field = 0, const std::string& value = std::string());
+
+			/**
 			* Close a kicked user's connection now, whatever is still queued for it.
 			*
 			* Deferred rather than immediate, and only ever queued once; see kick(),
@@ -312,6 +407,15 @@ namespace LocalHub {
 
 			/* ACL */
 			ACL::Table* acl;
+
+			/*
+			 * The boards this hub serves and the index it keeps for each of them.
+			 *
+			 * Never null once the hub is constructed, and inert rather than absent
+			 * where the configured directory could not be made - see hasBoards(),
+			 * which is what stops BBS0 being announced in that case.
+			 */
+			BoardStore* boards;
 
 			/*
 			 * Sweeps the connections. Owned here rather than one per user: a hub

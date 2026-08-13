@@ -69,6 +69,8 @@ class Handler : public ADC::CommandParser
 	ADC_LOCALHUB_CMD_CLASS(CmdRNT);
 	ADC_LOCALHUB_CMD_CLASS(CmdSTA);
 	ADC_LOCALHUB_CMD_CLASS(CmdDSC);
+	ADC_LOCALHUB_CMD_CLASS(CmdBBL);
+	ADC_LOCALHUB_CMD_CLASS(CmdBBP);
 
 } // namespace LocalHub
 } // namespace ADC

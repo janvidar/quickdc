@@ -103,3 +103,22 @@ bool ADC::LocalHub::CmdDSC::invoke(ADC::Command* cmd) {
 	hub->onDSC(cmd);
 	return true;
 }
+
+/*
+ * The two bulletin board commands a client sends. Neither is relayed - the hub
+ * answers a BBL with index entries of its own and a BBP with the entry it made -
+ * so the priority set here is what the hub's own reply inherits nothing from, and
+ * Normal is what the work of reading a board is worth: less than the commands a
+ * session needs to be on the hub at all, and more than a search.
+ */
+bool ADC::LocalHub::CmdBBL::invoke(ADC::Command* cmd) {
+	cmd->setPriority(ADC::Command::Normal);
+	hub->onBBL(cmd);
+	return true;
+}
+
+bool ADC::LocalHub::CmdBBP::invoke(ADC::Command* cmd) {
+	cmd->setPriority(ADC::Command::Normal);
+	hub->onBBP(cmd);
+	return true;
+}

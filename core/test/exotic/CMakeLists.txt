@@ -44,6 +44,7 @@ set(QUICKDC_EXOTIC_TESTS
     dcclientsession.tcc
     hubsession.tcc
     bbs_client.tcc
+    bbs_hub.tcc
     leafhashes.tcc
     lock.tcc
     portforward.tcc

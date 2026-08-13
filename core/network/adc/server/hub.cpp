@@ -16,7 +16,9 @@
 #include <string_view>
 
 #include "config/preferences.h"
+#include "network/adc/adcbbs.h"
 #include "network/adc/server/acl.h"
+#include "network/adc/server/boards.h"
 #include "network/adc/server/hub.h"
 #include "network/adc/server/service.h"
 #include "network/adc/server/user.h"
@@ -79,6 +81,10 @@ ADC::LocalHub::Hub::Hub() {
 	welcome    = "This hub is running " PRODUCT " " VERSION " on " SYSTEM "/" CPU;
 	hubname    = 0;
 	hubdesc    = 0;
+
+	/* Before the configuration is read, because that is where the store is made
+	   and it decides whether there is one to make. */
+	boards     = 0;
 	readConfiguration();
 
 	availSid = 0;
@@ -131,6 +137,7 @@ ADC::LocalHub::Hub::~Hub() {
 	delete timer; timer = 0;
 	delete acl;
 	delete services;
+	delete boards; boards = 0;
 
 	/*
 	 * Same reasoning as the users below: a check in flight holds this hub and
@@ -195,6 +202,38 @@ void ADC::LocalHub::Hub::readConfiguration() {
 	   not reading at all, and holding anything more for it is pointless. */
 	hardSendQ  = maxSendQ * 4;
 
+	/*
+	 * The bulletin board indexes, one file per board.
+	 *
+	 * Made once and not remade on a re-read: the store holds the entries every
+	 * subscriber has been sent and the highest timestamp handed out on each board,
+	 * and a new one would read those back off disk and could hand a timestamp out
+	 * twice. Moving the directory therefore takes a restart, which is said here
+	 * rather than left to be discovered.
+	 */
+	if (!boards)
+		boards = new ADC::LocalHub::BoardStore(
+			config->getString("Bulletin directory", "~/.quickdc/hub/bbs"));
+
+	/*
+	 * Taken before the boards are re-read, because a board that has gone owes
+	 * every session that was following it a descriptor saying so - and after the
+	 * re-read there is nothing left to say it about.
+	 */
+	const std::vector<std::string> before = boards->names();
+
+	config->setGroup("Local hub");
+	boards->readConfiguration(config);
+
+	for (const std::string& board : before) {
+		if (boards->exists(board)) announceBoard(board);
+		else announceBoardRemoved(board);
+	}
+
+	for (const std::string& board : boards->names())
+		if (std::find(before.begin(), before.end(), board) == before.end())
+			announceBoard(board);
+
 	if (!enabled) {
 		// FIXME: Kill all connections
 	}
@@ -228,6 +267,25 @@ void ADC::LocalHub::Hub::onSUP(ADC::Command* cmd) {
 			user->removeExtension(&arg[2]);
 	}
 
+	/*
+	 * A session that has taken BBS0 back is following nothing. The extension has a
+	 * hub withdrawing the feature cancel every subscription on the connection, and
+	 * a client withdrawing it has said the same thing from the other end: it will
+	 * not read what arrives, and an index entry sent to a client that has stopped
+	 * parsing them is at best ignored.
+	 */
+	if (!user->supportsExtension(ADC_EXT_BULLETIN))
+		user->getSubscriptions().clear();
+
+	/*
+	 * And a session that has offered it after logging in is told what there is to
+	 * read, which it would otherwise never learn: the descriptors go out on entry to
+	 * NORMAL and this session was not asking for them then. Only the boards it has
+	 * not already been told about, so that an offer repeated is not a burst repeated.
+	 */
+	else if (user->state == State_Normal)
+		sendBoardDescriptors(user);
+
 	if (user->state == State_Protocol) {
 		if (!enabled) {
 			ADC::Command* sta = new ADC::Command(FOURCC('I','S','T','A'));
@@ -256,6 +314,21 @@ void ADC::LocalHub::Hub::onSUP(ADC::Command* cmd) {
 		 * client that claimed it would be advertising a service it does not run.
 		 */
 		c_sup->addArgument("AD", ADC_EXT_PING);
+
+		/*
+		 * And the bulletin boards, when there are any and when this hub has just
+		 * said it speaks TIGR.
+		 *
+		 * The hub's announcement is what permits a client to send BBL or BBP at
+		 * all, so a hub with no usable index, or none configured, must not make it:
+		 * everything a client then sent could only be refused. The TIGR condition
+		 * is the extension's own - every identifier in BBS0 is a tiger tree root
+		 * and a client without TIGR cannot fetch a post body - and it is asked of
+		 * the command rather than assumed, so that the two claims cannot drift
+		 * apart if addSupportFlags() ever stops making one of them.
+		 */
+		if (hasBoards() && c_sup->haveArgument("AD" ADC_HASH_TIGER, 6))
+			c_sup->addArgument("AD", ADC_EXT_BULLETIN);
 
 		ADC::Command* c_sid = new ADC::Command(FOURCC('I','S','I','D'));
 		c_sid->addArgument(ADC::SID::toString(user->sid));
@@ -485,6 +558,715 @@ void ADC::LocalHub::Hub::onPAS(ADC::Command*) {
 	// FIXME: Handle password authentication
 }
 
+
+/* ------------------------------------------------------------------------- */
+/* Bulletin boards                                                           */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * The hub holds an index and no bytes.
+ *
+ * Which board a post is on, when it arrived and what nickname its author held are
+ * the hub's to say and are said in an index entry; the author, the parent, the
+ * subject and the content are the author's and are said in the document, which
+ * travels between clients and never through here. That split is why the fields a
+ * client sends in a BBP are so few, and why four of the ones it might send anyway
+ * - ID, NI, TH and TS - are discarded rather than refused: they are not the
+ * client's to state, in the way PD is not part of the INF the hub relays.
+ *
+ * Nothing below trusts PE for anything. It says what to offer a user, and every
+ * operation is re-checked as it arrives; a client is entitled to be refused
+ * something its descriptor appeared to allow.
+ */
+
+/** Severity 1 and a two digit code, which is the whole of an ADC status code. */
+static std::string statusCode(int code)
+{
+	char text[8] = {0,};
+	snprintf(text, sizeof(text), "1%02d", code % 100);
+	return std::string(text);
+}
+
+/**
+ * Whether 'text' is a number the hub can read.
+ *
+ * Nineteen digits at the most, which is one short of what a 64 bit count can hold
+ * and therefore the longest that cannot wrap. A wrapping size would be the
+ * interesting one: a declared length of 2^64 + 1 read as 1 would pass a board's
+ * limit and be recorded as a post of one byte.
+ */
+static bool isNumber(const char* text)
+{
+	if (!text || !*text) return false;
+
+	const std::string_view value(text);
+	if (value.size() > 19) return false;
+
+	for (const char c : value)
+		if (c < '0' || c > '9') return false;
+
+	return true;
+}
+
+static uint64_t toNumber(const char* text)
+{
+	uint64_t value = 0;
+	for (const char* at = text; at && *at; at++)
+		value = (value * 10) + static_cast<uint64_t>(*at - '0');
+
+	return value;
+}
+
+/** Whether a command carries exactly 'RM1', which is the only value defined. */
+static bool isRemoval(ADC::Command* cmd)
+{
+	const char* flag = cmd->getArgument("RM", 2);
+	return flag && std::string_view(flag) == "1";
+}
+
+/**
+ * Whether a command carries an RM this version does not define.
+ *
+ * Every other value of the field is reserved, and reserved is refused rather than
+ * ignored: a client sending RM2 has asked for something, and treating it as a
+ * post - which is what a flag read as absent would do - would carry out the one
+ * thing it certainly did not ask for.
+ */
+static bool hasReservedRemoval(ADC::Command* cmd)
+{
+	const char* flag = cmd->getArgument("RM", 2);
+	return flag && std::string_view(flag) != "1";
+}
+
+void ADC::LocalHub::Hub::sendOwned(ADC::Command* cmd, ADC::LocalHub::User* user, bool more)
+{
+	cmd->incRef();
+	send(cmd, user, more);
+	cmd->decRef();
+
+	if (cmd->canDelete()) delete cmd;
+}
+
+bool ADC::LocalHub::Hub::hasBoards() const
+{
+	return boards && boards->isUsable() && boards->count() != 0;
+}
+
+void ADC::LocalHub::Hub::refuseBulletin(ADC::LocalHub::User* user, int code,
+	const char* reason, const char* fourcc, const char* board, const char* tth,
+	const char* field, const std::string& value)
+{
+	ADC::Command* sta = new ADC::Command(FOURCC('I','S','T','A'));
+	sta->addArgument(statusCode(code).c_str());
+	sta->addArgument(reason);
+	sta->addArgument("FC", fourcc);
+
+	/* The hash of the post, or the name of the board, because this extension has
+	   no token: naming one of them is how a client matches a refusal to what it
+	   asked for. Both where both are known. */
+	if (tth) sta->addArgument("TR", tth);
+	if (board) sta->addArgument("BD", board);
+	if (field) sta->addArgument(field, value);
+
+	sendOwned(sta, user);
+}
+
+void ADC::LocalHub::Hub::sendBoardDescriptors(ADC::LocalHub::User* user)
+{
+	if (!hasBoards()) return;
+
+	/* Only a session that named the extension in its SUP. What a client wants
+	   other clients told is a different question and is not asked here. */
+	if (!user->supportsExtension(ADC_EXT_BULLETIN)) return;
+
+	const std::vector<std::string> names = boards->names();
+
+	for (const std::string& name : names) {
+		/*
+		 * Only boards this session has not been told about, so that a client
+		 * offering the extension over and over is not a way to ask for a burst of
+		 * one line per board for the price of one short command. A board whose
+		 * fields have changed is re-sent by announceBoard(), which is the path that
+		 * exists for saying something new.
+		 */
+		if (user->getSubscriptions().wasDescribed(name)) continue;
+
+		QuickDC::Board board;
+		if (!boards->describe(name, user->getCredentials(), board)) continue;
+
+		/* No descriptor at all where the session may not subscribe. */
+		if (!board.may(QuickDC::Subscribe)) continue;
+
+		user->getSubscriptions().noteDescribed(name);
+		sendOwned(writeBoard(board), user);
+	}
+}
+
+void ADC::LocalHub::Hub::announceBoard(const std::string& board)
+{
+	if (!boards) return;
+
+	/*
+	 * Held over the walk, as a broadcast holds it: writing to a user can fail hard,
+	 * the socket reports that before the write returns, and the user is retired on
+	 * the spot - which would free an entry of the very vector being walked. The flag
+	 * is what makes onQuit() defer instead. The one user that does not need it is
+	 * the one whose command is being processed, which is locked for the same reason.
+	 *
+	 * Restored rather than cleared, here and in the two below, so that one of these
+	 * called from inside something that had already set it cannot hand back a hub
+	 * that is no longer protecting the walk it is in the middle of.
+	 */
+	const bool walking = processing;
+	processing = true;
+
+	for (size_t n = 0; n < users.size(); n++) {
+		ADC::LocalHub::User* user = users[n];
+		if (user->state != State_Normal) continue;
+		if (!user->supportsExtension(ADC_EXT_BULLETIN)) continue;
+
+		QuickDC::Board described;
+		if (!boards->describe(board, user->getCredentials(), described)) continue;
+
+		/*
+		 * A session that may no longer subscribe is told nothing and stops
+		 * following the board. Told nothing rather than told RM1, which would say
+		 * the board had ceased to exist - it has not, and saying so to a session
+		 * that has merely been demoted would have it drop a board that is still
+		 * there for everybody else.
+		 */
+		if (!described.may(QuickDC::Subscribe)) {
+			user->getSubscriptions().cancel(board);
+			continue;
+		}
+
+		user->getSubscriptions().noteDescribed(board);
+		sendOwned(writeBoard(described), user);
+	}
+
+	processing = walking;
+}
+
+void ADC::LocalHub::Hub::announceBoardRemoved(const std::string& board)
+{
+	QuickDC::Board gone;
+	gone.name = board;
+	gone.removed = true;
+
+	/* As above: a user retired by a failing write must not be freed under this. */
+	const bool walking = processing;
+	processing = true;
+
+	for (size_t n = 0; n < users.size(); n++) {
+		ADC::LocalHub::User* user = users[n];
+		if (user->state != State_Normal) continue;
+
+		/* Only the sessions that were told the board was there, which is exactly
+		   the set holding it now. */
+		if (!user->getSubscriptions().wasDescribed(board)) continue;
+
+		user->getSubscriptions().forget(board);
+		sendOwned(writeBoard(gone), user);
+	}
+
+	processing = walking;
+}
+
+void ADC::LocalHub::Hub::sendEntry(const QuickDC::BoardEntry& entry,
+	ADC::LocalHub::User* author)
+{
+	/* One command for every recipient, and a reference held across the loop: a
+	   recipient's queue takes its own, and the last one out frees it. */
+	ADC::Command* cmd = writeEntry(entry);
+	cmd->incRef();
+
+	/* And as in announceBoard(): a subscriber whose write fails is retired, and this
+	   is what stops it being freed out of the vector being walked. */
+	const bool walking = processing;
+	processing = true;
+
+	for (size_t n = 0; n < users.size(); n++) {
+		ADC::LocalHub::User* user = users[n];
+		if (user->state != State_Normal) continue;
+
+		ADC::LocalHub::Subscriptions& following = user->getSubscriptions();
+		const bool subscribed = following.has(entry.board);
+
+		/*
+		 * The submitting session receives the entry whether it follows the board or
+		 * not. There is no success status message in this extension - the entry is
+		 * the acknowledgement - so a session that posted without subscribing would
+		 * otherwise be told nothing at all, and could not tell acceptance from a
+		 * refusal that went missing.
+		 */
+		if (!subscribed && user != author) continue;
+
+		/* The cursor follows what was queued and not what was attempted: a session
+		   whose queue is at its ceiling has not been sent this entry, and a cursor
+		   that moved past it would be a gap nothing could close. */
+		if (user->send(cmd))
+			following.advance(entry.board, entry.timestamp);
+	}
+
+	processing = walking;
+
+	cmd->decRef();
+	if (cmd->canDelete()) delete cmd;
+}
+
+void ADC::LocalHub::Hub::onBBL(ADC::Command* cmd) {
+	CHECK_SID_OK();
+	if (user->state != State_Normal) return;
+
+	if (!hasBoards()) {
+		/*
+		 * This hub never announced the feature, so a client sending BBL is one that
+		 * did not read the answer to its SUP. 45 is the feature error and carries
+		 * FC, which says which command was not available rather than inventing a
+		 * bulletin board condition for a hub that has no bulletin boards.
+		 */
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FEATURE_ERROR,
+			"This hub has no bulletin boards", "BBL", 0, 0);
+		return;
+	}
+
+	ADC::LocalHub::Subscriptions& following = user->getSubscriptions();
+
+	const char* raw_board = cmd->getArgument("BD", 2);
+	const std::string named(raw_board ? raw_board : "");
+	const bool board_ok = ADC::isValidBoardName(named);
+
+	/* Echoed back only where it is a board name at all: a refusal repeats what it
+	   was sent, and what it was sent is remote text of any length. */
+	const char* board = board_ok ? named.c_str() : 0;
+
+	const char* raw_tth = cmd->getArgument("TR", 2);
+	const std::string wanted(raw_tth ? raw_tth : "");
+	const char* tth = ADC::isValidTTH(wanted) ? wanted.c_str() : 0;
+
+	/*
+	 * Before the command is read, since a flood is answered rather than parsed. A
+	 * subscription is a standing instruction to send data obtained with one short
+	 * command, so the command itself is what has to be bounded.
+	 */
+	if (!following.requests.spend()) {
+		refuseBulletin(user, ADC_CODE_BULLETIN_ERROR, "Too many board requests",
+			"BBL", board, tth, "TL", std::to_string(following.requests.retryAfter()));
+		return;
+	}
+
+	if (!raw_board) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "No board named",
+			"BBL", 0, tth, "FM", "BD");
+		return;
+	}
+
+	if (!board_ok) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "Not a board name",
+			"BBL", 0, tth, "FB", "BD");
+		return;
+	}
+
+	const char* raw_from = cmd->getArgument("TS", 2);
+
+	/* A question about one entry and a subscription from a point in time are two
+	   different commands, and one carrying both is neither. */
+	if (raw_tth && raw_from) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_ERROR,
+			"TR and TS cannot both be given", "BBL", board, tth);
+		return;
+	}
+
+	if (hasReservedRemoval(cmd)) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_ERROR, "RM has no such value",
+			"BBL", board, tth);
+		return;
+	}
+
+	const uint64_t permissions = boards->permissionsFor(named, user->getCredentials());
+
+	if (!permissions) {
+		/*
+		 * A board this session may do nothing on answers as though it were not
+		 * there, whether it is or not: withholding the descriptor is the whole of
+		 * the mechanism for hiding a board, and a refusal that told a hidden board
+		 * apart from an absent one would undo it.
+		 *
+		 * The one exception is a board an operator has marked for registered
+		 * sessions, where saying so is the point - a reader who is told to register
+		 * can, and one told the board does not exist cannot.
+		 */
+		if (boards->exists(named) && boards->registeredOnly(named))
+			refuseBulletin(user, ADC_CODE_ACCESS_REGISTERED,
+				"That board is for registered users", "BBL", board, tth);
+		else
+			refuseBulletin(user, ADC_CODE_BULLETIN_NO_BOARD, "No such board",
+				"BBL", board, tth);
+		return;
+	}
+
+	if (isRemoval(cmd)) {
+		following.cancel(named);
+		return;
+	}
+
+	if (raw_tth) {
+		/*
+		 * A request carrying TR is a question and not a subscription: it is answered
+		 * with the one entry or with a refusal, and the session's subscriptions are
+		 * not touched either way. This is how a client fills in the parent of a
+		 * reply that arrived orphaned.
+		 */
+		if (!tth) {
+			refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED,
+				"Not a tiger tree hash", "BBL", board, 0, "FB", "TR");
+			return;
+		}
+
+		if (!(permissions & static_cast<uint64_t>(QuickDC::Subscribe))) {
+			refuseBulletin(user, ADC_CODE_ACCESS_DENIED,
+				"You may not read that board", "BBL", board, tth);
+			return;
+		}
+
+		const QuickDC::BoardEntry* entry = boards->findEntry(named, wanted);
+		if (!entry) {
+			refuseBulletin(user, ADC_CODE_BULLETIN_NO_ENTRY, "No such post",
+				"BBL", board, tth);
+			return;
+		}
+
+		sendOwned(writeEntry(*entry), user);
+		return;
+	}
+
+	if (!(permissions & static_cast<uint64_t>(QuickDC::Subscribe))) {
+		refuseBulletin(user, ADC_CODE_ACCESS_DENIED, "You may not read that board",
+			"BBL", board, 0);
+		return;
+	}
+
+	if (raw_from && !isNumber(raw_from)) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "Not a timestamp",
+			"BBL", board, 0, "FB", "TS");
+		return;
+	}
+
+	/* Absent means zero, which means the whole of the board. */
+	const uint64_t from = raw_from ? toNumber(raw_from) : 0;
+
+	if (!following.has(named) && following.count() >= MAX_SUBSCRIPTIONS_PER_SESSION) {
+		refuseBulletin(user, ADC_CODE_BULLETIN_ERROR, "Too many subscriptions",
+			"BBL", board, 0);
+		return;
+	}
+
+	const std::vector<QuickDC::BoardEntry> replay = boards->since(named, from);
+
+	/*
+	 * Counted in entries, which is what makes a replay from the beginning of a long
+	 * board expensive and a resumption at its head free. A client that has caught
+	 * up and reconnects costs the entries of one second; a client asking for
+	 * everything, over and over, costs the board each time and is refused for it.
+	 *
+	 * Charged at most the whole allowance, however long the board. A cost past what
+	 * the bucket can ever hold would be a refusal that waiting cannot lift, so an
+	 * operator who configured a board longer than the allowance would have made one
+	 * that nobody can read from the beginning - and would be told to wait for it in
+	 * a message that never comes true.
+	 */
+	const double cost = std::min(static_cast<double>(replay.size()),
+		ADC::LocalHub::BOARD_REPLAY_BURST);
+
+	if (!following.replays.spend(cost)) {
+		refuseBulletin(user, ADC_CODE_BULLETIN_ERROR, "Too much of the board at once",
+			"BBL", board, 0, "TL", std::to_string(following.replays.retryAfter(cost)));
+		return;
+	}
+
+	/*
+	 * A second BBL naming a board this session already follows replaces the first
+	 * and replays from the newly requested timestamp. The cursor starts where
+	 * nothing has been delivered and is moved on by each entry that goes out, so
+	 * what it holds is what this session has been sent and not what it asked for.
+	 */
+	following.subscribe(named, 0);
+
+	for (size_t n = 0; n < replay.size(); n++) {
+		sendOwned(writeEntry(replay[n]), user, (n + 1) < replay.size());
+		following.advance(named, replay[n].timestamp);
+	}
+}
+
+void ADC::LocalHub::Hub::onBBP(ADC::Command* cmd) {
+	CHECK_SID_OK();
+	if (user->state != State_Normal) return;
+
+	if (!hasBoards()) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FEATURE_ERROR,
+			"This hub has no bulletin boards", "BBP", 0, 0);
+		return;
+	}
+
+	ADC::LocalHub::Subscriptions& following = user->getSubscriptions();
+
+	const char* raw_board = cmd->getArgument("BD", 2);
+	const std::string named(raw_board ? raw_board : "");
+	const bool board_ok = ADC::isValidBoardName(named);
+	const char* board = board_ok ? named.c_str() : 0;
+
+	const char* raw_tth = cmd->getArgument("TR", 2);
+	const std::string hash(raw_tth ? raw_tth : "");
+	const bool tth_ok = ADC::isValidTTH(hash);
+	const char* tth = tth_ok ? hash.c_str() : 0;
+
+	const char* raw_parent = cmd->getArgument("PA", 2);
+	const std::string parent(raw_parent ? raw_parent : "");
+
+	if (!raw_board) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "No board named",
+			"BBP", 0, tth, "FM", "BD");
+		return;
+	}
+
+	if (!board_ok) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "Not a board name",
+			"BBP", 0, tth, "FB", "BD");
+		return;
+	}
+
+	const uint64_t permissions = boards->permissionsFor(named, user->getCredentials());
+
+	if (!permissions) {
+		if (boards->exists(named) && boards->registeredOnly(named))
+			refuseBulletin(user, ADC_CODE_ACCESS_REGISTERED,
+				"That board is for registered users", "BBP", board, tth);
+		else
+			refuseBulletin(user, ADC_CODE_BULLETIN_NO_BOARD, "No such board",
+				"BBP", board, tth);
+		return;
+	}
+
+	if (!raw_tth) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "No post named",
+			"BBP", board, 0, "FM", "TR");
+		return;
+	}
+
+	if (!tth_ok) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "Not a tiger tree hash",
+			"BBP", board, 0, "FB", "TR");
+		return;
+	}
+
+	if (hasReservedRemoval(cmd)) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_ERROR, "RM has no such value",
+			"BBP", board, tth);
+		return;
+	}
+
+	if (isRemoval(cmd)) {
+		const QuickDC::BoardEntry* entry = boards->findEntry(named, hash);
+
+		if (!entry || entry->removed) {
+			refuseBulletin(user, ADC_CODE_BULLETIN_NO_ENTRY, "No such post",
+				"BBP", board, tth);
+			return;
+		}
+
+		/* Copied out before the entry is withdrawn, which is what invalidates it. */
+		const std::string author(entry->cid);
+
+		const bool own = user->cid && author == user->cid;
+		const bool may = (permissions & static_cast<uint64_t>(QuickDC::WithdrawAny))
+			|| (own && (permissions & static_cast<uint64_t>(QuickDC::WithdrawOwn)));
+
+		if (!may) {
+			refuseBulletin(user, ADC_CODE_ACCESS_DENIED,
+				"You may not withdraw that post", "BBP", board, tth);
+			return;
+		}
+
+		/* A withdrawal writes to the index and rewrites its file, so it is charged
+		   the same allowance a post is. */
+		if (!following.posts.spend()) {
+			refuseBulletin(user, ADC_CODE_BULLETIN_RATE, "Too many posts",
+				"BBP", board, tth, "TL", std::to_string(following.posts.retryAfter()));
+			return;
+		}
+
+		QuickDC::BoardEntry tombstone;
+		if (!boards->withdraw(named, hash, tombstone)) {
+			refuseBulletin(user, ADC_CODE_BULLETIN_ERROR, "The post could not be withdrawn",
+				"BBP", board, tth);
+			return;
+		}
+
+		QHUB("%s: '%s' withdrew %s from board '%s'", ADC::SID::toString(user->sid),
+			user->nick ? user->nick : "(unidentified)", hash.c_str(), named.c_str());
+
+		sendEntry(tombstone, user);
+		announceBoard(named);
+		return;
+	}
+
+	/*
+	 * Permission 2 to start a thread, permission 4 to reply, and which of the two
+	 * is being asked for is decided by PA being there rather than by whether it
+	 * names anything the hub knows. A board where anyone may reply and only
+	 * operators may post is the natural shape of an announcements board.
+	 */
+	const bool thread = parent.empty();
+	const uint64_t needed = thread ? static_cast<uint64_t>(QuickDC::StartThread)
+	                               : static_cast<uint64_t>(QuickDC::Reply);
+
+	if (!(permissions & needed)) {
+		refuseBulletin(user, ADC_CODE_ACCESS_DENIED,
+			thread ? "You may not start a thread on that board"
+			       : "You may not reply on that board",
+			"BBP", board, tth);
+		return;
+	}
+
+	const char* raw_size = cmd->getArgument("SI", 2);
+
+	if (!raw_size) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "No size given",
+			"BBP", board, tth, "FM", "SI");
+		return;
+	}
+
+	if (!isNumber(raw_size) || !toNumber(raw_size)) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "Not a size",
+			"BBP", board, tth, "FB", "SI");
+		return;
+	}
+
+	QuickDC::Board described;
+	if (!boards->describe(named, user->getCredentials(), described)) {
+		refuseBulletin(user, ADC_CODE_BULLETIN_NO_BOARD, "No such board",
+			"BBP", board, tth);
+		return;
+	}
+
+	const uint64_t size = toNumber(raw_size);
+
+	/*
+	 * The declared size, which is all there is: nothing verifies it before the
+	 * transfer, the author declares it and the hub copies it. Enforcing MS against
+	 * it is what the extension asks of a hub, and a client caps the transfer
+	 * itself because this number is a claim.
+	 */
+	if (size > described.maxSize) {
+		refuseBulletin(user, ADC_CODE_BULLETIN_TOO_LARGE, "The post is too large",
+			"BBP", board, tth, "MS", std::to_string(described.maxSize));
+		return;
+	}
+
+	if (!parent.empty() && !ADC::isValidTTH(parent)) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "Not a tiger tree hash",
+			"BBP", board, tth, "FB", "PA");
+		return;
+	}
+
+	if (boards->findEntry(named, hash)) {
+		refuseBulletin(user, ADC_CODE_BULLETIN_ERROR, "That post is already on this board",
+			"BBP", board, tth);
+		return;
+	}
+
+	const char* raw_subject = cmd->getArgument("SJ", 2);
+	const std::string subject(raw_subject ? raw_subject : "");
+
+	/*
+	 * The subject on an entry is a copy of a document field, offered so that a
+	 * client can show a board without fetching it. Bounded because the hub keeps it
+	 * and repeats it to every subscriber for as long as the board lasts, and
+	 * refused rather than shortened: a truncated copy would disagree with the
+	 * document under a hash that still verified, and every reader would be left to
+	 * wonder which of the two the hub had altered.
+	 */
+	if (subject.size() > MAX_BOARD_SUBJECT
+		|| subject.find('\n') != std::string::npos) {
+		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "Not a subject",
+			"BBP", board, tth, "FB", "SJ");
+		return;
+	}
+
+	/*
+	 * Both allowances are asked before either is spent, so that a thread refused by
+	 * the stricter of the two is not also charged to the other. Thread creation is
+	 * held to less than replying: an existing conversation is bounded by the
+	 * interest of the people in it and starting one is not.
+	 */
+	if (!following.posts.affords() || (thread && !following.threads.affords())) {
+		const uint64_t wait = thread
+			? std::max(following.posts.retryAfter(), following.threads.retryAfter())
+			: following.posts.retryAfter();
+
+		refuseBulletin(user, ADC_CODE_BULLETIN_RATE,
+			thread ? "Too many new threads" : "Too many posts",
+			"BBP", board, tth, "TL", std::to_string(wait));
+		return;
+	}
+
+	following.posts.spend();
+	if (thread) following.threads.spend();
+
+	/*
+	 * What the author declared, and what this hub attests to. ID, NI, TH and TS are
+	 * never read from the command: they are not the client's to state, and building
+	 * the entry from nothing rather than editing what arrived is what makes
+	 * discarding them the default instead of something to remember.
+	 */
+	QuickDC::BoardEntry post;
+	post.tth = hash;
+	post.size = size;
+	post.parent = parent;
+	post.subject = subject;
+	post.cid = user->cid ? user->cid : "";
+	post.nick = user->nick ? user->nick : "";
+
+	QuickDC::BoardEntry entry;
+	const ADC::LocalHub::BoardStore::Outcome outcome = boards->add(named, post, entry);
+
+	switch (outcome) {
+		case ADC::LocalHub::BoardStore::Outcome::Accepted:
+			break;
+
+		case ADC::LocalHub::BoardStore::Outcome::NoBoard:
+			refuseBulletin(user, ADC_CODE_BULLETIN_NO_BOARD, "No such board",
+				"BBP", board, tth);
+			return;
+
+		case ADC::LocalHub::BoardStore::Outcome::Duplicate:
+			refuseBulletin(user, ADC_CODE_BULLETIN_ERROR,
+				"That post is already on this board", "BBP", board, tth);
+			return;
+
+		case ADC::LocalHub::BoardStore::Outcome::AuthorLimit:
+			/*
+			 * Refused rather than made room for. Dropping this author's oldest post
+			 * to fit the newest would make posting a way to unpublish, and it would
+			 * leave every client holding an entry the hub had quietly forgotten -
+			 * where a withdrawal is a tombstone that reaches them.
+			 */
+			refuseBulletin(user, ADC_CODE_BULLETIN_ERROR,
+				"You have as many posts on that board as you may", "BBP", board, tth);
+			return;
+	}
+
+	QHUB("%s: '%s' posted %s to board '%s'", ADC::SID::toString(user->sid),
+		user->nick ? user->nick : "(unidentified)", hash.c_str(), named.c_str());
+
+	/* The entry is the acknowledgement, and there is no other. */
+	sendEntry(entry, user);
+
+	/* And the board is not what it was: its newest timestamp and its count have
+	   both moved, and a session that is not subscribed learns it from here. */
+	announceBoard(named);
+}
+
 void ADC::LocalHub::Hub::onWelcome(ADC::LocalHub::User* user) {
 	QHUB("%s: User logged in: '%s'", ADC::SID::toString(user->sid), user->nick);
 
@@ -501,6 +1283,10 @@ void ADC::LocalHub::Hub::onWelcome(ADC::LocalHub::User* user) {
 	fake->setSocket(user->socket.get());
 	fake->addArgument("+motd");
 	services->invoke(fake.get());
+
+	/* And what there is to read here, which is the last thing a login owes a
+	   session that asked for it. */
+	sendBoardDescriptors(user);
 }
 
 void ADC::LocalHub::Hub::onQuit(ADC::LocalHub::User* user, const char* msg) {

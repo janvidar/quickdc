@@ -34,6 +34,7 @@ namespace LocalHub {
 
 class Hub;
 class ServiceMap;
+class Subscriptions;
 
 /**
  * The most features one user may advertise in the SU field of its INF.
@@ -125,6 +126,18 @@ class User : public Connection {
 		bool allowCommand();
 
 		/**
+		 * The bulletin boards this session follows, and what it has left to spend
+		 * on following them.
+		 *
+		 * Held by the session rather than by the board store, which is what makes a
+		 * subscription end when the connection does without anything having to
+		 * remember to cancel it. There would be nothing to look the session up by
+		 * afterwards either: a SID is handed out again to whoever connects next.
+		 */
+		Subscriptions& getSubscriptions() { return *subscriptions; }
+		const Subscriptions& getSubscriptions() const { return *subscriptions; }
+
+		/**
 		 * Queue a command for this user.
 		 * @return false if the send queue ceiling was reached and the command was
 		 *         dropped, which means the user is not keeping up at all.
@@ -175,6 +188,14 @@ class User : public Connection {
 		 * what it wants other clients told. See addExtension().
 		 */
 		std::set<std::string> extensions;
+
+		/*
+		 * By pointer, and never null: Subscriptions is declared with the board
+		 * store, which needs the credentials declared here, so holding one by
+		 * value would have each of the two headers requiring the other.
+		 */
+		Subscriptions* subscriptions;
+
 		bool locked;
 
 		/* Inbound command allowance. See allowCommand(). */

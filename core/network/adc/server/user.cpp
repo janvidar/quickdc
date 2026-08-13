@@ -13,6 +13,7 @@
 #include <string_view>
 #include <time.h>
 
+#include "network/adc/server/boards.h"
 #include "network/adc/server/hub.h"
 #include "network/adc/server/user.h"
 #include "network/adc/parser.h"
@@ -131,6 +132,7 @@ ADC::LocalHub::User::User(std::shared_ptr<Samurai::IO::Net::Socket> socket_, ADC
 	command_inf(0),
 	nick(0),
 	cid(0),
+	subscriptions(new Subscriptions()),
 	locked(false),
 	tokens(ADC::LocalHub::HUB_COMMAND_BURST),
 	tokens_filled(std::chrono::steady_clock::now()),
@@ -154,6 +156,10 @@ ADC::LocalHub::User::~User() {
 	free(nick);
 	free(cid);
 	clearFeatures();
+
+	/* And with it every subscription this session held, which is what makes a
+	   connection ending the end of them. */
+	delete subscriptions; subscriptions = 0;
 
 	state = State_None;
 	delete proxy; proxy = 0;

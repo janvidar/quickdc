@@ -55,6 +55,7 @@ set(QUICKDC_SOURCES
     network/adc/client/adcclientsession.cpp
     network/adc/client/adchubsession.cpp
     network/adc/server/acl.cpp
+    network/adc/server/boards.cpp
     network/adc/server/claimcheck.cpp
     network/adc/server/commands.cpp
     network/adc/server/hub.cpp
