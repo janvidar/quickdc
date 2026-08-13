@@ -905,9 +905,10 @@ EXO_TEST(hubsession_the_hubs_features_are_read_off_its_sup,
  * A hub may take a feature back, by naming it with 'RM' in a later ISUP, and the
  * answer follows what it last said in both directions.
  *
- * The hub is the only one who knows whether it can still serve a feature, and a
- * client that goes on asking after it has said no is one it has to refuse for the
- * rest of the session.
+ * Withdrawn once the session is up, which is the case that matters: the hub is
+ * the only one who knows whether it can still serve a feature, and it may lose
+ * whatever it needed for one at any point - after which a client that goes on
+ * asking is one it has to refuse for the rest of the session.
  */
 EXO_TEST(hubsession_a_feature_the_hub_withdraws_is_no_longer_supported,
 {
@@ -915,10 +916,20 @@ EXO_TEST(hubsession_a_feature_the_hub_withdraws_is_no_longer_supported,
 	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
 	EXO_ASSERT(s.ready);
 
+	/* The login exchange by hand, since it is the ISUP of it that has to carry
+	   the feature this case takes away again. */
 	std::string line;
 	EXO_ASSERT(s.hub.nextLine(line));
 
 	s.say("ISUP ADBASE ADTIGR AD" ADC_EXT_RICHTEXT);
+	s.say("ISID AAAA");
+	s.say("IINF NITestHub");
+
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line.compare(0, 4, "BINF") == 0);
+	s.say(line);
+
+	EXO_ASSERT(s.session->isLoggedIn());
 	EXO_ASSERT(s.session->supportsRichText());
 
 	s.say("ISUP RM" ADC_EXT_RICHTEXT);

@@ -557,8 +557,9 @@ EXO_TEST(adchub_a_session_records_the_extensions_it_offered,
 	EXO_ASSERT(c.connect(s.port()));
 	EXO_ASSERT(pump([&] { return s.hub.users.size() == 1; }));
 
-	/* One extension no client has ever offered among them, since a hub has to
-	   survive being told about something it has never heard of. */
+	/* 'ZZZZ' among them: a hub has to survive being offered an extension it has
+	   never heard of, and record it, since a name it does not know today is one it
+	   may be taught tomorrow. */
 	c.send("HSUP ADBASE ADTIGR ADBBS0 ADZZZZ");
 
 	std::string line;
