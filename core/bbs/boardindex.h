@@ -51,13 +51,19 @@ namespace QuickDC {
  * ".." is a legal board name and so is "...". Every file here is therefore named
  * in characters this client picked.
  *
- * The digest is short and is not collision resistant, and does not have to be,
- * because nothing is merged on the strength of it: each file also carries the hub
- * and board it was made for, and a file whose key is not the one being asked for
- * is not this board's index and is left alone. Two keys that land on one name
- * cost the second of them its cache rather than giving it the first one's entries
- * - which matters here in a way it does not for a chat transcript, since a hub
- * chooses its own board names and could otherwise aim one at another hub's file.
+ * The digest is Tiger, which is the hash this extension is made of everywhere
+ * else: a post is named by its tiger tree root, and the hub keeps its own copy of
+ * a board's index under a Tiger digest of the board name. A hub chooses its own
+ * board names and can choose them again once it has seen where one landed, so the
+ * name of a file has to be one it cannot work backwards from - a digest that can
+ * be inverted makes aiming a board at another board's file arithmetic rather than
+ * luck, which matters here in a way it does not for a chat transcript.
+ *
+ * Each file also carries the hub and board it was made for, and one whose key is
+ * not the one being asked for is not this board's index and is left alone. That is
+ * depth behind the digest rather than the thing holding it up: two keys landing on
+ * one name cost the second of them its cache rather than giving it the first one's
+ * entries.
  *
  * One thing kept here is this client's own rather than a hub's: which posts the
  * user has read. It is in nothing this client sends and in nothing the extension

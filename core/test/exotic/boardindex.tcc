@@ -982,7 +982,13 @@ EXO_TEST(boardindex_a_hostile_board_name_does_not_reach_a_path,
 
 		EXO_ASSERT(leaf.find('/') == std::string::npos);
 		EXO_ASSERT(leaf.find("..") == std::string::npos);
-		EXO_ASSERT(leaf.size() == 20);
+
+		/* A Tiger digest in base32 and then the suffix, so every character of it
+		   is one of thirty two this client can write and none of them is a dot
+		   until the suffix begins. */
+		EXO_ASSERT(leaf.size() == 43);
+		EXO_ASSERT(leaf.compare(39, 4, ".idx") == 0);
+		EXO_ASSERT(leaf.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") == 39);
 
 		/* And it resolves to itself: nothing in it is a traversal. */
 		EXO_ASSERT(Samurai::IO::File::resolvePath(path) == path);

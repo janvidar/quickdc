@@ -7,10 +7,10 @@
 
 #include "network/adc/adcbbs.h"
 
+#include <samurai/crypto/digest/tiger.h>
 #include <samurai/io/file.h>
 
 #include <algorithm>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -53,27 +53,44 @@ std::string key_of(const std::string& hubUrl, const std::string& board)
 }
 
 /**
- * A 64 bit FNV-1a of the key, in hex.
+ * A Tiger digest of the key, in base32.
  *
- * Enough to separate the boards one client caches, which is hundreds at the very
- * most, and nothing is decided by the value: the file says which key it belongs
- * to, so a collision costs the second board its cache rather than handing it the
- * first one's entries. That is the property that matters, because a hub chooses
- * its own board names and could otherwise aim one at the file of a board on
- * another hub - and this way the index does not drag a cryptographic hash in.
+ * Tiger because it is the hash this extension is made of everywhere else: a post
+ * is named by its tiger tree root, and the hub keeps its own copy of a board's
+ * index under a Tiger digest of the board name - see LocalHub::BoardStore::pathFor().
+ * One board hashed two ways in two files would be two answers to one question.
+ *
+ * It has to be a digest that cannot be worked backwards, and that is the whole of
+ * why it is this one. A hub chooses its own board names and can choose them again
+ * once it has seen where they land, so the arithmetic matters: a hash built from a
+ * multiplication by an odd constant is invertible modulo the word size, which
+ * walks the key backwards a byte at a time and turns "aim a board name at the file
+ * of a board on another hub" from a search of the whole space into a short one
+ * inside a legal board name.
+ *
+ * The key record in each file stays exactly where it is, and it is still worth its
+ * one line - but as depth behind the digest rather than as the thing holding the
+ * property up.
+ *
+ * A file some other naming put on disk is not found under this one, and nothing
+ * migrates it: an index is a cache that a subscription refills, and the read state
+ * that goes with it is a badge rather than a record. There is no migration here to
+ * go looking for.
+ *
+ * @return the empty string where the digest could not be formatted, which leaves
+ *         every call for that board doing nothing rather than doing it somewhere
+ *         else.
  */
 std::string digest_of(const std::string& key)
 {
-	uint64_t hash = 14695981039346656037ULL;
+	Samurai::Crypto::Digest::Tiger tiger;
+	tiger.update(key.data(), key.size());
 
-	for (const char c : key)
-	{
-		hash ^= static_cast<unsigned char>(c);
-		hash *= 1099511628211ULL;
-	}
+	char out[64] = {0,};
 
-	char out[17];
-	snprintf(out, sizeof(out), "%016llx", static_cast<unsigned long long>(hash));
+	if (!tiger.digest().getFormattedString(
+		Samurai::Crypto::Digest::HashValue::Format::Base32, out, sizeof(out)))
+		return std::string();
 
 	return std::string(out);
 }
@@ -331,7 +348,12 @@ std::string QuickDC::BoardIndex::pathFor(const std::string& hubUrl,
                                          const std::string& board) const
 {
 	/* The digest of the key and nothing taken from it; see key_of(). */
-	return directory + "/" + digest_of(key_of(hubUrl, board)) + ".idx";
+	const std::string digest = digest_of(key_of(hubUrl, board));
+
+	/* No name rather than a name several boards would share; see digest_of(). */
+	if (digest.empty()) return std::string();
+
+	return directory + "/" + digest + ".idx";
 }
 
 QuickDC::BoardIndex::Cached&
