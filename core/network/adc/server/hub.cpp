@@ -638,13 +638,23 @@ static bool hasReservedRemoval(ADC::Command* cmd)
 	return flag && std::string_view(flag) != "1";
 }
 
-void ADC::LocalHub::Hub::sendOwned(ADC::Command* cmd, ADC::LocalHub::User* user, bool more)
+bool ADC::LocalHub::Hub::sendOwned(ADC::Command* cmd, ADC::LocalHub::User* user, bool more)
 {
 	cmd->incRef();
-	send(cmd, user, more);
-	cmd->decRef();
 
+	/*
+	 * Queued for the one session directly rather than through the send() that also
+	 * handles an echo, because none of these is one: every command the boards
+	 * compose is an 'I' message addressed to a single recipient, and this way the
+	 * queue's answer comes back - which a replay needs, having a great deal more to
+	 * say and a reason to stop saying it.
+	 */
+	const bool queued = user ? user->send(cmd, more) : false;
+
+	cmd->decRef();
 	if (cmd->canDelete()) delete cmd;
+
+	return queued;
 }
 
 bool ADC::LocalHub::Hub::hasBoards() const
@@ -993,8 +1003,27 @@ void ADC::LocalHub::Hub::onBBL(ADC::Command* cmd) {
 	following.subscribe(named, 0);
 
 	for (size_t n = 0; n < replay.size(); n++) {
-		sendOwned(writeEntry(replay[n]), user, (n + 1) < replay.size());
-		following.advance(named, replay[n].timestamp);
+		if (sendOwned(writeEntry(replay[n]), user, (n + 1) < replay.size())) {
+			following.advance(named, replay[n].timestamp);
+			continue;
+		}
+
+		/*
+		 * The queue is at its ceiling, so the rest of the backlog has nowhere to go.
+		 * The subscription is dropped rather than the replay abandoned quietly: what
+		 * this session holds is a prefix of the board, and stopping there leaves it
+		 * exactly that - where going on to send it live entries would leave it a
+		 * prefix, a hole, and a head it had no way to know was not contiguous.
+		 *
+		 * It resumes from the highest timestamp it received, which is where the
+		 * prefix ends, and the hole closes itself.
+		 */
+		QHUB("%s: '%s' could not be sent the backlog of board '%s'; dropping the "
+			"subscription", ADC::SID::toString(user->sid),
+			user->nick ? user->nick : "(unidentified)", named.c_str());
+
+		following.cancel(named);
+		return;
 	}
 }
 

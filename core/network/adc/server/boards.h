@@ -92,8 +92,12 @@ inline constexpr uint64_t BOARD_DEFAULT_OPERATOR_PERMISSIONS = BOARD_PERMISSIONS
  * soon as it arrives. It is also remote text that the hub keeps on disk and
  * repeats to every subscriber for as long as the board lasts, so the copy is
  * bounded even though the document's own subject is not.
+ *
+ * Generous, because the bound is not a judgement about what a subject should be:
+ * a post refused here can never be indexed on this hub, and its document is
+ * already written and hashed by the time it is submitted.
  */
-inline constexpr size_t MAX_BOARD_SUBJECT = 256;
+inline constexpr size_t MAX_BOARD_SUBJECT = 512;
 
 /**
  * The most of one board's index file the hub will read.

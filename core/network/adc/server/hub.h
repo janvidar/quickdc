@@ -276,8 +276,11 @@ namespace LocalHub {
 			* so one that nothing accepted - a session already at its ceiling - has
 			* nobody left holding it and would never be freed. Every bulletin the
 			* hub composes for one recipient goes out through here for that reason.
+			*
+			* @return false where the queue refused it, which means the session is
+			*         not reading and has not been sent this.
 			*/
-			void sendOwned(ADC::Command* cmd, User* user, bool more = false);
+			bool sendOwned(ADC::Command* cmd, User* user, bool more = false);
 
 			/**
 			* Whether this hub has bulletin boards to offer at all.
