@@ -927,6 +927,18 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 
 		if (slots_full && file && file->size() < 65536)
 			slots_full = false;
+
+		/*
+		 * And a bulletin board post whatever its size, up to the bound on how many
+		 * of those may be in flight at once. A board is durable only because
+		 * everyone who has read a post hands it on, so a reader turned away because
+		 * somebody else is downloading a film is a board that stops working under
+		 * exactly the load that makes it worth having. What keeps that affordable is
+		 * the hub's own limit on how large a post may be, which is why these two
+		 * numbers are chosen together.
+		 */
+		if (slots_full && file && sharemgr->mayServeWithoutSlot(&fn[4], xfrmgr))
+			slots_full = false;
 	}
 	else
 	{

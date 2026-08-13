@@ -27,6 +27,7 @@ namespace Hash {
 class Manager;
 }
 class Preferences;
+class TransferManager;
 
 }
 
@@ -115,6 +116,48 @@ class Manager : public QuickDC::Hash::JobListener {
 		enum class Persistence { Remembered, Session };
 
 		/**
+		 * Whether serving an attachment costs an upload slot.
+		 *
+		 * Counted is every ordinary offer, and a peer asking for one meets the
+		 * refusal a shared file would give when the slots are taken.
+		 *
+		 * Free is for a file whose being served is what keeps something else
+		 * working. A bulletin board post is one: a board is durable only because
+		 * everyone who has read a post hands it on, so a reader turned away
+		 * because somebody else is downloading a film is a board that stops
+		 * working under exactly the load that makes it worth having.
+		 *
+		 * Nothing about slots belongs in Persistence, which is about surviving a
+		 * restart, and a file can want either of these with either of those: a
+		 * post document is served freely and remembered nowhere, and a caller that
+		 * wanted the opposite would be as sensible.
+		 *
+		 * Only this client can say so. The mark goes on a file we chose to offer,
+		 * is asked after by hash, and there is nothing a peer can send to obtain
+		 * it - which is the whole of what keeps it from being a way around the
+		 * slot limit.
+		 */
+		enum class SlotCost { Counted, Free };
+
+		/**
+		 * How many slot-free uploads may run at once where the configuration does
+		 * not say, as "Slot free uploads" in [Network].
+		 *
+		 * A bound of its own, which neither takes from Slots nor is taken from by
+		 * it: what is given away for nothing has to be bounded by how much of it
+		 * there is, and counting it against the slots the user configured would
+		 * turn the exemption back into the refusal it exists to avoid. Generous,
+		 * because it must never be what a reader meets in ordinary use - a post is
+		 * a couple of megabytes by the hub's own rule and is over in a moment, so
+		 * sixteen of them at once is a burst rather than a state.
+		 *
+		 * Zero means none, and not the unlimited a zero means for Slots: this is a
+		 * ceiling on serving for free, and an operator who writes zero on it is
+		 * asking for that to stop rather than to become boundless.
+		 */
+		static constexpr int DEFAULT_SLOT_FREE_UPLOADS = 16;
+
+		/**
 		 * Offer a file to other clients by its tiger tree hash alone, without
 		 * sharing it. This is what a chat attachment needs: the message carries
 		 * a magnet URI naming the hash, and whoever has that URI can fetch the
@@ -148,13 +191,42 @@ class Manager : public QuickDC::Hash::JobListener {
 		 *        being remembered, and never the other way about: a caller
 		 *        promised a URI that outlives the session cannot have that taken
 		 *        away by a later caller who did not need it.
+		 * @param slot whether serving the file takes an upload slot; see SlotCost.
+		 *        Promoted the same way persistence is, and for the same reason. One
+		 *        hash is one content, so a file that becomes slot-free by being
+		 *        attached a second time is not a larger file than it was.
 		 * @return false when there is nothing to work with - no path, no
 		 *         listener, or a path that is not a readable regular file - and
 		 *         then the listener is not called at all. Anything that can only
 		 *         be discovered later is reported to the listener instead.
 		 */
 		bool attach(const char* path, QuickDC::Share::AttachmentListener* listener,
-		            QuickDC::Share::Manager::Persistence persistence = Persistence::Remembered);
+		            QuickDC::Share::Manager::Persistence persistence = Persistence::Remembered,
+		            QuickDC::Share::Manager::SlotCost slot = SlotCost::Counted);
+
+		/**
+		 * Whether the file behind this hash is one of the slot-free offers.
+		 *
+		 * Only an attachment this client marked answers yes. A shared file never
+		 * does, however small, and neither does a remembered attachment offered
+		 * again at start-up: nothing of the mark reaches [Attachments], so a file
+		 * that is served for free is one something in this session asked to be.
+		 */
+		bool isSlotFreeByTTH(const char* tth) const;
+
+		/**
+		 * Whether this hash may be served without taking an upload slot as things
+		 * stand: marked slot-free, and not already at the bound on how many such
+		 * uploads run at once.
+		 *
+		 * The one place that decision is made, because both the ADC and the NMDC
+		 * request paths make it and a second copy of the reasoning is how the two
+		 * come to disagree about what this client gives away.
+		 *
+		 * @param transfers what is running, to count the slot-free uploads among.
+		 *        A null one counts as nothing running.
+		 */
+		bool mayServeWithoutSlot(const char* tth, QuickDC::TransferManager* transfers) const;
 
 		/**
 		 * Stop offering an attachment: take back everything attach() made
@@ -254,6 +326,8 @@ class Manager : public QuickDC::Hash::JobListener {
 			QuickDC::Share::File* file = 0;
 			/** Whether the record reaches [Attachments]; see Persistence. */
 			QuickDC::Share::Manager::Persistence persistence = Persistence::Remembered;
+			/** Whether serving it takes an upload slot; see SlotCost. */
+			QuickDC::Share::Manager::SlotCost slot = SlotCost::Counted;
 			/** Waiting to be told the hash. Emptied once they have been. */
 			std::vector<QuickDC::Share::AttachmentListener*> listeners;
 
@@ -283,6 +357,20 @@ class Manager : public QuickDC::Hash::JobListener {
 
 		QuickDC::Share::Manager::Attachment* findAttachment(const std::string& name) const;
 		bool isAttachment(const QuickDC::Share::File* ptr) const;
+
+		/**
+		 * Whether this is the file handle a slot-free offer is served through.
+		 *
+		 * How a running upload is recognised as one of them: an upload holds the
+		 * very handle getFileByTTH() returned, and asking which Share::File answers
+		 * for the hash rather than which one the record built covers the case where
+		 * a genuinely shared file holds the hash table entry and is therefore what
+		 * a peer is being sent.
+		 */
+		bool isSlotFreeHandle(const Samurai::IO::File* handle) const;
+
+		/** How many of the running uploads are slot-free offers. */
+		size_t countSlotFreeUploads(QuickDC::TransferManager* transfers) const;
 
 		/**
 		 * Make an attachment reachable by its hash, and by nothing else.

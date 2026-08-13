@@ -49,13 +49,19 @@ inline constexpr size_t MAX_SUBSCRIPTIONS_PER_SESSION = 16;
 /**
  * What a board is where its configuration does not say.
  *
- * The size is what a client meets as MS, and 256k is a long post and a short
- * file. The two entry counts are deliberately small: the index is an unbounded
+ * The size is what a client meets as MS, and two megabytes is a long post with a
+ * picture in it and nothing like a file. It is also the number that lets a client
+ * serve a post without an upload slot: a reader hands on what it has read
+ * whatever else it is doing, and how large a post may be is the only thing
+ * bounding what that costs. A hub raising this is asking every reader to give
+ * that much away for nothing, so the two move together or not at all.
+ *
+ * The two entry counts are deliberately small: the index is an unbounded
  * structure that remote users write to, a replay is sent in one pass, and a
  * board holding more than a session's send queue can carry is a board that
  * nobody on a slow link can ever catch up on.
  */
-inline constexpr uint64_t BOARD_DEFAULT_MAX_SIZE = 256 * 1024;
+inline constexpr uint64_t BOARD_DEFAULT_MAX_SIZE = 2 * 1024 * 1024;
 inline constexpr uint64_t BOARD_DEFAULT_MAX_ENTRIES = 512;
 inline constexpr uint64_t BOARD_DEFAULT_MAX_ENTRIES_PER_AUTHOR = 64;
 

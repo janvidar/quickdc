@@ -28,6 +28,8 @@
 #include "hash/hashjob.h"
 #include "hash/hashmanager.h"
 #include "network/adc/cid.h"
+#include "network/transfer.h"
+#include "network/transfermanager.h"
 
 /* An upper bound on "Total shares", which is read from the configuration file. */
 #define MAX_SHARES 1024
@@ -453,7 +455,8 @@ void QuickDC::Share::Manager::addLookupFile(const char* name, const char* tth, Q
 }
 
 bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::AttachmentListener* listener,
-                                     QuickDC::Share::Manager::Persistence persistence) {
+                                     QuickDC::Share::Manager::Persistence persistence,
+                                     QuickDC::Share::Manager::SlotCost slot) {
 	if (!path || !path[0] || !listener) return false;
 
 	Samurai::IO::File file(path);
@@ -473,6 +476,12 @@ bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::Attachmen
 			if (!known->tth.empty()) saveAttachments();
 		}
 
+		/* And slot-free in the same direction, for the same reason: a caller that
+		   needs the file served whatever else is running cannot have that taken back
+		   by one that did not. The bytes are the same either way, one hash being one
+		   content, so nothing larger becomes exempt by this. */
+		if (slot == SlotCost::Free) known->slot = SlotCost::Free;
+
 		if (known->tth.empty())
 			known->listeners.push_back(listener);
 		else
@@ -490,6 +499,7 @@ bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::Attachmen
 	record->name = file.getName();
 	record->size = static_cast<uint64_t>(file.size());
 	record->persistence = persistence;
+	record->slot = slot;
 	record->listeners.push_back(listener);
 	attachments.push_back(std::move(record));
 
@@ -551,6 +561,65 @@ bool QuickDC::Share::Manager::isAttachment(const QuickDC::Share::File* ptr) cons
 			return true;
 
 	return false;
+}
+
+bool QuickDC::Share::Manager::isSlotFreeByTTH(const char* tth) const {
+	if (!tth || !tth[0]) return false;
+
+	for (const std::unique_ptr<Attachment>& record : attachments)
+		if (record->slot == SlotCost::Free && record->tth == tth)
+			return true;
+
+	return false;
+}
+
+bool QuickDC::Share::Manager::isSlotFreeHandle(const Samurai::IO::File* handle) const {
+	if (!handle) return false;
+
+	for (const std::unique_ptr<Attachment>& record : attachments) {
+		if (record->slot != SlotCost::Free || record->tth.empty()) continue;
+
+		const QuickDC::Share::File* served = findByTTH(record->tth.c_str());
+		if (served && &served->getFile() == handle) return true;
+	}
+
+	return false;
+}
+
+size_t QuickDC::Share::Manager::countSlotFreeUploads(QuickDC::TransferManager* transfers) const {
+	if (!transfers) return 0;
+
+	size_t count = 0;
+
+	/*
+	 * The manager's own iterator, which is the only way to walk it, so this cannot
+	 * run inside another walk of the same list. Nothing does: the transfers are
+	 * driven by their sockets, and the places that enumerate them - this and
+	 * countUploads() - are called one after the other while a request is answered.
+	 */
+	for (QuickDC::Transfer* xfer = transfers->first(); xfer; xfer = transfers->next()) {
+		if (!xfer->isUpload()) continue;
+		if (isSlotFreeHandle(xfer->getFile())) count++;
+	}
+
+	return count;
+}
+
+bool QuickDC::Share::Manager::mayServeWithoutSlot(const char* tth, QuickDC::TransferManager* transfers) const {
+	if (!isSlotFreeByTTH(tth)) return false;
+
+	const int bound = (config) ? config->peekNumber("Network", "Slot free uploads",
+		DEFAULT_SLOT_FREE_UPLOADS) : DEFAULT_SLOT_FREE_UPLOADS;
+
+	/*
+	 * Counted rather than assumed to be plentiful: a post is bounded in size by the
+	 * hub that took it, but the number of connections a peer opens is bounded by
+	 * nothing we control, and serving without a slot means the ordinary refusal is
+	 * not there to stop them.
+	 */
+	if (bound <= 0) return false;
+
+	return countSlotFreeUploads(transfers) < static_cast<size_t>(bound);
 }
 
 bool QuickDC::Share::Manager::registerAttachment(QuickDC::Share::Manager::Attachment& record) {

@@ -25,11 +25,14 @@
 #include "api/core.h"
 #include "config/preferences.h"
 #include "hash/hashmanager.h"
+#include "network/transfer.h"
+#include "network/transfermanager.h"
 #include "share/sharemanager.h"
 #include "share/sharefile.h"
 #include "share/searchrequest.h"
 
 #include <samurai/io/file.h>
+#include <samurai/io/net/socket.h>
 
 #include <chrono>
 #include <memory>
@@ -41,6 +44,7 @@
 #include <vector>
 
 using Persistence = QuickDC::Share::Manager::Persistence;
+using SlotCost = QuickDC::Share::Manager::SlotCost;
 using Request = QuickDC::Share::SearchRequest;
 
 /* The pid is in the name because a run that dies leaves its files behind, and
@@ -114,6 +118,26 @@ class Replies : public QuickDC::Share::SearchReplyHandler
 		size_t count() const { return names.size(); }
 
 		std::vector<std::string> names;
+};
+
+/*
+ * An upload that exists to be counted and nothing else.
+ *
+ * What decides whether a file may be served without a slot asks the transfer
+ * manager what is running and looks at the file handle each upload holds, so a
+ * transfer in the list is the whole of what a case here has to arrange. No socket
+ * and no bytes: exec() is never called, and Transfer touches neither on its way
+ * in or out.
+ */
+class Running : public QuickDC::Transfer
+{
+	public:
+		Running(QuickDC::TransferManager* mgr, Samurai::IO::File* served)
+			: QuickDC::Transfer(mgr, 0, {}, served, QuickDC::Transfer::Upload, 0, 1) { }
+
+	protected:
+		void transfer() override { }
+		void close() override { }
 };
 
 /*
@@ -208,6 +232,25 @@ class Fixture
 			/* The core owns whatever it built; this one replaces it. */
 			delete core->shares;
 			core->shares = shares;
+		}
+
+		/*
+		 * A new manager over the same configuration and the same hash cache, which
+		 * is what a restart comes to: the [Attachments] group and what the cache
+		 * can still vouch for is all it has to go on.
+		 *
+		 * The core's manager is replaced rather than a second one built beside it,
+		 * because a Share::File announces its hash through Core::getInstance()
+		 * ->shares - so two managers at once would have one filling the other's
+		 * tables with files it does not own.
+		 */
+		bool restart()
+		{
+			delete core->shares;
+			shares = new QuickDC::Share::Manager(core->config, hashes.get(), out.c_str());
+			core->shares = shares;
+
+			return scan();
 		}
 
 		/* Scans the share, and hashes what that found. */
@@ -605,6 +648,200 @@ EXO_TEST(attachments_a_file_that_cannot_be_hashed_is_reported_and_forgotten,
 		EXO_ASSERT(retry.lastTTH.size() == TTH_LENGTH);
 		EXO_ASSERT(f.shares->getFileByTTH(retry.lastTTH.c_str()));
 		EXO_ASSERT(f.remembered() == 2);
+
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* Serving without an upload slot                                            */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A file offered slot-free says so by its hash, and an ordinary one does not.
+ *
+ * This is the question the request paths ask, by the hash a peer named, so what
+ * is answered here is what decides whether a bulletin board post is served while
+ * every slot is busy. Nothing a peer sends can reach it: the mark went on when
+ * this client attached the file, and a hash it has never been told about is no.
+ */
+EXO_TEST(attachments_a_slot_free_attachment_is_reported_by_its_hash,
+{
+		Fixture f;
+		f.build(false);
+		EXO_ASSERT(f.scan());
+
+		/* Both well past the 64k a request path exempts on size alone, so nothing
+		   here is answered by that older rule. */
+		const std::string post = f.looseFile("post.txt", std::string(300000, 'l'));
+		const std::string other = f.looseFile("holiday.jpg", std::string(300000, 'm'));
+
+		Attacher served, counted;
+		EXO_ASSERT(f.shares->attach(post.c_str(), &served, Persistence::Session, SlotCost::Free));
+		EXO_ASSERT(f.shares->attach(other.c_str(), &counted));
+		EXO_ASSERT(f.drain());
+		EXO_ASSERT(served.ready == 1 && counted.ready == 1);
+
+		EXO_ASSERT(f.shares->isSlotFreeByTTH(served.lastTTH.c_str()));
+		EXO_ASSERT(!f.shares->isSlotFreeByTTH(counted.lastTTH.c_str()));
+
+		EXO_ASSERT(!f.shares->isSlotFreeByTTH(std::string(TTH_LENGTH, 'A').c_str()));
+		EXO_ASSERT(!f.shares->isSlotFreeByTTH(""));
+		EXO_ASSERT(!f.shares->isSlotFreeByTTH(0));
+
+	return 1;
+});
+
+/*
+ * How many of them may run at once, which is a bound of its own.
+ *
+ * Serving for nothing cannot be boundless: a post is a couple of megabytes by the
+ * hub's rule, but the number of connections a peer opens is not ours to limit, and
+ * the refusal that would otherwise stop them is the very thing being waived. The
+ * ordinary slots are no part of it in either direction - an upload of a shared file
+ * does not fill this up, and one of these does not fill a slot.
+ */
+EXO_TEST(attachments_slot_free_serving_is_bounded_by_a_count_of_its_own,
+{
+		Fixture f;
+		f.build(false);
+		EXO_ASSERT(f.scan());
+
+		f.core->config->setNumber("Network", "Slot free uploads", 1);
+
+		const std::string first = f.looseFile("first_post.txt", std::string(200000, 'n'));
+		const std::string second = f.looseFile("second_post.txt", std::string(200000, 'o'));
+		const std::string film = f.looseFile("film.avi", std::string(200000, 'p'));
+
+		Attacher one, two, plain;
+		EXO_ASSERT(f.shares->attach(first.c_str(), &one, Persistence::Session, SlotCost::Free));
+		EXO_ASSERT(f.shares->attach(second.c_str(), &two, Persistence::Session, SlotCost::Free));
+		EXO_ASSERT(f.shares->attach(film.c_str(), &plain));
+		EXO_ASSERT(f.drain());
+		EXO_ASSERT(one.ready == 1 && two.ready == 1 && plain.ready == 1);
+
+		Samurai::IO::File* postFile = f.shares->getFileByTTH(one.lastTTH.c_str());
+		Samurai::IO::File* filmFile = f.shares->getFileByTTH(plain.lastTTH.c_str());
+		EXO_ASSERT(postFile && filmFile);
+
+		/* Nothing running, so either post may go and the film may not. */
+		EXO_ASSERT(f.shares->mayServeWithoutSlot(one.lastTTH.c_str(), f.core->transfers));
+		EXO_ASSERT(f.shares->mayServeWithoutSlot(two.lastTTH.c_str(), f.core->transfers));
+		EXO_ASSERT(!f.shares->mayServeWithoutSlot(plain.lastTTH.c_str(), f.core->transfers));
+
+		{
+			/* An ordinary upload takes a slot and nothing else. */
+			Running film_upload(f.core->transfers, filmFile);
+			EXO_ASSERT(f.shares->mayServeWithoutSlot(one.lastTTH.c_str(), f.core->transfers));
+
+			/* The one slot-free upload allowed here fills the bound. */
+			Running post_upload(f.core->transfers, postFile);
+			EXO_ASSERT(!f.shares->mayServeWithoutSlot(two.lastTTH.c_str(), f.core->transfers));
+		}
+
+		EXO_ASSERT(f.shares->mayServeWithoutSlot(two.lastTTH.c_str(), f.core->transfers));
+
+		/* And zero means none of it, rather than the boundlessness a zero means to
+		   the ordinary slot count. */
+		f.core->config->setNumber("Network", "Slot free uploads", 0);
+		EXO_ASSERT(!f.shares->mayServeWithoutSlot(one.lastTTH.c_str(), f.core->transfers));
+
+	return 1;
+});
+
+/*
+ * The mark is this session's, and a restart does not find it.
+ *
+ * A remembered attachment goes into [Attachments] as a hash and a path, and that
+ * is deliberately all: what is served for free is what something in this session
+ * asked to be, and a line in a file cannot make that decision again on its own.
+ */
+EXO_TEST(attachments_the_slot_free_mark_is_not_remembered_for_the_next_start,
+{
+		Fixture f;
+		f.build(false);
+		EXO_ASSERT(f.scan());
+
+		const std::string leaf = "kept_post.txt";
+		const std::string post = f.looseFile(leaf.c_str(), std::string(20000, 'q'));
+
+		Attacher who;
+		EXO_ASSERT(f.shares->attach(post.c_str(), &who, Persistence::Remembered, SlotCost::Free));
+		EXO_ASSERT(f.drain());
+		EXO_ASSERT(who.ready == 1);
+		EXO_ASSERT(f.shares->isSlotFreeByTTH(who.lastTTH.c_str()));
+		EXO_ASSERT(f.remembered() == 1);
+
+		/* The line ends at the path, so there is nothing in it the mark could be
+		   read back out of. */
+		const std::string entry = f.rememberedEntry(0);
+		EXO_ASSERT(entry.compare(0, TTH_LENGTH, who.lastTTH) == 0);
+		EXO_ASSERT(entry.size() > leaf.size());
+		EXO_ASSERT(entry.compare(entry.size() - leaf.size(), leaf.size(), leaf) == 0);
+
+		EXO_ASSERT(f.restart());
+
+		/* Offered again, since that is what being remembered is for, and counted
+		   against the slots like anything else. */
+		EXO_ASSERT(f.shares->getFileByTTH(who.lastTTH.c_str()));
+		EXO_ASSERT(!f.shares->isSlotFreeByTTH(who.lastTTH.c_str()));
+		EXO_ASSERT(!f.shares->mayServeWithoutSlot(who.lastTTH.c_str(), f.core->transfers));
+
+	return 1;
+});
+
+/* Taking the file back takes the mark with it, as it takes everything else. */
+EXO_TEST(attachments_detaching_takes_the_slot_free_mark_with_it,
+{
+		Fixture f;
+		f.build(false);
+		EXO_ASSERT(f.scan());
+
+		const std::string post = f.looseFile("withdrawn.txt", std::string(20000, 'r'));
+
+		Attacher who;
+		EXO_ASSERT(f.shares->attach(post.c_str(), &who, Persistence::Session, SlotCost::Free));
+		EXO_ASSERT(f.drain());
+		EXO_ASSERT(who.ready == 1);
+		EXO_ASSERT(f.shares->mayServeWithoutSlot(who.lastTTH.c_str(), f.core->transfers));
+
+		EXO_ASSERT(f.shares->detach(who.lastTTH));
+
+		EXO_ASSERT(!f.shares->isSlotFreeByTTH(who.lastTTH.c_str()));
+		EXO_ASSERT(!f.shares->mayServeWithoutSlot(who.lastTTH.c_str(), f.core->transfers));
+		EXO_ASSERT(!f.shares->getFileByTTH(who.lastTTH.c_str()));
+
+	return 1;
+});
+
+/*
+ * Attaching the same file again can make it slot-free, and never the other way
+ * about: a caller that needs a post served whatever else is running cannot have
+ * that taken back by one that only wanted the file offered.
+ */
+EXO_TEST(attachments_an_attachment_is_promoted_to_slot_free_and_not_back,
+{
+		Fixture f;
+		f.build(false);
+		EXO_ASSERT(f.scan());
+
+		const std::string path = f.looseFile("both.txt", std::string(20000, 's'));
+
+		Attacher plain;
+		EXO_ASSERT(f.shares->attach(path.c_str(), &plain));
+		EXO_ASSERT(f.drain());
+		EXO_ASSERT(plain.ready == 1);
+		EXO_ASSERT(!f.shares->isSlotFreeByTTH(plain.lastTTH.c_str()));
+
+		Attacher post;
+		EXO_ASSERT(f.shares->attach(path.c_str(), &post, Persistence::Session, SlotCost::Free));
+		EXO_ASSERT(post.ready == 1);
+		EXO_ASSERT(post.lastTTH == plain.lastTTH);
+		EXO_ASSERT(f.shares->isSlotFreeByTTH(post.lastTTH.c_str()));
+
+		Attacher again;
+		EXO_ASSERT(f.shares->attach(path.c_str(), &again));
+		EXO_ASSERT(again.ready == 1);
+		EXO_ASSERT(f.shares->isSlotFreeByTTH(post.lastTTH.c_str()));
 
 	return 1;
 });

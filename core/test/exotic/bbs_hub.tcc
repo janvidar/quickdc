@@ -1023,6 +1023,51 @@ EXO_TEST(bbs_hub_a_post_past_the_board_limit_is_refused_against_it,
 	return 1;
 });
 
+/*
+ * What a board takes where its configuration says nothing, which is two megabytes.
+ *
+ * The number is not a guess at how long a post is - it is enormous for a header and
+ * some text. It is the bound that makes serving a post without an upload slot
+ * affordable, so it and Share::Manager::SlotCost::Free are chosen together, and
+ * moving this without looking at that is the mistake to avoid. Configured here by
+ * writing the group without the key rather than through configureBoard(), which
+ * always writes one and would test its own default instead of the hub's.
+ */
+EXO_TEST(bbs_hub_a_board_that_says_nothing_takes_two_megabytes,
+{
+	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	config->setString("Local hub board unbounded", "Title", "Unbounded");
+	config->setNumber("Local hub board unbounded", "User permissions", 15);
+
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(41), "alice"));
+
+	std::string bbd;
+	EXO_ASSERT(alice.waitForLine({"IBBD", "BDunbounded"}, bbd));
+	EXO_ASSERT(fieldOf(bbd, "MS") == "2097152");
+
+	/* And it is the limit that is enforced, not merely the one announced. */
+	const std::string tth = makeTTH(41);
+	alice.send("HBBP TR" + tth + " SI2097153 BDunbounded SJOne\\sbyte\\stoo\\smany");
+
+	std::string sta;
+	EXO_ASSERT(alice.waitFor("ISTA", sta));
+	EXO_ASSERT(sta.find("172") != std::string::npos);
+	EXO_ASSERT(sta.find("MS2097152") != std::string::npos);
+
+	/* A post of exactly the limit is not past it. */
+	const std::string fits = makeTTH(42);
+	alice.send("HBBP TR" + fits + " SI2097152 BDunbounded SJExactly\\sthe\\slimit");
+
+	std::string line;
+	EXO_ASSERT(alice.waitForLine({"IBBL", "TR" + fits}, line));
+	return 1;
+});
+
 /* The same hash twice on one board is one post. */
 EXO_TEST(bbs_hub_a_post_already_indexed_is_refused,
 {

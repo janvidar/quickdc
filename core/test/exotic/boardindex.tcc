@@ -1641,8 +1641,21 @@ EXO_TEST(poststore_a_verified_document_is_offered_by_its_hash,
 	   at all is a decision the caller makes again every time. */
 	EXO_ASSERT(served.core->config->peekNumber("Attachments", "Total", 0) == 0);
 
+	/*
+	 * And offered without taking an upload slot, which is the whole of why a board
+	 * survives its author leaving: everybody who has read a post hands it on, and a
+	 * reader turned away because somebody else is downloading a film is a board that
+	 * stops working under the load that makes it worth having. Asserted here rather
+	 * than only where attach() is called directly, because the mark defaults to
+	 * Counted and this is the one caller whose forgetting it would be silent.
+	 */
+	EXO_ASSERT(served.shares->isSlotFreeByTTH(tth.c_str()));
+
 	EXO_ASSERT(store.withhold(tth));
 	EXO_ASSERT(store.release(tth));
+
+	/* And gone with it, so nothing is answered for free that is not offered. */
+	EXO_ASSERT(!served.shares->isSlotFreeByTTH(tth.c_str()));
 	return 1;
 });
 

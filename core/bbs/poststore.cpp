@@ -472,8 +472,17 @@ bool QuickDC::PostStore::serve(const std::string& tth)
 	 * Session, so the document never enters [Attachments]: whether it is offered
 	 * at all is the caller's decision to make again at every start-up, and a
 	 * remembered attachment would be offered again regardless of it.
+	 *
+	 * And served without taking an upload slot, which is what a board rests on: it
+	 * is durable only because everybody who has read a post hands it on, and a
+	 * reader turned away because somebody else is downloading a film is a board
+	 * that stops working under exactly the load that makes it worth having. What
+	 * keeps that affordable is the limit a hub puts on how large a post may be, so
+	 * that bound and this exemption are chosen together - see
+	 * ADC::LocalHub::BOARD_DEFAULT_MAX_SIZE.
 	 */
-	if (!shares->attach(path.c_str(), this, Share::Manager::Persistence::Session))
+	if (!shares->attach(path.c_str(), this, Share::Manager::Persistence::Session,
+	                    Share::Manager::SlotCost::Free))
 		return false;
 
 	document->offered = true;
