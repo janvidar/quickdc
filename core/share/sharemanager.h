@@ -229,6 +229,23 @@ class Manager : public QuickDC::Hash::JobListener {
 		bool mayServeWithoutSlot(const char* tth, QuickDC::TransferManager* transfers) const;
 
 		/**
+		 * Stop reporting to a listener that is going away.
+		 *
+		 * A file handed to attach() is hashed on the worker thread, which can take as
+		 * long as reading it takes, and the listener is called when that finishes. A
+		 * caller destroyed in between - a window closed while a large picture is still
+		 * being hashed - leaves its pointer in the record, and the hash completing then
+		 * reports into freed memory.
+		 *
+		 * The file itself is unaffected: it goes on being hashed and goes on being
+		 * offered once it has been. All that is dropped is the promise to say so to
+		 * somebody who is no longer there to be told.
+		 *
+		 * Anything with a shorter life than this manager has to call it as it goes.
+		 */
+		void forgetListener(QuickDC::Share::AttachmentListener* listener);
+
+		/**
 		 * Stop offering an attachment: take back everything attach() made
 		 * reachable, and forget the file.
 		 *

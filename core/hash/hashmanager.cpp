@@ -18,8 +18,6 @@
 #include <samurai/util/base32.h>
 
 #define FILE_HASH_CACHE     "~/.quickdc/hashdb.cache"
-#define FILE_HASH_CACHE_OLD "~/.quickdc/hashdb.cache.old"
-#define FILE_HASH_CACHE_NEW "~/.quickdc/hashdb.cache.new"
 
 
 enum HashType { HashTiger, HashTigerTree, HashMD5, HashSHA1, HashSHA256 };

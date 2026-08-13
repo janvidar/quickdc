@@ -91,6 +91,24 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 
 CorePortForwardListener portforward_listener;
 
+/**
+ * The hash cache to use for a core whose files were named rather than assumed.
+ *
+ * Beside the configuration it was given, since that is the directory such a core was
+ * pointed at, and the hash manager rotates its cache through a sibling of whatever it
+ * is told - so one name settles the lot. A configuration with no directory in it is
+ * answered with a bare name, which lands wherever the process is running, and that is
+ * still not the account's own cache.
+ */
+std::string hashCacheBeside(const std::string& config_file)
+{
+	const size_t slash = config_file.rfind('/');
+
+	if (slash == std::string::npos) return "hashdb.cache";
+
+	return config_file.substr(0, slash + 1) + "hashdb.cache";
+}
+
 /*
  * Make sure there is a certificate to present, generating one if there is not.
  *
@@ -229,9 +247,21 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	connections = new ConnectionManager();
 	hubs = new HubManager();
 
-	/* Only ever asked how much is shared, which is nothing until it is told to
-	   scan - and the constructor does not scan. */
-	hash = 0;
+	/*
+	 * Beside the files this core was named with, and never at the usual place.
+	 *
+	 * A core built this way is one somebody pointed at a directory of their own - a
+	 * test, or a second instance - and the whole point of naming its files is that it
+	 * touches nothing of the account's. The cache is the one file the hash manager
+	 * writes without being asked, and it rotates through a sibling of whatever it is
+	 * given, so naming it here is the whole of what keeps a run out of ~/.quickdc.
+	 *
+	 * Made rather than left out: without one, nothing here can hash, so attaching a
+	 * file fails with "there is no hash manager" - and a caller waiting to be told the
+	 * hash of what it just wrote waits for ever. That is a real path through this core
+	 * that could not be exercised at all while this was null.
+	 */
+	hash = new QuickDC::Hash::Manager(hashCacheBeside(config_file).c_str());
 	shares = new QuickDC::Share::Manager(config, hash);
 
 	/* Peer sessions reach for this without checking whether there is one. */

@@ -513,6 +513,22 @@ bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::Attachmen
 	return true;
 }
 
+void QuickDC::Share::Manager::forgetListener(QuickDC::Share::AttachmentListener* listener) {
+	if (!listener) return;
+
+	/*
+	 * Every record, because one caller may have several files in flight, and the
+	 * record itself is left exactly as it is: what it is waiting for is the hash,
+	 * which has nothing to do with who was going to be told.
+	 */
+	for (std::unique_ptr<Attachment>& record : attachments) {
+		std::vector<AttachmentListener*>& waiting = record->listeners;
+
+		waiting.erase(std::remove(waiting.begin(), waiting.end(), listener),
+		              waiting.end());
+	}
+}
+
 bool QuickDC::Share::Manager::detach(const std::string& tth) {
 	/* A record waiting for its hash has an empty one, and is not something a
 	   caller can name: it has never been offered under any hash. */
