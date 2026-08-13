@@ -111,9 +111,13 @@ bool isValidCID(std::string_view cid);
  * Read a board descriptor out of a BBD.
  *
  * Refused rather than repaired when anything required is missing or malformed:
- * BD, PE, MS, TS and OT are all required of the descriptor, and a descriptor
- * that cannot be trusted to say what a board is would otherwise be displayed as
- * a board with a limit of zero that nobody may post to.
+ * BD, PE, MS, TS and OT are all required of a descriptor that describes a board,
+ * and one that cannot be trusted to say what a board is would otherwise be
+ * displayed as a board with a limit of zero that nobody may post to.
+ *
+ * A descriptor carrying RM1 says a board has ceased to exist and is read the way
+ * readEntry() reads a tombstone: BD and the flag are the whole of it, since the
+ * limits and timestamps of a board that is gone describe nothing.
  *
  * @return false when nothing was read, leaving 'board' untouched.
  */
@@ -176,6 +180,15 @@ std::string writePostHeader(const QuickDC::Post& post);
  * ignored. SG and KY are ignored by name, being reserved for a future authorship
  * extension, and kept like any other unrecognised parameter so that a document
  * carrying them still round-trips.
+ *
+ * ID is the one field required of a document: nothing else in the header is worth
+ * refusing a post over. A subject is required of a post that starts a thread and
+ * that is a rule for whoever composes one - a document already written and hashed
+ * without one is a post that can be read and displayed, and refusing it here would
+ * make it unreadable for ever rather than untidy.
+ *
+ * The header's escapes and its UTF-8 encoding are checked; normalization form C is
+ * not, and isWellFormedUtf8() in the implementation says why at length.
  *
  * @return false when the document is refused, leaving 'out' untouched.
  */

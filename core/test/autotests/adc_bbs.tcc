@@ -316,6 +316,52 @@ EXO_TEST(bbs_post_sg_and_ky_are_ignored_and_kept, {
 	return ADC::writePostHeader(post) == header;
 });
 
+EXO_TEST(bbs_post_unrecognised_value_may_hold_a_newline, {
+	/* The rule about newlines is a rule about SJ, because a subject is displayed in
+	   a list of them. A parameter this version knows nothing about is carried
+	   through whatever it holds, escapes included. */
+	const char* header = "IBB0 ID" BBS_CID_A " SJx XXtwo\\nlines\\sand\\sa\\\\";
+
+	QuickDC::Post post;
+	if (!bbs_parses(bbs_document(header, ""), post)) return false;
+
+	if (post.unrecognised.size() != 1) return false;
+	if (post.unrecognised[0].value != "two\nlines and a\\") return false;
+
+	return ADC::writePostHeader(post) == header;
+});
+
+EXO_TEST(bbs_post_parameter_ceiling, {
+	/*
+	 * ADC::MAX_COMMAND_ARGUMENTS bounds what one command may carry, and a post
+	 * header is read by the parser that bound is in. It sits far above the five
+	 * fields this format defines, so nothing conformant comes near it - but it is
+	 * this reader's bound rather than the specification's, and a header that names
+	 * more parameters than that is refused rather than truncated.
+	 */
+	std::string header = "IBB0 ID" BBS_CID_A;
+	std::string over = header;
+
+	/* Names of a letter and a digit, so that none of them can collide with a field
+	   name, all of which are two letters. */
+	for (size_t n = 0; n <= ADC::MAX_COMMAND_ARGUMENTS; n++)
+	{
+		std::string parameter = " ";
+		parameter += static_cast<char>('A' + (n / 10));
+		parameter += static_cast<char>('0' + (n % 10));
+		parameter += '1';
+
+		/* ID and one parameter short of the ceiling is exactly the ceiling. */
+		if (n + 1 < ADC::MAX_COMMAND_ARGUMENTS) header += parameter;
+		over += parameter;
+	}
+
+	QuickDC::Post post;
+	return bbs_parses(bbs_document(header, ""), post)
+		&& post.unrecognised.size() == ADC::MAX_COMMAND_ARGUMENTS - 1
+		&& bbs_refuses(bbs_document(over, ""));
+});
+
 EXO_TEST(bbs_post_no_parent_and_parent, {
 	const std::string thread = bbs_document("IBB0 ID" BBS_CID_A " SJnew", "");
 	const std::string reply = bbs_document("IBB0 ID" BBS_CID_A " PA" BBS_TTH_A " SJre", "");
@@ -610,6 +656,25 @@ EXO_TEST(bbs_write_escapes_the_shortest_way, {
 	return ADC::writePostHeader(post) == "IBB0 ID" BBS_CID_A " SJa\\sb\\\\c\\nd";
 });
 
+EXO_TEST(bbs_write_subject_newline_is_the_composers_problem, {
+	/*
+	 * A newline in a subject is escaped faithfully rather than removed, and the
+	 * document that comes out is then refused by every reader - this one included.
+	 * That is the documented contract and it is pinned here so it cannot change
+	 * quietly: writePostHeader() is also the yardstick parsePost() measures a
+	 * header against, so it must emit what it is given and never a tidied version
+	 * of it. Stripping the newline belongs where the subject is composed.
+	 */
+	QuickDC::Post post;
+	post.cid = BBS_CID_A;
+	post.subject = "two\nlines";
+
+	const std::string header = ADC::writePostHeader(post);
+	if (header != "IBB0 ID" BBS_CID_A " SJtwo\\nlines") return false;
+
+	return bbs_refuses(bbs_document(header, ""));
+});
+
 EXO_TEST(bbs_write_field_order, {
 	QuickDC::Post post;
 	post.cid = BBS_CID_A;
@@ -679,6 +744,29 @@ EXO_TEST(bbs_board_removed_flag, {
 	if (!bbs_read_board("IBBD BDgeneral PE1 MS1 TS0 OT0 RM2", reserved)) return false;
 
 	return gone.removed && !here.removed && !reserved.removed;
+});
+
+EXO_TEST(bbs_board_removal_carries_only_the_name, {
+	/*
+	 * The same shape as a tombstone: a descriptor saying a board is gone need not
+	 * say what its limits were. Refusing one for want of them would leave a dead
+	 * board in the interface with nothing left that could ever take it out.
+	 */
+	QuickDC::Board gone;
+	if (!bbs_read_board("IBBD BDgeneral RM1", gone)) return false;
+
+	if (!gone.removed || gone.name != "general") return false;
+	if (gone.permissions != 0 || gone.maxSize != 0) return false;
+
+	/* A removal that does carry them is not refused for it, and neither is one
+	   whose numbers are nonsense refused into silence. */
+	QuickDC::Board full;
+	if (!bbs_read_board("IBBD BDgeneral PE1 MS1 TS9 OT0 RM1", full)) return false;
+	if (bbs_read_board("IBBD BDgeneral MSmany RM1", gone)) return false;
+
+	/* And a board name is still required of it. */
+	QuickDC::Board nameless;
+	return full.removed && full.newest == 9 && !bbs_read_board("IBBD RM1", nameless);
 });
 
 EXO_TEST(bbs_board_is_64_bit, {

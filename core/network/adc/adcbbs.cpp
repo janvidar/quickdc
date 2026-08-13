@@ -217,15 +217,35 @@ bool readDocumentNumber(std::string_view text, uint64_t& out)
  *
  * Leading zeros are allowed, unlike in a document: nothing here is hashed, so
  * there is no canonical spelling for a field to fail to match.
+ *
+ * A field that is not required may be absent, and may not be something other than
+ * a number: a hub that says a board holds "many" posts has told us nothing we can
+ * act on, and reading it as none would put a number on screen that nobody sent.
  */
-bool readWireNumber(ADC::Command* command, const char* name, uint64_t& out)
+bool readWireNumber(ADC::Command* command, const char* name, uint64_t& out, bool required)
 {
-	if (!command->haveArgument(name, 2)) return false;
+	if (!command->haveArgument(name, 2)) return !required;
 
 	const char* value = command->getArgument(name, 2);
 	if (!value || !isAllDigits(value)) return false;
 
 	out = Samurai::Util::Convert::to_uint64(value);
+	return true;
+}
+
+/**
+ * A string field, held to whatever it claims to be wherever it appears, and
+ * required to appear only where the caller says so.
+ */
+bool readChecked(ADC::Command* command, const char* name, std::string& out,
+                 bool required, bool (*valid)(std::string_view))
+{
+	if (!command->haveArgument(name, 2)) return !required;
+
+	const char* value = command->getArgument(name, 2);
+	if (!value || !valid(value)) return false;
+
+	out = value;
 	return true;
 }
 
@@ -280,24 +300,37 @@ bool ADC::readBoard(ADC::Command* command, QuickDC::Board& board)
 
 	QuickDC::Board read;
 
-	const char* name = command->getArgument("BD", 2);
-	if (!name || !isValidBoardName(name)) return false;
-	read.name = name;
+	if (!readChecked(command, "BD", read.name, true, ADC::isValidBoardName)) return false;
 
-	if (!readWireNumber(command, "PE", read.permissions)) return false;
-	if (!readWireNumber(command, "MS", read.maxSize)) return false;
-	if (!readWireNumber(command, "TS", read.newest)) return false;
-	if (!readWireNumber(command, "OT", read.oldest)) return false;
+	read.removed = isFlagSet(command, "RM");
 
-	/* NP is the one number a descriptor may leave out, being a display detail
-	   rather than something a subscription depends on. */
-	if (command->haveArgument("NP", 2) && !readWireNumber(command, "NP", read.posts))
-		return false;
+	/*
+	 * PE, MS, TS and OT are required of a descriptor, and only where it describes a
+	 * board. A descriptor saying a board is gone is read the way a tombstone is
+	 * read in readEntry(): what identifies the board and the fact that it has
+	 * ceased to exist, with the limits and the timestamps of something that no
+	 * longer has any beside the point.
+	 *
+	 * The extension exempts a tombstone by name and says nothing either way about
+	 * this, so the leniency is by analogy - and it is the side of the question that
+	 * cannot be permanently wrong. A removal read as a malformed command is a dead
+	 * board left in the interface with nothing to ever take it out again, while a
+	 * truncated descriptor read as a removal is undone by the next descriptor the
+	 * hub sends.
+	 */
+	const bool describesBoard = !read.removed;
+
+	if (!readWireNumber(command, "PE", read.permissions, describesBoard)) return false;
+	if (!readWireNumber(command, "MS", read.maxSize, describesBoard)) return false;
+	if (!readWireNumber(command, "TS", read.newest, describesBoard)) return false;
+	if (!readWireNumber(command, "OT", read.oldest, describesBoard)) return false;
+
+	/* NP is the one number a descriptor of a board may leave out, being a display
+	   detail rather than something a subscription depends on. */
+	if (!readWireNumber(command, "NP", read.posts, false)) return false;
 
 	readString(command, "NI", read.title);
 	readString(command, "DE", read.description);
-
-	read.removed = isFlagSet(command, "RM");
 
 	board = std::move(read);
 	return true;
@@ -310,54 +343,30 @@ bool ADC::readEntry(ADC::Command* command, QuickDC::BoardEntry& entry)
 
 	QuickDC::BoardEntry read;
 
-	const char* tth = command->getArgument("TR", 2);
-	if (!tth || !isValidTTH(tth)) return false;
-	read.tth = tth;
-
-	const char* board = command->getArgument("BD", 2);
-	if (!board || !isValidBoardName(board)) return false;
-	read.board = board;
-
-	if (!readWireNumber(command, "TS", read.timestamp)) return false;
+	/* What every entry has, whether it describes a post or the end of one. */
+	if (!readChecked(command, "TR", read.tth, true, ADC::isValidTTH)) return false;
+	if (!readChecked(command, "BD", read.board, true, ADC::isValidBoardName)) return false;
+	if (!readWireNumber(command, "TS", read.timestamp, true)) return false;
 
 	read.removed = isFlagSet(command, "RM");
 
 	/*
-	 * Everything a post has and a tombstone has not. Each is validated where it
-	 * is present and required only of an entry that describes a post, because a
+	 * And what a post has that a tombstone has not. Each is validated wherever it
+	 * appears and required only of an entry that describes a post, because a
 	 * tombstone carries TR, BD, TS and RM1 and should carry nothing else - the
 	 * subject and author of a withdrawn post are usually the reason it was
-	 * withdrawn. A hub that sends them anyway is not refused for it.
+	 * withdrawn. Requiring them of both would refuse every withdrawal on every
+	 * board; a hub that sends them anyway is not refused for it either.
 	 */
-	const bool haveSize = command->haveArgument("SI", 2);
-	if (haveSize && !readWireNumber(command, "SI", read.size)) return false;
+	const bool describesPost = !read.removed;
 
-	if (command->haveArgument("ID", 2))
-	{
-		const char* cid = command->getArgument("ID", 2);
-		if (!cid || !isValidCID(cid)) return false;
-		read.cid = cid;
-	}
-
-	if (command->haveArgument("TH", 2))
-	{
-		const char* thread = command->getArgument("TH", 2);
-		if (!thread || !isValidTTH(thread)) return false;
-		read.thread = thread;
-	}
-
-	if (command->haveArgument("PA", 2))
-	{
-		const char* parent = command->getArgument("PA", 2);
-		if (!parent || !isValidTTH(parent)) return false;
-		read.parent = parent;
-	}
+	if (!readWireNumber(command, "SI", read.size, describesPost)) return false;
+	if (!readChecked(command, "ID", read.cid, describesPost, ADC::isValidCID)) return false;
+	if (!readChecked(command, "TH", read.thread, describesPost, ADC::isValidTTH)) return false;
+	if (!readChecked(command, "PA", read.parent, false, ADC::isValidTTH)) return false;
 
 	readString(command, "NI", read.nick);
 	readString(command, "SJ", read.subject);
-
-	if (!read.removed && (!haveSize || read.cid.empty() || read.thread.empty()))
-		return false;
 
 	entry = std::move(read);
 	return true;
