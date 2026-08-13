@@ -806,7 +806,7 @@ void QuickDC::QueueManager::searchForSources()
 
 		const enum SourceSearchResult sent = sendSourceSearch(wanted[index]);
 
-		/* Not logged in anywhere yet; retry rather than lose the interval. */
+		/* Nowhere to send it yet; retry rather than lose the interval. */
 		if (sent == SourceSearchNotSent) return;
 
 		/* Nothing to search by, so it is not this file's turn after all. */
@@ -842,17 +842,21 @@ bool QuickDC::QueueManager::takeSearchFromBurst()
 
 bool QuickDC::QueueManager::requestSourceSearch(const char* tth, SourceSearchResult* why)
 {
+	/* Which is the answer for a hash we never got as far as looking up. */
 	enum SourceSearchResult outcome = SourceSearchBadHash;
-	QueueFile* file = 0;
 
-	if (!isTigerRoot(tth))
-		outcome = SourceSearchBadHash;
-	else if ((file = getFileByTTH(tth)) == 0)
-		outcome = SourceSearchNotQueued;
-	else if (!takeSearchFromBurst())
-		outcome = SourceSearchRateLimited;
-	else
-		outcome = sendSourceSearch(file);
+	if (isTigerRoot(tth))
+	{
+		QueueFile* file = getFileByTTH(tth);
+
+		/*
+		 * The burst is charged here rather than around the send, so that asking
+		 * is what costs; a caller which cannot be answered yet is bounded too.
+		 */
+		if (!file) outcome = SourceSearchNotQueued;
+		else if (!takeSearchFromBurst()) outcome = SourceSearchRateLimited;
+		else outcome = sendSourceSearch(file);
+	}
 
 	if (why) *why = outcome;
 	return outcome == SourceSearchSent;

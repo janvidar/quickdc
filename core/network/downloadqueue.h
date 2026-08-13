@@ -666,14 +666,16 @@ class QueueManager {
 		 *
 		 * A caller wants to tell these apart: a hash that is not queued is a
 		 * mistake on its part, while a refused rate or a hub that is not logged in
-		 * yet is only a reason to ask again in a moment.
+		 * yet is only a reason to ask again in a moment. Note that the last of them
+		 * still costs an ask: the allowance is charged before there is any way of
+		 * knowing whether a search can leave.
 		 */
 		enum SourceSearchResult {
 			SourceSearchSent,         /* the search went out */
 			SourceSearchBadHash,      /* not a TTH root at all */
 			SourceSearchNotQueued,    /* nothing is queued under that hash */
 			SourceSearchRateLimited,  /* asked for too often; try again shortly */
-			SourceSearchNotSent       /* nowhere to ask; no hub is logged in yet */
+			SourceSearchNotSent       /* nowhere to send it; no hub is logged in */
 		};
 
 		/**
