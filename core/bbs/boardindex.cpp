@@ -33,6 +33,19 @@ constexpr char RECORD_ENTRY = 'E';
 constexpr char RECORD_OLDEST = 'O';
 
 /**
+ * What identifies one board on one hub, and what everything here is kept by.
+ *
+ * The two halves are joined by a byte that appears in neither - a board name is a
+ * subset of ASCII and a hub address has no newline in it - so a hub whose address
+ * runs into a board name cannot be taken for another pairing that reads the same
+ * way end to end.
+ */
+std::string key_of(const std::string& hubUrl, const std::string& board)
+{
+	return hubUrl + '\n' + board;
+}
+
+/**
  * A 64 bit FNV-1a of the key, in hex.
  *
  * Enough to separate the boards one client caches, which is hundreds at the very
@@ -297,26 +310,22 @@ bool QuickDC::BoardIndex::isUsable() const
 std::string QuickDC::BoardIndex::pathFor(const std::string& hubUrl,
                                          const std::string& board) const
 {
-	/*
-	 * The digest of the key and nothing taken from it. The two halves are joined
-	 * by a byte that appears in neither - a board name is a subset of ASCII and a
-	 * hub address has no newline in it - so a hub whose address runs into a board
-	 * name cannot land on the file of another pairing that reads the same way end
-	 * to end.
-	 */
-	return directory + "/" + digest_of(hubUrl + '\n' + board) + ".idx";
+	/* The digest of the key and nothing taken from it; see key_of(). */
+	return directory + "/" + digest_of(key_of(hubUrl, board)) + ".idx";
 }
 
 QuickDC::BoardIndex::Cached&
-QuickDC::BoardIndex::remember(const std::string& path, const std::string& hubUrl,
+QuickDC::BoardIndex::remember(const std::string& hubUrl,
                               const std::string& board) const
 {
-	const std::map<std::string, Cached>::iterator known = cached.find(path);
+	const std::string key = key_of(hubUrl, board);
+
+	const std::map<std::string, Cached>::iterator known = cached.find(key);
 	if (known != cached.end()) return known->second;
 
-	Cached& state = cached[path];
+	Cached& state = cached[key];
 
-	for (const Record& record : read_records(path, &state.terminated))
+	for (const Record& record : read_records(pathFor(hubUrl, board), &state.terminated))
 	{
 		switch (record.type)
 		{
@@ -427,7 +436,7 @@ bool QuickDC::BoardIndex::append(const std::string& hubUrl, const std::string& b
 	if (!ADC::isValidTTH(entry.tth)) return false;
 
 	const std::string path = pathFor(hubUrl, board);
-	Cached& state = remember(path, hubUrl, board);
+	Cached& state = remember(hubUrl, board);
 
 	if (state.foreign) return true;
 
@@ -470,7 +479,7 @@ QuickDC::BoardIndex::entries(const std::string& hubUrl,
 	if (!usable) return found;
 
 	const std::string path = pathFor(hubUrl, board);
-	if (remember(path, hubUrl, board).foreign) return found;
+	if (remember(hubUrl, board).foreign) return found;
 
 	/*
 	 * Folded by hash as the file is walked, by the same rule append() writes it
@@ -518,7 +527,7 @@ uint64_t QuickDC::BoardIndex::cursor(const std::string& hubUrl,
 {
 	if (!usable) return 0;
 
-	return remember(pathFor(hubUrl, board), hubUrl, board).highest;
+	return remember(hubUrl, board).highest;
 }
 
 void QuickDC::BoardIndex::describe(const std::string& hubUrl, const Board& board)
@@ -526,7 +535,7 @@ void QuickDC::BoardIndex::describe(const std::string& hubUrl, const Board& board
 	if (!usable) return;
 
 	const std::string path = pathFor(hubUrl, board.name);
-	Cached& state = remember(path, hubUrl, board.name);
+	Cached& state = remember(hubUrl, board.name);
 
 	if (state.foreign) return;
 
@@ -552,7 +561,7 @@ QuickDC::BoardIndex::View QuickDC::BoardIndex::view(const std::string& hubUrl,
 {
 	if (!usable) return View::Unknown;
 
-	const Cached& state = remember(pathFor(hubUrl, board), hubUrl, board);
+	const Cached& state = remember(hubUrl, board);
 
 	if (!state.described) return View::Unknown;
 
@@ -566,7 +575,7 @@ bool QuickDC::BoardIndex::contains(const std::string& hubUrl,
 
 	const std::string path = pathFor(hubUrl, board);
 
-	return !remember(path, hubUrl, board).foreign
+	return !remember(hubUrl, board).foreign
 		&& Samurai::IO::File::exists(path.c_str());
 }
 
@@ -574,13 +583,11 @@ void QuickDC::BoardIndex::forget(const std::string& hubUrl, const std::string& b
 {
 	if (!usable) return;
 
-	const std::string path = pathFor(hubUrl, board);
-
 	/* Not a file belonging to another key, which forgetting this board is not. */
-	if (remember(path, hubUrl, board).foreign) return;
+	if (remember(hubUrl, board).foreign) return;
 
-	Samurai::IO::File(path).remove();
+	Samurai::IO::File(pathFor(hubUrl, board)).remove();
 
 	/* Or the entries just thrown away would go on being recognised as duplicates. */
-	cached.erase(path);
+	cached.erase(key_of(hubUrl, board));
 }

@@ -30,7 +30,11 @@ namespace QuickDC {
  *
  * Nothing is dropped as it ages. Both halves of a subscription arrive as one
  * stream and are indistinguishable, so what is held is what has been seen, and
- * cursor() is where a subscription picks the stream up again.
+ * cursor() is where a subscription picks the stream up again. A hub that sends
+ * entries for ever therefore grows this file for ever, which is deliberate: the
+ * bound a client is asked to keep is on the documents, which are as large as their
+ * authors made them, and not on the entries, which are a few hundred bytes each -
+ * see PostStore::Bounds.
  *
  * Entries are scoped to the hub that sent them, and that is why the key is a hub
  * and a board rather than a board alone. The board, the timestamp, the thread
@@ -201,7 +205,7 @@ class BoardIndex {
 		bool isUsable() const;
 
 	private:
-		/** What is held in memory for one index file; see 'cached'. */
+		/** What is held in memory for one board's index; see 'cached'. */
 		struct Cached {
 			/** The timestamp held for each hash, which is all append() decides on. */
 			std::map<std::string, uint64_t> held;
@@ -233,9 +237,8 @@ class BoardIndex {
 			bool foreign = false;
 		};
 
-		/** Fills the entry for a file from what is on disk, once. */
-		Cached& remember(const std::string& path, const std::string& hubUrl,
-		                 const std::string& board) const;
+		/** Fills the entry for a board from what is on disk, once. */
+		Cached& remember(const std::string& hubUrl, const std::string& board) const;
 
 		/** Writes one record, and the key record first where there is none. */
 		bool write(const std::string& path, Cached& state,
@@ -246,11 +249,15 @@ class BoardIndex {
 		bool usable;
 
 		/**
-		 * What is held for each board, by index path.
+		 * What is held for each board, by hub and board rather than by the file.
 		 *
 		 * Held rather than read per entry, because a resumed subscription arrives
 		 * as a burst of thousands and reading the file back for each one of them
 		 * would be the whole of a board read once per entry in it.
+		 *
+		 * By the key and not by the path, because two keys landing on one digest
+		 * must not share one state in memory any more than they may share the file:
+		 * the file says whose it is, and each of them has to be able to ask.
 		 */
 		mutable std::map<std::string, Cached> cached;
 };

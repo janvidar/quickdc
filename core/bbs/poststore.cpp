@@ -365,7 +365,17 @@ bool QuickDC::PostStore::adopt(const std::string& tth, const std::string& path)
 	document.size = size > 0 ? static_cast<uint64_t>(size) : 0;
 	document.adopted = static_cast<uint64_t>(time(0));
 
-	if (!write(document)) return false;
+	/*
+	 * A document nothing describes is worse than a document that was not stored.
+	 * The journal is the only thing that knows what is here, so a file it has no
+	 * record of would sit in the directory for ever: eviction would never choose
+	 * it, release() would never remove it, and nothing would ever offer it.
+	 */
+	if (!write(document))
+	{
+		Samurai::IO::File(target).remove();
+		return false;
+	}
 
 	held[tth] = document;
 	order.push_back(tth);

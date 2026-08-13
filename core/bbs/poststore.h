@@ -134,9 +134,11 @@ class PostStore : public Share::AttachmentListener {
 		 * @param path the file as it was fetched, which this takes away.
 		 * @return false when there is nothing to work with: an unusable store, a
 		 *         hash that is not a tiger tree root, or a file that cannot be
-		 *         read. A document already held is left alone and answers true,
-		 *         because a document is immutable and the copy in hand is the same
-		 *         bytes as the copy on disk.
+		 *         read. A document whose record could not be written is not held
+		 *         either, and is removed rather than left in the directory as bytes
+		 *         nothing describes. A document already held is left alone and
+		 *         answers true, because a document is immutable and the copy in
+		 *         hand is the same bytes as the copy on disk.
 		 */
 		bool adopt(const std::string& tth, const std::string& path);
 
