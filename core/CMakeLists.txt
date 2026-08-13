@@ -44,6 +44,7 @@ set(QUICKDC_SOURCES
     network/dc/lock.cpp
     network/dc/tag.cpp
     network/dc/textescape.cpp
+    network/adc/adcbbs.cpp
     network/adc/adccommandparser.cpp
     network/adc/adccommandproxy.cpp
     network/adc/adccommands.cpp

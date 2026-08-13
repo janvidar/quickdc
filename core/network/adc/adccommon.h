@@ -77,6 +77,24 @@ typedef uint32_t sid_t;
  */
 #define ADC_EXT_RICHTEXT                "RTF0"
 
+/*
+ * Bulletin boards: durable threaded posts on a hub, the BBD, BBL and BBP commands.
+ *
+ * One fourcc in one place, which is the contrast worth writing down beside the one
+ * above. Rich text is offered in SUP and announced again in INF's SU, because a
+ * client sends rich text to other clients and they have to know it is coming. A
+ * bulletin is only ever sent to a hub and only ever received from one, so there is
+ * nothing for another client to be told: SUP is the whole of the negotiation, and
+ * the absence of an SU flag here is deliberate rather than an omission.
+ *
+ * The hub's answer is authoritative for the connection and is not cached across
+ * one, since a hub may announce this later than its first ISUP and may withdraw it
+ * with RMBBS0. A hub must not announce it without also announcing TIGR: every
+ * identifier in the extension is a tiger tree root, and a client that cannot hash
+ * one cannot fetch a post.
+ */
+#define ADC_EXT_BULLETIN                "BBS0"
+
 #define ADC_INDEX_FILE                  "files.xml"
 #define ADC_INDEX_FILE_BZ2              "files.xml.bz2"
 
@@ -141,6 +159,31 @@ inline std::string adc_status_code(int severity, int code)
 #define ADC_CODE_TRANSFER_FILE_ERROR    51 /* File not available */
 #define ADC_CODE_TRANSFER_FILE_PART     52 /* Part of file not available */
 #define ADC_CODE_TRANSFER_SLOT_ERROR    53 /* No more slots */
+
+/*
+ * Bulletin boards. Requested by the BBS0 draft rather than registered, so a hub on
+ * the other side of the connection may know nothing of them - which costs a client
+ * an unrecognised code and no more, every one of them being severity 1: none is a
+ * reason to disconnect anybody.
+ *
+ * The 6x range would have been the obvious home and is not available: ADC-EXT has
+ * allocated 62 inside it without ever defining a 60, so a category cannot be opened
+ * there without claiming numbers around one already spent.
+ *
+ * Only the conditions a client can act on differently have a code of their own. A
+ * board that is gone can be dropped from the interface, a post that is too large can
+ * be reported against the limit, a rate limit can be waited out, and a post that is
+ * not indexed can stop being asked for. Everything else a hub already has a better
+ * word for, and where ADC has one it is used instead of these: ACCESS_DENIED for a
+ * missing permission, ACCESS_REGISTERED for a board open to registered users only,
+ * PROTOCOL_ERROR for a malformed command - a BBL carrying both TR and TS is one -
+ * and PROTOCOL_FLAG_REQUIRED for a field that is missing or invalid.
+ */
+#define ADC_CODE_BULLETIN_ERROR         70 /* Generic: an unknown parent, a duplicate post, too many subscriptions. */
+#define ADC_CODE_BULLETIN_NO_BOARD      71 /* Specify: 'BD' (the name that was not found). */
+#define ADC_CODE_BULLETIN_TOO_LARGE     72 /* Specify: 'MS' (the board's limit). */
+#define ADC_CODE_BULLETIN_RATE          75 /* Specify: 'TL' (seconds until the next post is allowed). */
+#define ADC_CODE_BULLETIN_NO_ENTRY      76 /* No index entry for the requested post. */
 
 #define ADC_STR_TRANSFER_FILE_ERROR     "File not available"
 #define ADC_STR_TRANSFER_FILE_PART      "Requested part of file is not available"
