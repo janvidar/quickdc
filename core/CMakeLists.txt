@@ -10,6 +10,8 @@
 # samurai's own logging is under samurai_debug() and friends, so the two do not
 # collide.
 set(QUICKDC_SOURCES
+    bbs/boardindex.cpp
+    bbs/poststore.cpp
     chat/archive.cpp
     network/chunkmap.cpp
     network/commandparser.cpp

@@ -26,6 +26,7 @@ set(QUICKDC_EXOTIC_TESTS
     token.tcc
     chunkmap.tcc
     chatarchive.tcc
+    boardindex.tcc
     config.tcc
     hublist.tcc
     transfer.tcc
