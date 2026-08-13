@@ -99,6 +99,22 @@ class Manager : public QuickDC::Hash::JobListener {
 		Samurai::IO::File* getFileByTTH(const char* sum);
 
 		/**
+		 * Whether an attachment is remembered past this session.
+		 *
+		 * Remembered is what a chat attachment needs: the hash is written to
+		 * [Attachments] as soon as it is known, so a magnet URI in a message
+		 * somebody scrolls back to a month later still fetches the file.
+		 *
+		 * Session is for a caller that keeps records of its own and decides for
+		 * itself what to offer again at start-up. A bulletin board cache is one:
+		 * whether a post document it holds is served at all is a per-hub setting,
+		 * so a document remembered here as well would be offered again whatever
+		 * that setting says - and the configuration would grow a line for every
+		 * post ever read.
+		 */
+		enum class Persistence { Remembered, Session };
+
+		/**
 		 * Offer a file to other clients by its tiger tree hash alone, without
 		 * sharing it. This is what a chat attachment needs: the message carries
 		 * a magnet URI naming the hash, and whoever has that URI can fetch the
@@ -127,12 +143,53 @@ class Manager : public QuickDC::Hash::JobListener {
 		 *        be. Attaching a file that is already attached, or one whose
 		 *        hash is known because it is genuinely shared, reports the hash
 		 *        it already has.
+		 * @param persistence whether the configuration remembers the file. A file
+		 *        that is already attached for this session only is promoted to
+		 *        being remembered, and never the other way about: a caller
+		 *        promised a URI that outlives the session cannot have that taken
+		 *        away by a later caller who did not need it.
 		 * @return false when there is nothing to work with - no path, no
 		 *         listener, or a path that is not a readable regular file - and
 		 *         then the listener is not called at all. Anything that can only
 		 *         be discovered later is reported to the listener instead.
 		 */
-		bool attach(const char* path, QuickDC::Share::AttachmentListener* listener);
+		bool attach(const char* path, QuickDC::Share::AttachmentListener* listener,
+		            QuickDC::Share::Manager::Persistence persistence = Persistence::Remembered);
+
+		/**
+		 * Stop offering an attachment: take back everything attach() made
+		 * reachable, and forget the file.
+		 *
+		 * A client that no longer holds what it once offered has to stop saying
+		 * that it does. A peer that asks for a hash we still answer for and then
+		 * cannot be served gets a failed transfer, having been told by a search
+		 * that we had the file.
+		 *
+		 * Every record naming this hash goes, not just the first, since the same
+		 * content can have been attached under more than one name. Nothing is left
+		 * for a search by hash to find, and nothing is left in [Attachments] to be
+		 * offered again at the next start-up.
+		 *
+		 * What is genuinely shared is left alone: a file in one of the shared
+		 * directories is reachable by its hash because it is shared, not because
+		 * it was attached, and it goes on being served. This still returns true,
+		 * for the attachment record it forgot.
+		 *
+		 * The one thing it cannot do is wait. An upload takes the very handle
+		 * getFileByTTH() returns - a member of the Share::File this destroys - and
+		 * reads through it until the transfer ends, so calling this while a peer is
+		 * being sent the file leaves that transfer reading an object that has been
+		 * freed. Nothing here can tell: the share manager hears nothing about
+		 * transfers, and asking the transfer manager means driving the one iterator
+		 * it has from underneath whoever else is walking it. A caller that cannot
+		 * rule out being in the middle of serving the file has to wait for itself.
+		 *
+		 * @param tth the tiger tree root, base32, as attach() reported it.
+		 * @return false when nothing is attached under that hash - which includes
+		 *         an attachment whose hash is not known yet, since it has none to
+		 *         be named by.
+		 */
+		bool detach(const std::string& tth);
 
 	protected:
 		/**
@@ -195,6 +252,8 @@ class Manager : public QuickDC::Hash::JobListener {
 			QuickDC::Share::Dir* dir = 0;
 			/** Null while the hash is unknown, and when a shared file has the same hash. */
 			QuickDC::Share::File* file = 0;
+			/** Whether the record reaches [Attachments]; see Persistence. */
+			QuickDC::Share::Manager::Persistence persistence = Persistence::Remembered;
 			/** Waiting to be told the hash. Emptied once they have been. */
 			std::vector<QuickDC::Share::AttachmentListener*> listeners;
 
@@ -206,6 +265,22 @@ class Manager : public QuickDC::Hash::JobListener {
 		 */
 		QuickDC::Share::File* findByTTH(const char* tth) const;
 
+		/**
+		 * A file in one of the shared directories that carries this hash.
+		 *
+		 * Only tthTable answers for a shared file, and one hash names one file
+		 * there, so an attachment that claimed the hash first is the file that
+		 * entry points at: the shared file's own insertion, which happens whenever
+		 * its hash arrives, found the entry taken and did nothing. Since a share is
+		 * hashed in the background, that is a matter of which finished first.
+		 * Taking such an attachment back therefore has to hand the entry over, or
+		 * a shared file is left with no hash for a peer to ask for it by.
+		 */
+		QuickDC::Share::File* findSharedByTTH(const std::string& tth) const;
+
+		/** findSharedByTTH() over one directory and everything below it. */
+		static QuickDC::Share::File* findInDirByTTH(QuickDC::Share::Dir* dir, const std::string& tth);
+
 		QuickDC::Share::Manager::Attachment* findAttachment(const std::string& name) const;
 		bool isAttachment(const QuickDC::Share::File* ptr) const;
 
@@ -215,6 +290,17 @@ class Manager : public QuickDC::Hash::JobListener {
 		 * @return false if it cannot be, which the caller has to report.
 		 */
 		bool registerAttachment(QuickDC::Share::Manager::Attachment& record);
+
+		/**
+		 * Take back what registerAttachment() made reachable, and forget the
+		 * record.
+		 *
+		 * The one way an attachment ends, whether it is withdrawn by detach() or
+		 * abandoned because its hash is never coming. Both have to undo exactly
+		 * what the registration did, and a second copy of that reasoning is how a
+		 * hash table entry naming a destroyed file gets left behind.
+		 */
+		void forgetAttachment(QuickDC::Share::Manager::Attachment& record);
 
 		/**
 		 * Tell an attachment's listeners it cannot be offered, and forget it.
@@ -233,6 +319,9 @@ class Manager : public QuickDC::Hash::JobListener {
 		 * The whole group is written every time, since Preferences cannot
 		 * enumerate the keys in a group and a Total left behind from a longer
 		 * list would name entries that are no longer there.
+		 *
+		 * Only the ones attached as Persistence::Remembered are written; a session
+		 * attachment is the caller's business and none of the configuration's.
 		 */
 		void saveAttachments();
 
@@ -244,6 +333,16 @@ class Manager : public QuickDC::Hash::JobListener {
 		/**
 		 * Offer a remembered file again, if it is still the file the remembered
 		 * hash was taken from.
+		 *
+		 * The hash cache is what answers that, and it is keyed on
+		 * Samurai::IO::File::getName() - the whole path, as a string. So this can
+		 * only adopt a file the cache has an entry for under the exact path it has
+		 * now, and it is no use for a file that has just arrived: a document
+		 * downloaded to a temporary name and renamed on completion is a path the
+		 * cache has never been told about, however recently its contents were
+		 * hashed, and this returns false for it however sure the caller is of the
+		 * hash. Offering such a file is attach()'s business, which hashes the file
+		 * instead of asking what is remembered about it.
 		 *
 		 * @return false when it is not, and the entry should be forgotten.
 		 */

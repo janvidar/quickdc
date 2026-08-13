@@ -15,6 +15,7 @@
 #
 
 set(QUICKDC_EXOTIC_TESTS
+    attachments.tcc
     adcparser.tcc
     dctext.tcc
     filelistgen.tcc

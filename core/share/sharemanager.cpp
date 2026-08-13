@@ -257,6 +257,32 @@ QuickDC::Share::File* QuickDC::Share::Manager::findByTTH(const char* tth) const 
 	return 0;
 }
 
+QuickDC::Share::File* QuickDC::Share::Manager::findInDirByTTH(QuickDC::Share::Dir* dir, const std::string& tth) {
+	for (QuickDC::Share::File* file : dir->files) {
+		const char* sum = file->getTTH();
+		if (sum && tth == sum)
+			return file;
+	}
+
+	for (QuickDC::Share::Dir* sub : dir->subdirs)
+		if (QuickDC::Share::File* found = findInDirByTTH(sub, tth))
+			return found;
+
+	return 0;
+}
+
+/* The shared directories only, so what is found is a file that is reachable by
+   its hash for being shared rather than for having been attached. */
+QuickDC::Share::File* QuickDC::Share::Manager::findSharedByTTH(const std::string& tth) const {
+	if (tth.empty()) return 0;
+
+	for (QuickDC::Share::Dir* dir : dirs)
+		if (QuickDC::Share::File* found = findInDirByTTH(dir, tth))
+			return found;
+
+	return 0;
+}
+
 Samurai::IO::File* QuickDC::Share::Manager::getFileByTTH(const char* tth) {
 	QuickDC::Share::File* shf = findByTTH(tth);
 	if (!shf) return 0;
@@ -426,7 +452,8 @@ void QuickDC::Share::Manager::addLookupFile(const char* name, const char* tth, Q
 	tthTable.insert( std::pair<std::string, QuickDC::Share::File*>(std::string(tth), ptr) );
 }
 
-bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::AttachmentListener* listener) {
+bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::AttachmentListener* listener,
+                                     QuickDC::Share::Manager::Persistence persistence) {
 	if (!path || !path[0] || !listener) return false;
 
 	Samurai::IO::File file(path);
@@ -438,6 +465,14 @@ bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::Attachmen
 
 	QuickDC::Share::Manager::Attachment* known = findAttachment(file.getName());
 	if (known) {
+		/* Promoted, never demoted: whoever asked for the file to be remembered was
+		   promised a URI that outlives the session, and a later caller who only
+		   needed it for this one cannot take that back. */
+		if (persistence == Persistence::Remembered && known->persistence == Persistence::Session) {
+			known->persistence = Persistence::Remembered;
+			if (!known->tth.empty()) saveAttachments();
+		}
+
 		if (known->tth.empty())
 			known->listeners.push_back(listener);
 		else
@@ -454,6 +489,7 @@ bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::Attachmen
 	record->path = path;
 	record->name = file.getName();
 	record->size = static_cast<uint64_t>(file.size());
+	record->persistence = persistence;
 	record->listeners.push_back(listener);
 	attachments.push_back(std::move(record));
 
@@ -464,6 +500,40 @@ bool QuickDC::Share::Manager::attach(const char* path, QuickDC::Share::Attachmen
 	 * and reported from Hash::Manager::process().
 	 */
 	hash->addJob(file, this);
+	return true;
+}
+
+bool QuickDC::Share::Manager::detach(const std::string& tth) {
+	/* A record waiting for its hash has an empty one, and is not something a
+	   caller can name: it has never been offered under any hash. */
+	if (tth.empty()) return false;
+
+	/*
+	 * Collected first, because forgetting a record destroys it. Every one of them
+	 * goes: the same content can be attached under several names, of which one
+	 * holds the hash table entry and the rest only describe the same file, and a
+	 * record left behind would put the hash back in the configuration and offer it
+	 * again at the next start-up.
+	 */
+	std::vector<Attachment*> matched;
+	for (const std::unique_ptr<Attachment>& record : attachments)
+		if (record->tth == tth)
+			matched.push_back(record.get());
+
+	if (matched.empty()) return false;
+
+	QDBG("QuickDC::Share::Manager::detach('%s')", tth.c_str());
+
+	bool remembered = false;
+	for (Attachment* record : matched) {
+		if (record->persistence == Persistence::Remembered) remembered = true;
+		forgetAttachment(*record);
+	}
+
+	/* Only if the configuration had anything to say about it, so that taking back
+	   a session attachment does not rewrite the file. */
+	if (remembered) saveAttachments();
+
 	return true;
 }
 
@@ -515,6 +585,45 @@ bool QuickDC::Share::Manager::registerAttachment(QuickDC::Share::Manager::Attach
 	return true;
 }
 
+void QuickDC::Share::Manager::forgetAttachment(QuickDC::Share::Manager::Attachment& record) {
+	/*
+	 * Only the entry this record put there. registerAttachment() adds nothing and
+	 * owns nothing when the hash was reachable already - the same content is
+	 * shared, or was attached under another name - and erasing that entry would
+	 * stop answering for a file there is still every reason to serve.
+	 */
+	if (record.file) {
+		std::map<std::string, QuickDC::Share::File*>::iterator it = tthTable.find(record.tth);
+		if (it != tthTable.end() && (*it).second == record.file) {
+			tthTable.erase(it);
+
+			/* Handed over rather than dropped when the share holds the same
+			   content: the shared file's own insertion found this entry already
+			   there and did nothing, so nothing else will put it back. */
+			if (QuickDC::Share::File* shared = findSharedByTTH(record.tth))
+				tthTable.insert( std::pair<std::string, QuickDC::Share::File*>(record.tth, shared) );
+		}
+	}
+
+	/*
+	 * The hashing job the attachment's own Share::File registered as it was built,
+	 * in the rare case that it is still waiting. ~Share::File cannot take that
+	 * back: it reaches the hash manager through its directory, and the directory
+	 * clears its manager pointer before deleting the files. A job left holding a
+	 * listener that has been freed calls into it on the next turn of the loop.
+	 */
+	if (record.file && !record.file->getTTH() && hash)
+		hash->removeJob(record.file->getFile());
+
+	for (std::vector< std::unique_ptr<Attachment> >::iterator it = attachments.begin(); it != attachments.end(); it++) {
+		if ((*it).get() == &record) {
+			/* The record owns the directory, which owns the file. */
+			attachments.erase(it);
+			break;
+		}
+	}
+}
+
 void QuickDC::Share::Manager::dropAttachment(QuickDC::Share::Manager::Attachment& record, const char* reason) {
 	const std::string path = record.path;
 	std::vector<QuickDC::Share::AttachmentListener*> waiting;
@@ -523,12 +632,7 @@ void QuickDC::Share::Manager::dropAttachment(QuickDC::Share::Manager::Attachment
 	/* Forgotten before anyone is told, so a listener that responds by attaching
 	   the same file again starts over rather than waiting for a hash that is
 	   not coming. */
-	for (std::vector< std::unique_ptr<Attachment> >::iterator it = attachments.begin(); it != attachments.end(); it++) {
-		if ((*it).get() == &record) {
-			attachments.erase(it);
-			break;
-		}
-	}
+	forgetAttachment(record);
 
 	for (QuickDC::Share::AttachmentListener* listener : waiting)
 		listener->EventAttachmentFailed(path.c_str(), reason);
@@ -565,6 +669,9 @@ void QuickDC::Share::Manager::saveAttachments() {
 
 	for (const std::unique_ptr<Attachment>& record : attachments) {
 		if (record->tth.empty()) continue;
+		/* A session attachment is offered for as long as the caller keeps it and
+		   not one moment longer, so nothing about it is written down. */
+		if (record->persistence != Persistence::Remembered) continue;
 
 		char key[16];
 		snprintf(key, sizeof(key), "File %d", total);
@@ -689,7 +796,8 @@ void QuickDC::Share::Manager::EventFileHashed(const QuickDC::Hash::Job* job) {
 
 	/* Before anyone is told, so the hash we are about to hand out is remembered
 	   even if the client never gets a chance to shut down cleanly. */
-	saveAttachments();
+	if (record->persistence == Persistence::Remembered)
+		saveAttachments();
 
 	std::vector<QuickDC::Share::AttachmentListener*> waiting;
 	waiting.swap(record->listeners);

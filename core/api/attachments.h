@@ -32,6 +32,7 @@
  *     file cannot be offered.
  *  4. A peer that asks for "TTH/<hash>" is served, because
  *     Manager::getFileByTTH() finds the file. A search by TTH finds it too.
+ *  5. QuickDC::Share::Manager::detach(tth) ends it, when the offer is over.
  *
  * Worth knowing before building on this:
  *
@@ -40,8 +41,20 @@
  *    has been edited since is dropped at startup instead: the remembered hash
  *    does not describe it any more, and serving the bytes under it would give
  *    the downloader nothing but a failed transfer.
- *  - there is no way to take one back while the client is running. An
- *    attachment lasts as long as the share manager, and past that.
+ *  - Manager::Persistence says whether that happens at all. Session leaves the
+ *    configuration alone, for a caller that keeps records of its own and decides
+ *    for itself what to offer again the next time it starts - a cache whose
+ *    contents are served or not according to a setting cannot have every file it
+ *    ever held offered again regardless.
+ *  - detach() is the way to stop. It takes back everything the hash reached: the
+ *    entry it was answered from, the file the manager built to serve it, and the
+ *    line in the configuration. It leaves alone what is genuinely shared, which
+ *    is reachable by hash for being shared and not for having been attached.
+ *  - a file that has just been fetched is offered with attach(), which hashes
+ *    it. Nothing that consults the hash cache will do, because the cache is
+ *    keyed on the path: a file written under a temporary name and renamed on
+ *    completion is a path the cache has never heard of, however recently its
+ *    contents went through it.
  *  - the hash manager only logs a hash job that fails, and tells no listener, so
  *    a failure is noticed when hashing next falls idle rather than at the moment
  *    it happens.
