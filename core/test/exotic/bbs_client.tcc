@@ -670,6 +670,18 @@ EXO_TEST(bbs_client_nothing_is_said_about_a_board_before_the_login_finishes,
 	pump([] { return false; }, 120);
 	s.hub.drain();
 	EXO_ASSERT(s.hub.received.empty());
+
+	/*
+	 * And nothing is heard either. A hub describes its boards on a session's entry
+	 * to the NORMAL state, so a descriptor arriving before that is a hub putting a
+	 * board in front of a user it has not accepted yet - at a point where nothing
+	 * said back about that board could be answered.
+	 */
+	s.say("IBBD BDgeneral PE15 MS262144 TS1786439662 OT0 NP7");
+	s.say(entryLine(TTH_A, "general", 1786436000));
+
+	EXO_ASSERT(s.listener.boards.empty());
+	EXO_ASSERT(s.listener.entries.empty());
 	return 1;
 });
 
@@ -1260,5 +1272,19 @@ EXO_TEST(bbs_client_a_refusal_from_another_client_is_not_one,
 	EXO_ASSERT(s.listener.refusals[0].board.empty());
 	EXO_ASSERT(s.listener.refusals[0].tth.empty());
 	EXO_ASSERT(s.listener.refusals[0].message == "Something went wrong");
+
+	/*
+	 * And a hub whose words begin with a field name is not read as naming a board:
+	 * the message is a sentence a remote party chooses freely, and it comes before
+	 * the fields rather than among them.
+	 */
+	s.say(std::string("ISTA 1") + std::to_string(ADC_CODE_BULLETIN_NO_BOARD)
+		+ " BDgeneral\\sis\\sclosed FCBBL");
+
+	EXO_ASSERT(s.listener.refusals.size() == 2);
+	if (s.listener.refusals.size() != 2) return 0;
+
+	EXO_ASSERT(s.listener.refusals[1].message == "BDgeneral is closed");
+	EXO_ASSERT(s.listener.refusals[1].board.empty());
 	return 1;
 });

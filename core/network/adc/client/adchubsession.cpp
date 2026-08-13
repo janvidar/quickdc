@@ -1768,9 +1768,21 @@ bool ADC::HubSession::withdrawPost(const char* tth, const char* board)
 }
 
 
+/*
+ * Both of these are dropped before the session reaches the NORMAL state, as the
+ * connect requests further down this file are.
+ *
+ * A hub sends a descriptor on a session's entry to NORMAL, after the INF exchange,
+ * and an entry only to a session that subscribed or posted - neither of which can
+ * have happened earlier. So nothing legitimate is lost, and what is refused is a
+ * hub putting a board's title and description in front of a user it has not yet
+ * accepted, at a point where nothing said about that board could be answered.
+ */
 void ADC::HubSession::onBoardDescription(const QuickDC::Board& board)
 {
 	if (!listener) return;
+	if (userState != QuickDC::HubSession::StateNormal) return;
+
 	listener->EventBoardDescribed(board);
 }
 
@@ -1778,6 +1790,8 @@ void ADC::HubSession::onBoardDescription(const QuickDC::Board& board)
 void ADC::HubSession::onBoardEntry(const QuickDC::BoardEntry& entry)
 {
 	if (!listener) return;
+	if (userState != QuickDC::HubSession::StateNormal) return;
+
 	listener->EventBoardEntry(entry);
 }
 
@@ -1860,12 +1874,19 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 		 */
 		if (code[0] == '1' && cmd->getFourcc() == FOURCC('I','S','T','A'))
 		{
-			const char* context = cmd->getArgument("FC", 2);
+			/*
+			 * Looked for past the two positional arguments, not from the start of
+			 * the command. The code and the message come first and a message is
+			 * arbitrary text, so a hub whose words happen to begin with a field
+			 * name - "BDrop it", say - would otherwise have its sentence read as a
+			 * field, and the sentence is the part a remote party chooses freely.
+			 */
+			const char* context = cmd->getArgument("FC", 2, 2);
 
 			if (context && (!strcmp(context, "BBL") || !strcmp(context, "BBP")))
 			{
-				const char* board = cmd->getArgument("BD", 2);
-				const char* tth = cmd->getArgument("TR", 2);
+				const char* board = cmd->getArgument("BD", 2, 2);
+				const char* tth = cmd->getArgument("TR", 2, 2);
 
 				/*
 				 * Neither is passed on unless it is what it claims to be. A board
