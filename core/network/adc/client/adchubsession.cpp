@@ -1524,9 +1524,56 @@ void ADC::HubSession::sendPasswordResponse()
 }
 
 
+/*
+ * The most features this session will remember a hub claiming.
+ *
+ * A hub's SUP is not the single exchange a peer's CSUP is: a hub may revise what
+ * it offers for as long as the session lasts, so nothing in the protocol says
+ * how many names may arrive, and every one of them is held for the life of the
+ * connection. Without a ceiling, a hub can grow a table in this client as fast
+ * as it cares to write four letter words - seven bytes each on the wire, a good
+ * deal more to keep - and it is the client that runs out. ADC has nothing like
+ * this many extensions to name.
+ */
+static constexpr size_t MAX_SUPPORT_FLAGS = 64;
+
 void ADC::HubSession::addSupport(const char* feature)
 {
+	if (!feature) return;
+
+	/*
+	 * Only while there is a session for the claim to belong to. What a hub
+	 * supports is current rather than remembered - see removeSupport() - so a
+	 * flag arriving once the session has ended is part of a conversation that is
+	 * over, and taking it would leave this session answering for a hub it is no
+	 * longer talking to.
+	 *
+	 * Every state above that one is accepted, and deliberately so: a hub is
+	 * entitled to send another SUP after the login exchange, which is where a
+	 * feature is added or withdrawn mid-session.
+	 */
+	if (userState == QuickDC::HubSession::StateNone) return;
+	if (extensions.size() >= MAX_SUPPORT_FLAGS) return;
+
 	extensions.emplace(feature);
+}
+
+
+/*
+ * A hub may take back a feature it once offered, by naming it with 'RM' in a
+ * later SUP, and what it says now is the whole of the answer.
+ *
+ * Nothing is assumed from what it said a moment ago, and nothing is kept against
+ * the hub between sessions - each connection is a new HubSession, and so a new
+ * set. A hub that has lost whatever it needed to serve a feature has no other
+ * way of saying so, and a client still asking is one it has to answer with an
+ * error every time.
+ */
+void ADC::HubSession::removeSupport(const char* feature)
+{
+	if (!feature) return;
+
+	extensions.erase(feature);
 }
 
 
@@ -1542,7 +1589,8 @@ void ADC::HubSession::onSupports()
 
 bool ADC::HubSession::supports(const char* feature) const
 {
-	return extensions.contains(feature);
+	/* Nothing is not a feature, and contains() would make a std::string of it. */
+	return feature && extensions.contains(feature);
 }
 
 

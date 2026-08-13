@@ -543,6 +543,144 @@ EXO_TEST(adchub_a_user_advertises_at_most_max_user_features,
 	return 1;
 });
 
+/* ------------------------------------------------------------------------- */
+/* what a session offered in its SUP                                         */
+/* ------------------------------------------------------------------------- */
+
+/* The extensions a session named, which the hub keeps per session. */
+EXO_TEST(adchub_a_session_records_the_extensions_it_offered,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client c;
+	EXO_ASSERT(c.connect(s.port()));
+	EXO_ASSERT(pump([&] { return s.hub.users.size() == 1; }));
+
+	/* One extension no client has ever offered among them, since a hub has to
+	   survive being told about something it has never heard of. */
+	c.send("HSUP ADBASE ADTIGR ADBBS0 ADZZZZ");
+
+	std::string line;
+	EXO_ASSERT(c.waitFor("ISID", line));
+
+	ADC::LocalHub::User* user = s.hub.users[0];
+
+	EXO_ASSERT(user->supportsExtension("BASE"));
+	EXO_ASSERT(user->supportsExtension(ADC_HASH_TIGER));
+	EXO_ASSERT(user->supportsExtension("BBS0"));
+	EXO_ASSERT(user->supportsExtension("ZZZZ"));
+
+	/* One it did not name, and two questions that are not names at all. */
+	EXO_ASSERT(!user->supportsExtension(ADC_EXT_PING));
+	EXO_ASSERT(!user->supportsExtension(0));
+	EXO_ASSERT(!user->supportsExtension("TOOLONG"));
+	return 1;
+});
+
+/*
+ * And they are not the features of an INF.
+ *
+ * 'SU' is what the hub relays to the other clients so that they know how to reach
+ * this one; a SUP is addressed to the hub and says what this session may be asked
+ * for. Nothing that arrives in one belongs in the other, which is the whole reason
+ * for the second set.
+ */
+EXO_TEST(adchub_the_features_of_an_inf_and_the_extensions_of_a_sup_are_kept_apart,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client c;
+	EXO_ASSERT(c.connect(s.port()));
+
+	/* login() opens with 'HSUP ADBASE ADTIGR', so the two sets are fed from two
+	   commands of the same exchange. */
+	EXO_ASSERT(c.login(makeIdentity(7), "tester", "SUTCP4,ADCS"));
+	EXO_ASSERT(pump([&] { return s.hub.users.size() == 1; }));
+
+	ADC::LocalHub::User* user = s.hub.users[0];
+
+	EXO_ASSERT(user->hasFeature(ADC_EXT_TCP4));
+	EXO_ASSERT(user->hasFeature(ADC_EXT_ADCS));
+	EXO_ASSERT(!user->supportsExtension(ADC_EXT_TCP4));
+
+	EXO_ASSERT(user->supportsExtension("BASE"));
+	EXO_ASSERT(!user->hasFeature("BASE"));
+	return 1;
+});
+
+/* A session can take back an extension it offered, in a SUP sent later. */
+EXO_TEST(adchub_a_session_can_withdraw_an_extension_it_offered,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client c;
+	EXO_ASSERT(c.connect(s.port()));
+	EXO_ASSERT(c.login(makeIdentity(8), "tester"));
+	EXO_ASSERT(pump([&] { return s.hub.users.size() == 1; }));
+
+	ADC::LocalHub::User* user = s.hub.users[0];
+
+	/* Long after the exchange that hands out a SID, which is the point: what a
+	   session supports is whatever it last said. */
+	c.send("HSUP ADBBS0");
+	EXO_ASSERT(pump([&] { return user->supportsExtension("BBS0"); }));
+
+	c.send("HSUP RMBBS0");
+	EXO_ASSERT(pump([&] { return !user->supportsExtension("BBS0"); }));
+
+	/* Only the one it named. */
+	EXO_ASSERT(user->supportsExtension("BASE"));
+	EXO_ASSERT(user->supportsExtension(ADC_HASH_TIGER));
+	return 1;
+});
+
+/*
+ * How many extensions one session may offer.
+ *
+ * The set is written by the client and held until the connection ends, and a SUP
+ * may be sent again as often as the client likes - so the ceiling is what stops a
+ * session deciding how much the hub remembers about it.
+ */
+EXO_TEST(adchub_a_session_offers_at_most_max_user_extensions,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client c;
+	EXO_ASSERT(c.connect(s.port()));
+	EXO_ASSERT(pump([&] { return s.hub.users.size() == 1; }));
+
+	/* A hundred names no extension has ever had, which is more than the ceiling
+	   and fewer than one command may carry. */
+	std::string flood("HSUP ADBASE");
+	for (int n = 0; n < 100; n++)
+	{
+		flood += " AD";
+		flood += static_cast<char>('A' + (n / 26));
+		flood += static_cast<char>('A' + (n % 26));
+		flood += "ZZ";
+	}
+	c.send(flood);
+
+	/* Still the hub it was: the handshake this SUP begins is answered. */
+	std::string line;
+	EXO_ASSERT(c.waitFor("ISID", line));
+
+	ADC::LocalHub::User* user = s.hub.users[0];
+	EXO_ASSERT(user->countExtensions() == ADC::LocalHub::MAX_USER_EXTENSIONS);
+
+	/* And what arrives once the ceiling is reached is not taken. */
+	c.send("HSUP ADZZZZ");
+	pump([] { return false; }, 300);
+
+	EXO_ASSERT(!user->supportsExtension("ZZZZ"));
+	EXO_ASSERT(user->countExtensions() == ADC::LocalHub::MAX_USER_EXTENSIONS);
+	return 1;
+});
+
 /* Every SID the hub hands out has to be one it can find again. */
 EXO_TEST(adchub_every_session_id_handed_out_resolves_back_to_its_user,
 {

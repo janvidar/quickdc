@@ -142,9 +142,15 @@ bool ADC::CmdSupport::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::High);
 	for (size_t n = 0; cmd->getArgument(n); n++) {
 		char* arg = cmd->getArgument(n);
-		if (arg && strlen(arg) == 6)
-			if (arg[0] == 'A' && arg[1] == 'D')
-				session->addSupport(&arg[2]);
+		if (!arg || strlen(arg) != 6) continue;
+
+		if (arg[0] == 'A' && arg[1] == 'D')
+			session->addSupport(&arg[2]);
+
+		/* A hub is as free to take a feature back as to offer one, and a SUP that
+		   says so arrives long after the login exchange - see removeSupport(). */
+		else if (arg[0] == 'R' && arg[1] == 'M')
+			session->removeSupport(&arg[2]);
 	}
 
 	/* What the hub answered decides what may be sent, so the session is told once the

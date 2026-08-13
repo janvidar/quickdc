@@ -131,6 +131,13 @@ class HubSession :
 		void onSID(char* sid);
 		void addSupport(const char* txt);
 
+		/**
+		 * Forget a feature the hub has withdrawn, named with 'RM' in a later
+		 * SUP. What the hub currently claims is the only thing consulted; see
+		 * the definition.
+		 */
+		void removeSupport(const char* txt);
+
 		/** Called once the hub's entire SUP list has been read. */
 		void onSupports();
 

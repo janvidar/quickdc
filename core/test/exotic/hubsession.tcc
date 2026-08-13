@@ -875,6 +875,159 @@ EXO_TEST(hubsession_the_login_inf_already_counts_this_hub,
 });
 
 /* ------------------------------------------------------------------------- */
+/* what the hub says it supports                                             */
+/* ------------------------------------------------------------------------- */
+
+/* The features an ISUP names are what the session will ask the hub for. */
+EXO_TEST(hubsession_the_hubs_features_are_read_off_its_sup,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+
+	s.say("ISUP ADBASE ADTIGR AD" ADC_EXT_RICHTEXT);
+
+	EXO_ASSERT(s.session->supports("BASE"));
+	EXO_ASSERT(s.session->supports(ADC_HASH_TIGER));
+	EXO_ASSERT(s.session->supportsRichText());
+
+	/* One the hub did not name, and a name that is not there at all - which is a
+	   question the session has to be able to answer without reading through it. */
+	EXO_ASSERT(!s.session->supports(ADC_EXT_PING));
+	EXO_ASSERT(!s.session->supports(0));
+	return 1;
+});
+
+/*
+ * A hub may take a feature back, by naming it with 'RM' in a later ISUP, and the
+ * answer follows what it last said in both directions.
+ *
+ * The hub is the only one who knows whether it can still serve a feature, and a
+ * client that goes on asking after it has said no is one it has to refuse for the
+ * rest of the session.
+ */
+EXO_TEST(hubsession_a_feature_the_hub_withdraws_is_no_longer_supported,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+
+	s.say("ISUP ADBASE ADTIGR AD" ADC_EXT_RICHTEXT);
+	EXO_ASSERT(s.session->supportsRichText());
+
+	s.say("ISUP RM" ADC_EXT_RICHTEXT);
+
+	EXO_ASSERT(!s.session->supportsRichText());
+
+	/* Only the one it named. */
+	EXO_ASSERT(s.session->supports("BASE"));
+	EXO_ASSERT(s.session->supports(ADC_HASH_TIGER));
+
+	/* And a withdrawal is no more permanent than the offer was. */
+	s.say("ISUP AD" ADC_EXT_RICHTEXT);
+	EXO_ASSERT(s.session->supportsRichText());
+	return 1;
+});
+
+/*
+ * How many features one hub may name.
+ *
+ * The set is fed by the hub and held for the life of the connection, so a hub
+ * that keeps sending ISUP is the one deciding how much this client remembers.
+ */
+EXO_TEST(hubsession_a_hub_can_only_name_so_many_features,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+
+	s.say("ISUP ADBASE ADTIGR");
+
+	/* A hundred names no extension has ever had, which is more than the ceiling
+	   and fewer than one command may carry. */
+	std::string flood("ISUP");
+	for (int n = 0; n < 100; n++)
+	{
+		flood += " AD";
+		flood += static_cast<char>('A' + (n / 26));
+		flood += static_cast<char>('A' + (n % 26));
+		flood += "ZZ";
+	}
+	s.say(flood);
+
+	/* The ceiling has been reached, so what arrives after it is not taken - while
+	   what the hub said before it is still there. */
+	s.say("ISUP ADZZZZ");
+	EXO_ASSERT(!s.session->supports("ZZZZ"));
+	EXO_ASSERT(s.session->supports("BASE"));
+	EXO_ASSERT(s.session->supports(ADC_HASH_TIGER));
+	return 1;
+});
+
+/*
+ * A feature named once the session is over is not taken either. There is no hub
+ * left to ask for it, and the set is what this session answers for.
+ */
+EXO_TEST(hubsession_a_feature_named_after_the_session_ended_is_ignored,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.hub.peer.reset();
+	EXO_ASSERT(pump([&] { return !s.session->isLoggedIn(); }));
+
+	s.session->addSupport("ZZZZ");
+	EXO_ASSERT(!s.session->supports("ZZZZ"));
+	return 1;
+});
+
+/*
+ * And nothing is remembered against the hub itself: a session that comes back
+ * knows only what this hub has said this time.
+ *
+ * Each connection is a HubSession of its own - QuickDC::Hub builds one per
+ * attempt - so the set cannot outlive the connection it was negotiated on. A
+ * client that cached it would offer to use a feature the hub has since stopped
+ * serving, on the strength of a conversation that has ended.
+ */
+EXO_TEST(hubsession_a_new_session_learns_the_features_over_again,
+{
+	{
+		Session s;
+		if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+		EXO_ASSERT(s.ready);
+
+		std::string line;
+		EXO_ASSERT(s.hub.nextLine(line));
+		s.say("ISUP ADBASE ADTIGR AD" ADC_EXT_RICHTEXT);
+		EXO_ASSERT(s.session->supportsRichText());
+	}
+
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	s.say("ISUP ADBASE ADTIGR");
+
+	EXO_ASSERT(s.session->supports("BASE"));
+	EXO_ASSERT(!s.session->supportsRichText());
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
 /* who is on the hub                                                         */
 /* ------------------------------------------------------------------------- */
 

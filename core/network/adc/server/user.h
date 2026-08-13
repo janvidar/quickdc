@@ -45,6 +45,16 @@ class ServiceMap;
 inline constexpr size_t MAX_USER_FEATURES = 64;
 
 /**
+ * The most extensions one session may offer in its SUP.
+ *
+ * Bounded for the same reason the features are, and separately because the two
+ * sets are fed by different commands: a SUP may be sent again at any point in a
+ * session, so a client can name extensions for as long as it likes, and each
+ * name is held until the connection ends.
+ */
+inline constexpr size_t MAX_USER_EXTENSIONS = 64;
+
+/**
  * Inbound commands one user may have processed: a sustained rate, and a burst it
  * may spend at once. A client answering a search sends its results in one go,
  * which is what the burst is sized for.
@@ -89,6 +99,22 @@ class User : public Connection {
 		void clearFeatures();
 		bool hasFeature(const char* feature) const;
 		size_t countFeatures() const { return features.size(); }
+
+		/**
+		 * What this session offered in its SUP, which is a different question
+		 * from what it advertises in the 'SU' field of its INF.
+		 *
+		 * 'SU' tells the other clients on the hub what this one can do, so the
+		 * hub relays it and casts searches by it; SUP tells the hub what this
+		 * session may be asked for, and the hub is the only reader. An extension
+		 * can be one without being the other - BBS0 is deliberately not an 'SU'
+		 * flag, since reading boards from a hub concerns no other client - and a
+		 * board descriptor goes only to a session that asked for it here.
+		 */
+		void addExtension(const std::string& extension);
+		void removeExtension(const std::string& extension);
+		bool supportsExtension(const char* extension) const;
+		size_t countExtensions() const { return extensions.size(); }
 
 		/**
 		 * Spend one token from this user's inbound allowance.
@@ -141,6 +167,14 @@ class User : public Connection {
 		 * of turns one search into work proportional to that length.
 		 */
 		std::set<std::string> features;
+
+		/*
+		 * Kept apart from the features above rather than merged into them: the two
+		 * arrive in different commands, mean different things to different readers,
+		 * and a client that names an extension in its SUP has said nothing about
+		 * what it wants other clients told. See addExtension().
+		 */
+		std::set<std::string> extensions;
 		bool locked;
 
 		/* Inbound command allowance. See allowCommand(). */

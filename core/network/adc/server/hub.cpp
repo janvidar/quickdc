@@ -202,7 +202,33 @@ void ADC::LocalHub::Hub::readConfiguration() {
 
 void ADC::LocalHub::Hub::onSUP(ADC::Command* cmd) {
 	ADC::LocalHub::User* user = lookupUser(cmd->getSocket());
-	if (user && user->state == State_Protocol) {
+	if (!user) return;
+
+	/*
+	 * What the session offered, kept per session.
+	 *
+	 * Not the features of an INF: 'SU' is what this client wants the others on the
+	 * hub told, which is why the hub relays it and casts searches by it, while a
+	 * SUP says what this session may be asked for and is addressed to the hub
+	 * alone. A board descriptor goes only to a session that named BBS0 here, and
+	 * BBS0 is deliberately not an 'SU' flag - reading boards off a hub is no
+	 * concern of any other client.
+	 *
+	 * Read whether or not this is the SUP that begins the handshake, because a
+	 * client is free to send another one later to add or withdraw a name, and what
+	 * it supports is whatever it last said.
+	 */
+	for (size_t n = 0; cmd->getArgument(n); n++) {
+		const char* arg = cmd->getArgument(n);
+		if (strlen(arg) != 6) continue;
+
+		if (arg[0] == 'A' && arg[1] == 'D')
+			user->addExtension(&arg[2]);
+		else if (arg[0] == 'R' && arg[1] == 'M')
+			user->removeExtension(&arg[2]);
+	}
+
+	if (user->state == State_Protocol) {
 		if (!enabled) {
 			ADC::Command* sta = new ADC::Command(FOURCC('I','S','T','A'));
 			sta->addArgument("212");

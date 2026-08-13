@@ -361,6 +361,27 @@ void ADC::LocalHub::User::clearFeatures() {
 	features.clear();
 }
 
+void ADC::LocalHub::User::addExtension(const std::string& extension) {
+	if (extensions.size() >= ADC::LocalHub::MAX_USER_EXTENSIONS) return;
+	extensions.insert(extension);
+}
+
+/*
+ * A client may take back an extension it offered, by naming it with 'RM' in a
+ * later SUP. Withdrawing one it never offered is not an error: the client has
+ * said it does not want the thing, and that is the state it is left in.
+ */
+void ADC::LocalHub::User::removeExtension(const std::string& extension) {
+	extensions.erase(extension);
+}
+
+bool ADC::LocalHub::User::supportsExtension(const char* extension) const {
+	/* As hasFeature(): a name that is not four characters is not one a SUP can
+	   have carried, and asking must not read through a null. */
+	if (!extension || strlen(extension) != 4) return false;
+	return extensions.count(extension) != 0;
+}
+
 std::string ADC::LocalHub::User::getObservedAddress() const
 {
 	return peerAddress(socket.get());
