@@ -663,12 +663,62 @@ class QueueXMLReader : public Samurai::IO::XmlContentHandler
 /* QueueManager                                                              */
 /* ------------------------------------------------------------------------- */
 
+namespace {
+
+/*
+ * Whether this is a tiger tree root and nothing else.
+ *
+ * A hash handed to us by a user interface, or read out of a peer's bulletin
+ * board index, goes on the wire in a search - so it is checked here rather than
+ * left to come up empty against the queue. The length alone is not enough: a
+ * string of the right length that is not base32 cannot be any file's root, and
+ * a hub is no place to find that out.
+ */
+bool isTigerRoot(const char* tth)
+{
+	if (!tth || strlen(tth) != QUICKDC_TTH_LENGTH) return false;
+
+	for (const char* p = tth; *p; p++)
+	{
+		if ((*p >= 'A' && *p <= 'Z') || (*p >= '2' && *p <= '7')) continue;
+		return false;
+	}
+	return true;
+}
+
+/*
+ * Whether these two name a peer we are able to record.
+ *
+ * FileSource keeps whatever hub and client ID it is handed without looking at
+ * them, and an empty one of either counts as valid there - two empty ones then
+ * match each other, so a source naming nobody would be taken for one we already
+ * have. The rest is what the queue file demands: a source is written out as
+ * {hub}/{cid}/TTH:{root} and read back by splitting on the slashes, so a client
+ * ID containing one comes back as a different user with a filename, a hub URL
+ * containing one loses its tail the same way, and one without a protocol does
+ * not come back at all.
+ */
+bool isRecordablePeer(const char* hubUrl, const char* cid)
+{
+	if (!hubUrl || !cid || !*hubUrl || !*cid) return false;
+
+	const char* authority = strstr(hubUrl, "://");
+	if (!authority || authority == hubUrl) return false;
+	if (!authority[3] || strchr(authority + 3, '/')) return false;
+
+	return strchr(cid, '/') == 0;
+}
+
+}
+
 QuickDC::QueueManager::QueueManager(const char* path_)
 	: verifier(0)
 	, dirty(false)
 	, tokenCounter(0)
 	, lastSourceSearch(0)
 	, searchRotation(0)
+	, lastBurstSearch(0)
+	, burstAllowance(QUICKDC_SOURCE_SEARCH_BURST)
 	, path(path_ ? path_ : "")
 	, pathNew(path + ".new")
 {
@@ -717,44 +767,118 @@ void QuickDC::QueueManager::process()
 		save();
 }
 
+enum QuickDC::QueueManager::SourceSearchResult QuickDC::QueueManager::sendSourceSearch(QueueFile* file)
+{
+	/* Only a hash can find a source; a name is whatever it is called here. */
+	if (!file || file->tth.size() != QUICKDC_TTH_LENGTH) return SourceSearchBadHash;
+
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	if (!core || !core->hubs) return SourceSearchNotSent;
+
+	const std::string suffix = makeToken();
+	if (suffix.empty()) return SourceSearchNotSent;
+
+	std::string token("src");
+	token += suffix;
+
+	QuickDC::Share::SearchRequest request(QuickDC::Share::SearchRequest::SizeAny,
+		0, file->tth.c_str(), token.c_str(), 0);
+
+	if (!core->hubs->searchAllHubs(&request)) return SourceSearchNotSent;
+
+	QDBG("Looking for more sources for '%s'; it has %d",
+		file->getLocalFilename(), static_cast<int>(file->countSources()));
+	return SourceSearchSent;
+}
+
 void QuickDC::QueueManager::searchForSources()
 {
 	if (lastSourceSearch.elapsed() < QUICKDC_SOURCE_SEARCH_INTERVAL) return;
-
-	QuickDC::Core* core = QuickDC::Core::getInstance();
-	if (!core || !core->hubs) return;
 
 	std::vector<QueueFile*> wanted;
 	getFilesNeedingSources(wanted, QUICKDC_SOURCE_SEARCH_MIN_SOURCES);
 	if (wanted.empty()) return;
 
-	/* One file per interval, taken in turn. Only a hash can find a source. */
+	/* One file per interval, taken in turn. */
 	for (size_t n = 0; n < wanted.size(); n++)
 	{
 		size_t index = (searchRotation + n) % wanted.size();
-		QueueFile* file = wanted[index];
 
-		if (file->tth.size() != QUICKDC_TTH_LENGTH) continue;
-
-		const std::string suffix = makeToken();
-		if (suffix.empty()) continue;
-
-		std::string token("src");
-		token += suffix;
-
-		QuickDC::Share::SearchRequest request(QuickDC::Share::SearchRequest::SizeAny,
-			0, file->tth.c_str(), token.c_str(), 0);
+		const enum SourceSearchResult sent = sendSourceSearch(wanted[index]);
 
 		/* Not logged in anywhere yet; retry rather than lose the interval. */
-		if (!core->hubs->searchAllHubs(&request)) return;
+		if (sent == SourceSearchNotSent) return;
+
+		/* Nothing to search by, so it is not this file's turn after all. */
+		if (sent != SourceSearchSent) continue;
 
 		searchRotation = index + 1;
 		lastSourceSearch.reset();
-
-		QDBG("Looking for more sources for '%s'; it has %d",
-			file->getLocalFilename(), static_cast<int>(file->countSources()));
 		return;
 	}
+}
+
+bool QuickDC::QueueManager::takeSearchFromBurst()
+{
+	const time_t since = lastBurstSearch.elapsed();
+
+	/*
+	 * Whole searches only, so that a caller asking every second is credited at
+	 * the interval rather than continuously. A clock that went backwards credits
+	 * nothing, which costs a caller one interval of waiting at worst.
+	 */
+	if (since >= QUICKDC_SOURCE_SEARCH_BURST_REFILL)
+	{
+		const size_t credit = static_cast<size_t>(since / QUICKDC_SOURCE_SEARCH_BURST_REFILL);
+		burstAllowance = std::min<size_t>(QUICKDC_SOURCE_SEARCH_BURST, burstAllowance + credit);
+	}
+
+	if (!burstAllowance) return false;
+
+	burstAllowance--;
+	lastBurstSearch.reset();
+	return true;
+}
+
+bool QuickDC::QueueManager::requestSourceSearch(const char* tth, SourceSearchResult* why)
+{
+	enum SourceSearchResult outcome = SourceSearchBadHash;
+	QueueFile* file = 0;
+
+	if (!isTigerRoot(tth))
+		outcome = SourceSearchBadHash;
+	else if ((file = getFileByTTH(tth)) == 0)
+		outcome = SourceSearchNotQueued;
+	else if (!takeSearchFromBurst())
+		outcome = SourceSearchRateLimited;
+	else
+		outcome = sendSourceSearch(file);
+
+	if (why) *why = outcome;
+	return outcome == SourceSearchSent;
+}
+
+bool QuickDC::QueueManager::addKnownSource(const char* tth, const char* hubUrl, const char* cid)
+{
+	if (!isTigerRoot(tth) || !isRecordablePeer(hubUrl, cid)) return false;
+
+	QueueFile* file = getFileByTTH(tth);
+	if (!file) return false;
+
+	/* Keeping the one we have; it carries the retry count and the last seen. */
+	if (file->findSource(hubUrl, cid)) return false;
+
+	std::string name("TTH:");
+	name += tth;
+	file->addSource(new FileSource(hubUrl, cid, name.c_str()));
+
+	/* addSource() drops what it will not have, so ask whether it took it. */
+	if (!file->findSource(hubUrl, cid)) return false;
+
+	if (file->isPersistent()) dirty = true;
+
+	QDBG("'%s' is a known source for '%s'", cid, file->getLocalFilename());
+	return true;
 }
 
 /* ---- contents ---- */

@@ -31,6 +31,13 @@
  *  - a completed download leaves the queue and is not recorded anywhere, so
  *    there is no history to show.
  *
+ * Queueing a file is not the same as looking for it. QueueManager searches for
+ * sources one file per QUICKDC_SOURCE_SEARCH_INTERVAL across the whole queue,
+ * which is a background rate and nothing else: anything a user is sitting and
+ * waiting for wants QueueManager::requestSourceSearch() as well, and a source
+ * that is already named - the author of a bulletin board post, say - wants
+ * addKnownSource() rather than a search at all.
+ *
  * None of it is thread safe. All of it belongs to the thread that constructed
  * the Core, and Core::run() is the only thing that advances it.
  */

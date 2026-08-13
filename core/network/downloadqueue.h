@@ -71,6 +71,20 @@
 /** Files with fewer sources than this are searched for. */
 #define QUICKDC_SOURCE_SEARCH_MIN_SOURCES 5
 
+/**
+ * How many searches may be asked for on the spot, and how quickly one is
+ * credited back.
+ *
+ * QueueManager::requestSourceSearch() is driven by whoever is reading rather
+ * than by the clock, and a hub disconnects a client that floods it with
+ * searches. A burst is allowed because opening a thread of replies asks for all
+ * of their bodies at once and a reader is waiting for every one of them; the
+ * credit is what stops a caller in a loop from becoming a flood, since once the
+ * burst is spent the rate settles at one search per interval.
+ */
+#define QUICKDC_SOURCE_SEARCH_BURST 5
+#define QUICKDC_SOURCE_SEARCH_BURST_REFILL 10
+
 /** A TTH root in base32 is always this long. */
 #define QUICKDC_TTH_LENGTH 39
 
@@ -645,6 +659,82 @@ class QueueManager {
 		 */
 		uint64_t chunkSizeFor(const FileSource* source) const;
 
+	public: /* sources for a file somebody is waiting on */
+
+		/**
+		 * What came of asking for sources for one file.
+		 *
+		 * A caller wants to tell these apart: a hash that is not queued is a
+		 * mistake on its part, while a refused rate or a hub that is not logged in
+		 * yet is only a reason to ask again in a moment.
+		 */
+		enum SourceSearchResult {
+			SourceSearchSent,         /* the search went out */
+			SourceSearchBadHash,      /* not a TTH root at all */
+			SourceSearchNotQueued,    /* nothing is queued under that hash */
+			SourceSearchRateLimited,  /* asked for too often; try again shortly */
+			SourceSearchNotSent       /* nowhere to ask; no hub is logged in yet */
+		};
+
+		/**
+		 * Search every hub for sources for one queued file now, rather than
+		 * waiting for its turn in the rotation.
+		 *
+		 * searchForSources() sends one search per QUICKDC_SOURCE_SEARCH_INTERVAL,
+		 * taking the files that are short of sources in turn. That is the right
+		 * shape for a download queue: nobody is watching it, and being tolerable
+		 * to the hub matters more than how quickly any one file finds its second
+		 * source. It is useless for a document somebody is waiting to read - ten
+		 * of them would be twenty minutes before the last was even looked for, and
+		 * every one of those turns is one the user's own downloads did not get.
+		 * So queueing a file is not enough on its own when a reader is waiting:
+		 * ask for this as well.
+		 *
+		 * Bounded by an allowance of QUICKDC_SOURCE_SEARCH_BURST asks, credited
+		 * back one per QUICKDC_SOURCE_SEARCH_BURST_REFILL seconds, so that a
+		 * caller cannot turn this into the search flood a hub disconnects clients
+		 * for. The allowance is spent on the asking rather than on the sending, so
+		 * that a caller which keeps asking while no hub is logged in is bounded
+		 * too; the search it did not get is one the rotation will make eventually.
+		 *
+		 * The rotation is left strictly alone. This neither delays it nor takes a
+		 * turn from it, so the rest of the queue is searched for on exactly the
+		 * schedule it would have had.
+		 *
+		 * Called from the thread that drives the Core, like the rest of this class.
+		 *
+		 * @param why if given, set to the outcome whether or not it succeeded.
+		 * @return false unless a search actually went out.
+		 */
+		bool requestSourceSearch(const char* tth, SourceSearchResult* why = 0);
+
+		/**
+		 * Add a source for a queued file by hash and user, without searching.
+		 *
+		 * A search is how sources are found for a file that came from nowhere in
+		 * particular, and it is not needed when one of them is already named. A
+		 * BBS0 index entry carries the CID of the session the hub accepted the
+		 * post from, so the author of a post is a known source for its body from
+		 * the moment the entry arrives - and a client that can reach nobody else
+		 * can always ask them.
+		 *
+		 * The source is recorded as {hubUrl}/{cid}/TTH:{root}, which is the URL
+		 * notation filesource.h describes and the same spelling a search reply and
+		 * a PSR are turned into. Note that this is not what goes on the wire:
+		 * both protocols ask for "TTH/{root}", built from the QueueFile's own hash
+		 * rather than from the source, so the source's filename only decides
+		 * whether it names a file at all - one with no filename is a request for
+		 * the peer's file list, see FileSource::isFilelist(). That is why this
+		 * spells the hash out instead of leaving the filename off.
+		 *
+		 * Called from the thread that drives the Core, like the rest of this class.
+		 *
+		 * @return false if the hash is not a TTH root, if no file with that hash
+		 *         is queued, if either identifier is unusable, or if that source
+		 *         is one we already know about.
+		 */
+		bool addKnownSource(const char* tth, const char* hubUrl, const char* cid);
+
 	public: /* file lists - transient, never stored */
 
 		/**
@@ -745,6 +835,22 @@ class QueueManager {
 		/** Search for more sources for one file that is short of them. */
 		void searchForSources();
 
+		/**
+		 * Ask every hub where a file can be had, and remember the token the
+		 * replies will quote.
+		 *
+		 * Shared by the rotation and by requestSourceSearch(), which differ only in
+		 * what they are allowed to send and how often - the search itself is the
+		 * same one either way.
+		 */
+		enum SourceSearchResult sendSourceSearch(QueueFile* file);
+
+		/**
+		 * Take one search from the burst allowance.
+		 * @return false if there is none left to take; see requestSourceSearch().
+		 */
+		bool takeSearchFromBurst();
+
 		/** @return false if this source holds nothing we still need. */
 		bool sourceIsUseful(QueueFile* file, FileSource* source) const;
 
@@ -790,6 +896,11 @@ class QueueManager {
 
 		Samurai::TimeStamp lastSourceSearch;
 		size_t searchRotation;
+
+		/* The burst requestSourceSearch() spends, kept apart from the rotation
+		   above so that neither can hold the other up. */
+		Samurai::TimeStamp lastBurstSearch;
+		size_t burstAllowance;
 
 		std::string path;      // the queue on disk
 		std::string pathNew;   // written first, then moved into place

@@ -190,6 +190,29 @@ static size_t mine(QuickDC::QueueManager& queue, const std::string& dir,
 	return added;
 }
 
+/*
+ * A queue whose source rotation can be looked at.
+ *
+ * What the rotation is made of - when it last searched, and whose turn is next -
+ * is protected, and the property that matters about searching for one file on
+ * demand is precisely that it leaves both of them alone. A subclass is how a
+ * test gets to see that, and it is also how searchForSources() can be run at a
+ * moment of the case's choosing rather than whenever process() feels like it.
+ */
+class PeekableQueue : public QuickDC::QueueManager
+{
+	public:
+		PeekableQueue(const char* path) : QuickDC::QueueManager(path) { }
+
+		/** How long the rotation has been waiting for its turn. */
+		time_t sinceRotation() { return lastSourceSearch.elapsed(); }
+
+		/** Which of the files short of sources is next. */
+		size_t rotation() const { return searchRotation; }
+
+		void rotate() { searchForSources(); }
+};
+
 /* A queue holding the three TTHs above, in its own scratch file. */
 class Fixture
 {
@@ -198,7 +221,7 @@ class Fixture
 			: dir(scratch("lists")), queue_path(scratch("queue.xml"))
 		{
 			Samurai::IO::File::mkdir(dir.c_str());
-			queue = std::make_unique<QuickDC::QueueManager>(queue_path.c_str());
+			queue = std::make_unique<PeekableQueue>(queue_path.c_str());
 		}
 
 		~Fixture()
@@ -221,7 +244,7 @@ class Fixture
 
 		std::string dir;
 		std::string queue_path;
-		std::unique_ptr<QuickDC::QueueManager> queue;
+		std::unique_ptr<PeekableQueue> queue;
 };
 
 /* ------------------------------------------------------------------------- */
@@ -893,5 +916,270 @@ EXO_TEST(sources_an_identifier_that_would_name_a_path_is_refused,
 			EXO_ASSERT(resolved.compare(0, prefix.size(), prefix) == 0);
 		}
 	}
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* Sources for a file somebody is waiting to read                            */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * The rotation searches for one file per QUICKDC_SOURCE_SEARCH_INTERVAL, which
+ * is right for a queue nobody is watching and hopeless for a document somebody
+ * has just opened: a bulletin board thread of ten replies would be twenty
+ * minutes before the last of the bodies was even looked for.
+ * requestSourceSearch() is that search asked for now, bounded so that it cannot
+ * become the flood a hub disconnects clients for; addKnownSource() is the case
+ * where no search is needed at all, because the post's index entry named the CID
+ * the hub accepted it from.
+ *
+ * There is no Core in these cases and nothing can leave without one, which is
+ * what SourceSearchNotSent reports - and it is reported after the burst has been
+ * charged for the asking. So what is checked here is which answer comes back and
+ * what the queue looks like afterwards; whether a search reaches a hub is the
+ * business of the hub session cases.
+ */
+
+/* The author of a post is a source for it, with no search anywhere. */
+EXO_TEST(sources_a_named_source_is_added_without_any_search,
+{
+	Fixture fix;
+	fix.want("/tmp/post.txt", TTH1);
+
+	EXO_ASSERT(fix.queue->addKnownSource(TTH1, HUB, CID));
+
+	QuickDC::QueueFile* file = fix.queue->getFileByTTH(TTH1);
+	EXO_ASSERT(file && file->countSources() == 1);
+
+	QuickDC::FileSource* source = file ? file->findSource(HUB, CID) : 0;
+	EXO_ASSERT(source != 0);
+
+	/*
+	 * Named by the hash rather than left nameless: a source with no filename at
+	 * all is a request for the peer's file list. What goes on the wire is
+	 * "TTH/{root}" either way, built from the QueueFile and not from this.
+	 */
+	EXO_ASSERT(source && !source->isFilelist());
+	EXO_ASSERT(source && source->getName() && !strcmp(source->getName(), "TTH:" TTH1));
+	return 1;
+});
+
+/* And it is still the same peer after a trip through the queue file notation. */
+EXO_TEST(sources_a_named_source_survives_the_queue_file_notation,
+{
+	Fixture fix;
+	fix.want("/tmp/post.txt", TTH1);
+	EXO_ASSERT(fix.queue->addKnownSource(TTH1, HUB, CID));
+
+	QuickDC::FileSource* source = fix.queue->getFileByTTH(TTH1)->findSource(HUB, CID);
+	EXO_ASSERT(source != 0);
+
+	char* url = source->toURL();
+	EXO_ASSERT(url && std::string(url) == HUB "/" CID "/TTH:" TTH1);
+
+	QuickDC::FileSource back(url);
+	free(url);
+
+	EXO_ASSERT(back.isValid());
+	EXO_ASSERT(!back.isFilelist());
+	EXO_ASSERT(back.matches(HUB, CID));
+	return 1;
+});
+
+/* Which is enough for a transfer to be started from them. */
+EXO_TEST(sources_a_named_source_is_one_a_transfer_can_start_from,
+{
+	Fixture fix;
+	fix.want("/tmp/post.txt", TTH1);
+	EXO_ASSERT(fix.queue->addKnownSource(TTH1, HUB, CID));
+
+	QuickDC::QueueFile* file = 0;
+	QuickDC::FileSource* source = 0;
+
+	EXO_ASSERT(fix.queue->getNextTransfer(file, source));
+	EXO_ASSERT(file == fix.queue->getFileByTTH(TTH1));
+	EXO_ASSERT(source && source->matches(HUB, CID));
+	return 1;
+});
+
+/* The same peer named twice is one source, and the second time says so. */
+EXO_TEST(sources_the_same_named_source_twice_is_refused,
+{
+	Fixture fix;
+	fix.want("/tmp/post.txt", TTH1);
+
+	EXO_ASSERT(fix.queue->addKnownSource(TTH1, HUB, CID));
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, HUB, CID));
+	EXO_ASSERT(fix.queue->getFileByTTH(TTH1)->countSources() == 1);
+
+	/* Somebody else on the same hub is another matter. */
+	EXO_ASSERT(fix.queue->addKnownSource(TTH1, HUB, "SOMEONEELSE"));
+	EXO_ASSERT(fix.queue->getFileByTTH(TTH1)->countSources() == 2);
+	return 1;
+});
+
+/* Neither of them has anything to say about a hash we are not downloading. */
+EXO_TEST(sources_a_hash_that_is_not_queued_is_refused_by_both,
+{
+	Fixture fix;
+	fix.want("/tmp/post.txt", TTH1);
+
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH2, HUB, CID));
+
+	QuickDC::QueueManager::SourceSearchResult why = QuickDC::QueueManager::SourceSearchSent;
+	EXO_ASSERT(!fix.queue->requestSourceSearch(TTH2, &why));
+	EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchNotQueued);
+
+	/* Refusing it costs nothing, so the burst is intact for one we do want. */
+	EXO_ASSERT(!fix.queue->requestSourceSearch(TTH1, &why));
+	EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchNotSent);
+	return 1;
+});
+
+/*
+ * A hash that is not a root goes no further. The length alone would not do it:
+ * these go on the wire in a search, and a hub is no place to discover that
+ * something was never base32.
+ */
+EXO_TEST(sources_a_malformed_hash_is_refused_by_both,
+{
+	Fixture fix;
+	fix.want("/tmp/post.txt", TTH1);
+
+	static const char* malformed[] = {
+		"",
+		"TTH:" TTH1,
+		"MWXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7",     /* one short */
+		"MWXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7AA",   /* one long */
+		"mwxflx5no4t54fmvtgz6uxer2qkn6j2iggl3w7a",    /* not upper case */
+		"MWXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W71",    /* '1' is not base32 */
+		"MWXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7 ",
+		0
+	};
+
+	for (size_t n = 0; malformed[n]; n++)
+	{
+		QuickDC::QueueManager::SourceSearchResult why = QuickDC::QueueManager::SourceSearchSent;
+
+		EXO_ASSERT(!fix.queue->addKnownSource(malformed[n], HUB, CID));
+		EXO_ASSERT(!fix.queue->requestSourceSearch(malformed[n], &why));
+		EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchBadHash);
+	}
+
+	QuickDC::QueueManager::SourceSearchResult why = QuickDC::QueueManager::SourceSearchSent;
+	EXO_ASSERT(!fix.queue->addKnownSource(0, HUB, CID));
+	EXO_ASSERT(!fix.queue->requestSourceSearch(0, &why));
+	EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchBadHash);
+
+	EXO_ASSERT(fix.queue->getFileByTTH(TTH1)->countSources() == 0);
+	return 1;
+});
+
+/*
+ * And a peer the queue could not write back out again is no source. One is
+ * spelled {hub}/{cid}/TTH:{root} and read back by splitting on the slashes, so
+ * an identifier carrying one of those would return as somebody else; an empty
+ * hub or client ID is worse still, since two of those match each other and the
+ * next source added would be taken for one we already had.
+ */
+EXO_TEST(sources_a_peer_the_queue_could_not_write_back_is_refused,
+{
+	Fixture fix;
+	fix.want("/tmp/post.txt", TTH1);
+
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, 0, CID));
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, "", CID));
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, "hub.example:412", CID));
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, "://hub.example:412", CID));
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, "adc://", CID));
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, HUB "/somewhere", CID));
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, HUB "/", CID));
+
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, HUB, 0));
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, HUB, ""));
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, HUB, "AAAA/BBBB"));
+
+	EXO_ASSERT(fix.queue->getFileByTTH(TTH1)->countSources() == 0);
+	return 1;
+});
+
+/*
+ * The burst is what stops a caller in a loop from becoming a search flood. It is
+ * charged for the asking and not for the sending, which is why these get as far
+ * as having nowhere to send them and then stop.
+ */
+EXO_TEST(sources_the_burst_bounds_how_often_a_search_may_be_asked_for,
+{
+	Fixture fix;
+	fix.want("/tmp/post.txt", TTH1);
+
+	QuickDC::QueueManager::SourceSearchResult why = QuickDC::QueueManager::SourceSearchSent;
+
+	for (size_t n = 0; n < QUICKDC_SOURCE_SEARCH_BURST; n++)
+	{
+		EXO_ASSERT(!fix.queue->requestSourceSearch(TTH1, &why));
+		EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchNotSent);
+	}
+
+	EXO_ASSERT(!fix.queue->requestSourceSearch(TTH1, &why));
+	EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchRateLimited);
+
+	/* And it stays refused; the next credit is a whole interval away. */
+	EXO_ASSERT(!fix.queue->requestSourceSearch(TTH1, &why));
+	EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchRateLimited);
+
+	/* The reason is optional, for a caller that only wants to know whether. */
+	EXO_ASSERT(!fix.queue->requestSourceSearch(TTH1));
+	return 1;
+});
+
+/*
+ * The regression that would matter most: none of that may cost the rest of the
+ * queue its rotation. A fresh queue has never searched, so its turn is due at
+ * once, and it is still due once a burst has been spent.
+ */
+EXO_TEST(sources_asking_for_a_search_now_leaves_the_rotation_alone,
+{
+	Fixture fix;
+	fix.want("/tmp/a.bin", TTH1);
+	fix.want("/tmp/b.bin", TTH2);
+
+	EXO_ASSERT(fix.queue->rotation() == 0);
+	EXO_ASSERT(fix.queue->sinceRotation() >= QUICKDC_SOURCE_SEARCH_INTERVAL);
+
+	for (size_t n = 0; n < QUICKDC_SOURCE_SEARCH_BURST + 2; n++)
+		fix.queue->requestSourceSearch(TTH1);
+
+	EXO_ASSERT(fix.queue->addKnownSource(TTH1, HUB, CID));
+
+	EXO_ASSERT(fix.queue->rotation() == 0);
+	EXO_ASSERT(fix.queue->sinceRotation() >= QUICKDC_SOURCE_SEARCH_INTERVAL);
+
+	/* It still runs, and with nowhere to send anything it keeps its turn rather
+	   than spending the interval on a search that never left. */
+	fix.queue->rotate();
+	EXO_ASSERT(fix.queue->rotation() == 0);
+	EXO_ASSERT(fix.queue->sinceRotation() >= QUICKDC_SOURCE_SEARCH_INTERVAL);
+
+	/* And both files are still there, still short of sources, still wanted. */
+	std::vector<QuickDC::QueueFile*> wanted;
+	fix.queue->getFilesNeedingSources(wanted, QUICKDC_SOURCE_SEARCH_MIN_SOURCES);
+
+	EXO_ASSERT(wanted.size() == 2);
+	EXO_ASSERT(fix.queue->getFileByTTH(TTH1)->countSources() == 1);
+	EXO_ASSERT(fix.queue->getFileByTTH(TTH2)->countSources() == 0);
+	return 1;
+});
+
+/* Neither minds being asked before anything is queued at all. */
+EXO_TEST(sources_an_empty_queue_refuses_both_without_complaint,
+{
+	Fixture fix;
+
+	QuickDC::QueueManager::SourceSearchResult why = QuickDC::QueueManager::SourceSearchSent;
+
+	EXO_ASSERT(!fix.queue->requestSourceSearch(TTH1, &why));
+	EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchNotQueued);
+	EXO_ASSERT(!fix.queue->addKnownSource(TTH1, HUB, CID));
 	return 1;
 });
