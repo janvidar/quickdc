@@ -120,28 +120,46 @@ QuickDC::Hub* QuickDC::HubManager::lookupUserByNick(const char* nick) {
 }
 
 
+/*
+ * Every search goes out naming itself, and what it names is remembered.
+ *
+ * A datagram's source address is whatever its sender wrote, so a reply can only be
+ * told from a stranger by what it answers. The queue draws its own token for a source
+ * search, so one may be here already - it is remembered rather than replaced, since it
+ * is the one the reply will quote.
+ *
+ * One token however many hubs it goes to: the same search is being asked in several
+ * places, and a reply from any of them answers it.
+ */
+void QuickDC::HubManager::rememberSearchToken(QuickDC::Share::SearchRequest* request) {
+	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	if (!tokens) return;
+
+	if (const char* existing = request->getToken())
+		tokens->remember(existing);
+	else
+		request->setToken(tokens->issue().c_str());
+}
+
+
+size_t QuickDC::HubManager::searchOneHub(const char* url, QuickDC::Share::SearchRequest* request) {
+	if (!request || !url || !*url) return 0;
+
+	QuickDC::Hub* hub = getHubByUrl(url);
+
+	/* sendSearchRequest() would report this to the user as an error. */
+	if (!hub || !hub->session || !hub->session->isLoggedIn()) return 0;
+
+	rememberSearchToken(request);
+	hub->sendSearchRequest(request);
+	return 1;
+}
+
+
 size_t QuickDC::HubManager::searchAllHubs(QuickDC::Share::SearchRequest* request) {
 	if (!request) return 0;
 
-	/*
-	 * Every search goes out naming itself, and what it names is remembered.
-	 *
-	 * A datagram's source address is whatever its sender wrote, so a reply can only
-	 * be told from a stranger by what it answers. The queue draws its own token for
-	 * a source search, so one may be here already - it is remembered rather than
-	 * replaced, since it is the one the reply will quote.
-	 *
-	 * One token for all the hubs: the same search is being asked in several places,
-	 * and a reply from any of them answers it.
-	 */
-	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
-	if (tokens)
-	{
-		if (const char* existing = request->getToken())
-			tokens->remember(existing);
-		else
-			request->setToken(tokens->issue().c_str());
-	}
+	rememberSearchToken(request);
 
 	size_t sent = 0;
 	for (size_t i = 0; i < hubs.size(); i++)

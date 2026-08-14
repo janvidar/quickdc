@@ -29,6 +29,7 @@
 #include "network/adc/adcudp.h"
 #include "network/adc/parser.h"
 #include "network/searchtokens.h"
+#include "network/downloadqueue.h"
 
 #include "fakegateway.h"
 #include "network/adc/adccommon.h"
@@ -68,6 +69,7 @@ static std::string session_file;
 
 /* And its chat transcripts. */
 static std::string chat_dir;
+static std::string queue_file;
 
 static std::string readFile(const char* path)
 {
@@ -446,7 +448,15 @@ EXO_SETUP({
 	 */
 	chat_dir = scratch("chat");
 
-	core = new QuickDC::Core(config_file, session_file, std::string(), chat_dir);
+	/*
+	 * And with a download queue, which the source search cases need: a search for a
+	 * file is sent from the queue, and a queue is only built when it is given
+	 * somewhere to keep itself. Nothing else here reads it, and nothing drives it -
+	 * these cases pump the socket monitor rather than running the core.
+	 */
+	queue_file = scratch("queue.xml");
+
+	core = new QuickDC::Core(config_file, session_file, queue_file, chat_dir);
 	return 1;
 });
 
@@ -460,6 +470,7 @@ EXO_TEARDOWN({
 
 	Samurai::IO::File(config_file).remove();
 	Samurai::IO::File(session_file).remove();
+	Samurai::IO::File(queue_file).remove();
 
 	/*
 	 * And the transcripts. Emptied rather than removed by name, because every
@@ -3620,6 +3631,195 @@ EXO_TEST(hubsession_a_search_that_went_out_is_remembered,
 	const char* went = request.getToken();
 	EXO_ASSERT_NOT_NULL(went);
 	EXO_ASSERT(tokens->issued(went));
+	return 1;
+});
+
+/*
+ * A logged-in hub the manager can see, which is what a fan-out walks.
+ *
+ * Driven through Hub::connect() rather than by building the session directly, because
+ * the manager reads each hub's session and only connect() sets one - see the
+ * client-info cases above, which need the same thing.
+ */
+class ManagedHub
+{
+	public:
+		FakeHub fake;
+		Listener listener;
+		std::unique_ptr<Samurai::IO::Net::URL> url;
+		std::unique_ptr<QuickDC::Hub> ui;
+		bool ready = false;
+
+		ManagedHub()
+		{
+			if (!fake.listen()) return;
+
+			const std::string address =
+				"adc://127.0.0.1:" + std::to_string(fake.port());
+			url = std::make_unique<Samurai::IO::Net::URL>(address);
+			ui = std::make_unique<QuickDC::Hub>(&listener, url.get());
+
+			ui->connect();
+			if (!fake.accepted()) return;
+
+			std::string line;
+			if (!fake.nextLine(line)) return;
+
+			fake.send("ISUP ADBASE ADTIGR");
+			pump([] { return false; }, 60);
+			fake.send("ISID AAAA");
+			pump([] { return false; }, 60);
+
+			/* The INF echoed back is what being logged in means. */
+			if (fake.nextLine(line) && line.compare(0, 4, "BINF") == 0)
+			{
+				fake.send(line);
+				pump([] { return false; }, 60);
+			}
+
+			fake.drain();
+			fake.received.clear();
+
+			ready = true;
+		}
+
+		ManagedHub(const ManagedHub&) = delete;
+		ManagedHub& operator=(const ManagedHub&) = delete;
+
+		/** Whether anything carrying 'what' has reached the hub by now. */
+		bool sawWithin(const char* what, int timeout_ms = 400)
+		{
+			pump([&] {
+				fake.drain();
+				return fake.received.find(what) != std::string::npos;
+			}, timeout_ms);
+
+			fake.drain();
+			return fake.received.find(what) != std::string::npos;
+		}
+};
+
+/*
+ * A post is looked for on the hub whose board it is on, and on no other.
+ *
+ * The hash of a post is on one hub's board, where every subscriber can read it. Asking
+ * a second hub about it tells that operator which boards this client reads elsewhere,
+ * which is a disclosure nothing about the download needs - and it asks people who could
+ * not answer in any case, since a post is offered by hash alone and only by the readers
+ * of that board.
+ *
+ * Both halves are here because only the pair says anything: that a search does go out,
+ * and that the same search confined somewhere else goes nowhere.
+ */
+EXO_TEST(hubsession_a_post_is_looked_for_on_its_own_hub_and_no_other,
+{
+	ManagedHub hub;
+	if (!hub.fake.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(hub.ready);
+
+	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	EXO_ASSERT_NOT_NULL(queue);
+
+	const char* post = "AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A";
+
+	QuickDC::QueueFile* file = queue->add(scratch("post.txt").c_str(), post, 72);
+	EXO_ASSERT_NOT_NULL(file);
+
+	/* The canonical form the hub reports for itself, which is what is matched. */
+	const char* here = hub.ui->getUrl();
+	EXO_ASSERT_NOT_NULL(here);
+
+	file->searchOnlyOn(here);
+
+	if (!queue->requestSourceSearch(post))
+	{
+		queue->remove(file);
+		EXO_FAIL("a post confined to a hub this client is on was not looked for");
+	}
+
+	if (!hub.sawWithin(post))
+	{
+		queue->remove(file);
+		EXO_FAIL("a post confined to this hub was not looked for on it");
+	}
+
+	/* And confined to a hub this client is not on, it goes nowhere at all. */
+	file->searchOnlyOn("adc://192.0.2.9:411");
+
+	hub.fake.drain();
+	hub.fake.received.clear();
+
+	QuickDC::QueueManager::SourceSearchResult why =
+		QuickDC::QueueManager::SourceSearchSent;
+
+	const bool sent = queue->requestSourceSearch(post, &why);
+
+	pump([] { return false; }, 200);
+	hub.fake.drain();
+
+	const bool leaked = hub.fake.received.find(post) != std::string::npos;
+
+	queue->remove(file);
+
+	/* Refused for want of a hub to ask, rather than sent to whoever was listening. */
+	EXO_ASSERT(!sent);
+	EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchNotSent);
+
+	if (leaked) EXO_FAIL("a post was looked for on a hub that is not its board's");
+
+	return 1;
+});
+
+/*
+ * And a file somebody asked about out of turn is not asked about again by the rotation.
+ *
+ * The two paths bound themselves separately, which is the point: the rotation sends one
+ * search per interval for a queue nobody is watching, and the burst is what makes an
+ * urgent ask urgent. But spending the burst does not leave the file needing to be asked
+ * about again, and at start-up the rotation's interval has always elapsed - so the first
+ * file of every session was searched for twice within the same second.
+ */
+EXO_TEST(hubsession_the_rotation_does_not_repeat_a_search_just_asked_for,
+{
+	ManagedHub hub;
+	if (!hub.fake.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(hub.ready);
+
+	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	EXO_ASSERT_NOT_NULL(queue);
+
+	const char* post = "AAYFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A";
+
+	QuickDC::QueueFile* file = queue->add(scratch("again.txt").c_str(), post, 72);
+	EXO_ASSERT_NOT_NULL(file);
+
+	file->searchOnlyOn(hub.ui->getUrl());
+
+	if (!queue->requestSourceSearch(post) || !hub.sawWithin(post))
+	{
+		queue->remove(file);
+		EXO_FAIL("the search that is not to be repeated did not go out");
+	}
+
+	const size_t after_the_ask = hub.fake.received.size();
+
+	/*
+	 * The rotation's turn, driven through the same call the queue's own tick makes
+	 * rather than by reaching inside it. Its interval has elapsed - the queue has been
+	 * up for the whole run - so the only thing that can hold it back is the file
+	 * knowing it has just been searched for.
+	 */
+	queue->process();
+
+	pump([] { return false; }, 200);
+	hub.fake.drain();
+
+	const bool repeated = hub.fake.received.size() != after_the_ask;
+
+	queue->remove(file);
+
+	if (repeated) EXO_FAIL("the rotation repeated a search that had just gone out");
+
 	return 1;
 });
 

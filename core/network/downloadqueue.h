@@ -253,6 +253,41 @@ class QueueFile {
 		void setSourceActive(FileSource* source, bool active);
 		bool isSourceActive(FileSource* source) const;
 
+		/**
+		 * Ask only this hub about this file, rather than every hub we are on.
+		 *
+		 * For a file whose hash is only one hub's business because that is where it
+		 * was learned. A bulletin board post is the case: its hash is on that hub's
+		 * board, where every subscriber can read it, and asking elsewhere tells
+		 * another operator which boards this client reads - a disclosure the download
+		 * does not need. It also asks people who cannot answer, since a post is
+		 * offered by hash alone and only by the hub's own subscribers.
+		 *
+		 * Confining a file is a decision about where it may be looked for and not
+		 * about where it may be fetched from: a source named by any other route is
+		 * still a source.
+		 *
+		 * @param hubUrl canonical, as Hub::getUrl() returns it; 0 or empty lifts it.
+		 */
+		void searchOnlyOn(const char* hubUrl);
+
+		/** The one hub to ask, or 0 where every hub may be asked. */
+		const char* searchesOnlyOn() const;
+
+		/**
+		 * Whether a source search has gone out for this file within 'seconds'.
+		 *
+		 * The rotation asks this so that it does not repeat a file a caller has just
+		 * asked about out of turn: the two paths bound themselves separately - one by
+		 * an interval and one by a burst allowance - so without it the first file of
+		 * a session is searched for twice, once by whoever wanted it and once by the
+		 * rotation, whose interval has always elapsed at start-up.
+		 */
+		bool searchedWithin(time_t seconds);
+
+		/** Record that a source search has just gone out for this file. */
+		void noteSearched();
+
 	public:
 		inline ChunkMap& getChunks() { return chunks; }
 		inline const ChunkMap& getChunks() const { return chunks; }
@@ -294,6 +329,19 @@ class QueueFile {
 		std::string tth;                    // tth, empty if not known
 		uint64_t size;                      // size of file (0 if unknown)
 		Samurai::TimeStamp added;           // the time the file was queued
+
+		/* The one hub to ask about this file; empty asks every one. */
+		std::string only_hub;
+
+		/*
+		 * When a source search last went out for this file, and whether one ever
+		 * did. Both, because a file that has never been searched for has no
+		 * timestamp that means anything and must not be taken for one searched a
+		 * moment ago - which is what a fresh TimeStamp reads as.
+		 */
+		Samurai::TimeStamp searched;
+		bool ever_searched = false;
+
 		std::vector<FileSource*> sources;
 		std::set<FileSource*> active;       // sources with a transfer in flight
 		enum Priority priority;

@@ -74,6 +74,20 @@ class HubManager : public Samurai::TimerListener {
 		size_t searchAllHubs(Share::SearchRequest* request);
 
 		/**
+		 * Send a search to one hub and to no other.
+		 *
+		 * For something that is only any hub's business because it was learned there.
+		 * A bulletin board's posts are the case: the hash of a post is on that hub's
+		 * board, where every subscriber can read it, and asking a second hub about it
+		 * tells that hub's operator which boards this client reads elsewhere - which
+		 * is a disclosure nothing about the download requires.
+		 *
+		 * @param url canonical, as Hub::getUrl() returns it and a FileSource stores it.
+		 * @return 1 where it went out, and 0 for a hub this client is not logged in to.
+		 */
+		size_t searchOneHub(const char* url, Share::SearchRequest* request);
+
+		/**
 		 * Ask for our own status to be re-sent to every hub we are logged in to.
 		 *
 		 * For something a hub was told once and would otherwise keep believing -
@@ -139,6 +153,12 @@ class HubManager : public Samurai::TimerListener {
 
 	protected:
 		void EventTimeout(Samurai::Timer* timer) override;
+
+		/**
+		 * Give the search a token, and remember it, so a reply can be told from a
+		 * stranger by what it answers. Shared by both ways of sending one.
+		 */
+		void rememberSearchToken(Share::SearchRequest* request);
 
 		std::vector<Hub*> hubs;
 

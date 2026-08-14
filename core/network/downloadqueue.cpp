@@ -253,6 +253,30 @@ bool QuickDC::QueueFile::isSourceActive(FileSource* source) const
 	return (active.count(source) != 0);
 }
 
+void QuickDC::QueueFile::searchOnlyOn(const char* hubUrl)
+{
+	if (hubUrl) only_hub = hubUrl;
+	else only_hub.clear();
+}
+
+const char* QuickDC::QueueFile::searchesOnlyOn() const
+{
+	return only_hub.empty() ? 0 : only_hub.c_str();
+}
+
+bool QuickDC::QueueFile::searchedWithin(time_t seconds)
+{
+	if (!ever_searched) return false;
+
+	return searched.elapsed() < seconds;
+}
+
+void QuickDC::QueueFile::noteSearched()
+{
+	ever_searched = true;
+	searched.reset();
+}
+
 bool QuickDC::QueueFile::isComplete() const
 {
 	return chunks.isComplete();
@@ -784,10 +808,35 @@ enum QuickDC::QueueManager::SourceSearchResult QuickDC::QueueManager::sendSource
 	QuickDC::Share::SearchRequest request(QuickDC::Share::SearchRequest::SizeAny,
 		0, file->tth.c_str(), token.c_str(), 0);
 
-	if (!core->hubs->searchAllHubs(&request)) return SourceSearchNotSent;
+	/*
+	 * Where the file names a hub, that hub and no other; see
+	 * QueueFile::searchOnlyOn(). A hub this client is not logged in to answers
+	 * nothing, and is reported as not sent rather than as sent to nobody, so the
+	 * rotation keeps its turn and tries again once the hub is back.
+	 */
+	const size_t sent = file->searchesOnlyOn()
+		? core->hubs->searchOneHub(file->searchesOnlyOn(), &request)
+		: core->hubs->searchAllHubs(&request);
 
-	QDBG("Looking for more sources for '%s'; it has %d",
-		file->getLocalFilename(), static_cast<int>(file->countSources()));
+	if (!sent)
+	{
+		/* Said, because a file confined to a hub this client is not on is looked for
+		   nowhere at all, and silence would leave that looking like a peer that never
+		   answered. */
+		if (file->searchesOnlyOn())
+			QDBG("Not asking about '%s' yet: not logged in to %s",
+				file->getLocalFilename(), file->searchesOnlyOn());
+
+		return SourceSearchNotSent;
+	}
+
+	/* So that whichever of the two paths sent it, the other does not repeat it. */
+	file->noteSearched();
+
+	QDBG("Looking for more sources for '%s' on %s; it has %d",
+		file->getLocalFilename(),
+		file->searchesOnlyOn() ? file->searchesOnlyOn() : "every hub",
+		static_cast<int>(file->countSources()));
 	return SourceSearchSent;
 }
 
@@ -803,6 +852,15 @@ void QuickDC::QueueManager::searchForSources()
 	for (size_t n = 0; n < wanted.size(); n++)
 	{
 		size_t index = (searchRotation + n) % wanted.size();
+
+		/*
+		 * Not one somebody has just asked about out of turn. The burst spends its own
+		 * allowance and leaves this interval alone, which is what makes an urgent ask
+		 * urgent - but it does not make the file need asking about again, and at
+		 * start-up this interval has always elapsed, so without this the first file
+		 * of every session went out twice within the second.
+		 */
+		if (wanted[index]->searchedWithin(QUICKDC_SOURCE_SEARCH_INTERVAL)) continue;
 
 		const enum SourceSearchResult sent = sendSourceSearch(wanted[index]);
 
