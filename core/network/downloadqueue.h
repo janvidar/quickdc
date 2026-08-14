@@ -723,7 +723,18 @@ class QueueManager {
 			SourceSearchBadHash,      /* not a TTH root at all */
 			SourceSearchNotQueued,    /* nothing is queued under that hash */
 			SourceSearchRateLimited,  /* asked for too often; try again shortly */
-			SourceSearchNotSent       /* nowhere to send it; no hub is logged in */
+			SourceSearchNotSent,      /* nowhere to send it; no hub is logged in */
+
+			/*
+			 * This file names one hub - see QueueFile::searchOnlyOn() - and it is not
+			 * one we are logged in to.
+			 *
+			 * Apart from NotSent because the two are not the same condition and the
+			 * rotation must not treat them alike: nothing can be sent anywhere is a
+			 * reason to stop the pass, while this one file having nowhere to go is a
+			 * reason to move on to the next.
+			 */
+			SourceSearchHubAbsent
 		};
 
 		/**

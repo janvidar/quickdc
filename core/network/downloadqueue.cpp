@@ -820,12 +820,19 @@ enum QuickDC::QueueManager::SourceSearchResult QuickDC::QueueManager::sendSource
 
 	if (!sent)
 	{
-		/* Said, because a file confined to a hub this client is not on is looked for
-		   nowhere at all, and silence would leave that looking like a peer that never
-		   answered. */
+		/*
+		 * Said, because a file confined to a hub this client is not on is looked for
+		 * nowhere at all, and silence would leave that looking like a peer that never
+		 * answered. Answered apart from NotSent as well, so that one such file does not
+		 * stop the rotation asking about any of the others.
+		 */
 		if (file->searchesOnlyOn())
+		{
 			QDBG("Not asking about '%s' yet: not logged in to %s",
 				file->getLocalFilename(), file->searchesOnlyOn());
+
+			return SourceSearchHubAbsent;
+		}
 
 		return SourceSearchNotSent;
 	}
@@ -858,16 +865,22 @@ void QuickDC::QueueManager::searchForSources()
 		 * allowance and leaves this interval alone, which is what makes an urgent ask
 		 * urgent - but it does not make the file need asking about again, and at
 		 * start-up this interval has always elapsed, so without this the first file
-		 * of every session went out twice within the second.
+		 * of every session is searched for twice within the second.
 		 */
 		if (wanted[index]->searchedWithin(QUICKDC_SOURCE_SEARCH_INTERVAL)) continue;
 
 		const enum SourceSearchResult sent = sendSourceSearch(wanted[index]);
 
-		/* Nowhere to send it yet; retry rather than lose the interval. */
+		/*
+		 * Nowhere to send anything yet; retry rather than lose the interval. Only for
+		 * no hub at all: a file whose own hub is absent answers HubAbsent instead and
+		 * falls to the next line, because stopping the pass for it would leave one such
+		 * file - a post from a hub the user has left - holding up the source search for
+		 * every other download in the queue, on every tick, for as long as it is queued.
+		 */
 		if (sent == SourceSearchNotSent) return;
 
-		/* Nothing to search by, so it is not this file's turn after all. */
+		/* Nothing to search by, or nowhere for this one file; not its turn after all. */
 		if (sent != SourceSearchSent) continue;
 
 		searchRotation = index + 1;

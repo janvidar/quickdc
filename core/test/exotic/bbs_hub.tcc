@@ -989,13 +989,31 @@ EXO_TEST(bbs_hub_a_post_without_the_permission_for_it_is_refused,
 	EXO_ASSERT(sta.find("FCBBP") != std::string::npos);
 	EXO_ASSERT(sta.find("TR" + tth) != std::string::npos);
 
-	/* A reply is allowed, so the refusal was about the permission and not the
-	   board. */
-	const std::string reply = makeTTH(9);
-	alice.send("HBBP TR" + reply + " SI100 BDannouncements PA" + tth + " SJA\\sreply");
+	/*
+	 * 125 is severity 1 and ADC_CODE_ACCESS_DENIED, which a board that does not exist
+	 * or that nobody may use answers with 171 and 170 instead - so the refusal above is
+	 * about this permission on this board and not about the board.
+	 *
+	 * And PA does not get round it. A post naming a parent this board does not hold is a
+	 * thread as far as this board is concerned - that is what BoardStore::add() makes of
+	 * it - so it needs the permission to start one. Decided from PA being present rather
+	 * than from PA resolving, a session with Reply and not StartThread may post at the top
+	 * of an announcements board by quoting any hash at all, and be charged at the reply
+	 * rate for doing it.
+	 */
+	const std::string orphan = makeTTH(9);
+	alice.send("HBBP TR" + orphan + " SI100 BDannouncements PA" + tth
+		+ " SJNot\\sa\\sreply");
 
+	std::string refused;
+	EXO_ASSERT(alice.waitFor("ISTA", refused));
+	EXO_ASSERT(refused.find("125") != std::string::npos);
+	EXO_ASSERT(refused.find("FCBBP") != std::string::npos);
+	EXO_ASSERT(refused.find("TR" + orphan) != std::string::npos);
+
+	/* And it is not on the board, which is the half a status code cannot show. */
 	std::string line;
-	EXO_ASSERT(alice.waitForLine({"IBBL", "TR" + reply}, line));
+	EXO_ASSERT(!alice.sawLine({"IBBL", "TR" + orphan}));
 	return 1;
 });
 

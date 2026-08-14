@@ -178,8 +178,18 @@ QuickDC::PostStore::PostStore(const std::string& directory_, Share::Manager* sha
  * would be exactly the one release() exists to avoid, at the one moment a transfer
  * is most likely to still be running. A share manager that outlives this goes on
  * serving the documents from the files, which are still there and still correct.
+ *
+ * What is taken back is this store's own address. serve() hands it to the share
+ * manager as the listener for a hash job, the manager holds that pointer until the
+ * job finishes, and hashing happens on another thread - so a store destroyed while
+ * one is outstanding is a store the manager is about to report a hash to. Every
+ * other listener of a shorter life than the manager does the same; see
+ * Share::Manager::forgetListener().
  */
-QuickDC::PostStore::~PostStore() = default;
+QuickDC::PostStore::~PostStore()
+{
+	if (shares) shares->forgetListener(this);
+}
 
 bool QuickDC::PostStore::isUsable() const
 {

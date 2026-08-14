@@ -258,8 +258,8 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	 *
 	 * Made rather than left out: without one, nothing here can hash, so attaching a
 	 * file fails with "there is no hash manager" - and a caller waiting to be told the
-	 * hash of what it just wrote waits for ever. That is a real path through this core
-	 * that could not be exercised at all while this was null.
+	 * hash of what it just wrote waits for ever. That is a real path through this core,
+	 * and it is what this is made for rather than left null.
 	 */
 	hash = new QuickDC::Hash::Manager(hashCacheBeside(config_file).c_str());
 	shares = new QuickDC::Share::Manager(config, hash);

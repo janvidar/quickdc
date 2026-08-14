@@ -113,6 +113,14 @@ class PostStore : public Share::AttachmentListener {
 		 */
 		PostStore(const std::string& directory, Share::Manager* shares);
 
+		/**
+		 * Withdraws this store as a listener, and detaches nothing.
+		 *
+		 * The share manager holds a listener's address until the hash job it was given
+		 * for finishes, and hashing is not done on this thread, so a store that went
+		 * away with one outstanding would be reported to at an address that is no
+		 * longer a store.
+		 */
 		~PostStore() override;
 
 		PostStore(const PostStore&) = delete;

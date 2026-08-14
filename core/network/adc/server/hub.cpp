@@ -1151,20 +1151,20 @@ void ADC::LocalHub::Hub::onBBP(ADC::Command* cmd) {
 	}
 
 	/*
-	 * Permission 2 to start a thread, permission 4 to reply, and which of the two
-	 * is being asked for is decided by PA being there rather than by whether it
-	 * names anything the hub knows. A board where anyone may reply and only
-	 * operators may post is the natural shape of an announcements board.
+	 * That the session may put anything on this board at all, which is asked here so
+	 * that a board it may not post to is refused before anything else about the post
+	 * is examined - a board nobody may post to answers the same way as one that is
+	 * not there, and permissionsFor() returns 0 for both.
+	 *
+	 * Which of the two permissions is actually needed cannot be decided yet; see
+	 * below, after the parent has been resolved.
 	 */
-	const bool thread = parent.empty();
-	const uint64_t needed = thread ? static_cast<uint64_t>(QuickDC::StartThread)
-	                               : static_cast<uint64_t>(QuickDC::Reply);
+	const uint64_t either = static_cast<uint64_t>(QuickDC::StartThread)
+		| static_cast<uint64_t>(QuickDC::Reply);
 
-	if (!(permissions & needed)) {
+	if (!(permissions & either)) {
 		refuseBulletin(user, ADC_CODE_ACCESS_DENIED,
-			thread ? "You may not start a thread on that board"
-			       : "You may not reply on that board",
-			"BBP", board, tth);
+			"You may not post on that board", "BBP", board, tth);
 		return;
 	}
 
@@ -1206,6 +1206,34 @@ void ADC::LocalHub::Hub::onBBP(ADC::Command* cmd) {
 	if (!parent.empty() && !ADC::isValidTTH(parent)) {
 		refuseBulletin(user, ADC_CODE_PROTOCOL_FLAG_REQUIRED, "Not a tiger tree hash",
 			"BBP", board, tth, "FB", "PA");
+		return;
+	}
+
+	/*
+	 * Whether this post starts a thread, decided by what will become of it rather than
+	 * by what arrived. PA naming a post this board holds makes it a reply; PA naming
+	 * anything else - a post on another board, one on another hub, one already
+	 * withdrawn, or a hash that was never a post at all - leaves it a thread of its
+	 * own, because there is no thread here to attach it to. That is what BoardStore::add()
+	 * does with it, and this has to agree with that or the two answer different
+	 * questions. Deciding permission from PA being present, while threading is decided
+	 * from PA resolving, lets a session with Reply and not StartThread start a thread on
+	 * an announcements board by quoting any hash at all as its parent - and be charged at
+	 * the reply rate for doing it.
+	 */
+	const QuickDC::BoardEntry* attaches = parent.empty()
+		? 0 : boards->findEntry(named, parent);
+
+	const bool thread = !attaches || attaches->removed || attaches->thread.empty();
+
+	const uint64_t needed = thread ? static_cast<uint64_t>(QuickDC::StartThread)
+	                               : static_cast<uint64_t>(QuickDC::Reply);
+
+	if (!(permissions & needed)) {
+		refuseBulletin(user, ADC_CODE_ACCESS_DENIED,
+			thread ? "You may not start a thread on that board"
+			       : "You may not reply on that board",
+			"BBP", board, tth);
 		return;
 	}
 

@@ -3761,9 +3761,15 @@ EXO_TEST(hubsession_a_post_is_looked_for_on_its_own_hub_and_no_other,
 
 	queue->remove(file);
 
-	/* Refused for want of a hub to ask, rather than sent to whoever was listening. */
+	/*
+	 * Refused for want of a hub to ask, rather than sent to whoever was listening - and
+	 * refused with its own answer rather than with NotSent, which means no hub at all is
+	 * logged in and is the one answer that stops the rotation's pass. One file confined
+	 * to a hub the user has left must not hold up the source search for every other
+	 * download in the queue.
+	 */
 	EXO_ASSERT(!sent);
-	EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchNotSent);
+	EXO_ASSERT(why == QuickDC::QueueManager::SourceSearchHubAbsent);
 
 	if (leaked) EXO_FAIL("a post was looked for on a hub that is not its board's");
 
@@ -3819,6 +3825,62 @@ EXO_TEST(hubsession_the_rotation_does_not_repeat_a_search_just_asked_for,
 	queue->remove(file);
 
 	if (repeated) EXO_FAIL("the rotation repeated a search that had just gone out");
+
+	return 1;
+});
+
+/*
+ * A file confined to a hub that is not here does not stop the rotation asking about the
+ * others.
+ *
+ * Two answers that used to be one. "No hub is logged in" is a reason to stop the pass,
+ * because nothing could go anywhere; "this file's own hub is not here" is a reason to
+ * move on to the next file. Confining a file makes the second answer possible, and given
+ * as the first it lets one post from a hub the user has left hold up the source search for
+ * every other download in the queue - on every tick, since the pass returns without
+ * resetting its interval.
+ */
+EXO_TEST(hubsession_a_file_whose_hub_is_gone_does_not_stop_the_others_being_searched_for,
+{
+	ManagedHub hub;
+	if (!hub.fake.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(hub.ready);
+
+	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	EXO_ASSERT_NOT_NULL(queue);
+
+	/* One confined to a hub this client is not on, and one ordinary download. */
+	const char* stranded = "AAZFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A";
+	const char* ordinary = "AA2FLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A";
+
+	QuickDC::QueueFile* lost = queue->add(scratch("lost.txt").c_str(), stranded, 72);
+	QuickDC::QueueFile* other = queue->add(scratch("other.txt").c_str(), ordinary, 72);
+	EXO_ASSERT_NOT_NULL(lost);
+	EXO_ASSERT_NOT_NULL(other);
+
+	lost->searchOnlyOn("adc://192.0.2.9:411");
+
+	hub.fake.drain();
+	hub.fake.received.clear();
+
+	/*
+	 * The rotation, taken from every starting point in turn: which file it lands on
+	 * first is whatever the rotation happens to hold, and the stranded one must not stop
+	 * the pass from whichever position it is reached.
+	 */
+	bool asked = false;
+
+	for (int turn = 0; turn < 4 && !asked; turn++)
+	{
+		queue->process();
+		asked = hub.sawWithin(ordinary, 200);
+	}
+
+	queue->remove(lost);
+	queue->remove(other);
+
+	if (!asked)
+		EXO_FAIL("a file confined to an absent hub stopped the others being searched for");
 
 	return 1;
 });

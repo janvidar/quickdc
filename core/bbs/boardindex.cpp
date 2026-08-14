@@ -68,9 +68,8 @@ std::string key_of(const std::string& hubUrl, const std::string& board)
  * of a board on another hub" from a search of the whole space into a short one
  * inside a legal board name.
  *
- * The key record in each file stays exactly where it is, and it is still worth its
- * one line - but as depth behind the digest rather than as the thing holding the
- * property up.
+ * The key record in each file is worth its one line as depth behind the digest, rather
+ * than as the thing holding the property up.
  *
  * A file some other naming put on disk is not found under this one, and nothing
  * migrates it: an index is a cache that a subscription refills, and the read state
