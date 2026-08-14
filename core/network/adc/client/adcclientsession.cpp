@@ -1115,7 +1115,20 @@ void ADC::ClientSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO
 	QERR("Peer connection failed with socket error %d: %s",
 		static_cast<int>(error), msg ? msg : "no detail given");
 
-	if (hubsession)
+	/*
+	 * And told at all only while the connection is still being made. The code means
+	 * that a direct connection could not be established, so a connection that got as
+	 * far as both sides naming themselves has nothing to report under it however it
+	 * ends afterwards - a peer that closes once it has what it asked for ends the
+	 * stream, and on some systems ends it with a reset, which arrives here as an
+	 * error like any other.
+	 *
+	 * Sending it anyway is not merely noise. It reaches the peer through the hub as a
+	 * fatal status against the token of a transfer that has already finished, which
+	 * says the download it just completed failed; and the peer is the one party that
+	 * already knows what became of its own end of the connection.
+	 */
+	if (hubsession && !isEstablished())
 		hubsession->sendPeerError(remote_sid.empty() ? 0 : remote_sid.c_str(),
 			adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_CONNECT_ERROR).c_str(),
 			ADC_STR_CONNECTION_FAILED, token.empty() ? 0 : token.c_str(), ADC_COMPLIANCE);

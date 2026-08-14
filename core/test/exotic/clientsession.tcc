@@ -662,6 +662,59 @@ EXO_TEST(clientsession_a_socket_error_is_not_repeated_to_the_peer,
 	return 1;
 });
 
+/*
+ * And a connection that was made and then ended is not reported as one that could
+ * not be made.
+ *
+ * The code above says a direct connection failed, which is a thing that can only be
+ * true while one is being established. Once both peers have named themselves the
+ * connection exists, and how it ends afterwards is not news the other end needs from
+ * us: a peer that closes as soon as it has what it asked for ends the stream, and on
+ * some systems ends it with a reset that arrives here as a read error like any other.
+ *
+ * Sent anyway it is worse than noise. It reaches the peer through the hub as a fatal
+ * status against the token of the transfer that has just finished - which tells it the
+ * download it completed failed - and every successful upload ended with one.
+ */
+EXO_TEST(clientsession_an_error_after_the_connection_was_made_is_not_reported_to_the_peer,
+{
+	Peer peer;
+	if (!peer.connect()) EXO_SKIP(CANNOT_CONNECT);
+
+	/* What the hub granted when it asked this peer to connect; the CINF spends it. */
+	QuickDC::Core::getInstance()->securityManager->grant(
+		new QuickDC::Clearance(QuickDC::Clearance::AuthorizedUser,
+			QuickDC::Clearance::ADC, 0, PEER_CID, "job9"));
+
+	ErrorableSession session(peer.theirs, 0, "job9", 0, false, 0);
+
+	RecordingHubSession hub;
+	session.setHubSession(&hub);
+
+	/* The peer speaks first on an inbound connection, and names itself second. */
+	peer.send("CSUP ADBASE ADTIGR");
+
+	std::string line;
+	EXO_ASSERT(peer.expect("CSUP ", line));
+	EXO_ASSERT(peer.expect("CINF ", line));
+
+	peer.send("CINF ID" PEER_CID);
+	pump([&] { return session.isEstablished(); });
+
+	EXO_ASSERT(session.isEstablished());
+
+	/* The peer has gone, which on this host is a read error and not an end of file. */
+	session.EventError(peer.theirs.get(),
+		Samurai::IO::Net::SocketError::SocketRead, strerror(EPROTO));
+
+	EXO_ASSERT(hub.errors == 0);
+
+	QuickDC::Core::getInstance()->securityManager->revoke(
+		QuickDC::Clearance::ADC, 0, PEER_CID, "job9");
+
+	return 1;
+});
+
 /* The peer hanging up is noticed rather than spun on. */
 EXO_TEST(clientsession_the_peer_hanging_up_is_survived,
 {
