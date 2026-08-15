@@ -655,6 +655,14 @@ EXO_TEST(bbs_hub_a_session_that_did_not_offer_the_extension_is_told_nothing,
 	EXO_ASSERT(c.connect(s.port()));
 	EXO_ASSERT(c.login(makeIdentity(2), "reader", false));
 
+	/*
+	 * Read to the end before deciding nothing arrived. login() returns on the session's
+	 * own INF echo and sawLine() searches only what has been read, so without this the
+	 * descriptors would still be on the socket and their absence from the log would say
+	 * nothing about whether the hub sent them.
+	 */
+	c.settle();
+
 	EXO_ASSERT(!c.sawLine({"IBBD"}));
 	return 1;
 });

@@ -534,12 +534,26 @@ EXO_TEST(adchub_a_user_advertises_at_most_max_user_features,
 	EXO_ASSERT(user->hasFeature("BZIP"));
 	EXO_ASSERT(!user->hasFeature("SEGA"));
 
-	/* And the field as an attacker writes it. */
+	/*
+	 * And the field as an attacker writes it. Distinct names, because the ceiling is on
+	 * how many are kept and a flood of one repeated name is one feature however long it
+	 * is - a set drops the rest and the bound is never approached.
+	 */
 	user->clearFeatures();
 	std::string many;
-	while (many.size() < 128 * 1024) many += "AA1,";
+
+	for (int n = 0; n < static_cast<int>(ADC::LocalHub::MAX_USER_FEATURES) * 4; n++)
+	{
+		many += static_cast<char>('A' + (n / 676) % 26);
+		many += static_cast<char>('A' + (n / 26) % 26);
+		many += static_cast<char>('A' + (n % 26));
+		many += "Z,";
+	}
+
 	user->addFeatures(many.c_str());
-	EXO_ASSERT(user->countFeatures() <= ADC::LocalHub::MAX_USER_FEATURES);
+
+	/* Exactly the ceiling: more were offered than it holds, and it held its number. */
+	EXO_ASSERT_EQ_UINT(user->countFeatures(), ADC::LocalHub::MAX_USER_FEATURES);
 	return 1;
 });
 

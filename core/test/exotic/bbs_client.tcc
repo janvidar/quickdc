@@ -1153,9 +1153,16 @@ EXO_TEST(bbs_client_a_missing_entry_is_a_board_refusal,
 	EXO_ASSERT(s.listener.refusals[0].tth == TTH_A);
 	EXO_ASSERT(s.listener.refusals[0].board.empty());
 
-	/* And it is not reported as a system error as well, which is where an
-	   unrecognised status would have ended up. */
-	EXO_ASSERT(s.listener.errors.empty());
+	/*
+	 * And it is reported once and as one thing. A refusal that reached the interface
+	 * twice, or that also arrived as a board this client does not have, would be the
+	 * same status understood two ways - which is what the matching by hash exists to
+	 * stop. Not checked against the system errors: onStatus() has no path to one, so
+	 * an empty collector there is empty whatever this status did.
+	 */
+	EXO_ASSERT(s.listener.refusals.size() == 1);
+	EXO_ASSERT(s.listener.boards.empty());
+	EXO_ASSERT(s.listener.entries.empty());
 	return 1;
 });
 

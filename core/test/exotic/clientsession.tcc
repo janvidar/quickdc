@@ -429,7 +429,17 @@ EXO_TEST(clientsession_a_file_asked_for_before_cinf_is_not_sent,
 	pump([] { return false; }, 200);
 
 	s.peer.drain();
+
+	/*
+	 * Not answered at all, which is what refusing before the request is looked at
+	 * means - and the only thing that can be checked here. This fixture shares
+	 * nothing, so a request that got past the guard would find no file and be
+	 * refused with a CSTA; a check for the absence of a CSND alone would hold
+	 * whether the guard was there or not. clientsession_a_file_we_do_not_have_is_refused
+	 * is the case where that CSTA does arrive.
+	 */
 	EXO_ASSERT(s.peer.received.find("CSND") == std::string::npos);
+	EXO_ASSERT(s.peer.received.find("CSTA") == std::string::npos);
 	return 1;
 });
 
@@ -449,7 +459,10 @@ EXO_TEST(clientsession_a_malformed_cid_does_not_identify_a_peer,
 	pump([] { return false; }, 200);
 
 	s.peer.drain();
+
+	/* Neither answer, for the reason the case above gives. */
 	EXO_ASSERT(s.peer.received.find("CSND") == std::string::npos);
+	EXO_ASSERT(s.peer.received.find("CSTA") == std::string::npos);
 	return 1;
 });
 
@@ -554,7 +567,10 @@ EXO_TEST(clientsession_a_type_that_is_not_four_characters_is_refused,
 	pump([] { return false; }, 200);
 
 	s.peer.drain();
+
+	/* Neither answer, for the reason the two cases above give. */
 	EXO_ASSERT(s.peer.received.find("CSND") == std::string::npos);
+	EXO_ASSERT(s.peer.received.find("CSTA") == std::string::npos);
 	return 1;
 });
 
