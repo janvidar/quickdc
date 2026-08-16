@@ -95,8 +95,15 @@ find_package(OpenSSL REQUIRED)
 set(SAMURAI_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../samurai" CACHE PATH
     "Where samurai is checked out, when it is not provided or installed")
 
+if(TARGET samurai::samurai_static)
+    # Somebody else added it, and the summary should say so rather than claim
+    # this build chose the flavour it is linking.
+    set(QUICKDC_SAMURAI_ORIGIN "provided by the enclosing build")
+endif()
+
 if(NOT TARGET samurai::samurai_static)
     if(EXISTS ${SAMURAI_SOURCE_DIR}/CMakeLists.txt)
+        set(QUICKDC_SAMURAI_ORIGIN "static, from ${SAMURAI_SOURCE_DIR}")
         # QuickDC links samurai statically, so ask for the static flavour only.
         # FORCE because these are cache variables owned by the samurai
         # subproject, and they are set here only because this is the build that
@@ -130,6 +137,7 @@ if(NOT TARGET samurai::samurai_static)
         add_subdirectory(${SAMURAI_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/samurai)
     else()
         find_package(samurai REQUIRED)
+        set(QUICKDC_SAMURAI_ORIGIN "installed package ${samurai_DIR}")
     endif()
 endif()
 
@@ -297,7 +305,7 @@ message(STATUS "  Build type      : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build id        : ${QUICKDC_BUILD_ID}")
 message(STATUS "  Target          : ${QUICKDC_SYSTEM}/${QUICKDC_CPU}")
 message(STATUS "  Loopback auth   : ${QUICKDC_ALLOW_LOOPBACK_AUTH}")
-message(STATUS "  Samurai         : static (in-tree submodule)")
+message(STATUS "  Samurai         : ${QUICKDC_SAMURAI_ORIGIN}")
 message(STATUS "  TLS             : mandatory (backend reported above)")
 if(QUICKDC_SANITIZE)
     # Samurai reports SAMURAI_SANITIZE_LEAKS just above, but that only reaches
