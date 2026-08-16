@@ -270,6 +270,15 @@ namespace LocalHub {
 			void expire(User* user, const char* code, const char* reason);
 
 			/**
+			* Retire every connection, telling each one why.
+			*
+			* What turning the hub off means for the people already on it. The
+			* refusal in the login exchange covers everybody arriving afterwards,
+			* and covers nobody who arrived before.
+			*/
+			void closeEveryConnection();
+
+			/**
 			* Send a command this hub composed to one session, and let go of it.
 			*
 			* A send queue takes a reference of its own when it accepts a command,

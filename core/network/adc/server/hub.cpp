@@ -233,9 +233,23 @@ void ADC::LocalHub::Hub::readConfiguration() {
 	for (const std::string& board : boards->names())
 		if (std::find(before.begin(), before.end(), board) == before.end())
 			announceBoard(board);
+}
 
-	if (!enabled) {
-		// FIXME: Kill all connections
+void ADC::LocalHub::Hub::closeEveryConnection() {
+	/*
+	 * Copied, for the reason the sweep copies it: expire() may broadcast, and a
+	 * deferred userAdd() processed in the meantime appends to 'users'.
+	 */
+	const std::vector<User*> snapshot(users);
+
+	for (User* user : snapshot) {
+		/*
+		 * One already on its way out is left to the sweep, which is what ends its
+		 * wait. Expiring it again would move a state that has already moved.
+		 */
+		if (user->state == State_WaitDisconnect) continue;
+
+		expire(user, "212", "This hub is disabled");
 	}
 }
 
@@ -1866,14 +1880,15 @@ bool ADC::LocalHub::Hub::EventMessage(const Samurai::Message* msg) {
 	const bool ours = (id == QuickDC::MsgHubUserRemoveUser
 	                || id == QuickDC::MsgHubUserAppendUser
 	                || id == QuickDC::MsgHubUserDelayedQuit
-	                || id == QuickDC::MsgHubUserDisconnect);
+	                || id == QuickDC::MsgHubUserDisconnect
+	                || id == QuickDC::MsgConfigUpdated);
 
 	if (!ours) return false;
 
 	/*
 	 * Put back rather than dropped.
 	 *
-	 * All four of these mutate the tables a broadcast walks, which is why they
+	 * All five of these mutate the tables a broadcast walks, which is why they
 	 * are not run while one is in progress. Returning without running them lost
 	 * them: the ticket stays in 'pending' and nothing else ever posts it again, so
 	 * a user queued for removal was never removed - and one queued for
@@ -1886,6 +1901,22 @@ bool ADC::LocalHub::Hub::EventMessage(const Samurai::Message* msg) {
 	if (processing) {
 		QHUB("A hub message arrived during a broadcast; deferring it to the next pass");
 		Samurai::postMessage(id, msg->getData(), msg->getArg1(), msg->getArg2());
+		return true;
+	}
+
+	/*
+	 * The configuration was rewritten while the hub was running, so what it says
+	 * now is read again rather than waiting for the next start - the switch that
+	 * turns this hub on is one somebody expects to act on the hub in front of them.
+	 *
+	 * Turning it off has to take the users with it. A disabled hub refuses a login
+	 * and says so, but that is only ever asked at the login exchange, so without
+	 * this everybody already on it would stay on it for as long as the process ran.
+	 */
+	if (id == QuickDC::MsgConfigUpdated)
+	{
+		readConfiguration();
+		if (!enabled) closeEveryConnection();
 		return true;
 	}
 
