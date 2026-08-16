@@ -15,19 +15,20 @@
 #
 
 option(QUICKDC_REQUIRE_AUTOTESTS
-    "Fail the configure if the vendored 'exotic' is missing, rather than skipping the suite" OFF)
+    "Fail the configure if 'exotic' is missing, rather than skipping the suite" OFF)
 
 if(NOT COMMAND exotic_add_tests)
     if(QUICKDC_REQUIRE_AUTOTESTS)
         message(FATAL_ERROR
-            "QuickDC: the vendored 'exotic' is not available and "
-            "QUICKDC_REQUIRE_AUTOTESTS is ON. Run "
-            "'git submodule update --init --recursive'.")
+            "QuickDC: 'exotic' is not available and QUICKDC_REQUIRE_AUTOTESTS is "
+            "ON. Clone https://github.com/janvidar/exotic beside this checkout, "
+            "or set EXOTIC_SOURCE_DIR.")
     endif()
     message(WARNING
-        "QuickDC: the vendored 'exotic' is not available - SKIPPING the autotest "
-        "suite, and ctest will still report success. Run "
-        "'git submodule update --init --recursive' to enable it.")
+        "QuickDC: 'exotic' is not available - SKIPPING the autotest suite, and "
+        "ctest will still report success. Clone "
+        "https://github.com/janvidar/exotic beside this checkout, or set "
+        "EXOTIC_SOURCE_DIR, to enable it.")
     return()
 endif()
 

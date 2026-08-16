@@ -5,14 +5,17 @@
 ## its own, so one file serves both remotes.
 ##
 ## Every job configures with QUICKDC_REQUIRE_AUTOTESTS=ON. Without it an absent
-## exotic submodule drops the whole autotest suite and ctest still reports every
-## remaining test green, so a run that skipped it looks exactly like one that did
-## not - see core/test/autotests/CMakeLists.txt.
+## exotic drops the whole autotest suite and ctest still reports every remaining
+## test green, so a run that skipped it looks exactly like one that did not - see
+## core/test/autotests/CMakeLists.txt.
 ##
-## exotic itself needs no step of its own: it is a submodule inside samurai, the
-## top level adds it to the build, and MODE AUTO compiles the .tcc files against
-## the library rather than running the generator. The checkouts below are
-## recursive for that reason.
+## QuickDC carries neither of its dependencies, so every job checks out three
+## repositories side by side and configures the middle one. That is the same
+## layout a developer gets, and the same one a superproject building all three
+## produces, so the lookups being exercised here are the ones that run anywhere
+## else. samurai is taken at its tip rather than pinned: the pin lives in the
+## superproject that ships them together, and a samurai change that breaks the
+## library QuickDC builds against should be visible here.
 #
 
 name: CI
@@ -41,12 +44,20 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     steps:
-      # samurai is a submodule, and it carries exotic as one of its own, so the
-      # checkout has to be recursive or the autotest suite is skipped.
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          path: quickdc
           fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/samurai
+          path: samurai
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/exotic
+          path: exotic
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -66,7 +77,7 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then
             export OPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
           fi
-          cmake -S . -B build -G Ninja -DQUICKDC_REQUIRE_AUTOTESTS=ON
+          cmake -S quickdc -B build -G Ninja -DQUICKDC_REQUIRE_AUTOTESTS=ON
 
       # The tree is warning-free in every configuration, and the curated -Werror
       # set deliberately does not cover everything - so the way to keep it that
@@ -103,8 +114,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          path: quickdc
           fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/samurai
+          path: samurai
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/exotic
+          path: exotic
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -122,7 +143,7 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then
             export OPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
           fi
-          cmake -S . -B build-asan -G Ninja \
+          cmake -S quickdc -B build-asan -G Ninja \
                 -DQUICKDC_SANITIZE=ON \
                 -DQUICKDC_REQUIRE_AUTOTESTS=ON
 
@@ -152,8 +173,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          path: quickdc
           fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/samurai
+          path: samurai
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/exotic
+          path: exotic
 
       - name: Install dependencies
         run: |
@@ -164,7 +195,7 @@ jobs:
       - name: Configure, build and test with tracing on
         run: |
           set -o pipefail
-          cmake -S . -B build-trace -G Ninja \
+          cmake -S quickdc -B build-trace -G Ninja \
                 -DCMAKE_BUILD_TYPE=Debug \
                 -DQUICKDC_TRACE=ON \
                 -DQUICKDC_REQUIRE_AUTOTESTS=ON
@@ -175,32 +206,6 @@ jobs:
             exit 1
           fi
           ctest --test-dir build-trace --output-on-failure
-
-  # ---------------------------------------------------------------------------
-  # samurai's own suite, which a QuickDC build never runs: the top level sets
-  # SAMURAI_BUILD_TESTS OFF. The submodule is pinned, so a bump that breaks the
-  # library it supplies should be visible here rather than in QuickDC's tests.
-  # ---------------------------------------------------------------------------
-  samurai:
-    name: samurai suite
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build zlib1g-dev libbz2-dev libssl-dev
-
-      - name: Configure, build and test samurai standalone
-        run: |
-          cmake -S samurai -B build-samurai -G Ninja
-          cmake --build build-samurai
-          ctest --test-dir build-samurai --output-on-failure
 
   # ---------------------------------------------------------------------------
   # Non-blocking: reports what LeakSanitizer finds without failing the run.
@@ -216,8 +221,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          path: quickdc
           fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/samurai
+          path: samurai
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/exotic
+          path: exotic
 
       - name: Install dependencies
         run: |
@@ -227,7 +242,7 @@ jobs:
 
       - name: Configure and build
         run: |
-          cmake -S . -B build-leaks -G Ninja \
+          cmake -S quickdc -B build-leaks -G Ninja \
                 -DQUICKDC_SANITIZE=ON \
                 -DQUICKDC_REQUIRE_AUTOTESTS=ON
           cmake --build build-leaks

@@ -83,39 +83,78 @@ include(QuickDCHardening)
 find_package(OpenSSL REQUIRED)
 
 # ---------------------------------------------------------------------------
-# Samurai submodule
+# Samurai
+#
+# Not carried here. A superproject that builds QuickDC alongside its own copy of
+# samurai has already added it by the time this runs, and adding a second copy
+# would collide on the target names rather than produce a second library - so
+# what is already there is used, and only a standalone build goes looking.
 # ---------------------------------------------------------------------------
 
-if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/samurai/CMakeLists.txt)
-    message(FATAL_ERROR
-        "The samurai submodule is not checked out. Run:\n"
-        "    git submodule update --init --recursive")
+# Where a standalone build looks: beside this checkout.
+set(SAMURAI_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../samurai" CACHE PATH
+    "Where samurai is checked out, when it is not provided or installed")
+
+if(NOT TARGET samurai::samurai_static)
+    if(EXISTS ${SAMURAI_SOURCE_DIR}/CMakeLists.txt)
+        # QuickDC links samurai statically, so ask for the static flavour only.
+        # FORCE because these are cache variables owned by the samurai
+        # subproject, and they are set here only because this is the build that
+        # adds it - a build handed a samurai someone else configured is too late
+        # to ask for any of this, and checks instead. See below.
+        set(SAMURAI_BUILD_STATIC ON  CACHE BOOL "Build the samurai static library" FORCE)
+        set(SAMURAI_BUILD_SHARED OFF CACHE BOOL "Build the samurai shared library" FORCE)
+
+        # Samurai's own test and example programs are not part of a QuickDC
+        # build. Configure samurai standalone if you want them.
+        set(SAMURAI_BUILD_TESTS OFF CACHE BOOL "Build the samurai test programs" FORCE)
+
+        # Samurai owns the sanitizer flags and applies them PUBLIC to both the
+        # compile and the link line, so forwarding the request is all QuickDC has
+        # to do - its own targets inherit them by linking samurai. Has to be set
+        # before samurai is configured, since it is that project's cache
+        # variable. Unconditional, so that turning QUICKDC_SANITIZE back off also
+        # turns samurai's off.
+        set(SAMURAI_SANITIZE ${QUICKDC_SANITIZE} CACHE BOOL "Build samurai with sanitizers" FORCE)
+
+        # Samurai exports DEBUG PUBLIC, since dbg.h is one of its public headers,
+        # so its tracing has to be asked for on the same terms as QuickDC's -
+        # otherwise the QDBG macros in core/ resolve against a library that did
+        # not compile the sinks they call. Forwarded unconditionally, as
+        # SAMURAI_SANITIZE is, so that turning QUICKDC_TRACE back off turns
+        # samurai's off too.
+        set(SAMURAI_TRACE ${QUICKDC_TRACE} CACHE BOOL "Build samurai with tracing" FORCE)
+
+        # The binary directory is not optional for a source directory outside
+        # this one: CMake has nowhere to put it otherwise.
+        add_subdirectory(${SAMURAI_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/samurai)
+    else()
+        find_package(samurai REQUIRED)
+    endif()
 endif()
 
-# QuickDC links samurai statically, so ask for the static flavour only. FORCE
-# because these are cache variables owned by the samurai subproject.
-set(SAMURAI_BUILD_STATIC ON  CACHE BOOL "Build the samurai static library" FORCE)
-set(SAMURAI_BUILD_SHARED OFF CACHE BOOL "Build the samurai shared library" FORCE)
+# Whoever configured samurai, these two have to agree, and disagreeing is not a
+# thing the build can paper over from here.
+#
+# DEBUG and the sanitizer flags are both PUBLIC usage requirements of samurai:
+# the first decides whether dbg.h compiles the sinks that core/'s QDBG macros
+# call, and the second has to be on both sides of the link line or the
+# instrumented library and the uninstrumented caller disagree about what a
+# frame looks like. A mismatch is a link error at best and a silent
+# no-op at worst, so it is refused here where it can still be read.
+if(NOT "${SAMURAI_TRACE}" STREQUAL "${QUICKDC_TRACE}")
+    message(FATAL_ERROR
+        "SAMURAI_TRACE is '${SAMURAI_TRACE}' but QUICKDC_TRACE is "
+        "'${QUICKDC_TRACE}'. Samurai exports DEBUG as a PUBLIC definition, so "
+        "the two have to be asked for together; configure both the same way.")
+endif()
 
-# Samurai's own test and example programs are not part of a QuickDC build.
-# Configure samurai standalone if you want them.
-set(SAMURAI_BUILD_TESTS OFF CACHE BOOL "Build the samurai test programs" FORCE)
-
-# Samurai owns the sanitizer flags and applies them PUBLIC to both the compile
-# and the link line, so forwarding the request is all QuickDC has to do - its
-# own targets inherit them by linking samurai. Has to be set before samurai is
-# configured, since it is that project's cache variable. Unconditional, so that
-# turning QUICKDC_SANITIZE back off also turns samurai's off.
-set(SAMURAI_SANITIZE ${QUICKDC_SANITIZE} CACHE BOOL "Build samurai with sanitizers" FORCE)
-
-# Samurai exports DEBUG PUBLIC, since dbg.h is one of its public headers, so its
-# tracing has to be asked for on the same terms as QuickDC's - otherwise the
-# QDBG macros in core/ resolve against a library that did not compile the sinks
-# they call. Forwarded unconditionally, as SAMURAI_SANITIZE is, so that turning
-# QUICKDC_TRACE back off turns samurai's off too.
-set(SAMURAI_TRACE ${QUICKDC_TRACE} CACHE BOOL "Build samurai with tracing" FORCE)
-
-add_subdirectory(samurai)
+if(NOT "${SAMURAI_SANITIZE}" STREQUAL "${QUICKDC_SANITIZE}")
+    message(FATAL_ERROR
+        "SAMURAI_SANITIZE is '${SAMURAI_SANITIZE}' but QUICKDC_SANITIZE is "
+        "'${QUICKDC_SANITIZE}'. Samurai applies the sanitizer flags PUBLIC to "
+        "both the compile and the link line; configure both the same way.")
+endif()
 
 # ---------------------------------------------------------------------------
 # Build identification
@@ -154,22 +193,30 @@ if(QUICKDC_BUILD_TESTS)
     enable_testing()
 
     #
-    # The test generator and runtime, from the copy pinned inside samurai rather
-    # than whatever happens to be on PATH.
+    # The test generator and runtime, from a checkout rather than from whatever
+    # happens to be on PATH.
     #
     # find_program(exotic) used to resolve this, which made the build depend on
     # the machine: an older exotic earlier in PATH carries a different runtime, so
     # a .tcc using an assertion added later compiled or did not depending on the
-    # environment. The submodule is the version this tree is tested against.
+    # environment.
     #
-    # samurai adds the same directory, but only when its own tests are enabled -
-    # and this build turns those off - so it is added here instead. Both of
-    # exotic's options default to off for a nested build, so this contributes no
-    # install rules and does not build exotic's own regression suite.
+    # Samurai's tests are built through the same framework, so whichever of the
+    # two is configured first is the one that adds it and the other uses what is
+    # there. Both of exotic's options default to off for a nested build, so this
+    # contributes no install rules and does not build exotic's own regression
+    # suite. It has to happen before core/ below, since exotic_add_tests() is a
+    # command and the .tcc directories call it as they are read.
     #
-    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/samurai/third_party/exotic/CMakeLists.txt)
-        add_subdirectory(samurai/third_party/exotic
-            ${CMAKE_CURRENT_BINARY_DIR}/exotic)
+    set(EXOTIC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../exotic" CACHE PATH
+        "Where the exotic test framework is checked out, when it is not installed")
+
+    if(NOT TARGET Exotic::exotic)
+        if(EXISTS ${EXOTIC_SOURCE_DIR}/CMakeLists.txt)
+            add_subdirectory(${EXOTIC_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/exotic)
+        else()
+            find_package(Exotic QUIET)
+        endif()
     endif()
 endif()
 

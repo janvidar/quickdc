@@ -14,6 +14,25 @@
 ## `ctest -R` selects it, and a crash takes down that test rather than the run.
 #
 
+## Said the way the autotest suite beside this one says it, and for the same
+## reason: without exotic the calls below are not a missing library but an
+## unknown command, which stops the configure with a message about CMake syntax
+## rather than about a checkout that is not there.
+if(NOT COMMAND exotic_add_tests)
+    if(QUICKDC_REQUIRE_AUTOTESTS)
+        message(FATAL_ERROR
+            "QuickDC: 'exotic' is not available and QUICKDC_REQUIRE_AUTOTESTS is "
+            "ON. Clone https://github.com/janvidar/exotic beside this checkout, "
+            "or set EXOTIC_SOURCE_DIR.")
+    endif()
+    message(WARNING
+        "QuickDC: 'exotic' is not available - SKIPPING the exotic suite, and "
+        "ctest will still report success. Clone "
+        "https://github.com/janvidar/exotic beside this checkout, or set "
+        "EXOTIC_SOURCE_DIR, to enable it.")
+    return()
+endif()
+
 set(QUICKDC_EXOTIC_TESTS
     attachments.tcc
     adcparser.tcc
