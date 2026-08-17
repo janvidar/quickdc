@@ -161,6 +161,24 @@ bool startDropCheck();
 DropVerdict lastDropVerdict();
 
 /**
+ * Whether 'held' still describes the network, as of 'now'.
+ *
+ * The same age at which the reachability record stops weighing a measurement, so
+ * that what is believed and what is worth measuring again cannot disagree - see
+ * QUICKDC_REACHABILITY_MEASUREMENT_AGE for why a verdict is believed for a while
+ * and then ignored entirely.
+ *
+ * A verdict that never ran is not fresh, and neither is one dated in the future:
+ * these are wall-clock times, so an operator correcting a clock or a machine
+ * resuming with a bad one can leave a measurement apparently taken later than the
+ * moment it is being judged from. Treating that as fresh would hold a stale
+ * answer for however far the clock was out.
+ *
+ * Unlike the three above this touches nothing and may be called from anywhere.
+ */
+bool dropMeasurementIsFresh(const DropVerdict& held, time_t now);
+
+/**
  * Feed the last verdict into the reachability record again.
  *
  * Needed because the record ignores a measurement until something has been

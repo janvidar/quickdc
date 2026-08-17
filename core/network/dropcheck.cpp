@@ -330,6 +330,16 @@ QuickDC::DropVerdict QuickDC::lastDropVerdict()
 	return core->dropcheck->verdict();
 }
 
+
+bool QuickDC::dropMeasurementIsFresh(const QuickDC::DropVerdict& held, time_t now)
+{
+	if (!held.ran || !held.observedAt) return false;
+
+	if (now < held.observedAt) return false;
+
+	return now - held.observedAt <= QUICKDC_REACHABILITY_MEASUREMENT_AGE;
+}
+
 void QuickDC::applyDropMeasurement()
 {
 	Core* core = Core::getInstance();

@@ -53,6 +53,28 @@ namespace {
 bool mapping_asked_for = false;
 
 /*
+ * How old the measurement in hand may be before another is taken.
+ *
+ * The age at which the record stops believing one, and deliberately not a period
+ * chosen here: anything longer leaves a window where nothing is believed and
+ * nothing is being asked, and anything shorter spends a request on an answer that
+ * is still good. Kept in step by being the same constant rather than by matching
+ * it.
+ */
+const time_t DROP_REFRESH_AGE = QUICKDC_REACHABILITY_MEASUREMENT_AGE;
+
+/*
+ * How often that is looked at.
+ *
+ * Shorter than the age because a measurement taken for some other reason moves
+ * when the one in hand expires, and a timer running at exactly the age would
+ * discover that a third of an hour after it happened. Looking more often than
+ * measuring is what keeps the two apart: a look costs a comparison, and only a
+ * measurement that has actually aged out costs a request.
+ */
+const time_t DROP_REFRESH_TICK = DROP_REFRESH_AGE / 3;
+
+/*
  * What the core does with the outcome, which is to record it.
  *
  * Nothing here decides anything: whether the client is reachable is answered by
@@ -136,9 +158,42 @@ CorePortForwardListener portforward_listener;
  * kept on the check itself, so anything showing it reads it there rather than
  * being handed a copy that goes stale the moment the next run finishes.
  */
-class CoreDropCheckListener : public QuickDC::DropCheckListener
+class CoreDropCheckListener : public QuickDC::DropCheckListener,
+                              public Samurai::TimerListener
 {
 	public:
+		/**
+		 * Take the measurement again once the one in hand has aged out.
+		 *
+		 * The record stops believing a measurement when it is old enough - see
+		 * QUICKDC_REACHABILITY_MEASUREMENT_AGE - and without this nothing would
+		 * ever take a newer one. The client would keep running, quietly demoted
+		 * from what was measured to what can be guessed from what peers report,
+		 * having last been told the truth a quarter of an hour ago.
+		 *
+		 * What is held is read rather than remembered, because this object is
+		 * not reliably the one told about a verdict: a front end showing the
+		 * measurement displaces the core's listener with its own, and from then
+		 * on nothing here hears that a check finished. Reading the check's own
+		 * record instead means the decision is the same whoever was listening,
+		 * and that a measurement taken for any other reason postpones this one
+		 * rather than being followed by a redundant second.
+		 *
+		 * A verdict that never ran is treated as one that has expired, so a
+		 * server that could not be reached at start-up is tried again rather
+		 * than leaving the client permanently unmeasured over one failure.
+		 */
+		void EventTimeout(Samurai::Timer*) override
+		{
+			if (QuickDC::dropMeasurementIsFresh(QuickDC::lastDropVerdict(), time(0)))
+				return;
+
+			QDBG("Nothing measured within the last %d seconds; measuring again",
+			     static_cast<int>(DROP_REFRESH_AGE));
+
+			QuickDC::startDropCheck();
+		}
+
 		/**
 		 * Record what was measured, and carry the loop on from it.
 		 *
@@ -375,6 +430,7 @@ QuickDC::Core::Core()
 	chat = new QuickDC::ChatArchive(QUICKDC_CHAT_DIR);
 
 	dropcheck = 0;
+	dropRefresh = 0;
 	portforward = new PortForward(&portforward_listener);
 
 	/*
@@ -392,6 +448,15 @@ QuickDC::Core::Core()
 		dropcheck = new DropCheck(&dropcheck_listener);
 		startDropCheck();
 	}
+
+	/*
+	 * Whether or not one was configured above. A server named later is measured
+	 * without a restart - the check is built on demand when a front end attaches
+	 * a listener - and a refresh made only where one was configured at start-up
+	 * would leave exactly that case never measured again. It costs a comparison
+	 * every few minutes to ask, and asks a server nothing until there is one.
+	 */
+	dropRefresh = new Samurai::Timer(&dropcheck_listener, DROP_REFRESH_TICK, false);
 
 	shares->initialize();
 }
@@ -447,6 +512,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	server = 0;
 	/* Nothing to forward to without a listening socket. */
 	dropcheck = 0;
+	dropRefresh = 0;
 	portforward = 0;
 	localHub = 0;
 	bandwidthManager = 0;
@@ -491,6 +557,9 @@ QuickDC::Core::~Core()
 
 	/* After the hubs above, which write a line into it as one arrives. */
 	delete chat; chat = 0;
+
+	/* Before the check it starts, which it must not outlive. */
+	delete dropRefresh; dropRefresh = 0;
 
 	delete dropcheck; dropcheck = 0;
 

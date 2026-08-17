@@ -31,6 +31,7 @@ namespace Samurai {
 		}
 	}
 	
+	class Timer;
 	class TimerManager;
 	class MessageHandler;
 }
@@ -182,6 +183,23 @@ class Core {
 		 * socket the monitor is still walking and stops answering as it goes.
 		 */
 		QuickDC::DropCheck* dropcheck;
+
+		/**
+		 * Takes the measurement again once the one in hand is too old to believe.
+		 *
+		 * Present whenever there is a port to measure, including where no server
+		 * was configured to ask: one named later is measured without a restart,
+		 * and this is what keeps measuring it. It asks nobody anything until
+		 * there is a server, and then at most once per
+		 * QUICKDC_REACHABILITY_MEASUREMENT_AGE - the disclosure is the one
+		 * already chosen by naming that server, repeated for as long as the
+		 * client runs, and a measurement nothing refreshes is worth having only
+		 * for the first quarter of an hour of a session.
+		 *
+		 * Null in a core built without a listening socket, as dropcheck is.
+		 * Destroyed before Core::dropcheck, which is what it starts.
+		 */
+		Samurai::Timer* dropRefresh;
 
 		/**
 		 * The searches sent, so a datagram answering one can be told from a

@@ -26,6 +26,7 @@
 #include "quickdc.h"
 #include "api/dropverdict.h"
 #include "network/dropcheck.h"
+#include "network/reachability.h"
 
 #include <drop/responder.h>
 #include <drop/stun.h>
@@ -313,5 +314,76 @@ EXO_TEST(dropcheck_every_mode_can_be_named,
 	EXO_ASSERT(std::string(QuickDC::toString(QuickDC::DropMode::Unknown)) == "not known");
 	EXO_ASSERT(std::string(QuickDC::toString(QuickDC::DropMode::Active)) == "active");
 	EXO_ASSERT(std::string(QuickDC::toString(QuickDC::DropMode::Passive)) == "passive");
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * How long a measurement is worth keeping, which is what decides when another is
+ * taken. The answer has to be the same one the reachability record reaches, or
+ * the client would go on believing a verdict nothing intends to refresh, or keep
+ * measuring one that is still being believed.
+ */
+
+static QuickDC::DropVerdict measuredAt(time_t when)
+{
+	QuickDC::DropVerdict verdict;
+	verdict.ran = true;
+	verdict.observedAt = when;
+	return verdict;
+}
+
+/* Nothing measured is not a fresh measurement, whatever else the verdict holds. */
+EXO_TEST(dropcheck_a_verdict_that_never_ran_is_never_fresh,
+{
+	const time_t now = 1000000;
+
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(QuickDC::DropVerdict(), now));
+
+	QuickDC::DropVerdict unrun = measuredAt(now);
+	unrun.ran = false;
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(unrun, now));
+
+	/*
+	 * Nor one that ran but recorded no time, which there is no judging.
+	 *
+	 * Asked close to the epoch, because that is the only place the answer turns
+	 * on saying so: further out, an unset time is refused for being ancient
+	 * rather than for being unset, and a check dropped here would go unnoticed
+	 * until a clock made it matter.
+	 */
+	QuickDC::DropVerdict undated = measuredAt(0);
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(undated, now));
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(undated, 1));
+	return 1;
+});
+
+/* Believed right up to the age, and not one second past it. */
+EXO_TEST(dropcheck_a_measurement_is_believed_for_exactly_as_long_as_the_record_does,
+{
+	const time_t now = 1000000;
+	const time_t age = QUICKDC_REACHABILITY_MEASUREMENT_AGE;
+
+	EXO_ASSERT(QuickDC::dropMeasurementIsFresh(measuredAt(now), now));
+	EXO_ASSERT(QuickDC::dropMeasurementIsFresh(measuredAt(now - age + 1), now));
+	EXO_ASSERT(QuickDC::dropMeasurementIsFresh(measuredAt(now - age), now));
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(measuredAt(now - age - 1), now));
+	return 1;
+});
+
+/*
+ * A measurement dated later than the moment it is judged from is not fresh.
+ *
+ * These are wall-clock times, so an operator correcting a clock, or a machine
+ * resuming with a bad one, can leave one behind. Believing it would hold a stale
+ * answer for however far the clock was out - and the further out, the longer.
+ */
+EXO_TEST(dropcheck_a_measurement_from_the_future_is_not_believed,
+{
+	const time_t now = 1000000;
+
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(measuredAt(now + 1), now));
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(measuredAt(now + 86400), now));
 	return 1;
 });
