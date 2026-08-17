@@ -51,6 +51,15 @@ class DropCheck final : public Drop::ClientEventHandler
 {
 	public:
 		explicit DropCheck(DropCheckListener* listener);
+
+		/**
+		 * Ends a run in flight, and takes the client with it.
+		 *
+		 * Not through cancel(), which reports nothing but leaves the client in
+		 * place. Here the client goes too, and the order matters only in that the
+		 * credentials stop answering before the socket that carried them can be
+		 * read again.
+		 */
 		~DropCheck() override;
 
 		DropCheck(const DropCheck&) = delete;
@@ -59,6 +68,13 @@ class DropCheck final : public Drop::ClientEventHandler
 		/**
 		 * Ask a DROP server about one family.
 		 *
+		 * The run opens by asking for the server's capabilities, which is also
+		 * what says this is a DROP server rather than something that answers 200
+		 * to everything, and what carries the bounds the rest of the run has to
+		 * stay inside. A client left from an earlier run is replaced in one step
+		 * rather than reset first, since this is reached from a handler whenever a
+		 * check is asked for by one.
+		 *
 		 * @param baseUrl the family's own name, "https://ipv4.drop.example.org".
 		 *        The unprefixed name would leave the family under test to
 		 *        whichever connection won, since one connection has one source
@@ -66,8 +82,10 @@ class DropCheck final : public Drop::ClientEventHandler
 		 * @param tcpPort the port this client advertises, never an ephemeral one.
 		 * @param udpPort the port search results arrive on; zero to test neither.
 		 * @param localAddress the address to bind, where this host has more than
-		 *        one of the family: without it the kernel chooses per
-		 *        destination and the answer is about whichever it chose.
+		 *        one of the family: without it the kernel chooses per destination,
+		 *        and the server would report, and probe, whichever address it
+		 *        happened to be reached from rather than the one this client
+		 *        advertises.
 		 */
 		void start(const std::string& baseUrl, Drop::Family family,
 		           uint16_t tcpPort, uint16_t udpPort,
@@ -113,7 +131,11 @@ class DropCheck final : public Drop::ClientEventHandler
 		 * a datagram whose source was never proven is a reflection an attacker
 		 * aims by spoofing it, so this answers nothing at all unless a session
 		 * is open and the request verifies against it. The credentials are held
-		 * only between a session being opened and the run ending.
+		 * only between a session being opened and the run ending, and the empty
+		 * credentials of a run that is not open are themselves the refusal, since
+		 * the library answers nothing without a password. The run's state is
+		 * checked here as well, so that the rule is visible where it is relied
+		 * upon rather than only inside the library.
 		 *
 		 * @return true when 'reply' is to be sent back to 'from'.
 		 */
@@ -122,10 +144,60 @@ class DropCheck final : public Drop::ClientEventHandler
 		                     bool fromIsV6, std::vector<uint8_t>& reply) const;
 
 	protected:
+		/**
+		 * Take what the server offers, and hold the run to it.
+		 *
+		 * The UDP test is asked for only where the server runs it for the family
+		 * under test. The two lists routinely differ - the second address RFC 5780
+		 * needs is commonly there on one family and not the other - and asking for
+		 * a test a server does not run is a refusal rather than an answer. A port
+		 * the server will not probe ends the run here instead, which is better
+		 * than reporting the refusal that would follow: the bound is the server's,
+		 * so nothing this client does about its own configuration would make the
+		 * answer arrive.
+		 */
 		void EventDropServerInfo(Drop::Client*, const Drop::ServerInfo&) override;
+
+		/**
+		 * Take the address the server saw us at, and open a session.
+		 *
+		 * What is kept is the server's own wording where it gave one and its bare
+		 * classification where it did not, so that what a user is shown is what
+		 * the measurer said. Nothing is armed yet, because the listeners this asks
+		 * about are the ones already up: the peer port and the search port are
+		 * bound for as long as the client runs. What a session adds is the
+		 * credentials that let a probe be told apart from a stranger.
+		 */
 		void EventDropWhoami(Drop::Client*, const Drop::Whoami&) override;
+
+		/**
+		 * Arm the listeners, and ask for the probes.
+		 *
+		 * Armed before the probes are asked for and never after: the server
+		 * connects back while the request is outstanding, so a client that asks
+		 * first races the probe against its own willingness to answer it.
+		 */
 		void EventDropSession(Drop::Client*, const Drop::Session&) override;
+
+		/**
+		 * Turn the probe results into the verdict the run reports.
+		 *
+		 * The mode and the per-port outcomes come from the library's own decision
+		 * table rather than from a reading of the verdicts here. It lives in one
+		 * place on purpose: a user who moves between two clients and is given two
+		 * different explanations of the same network concludes that one of them is
+		 * broken.
+		 */
 		void EventDropInbound(Drop::Client*, const Drop::InboundResult&) override;
+
+		/**
+		 * Give up on the run, and say why.
+		 *
+		 * Reached from inside a request as well as from the wire: a request
+		 * refused before it reaches a socket reports itself from the call that
+		 * made it, which is why every state is set before its request rather than
+		 * after.
+		 */
 		void EventDropError(Drop::Client*, const Drop::ErrorInfo&) override;
 
 	private:
@@ -140,6 +212,14 @@ class DropCheck final : public Drop::ClientEventHandler
 		enum class State { Idle, ServerInfo, Whoami, Session, Inbound };
 
 		void internal_fail(const std::string& reason);
+
+		/**
+		 * Report what a completed run established.
+		 *
+		 * The session is forgotten before the verdict goes out rather than after,
+		 * so that nothing can observe a client still willing to answer a probe for
+		 * a run that is over.
+		 */
 		void internal_finish();
 
 		/** Forget the session and with it the credentials that answer a probe. */
@@ -152,7 +232,8 @@ class DropCheck final : public Drop::ClientEventHandler
 		 *
 		 * Never destroyed from inside a handler: the handler is called from the
 		 * client's own stack, and the HTTP client underneath it owns the socket
-		 * whose callback is below that.
+		 * whose callback is below that. A new run therefore replaces it in one
+		 * step instead of resetting it first.
 		 */
 		std::unique_ptr<Drop::Client> client;
 

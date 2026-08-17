@@ -236,17 +236,9 @@ void ADC::LocalHub::Hub::readConfiguration() {
 }
 
 void ADC::LocalHub::Hub::closeEveryConnection() {
-	/*
-	 * Copied, for the reason the sweep copies it: expire() may broadcast, and a
-	 * deferred userAdd() processed in the meantime appends to 'users'.
-	 */
 	const std::vector<User*> snapshot(users);
 
 	for (User* user : snapshot) {
-		/*
-		 * One already on its way out is left to the sweep, which is what ends its
-		 * wait. Expiring it again would move a state that has already moved.
-		 */
 		if (user->state == State_WaitDisconnect) continue;
 
 		expire(user, "212", "This hub is disabled");
@@ -1904,15 +1896,6 @@ bool ADC::LocalHub::Hub::EventMessage(const Samurai::Message* msg) {
 		return true;
 	}
 
-	/*
-	 * The configuration was rewritten while the hub was running, so what it says
-	 * now is read again rather than waiting for the next start - the switch that
-	 * turns this hub on is one somebody expects to act on the hub in front of them.
-	 *
-	 * Turning it off has to take the users with it. A disabled hub refuses a login
-	 * and says so, but that is only ever asked at the login exchange, so without
-	 * this everybody already on it would stay on it for as long as the process ran.
-	 */
 	if (id == QuickDC::MsgConfigUpdated)
 	{
 		readConfiguration();

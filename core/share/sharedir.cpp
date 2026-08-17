@@ -128,6 +128,17 @@ QuickDC::Share::File* QuickDC::Share::Dir::getFile(const char* name) {
 
 /*
  * Scan directory for files / directories. Symlinks are not followed - see below.
+ *
+ * A file offered by its hash alone is given a directory of its own whose path is
+ * that file, so that its Share::File has something to report its size through
+ * without joining a share - see Share::Manager::registerAttachment(), which is the
+ * only place that sets the flag tested below. There is nothing beneath a regular
+ * file to find, so one is left alone rather than opened as a directory and
+ * reported for not being one - a diagnostic naming every remembered attachment on
+ * every start-up says nothing, and buries the failures that do mean something.
+ * Only that one case is quiet: a share root that names a file rather than a
+ * directory is still reported, because it is a mistake somebody has to be told
+ * about.
  */
 void QuickDC::Share::Dir::scan() {
 	QDBG("Scanning directory: %s", path.c_str());
@@ -138,17 +149,6 @@ void QuickDC::Share::Dir::scan() {
 		return;
 	}
 
-	/*
-	 * A file offered by its hash alone is given a directory of its own whose path
-	 * is that file, so that its Share::File has something to report its size
-	 * through without joining a share - see Share::Manager::registerAttachment(),
-	 * which is the only place that sets this flag. There is nothing below a
-	 * regular file to find, so opening it as a directory could only fail, and the
-	 * failure said nothing: it put a line in the error log for every remembered
-	 * attachment on every start-up, among the failures that do mean something.
-	 * Asked about a share root the error stands, because a root that names a file
-	 * rather than a directory is a mistake somebody has to be told about.
-	 */
 	if (manager && manager->attaching && Samurai::IO::File(path).isRegular())
 		return;
 

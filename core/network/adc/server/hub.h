@@ -190,6 +190,18 @@ namespace LocalHub {
 			void EventDataAvailable(const Samurai::IO::Net::Socket*) override;
 			void EventCanWrite(const Samurai::IO::Net::Socket*) override;
 			void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg) override;
+
+			/**
+			* Handle the messages this hub posts to itself, and the notice that the
+			* configuration was rewritten.
+			*
+			* The configuration is read again there and then rather than at the next
+			* start, because the switch that turns this hub on is one somebody
+			* expects to act on the hub in front of them. Where that reading turns
+			* the hub off, everybody already logged in is retired with it: a
+			* disabled hub refuses a login and says so, but that is only ever asked
+			* at the login exchange - see closeEveryConnection().
+			*/
 			bool EventMessage(const Samurai::Message*) override;
 	
 		public:
@@ -275,6 +287,12 @@ namespace LocalHub {
 			* What turning the hub off means for the people already on it. The
 			* refusal in the login exchange covers everybody arriving afterwards,
 			* and covers nobody who arrived before.
+			*
+			* The user table is copied first, for the reason the idle sweep copies
+			* it: expire() may broadcast, and a deferred userAdd() processed in the
+			* meantime appends to it. A user already on its way out is left to that
+			* sweep, which is what ends its wait; expiring it a second time would
+			* move a state that has already moved.
 			*/
 			void closeEveryConnection();
 

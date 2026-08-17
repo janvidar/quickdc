@@ -543,6 +543,7 @@ EXO_TEST(reachability_an_expired_measurement_leaves_the_inference_alone,
 /*
  * UDP can be decided against, but only here. A server asked to send a datagram
  * can be asked afterwards whether it did, which is what nobody else can answer.
+ * It says nothing about TCP while it does, that being a separate mapping.
  */
 EXO_TEST(reachability_a_measurement_decides_udp_both_ways,
 {
@@ -552,7 +553,6 @@ EXO_TEST(reachability_a_measurement_decides_udp_both_ways,
 	r.measured(State::Unknown, State::Unreachable, reachability_just_now());
 	EXO_ASSERT(r.udp() == State::Unreachable);
 
-	/* And says nothing about TCP, which is a separate mapping. */
 	EXO_ASSERT(r.tcp() == State::Unknown);
 
 	r.measured(State::Unknown, State::Reachable, reachability_just_now());
@@ -560,7 +560,8 @@ EXO_TEST(reachability_a_measurement_decides_udp_both_ways,
 	return 1;
 });
 
-/* A datagram that arrived outranks it, for the reason a connection does. */
+/* A datagram that arrived outranks it, for the reason a connection does, and in
+   either order. */
 EXO_TEST(reachability_a_datagram_that_arrived_outranks_a_passive_measurement,
 {
 	QuickDC::Reachability r;
@@ -572,7 +573,6 @@ EXO_TEST(reachability_a_datagram_that_arrived_outranks_a_passive_measurement,
 	r.inboundDatagram();
 	EXO_ASSERT(r.udp() == State::Reachable);
 
-	/* In either order. */
 	r.measured(State::Unknown, State::Unreachable, reachability_just_now());
 	EXO_ASSERT(r.udp() == State::Reachable);
 	return 1;

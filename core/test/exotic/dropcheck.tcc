@@ -112,6 +112,7 @@ EXO_TEST(dropcheck_a_check_that_never_ran_is_idle_and_has_no_verdict,
 	return 1;
 });
 
+/* Nothing was abandoned, so there is nothing to report about it either. */
 EXO_TEST(dropcheck_cancelling_a_check_that_is_not_running_changes_nothing,
 {
 	Recorder events;
@@ -122,7 +123,6 @@ EXO_TEST(dropcheck_cancelling_a_check_that_is_not_running_changes_nothing,
 	EXO_ASSERT(!check.isBusy());
 	EXO_ASSERT(!check.verdict().ran);
 
-	/* Nothing was abandoned, so there is nothing to report about it. */
 	EXO_ASSERT(events.finished == 0);
 	EXO_ASSERT(events.failed == 0);
 	return 1;
@@ -137,6 +137,17 @@ EXO_TEST(dropcheck_cancelling_a_check_that_is_not_running_changes_nothing,
  * a probe arriving on the search port comes from somebody whose address nobody
  * proved, and the answer to it is silence rather than an error - an error is
  * still a reply, and a reply is what gets reflected.
+ *
+ * The probe is a complete authenticated Binding Request, and it is shown to be both
+ * of those before it is refused: first the shape a socket carrying STUN and search
+ * results demultiplexes on - top two bits zero, and the magic cookie in the second
+ * word - and then answerable, because a responder holding the credentials it was
+ * signed with replies to these exact bytes. That is what makes the refusals below a
+ * statement about the run not being open rather than about bytes nobody could have
+ * made sense of.
+ *
+ * The refusal then holds however the sender describes itself, on either family,
+ * since the description is the part that cannot be trusted.
  */
 EXO_TEST(dropcheck_an_unarmed_check_answers_no_stun_probe,
 {
@@ -146,15 +157,11 @@ EXO_TEST(dropcheck_an_unarmed_check_answers_no_stun_probe,
 	const std::vector<uint8_t> probe = authenticatedProbe();
 	std::vector<uint8_t> reply;
 
-	/* The shape a socket carrying both STUN and search results demultiplexes
-	   on: top two bits zero, and the magic cookie in the second word. */
 	EXO_ASSERT(Drop::Stun::Message::looksLikeStun(probe));
 	EXO_ASSERT((probe[0] & 0xc0) == 0);
 	EXO_ASSERT(probe[4] == 0x21 && probe[5] == 0x12);
 	EXO_ASSERT(probe[6] == 0xa4 && probe[7] == 0x42);
 
-	/* And it is answerable: a responder holding this session's credentials
-	   replies to these exact bytes. */
 	Drop::Stun::Endpoint from;
 	from.address = "198.51.100.9";
 	from.port = 1411;
@@ -162,12 +169,9 @@ EXO_TEST(dropcheck_an_unarmed_check_answers_no_stun_probe,
 	EXO_ASSERT(!reply.empty());
 	reply.clear();
 
-	/* This check holds no session, so it answers nothing. */
 	EXO_ASSERT(!check.answerStunProbe(probe, "198.51.100.9", 1411, false, reply));
 	EXO_ASSERT(reply.empty());
 
-	/* However the sender describes itself, on either family: the description is
-	   the part that cannot be trusted. */
 	EXO_ASSERT(!check.answerStunProbe(probe, "203.0.113.7", 40001, false, reply));
 	EXO_ASSERT(!check.answerStunProbe(probe, "2001:db8::1", 1411, true, reply));
 	EXO_ASSERT(reply.empty());
@@ -179,6 +183,10 @@ EXO_TEST(dropcheck_an_unarmed_check_answers_no_stun_probe,
  * tells strangers what it runs for nothing in return, so the window is closed
  * here too - even though a peer that completed a handshake has proven its
  * address and there is nothing to reflect.
+ *
+ * Paired the same way as the probe above: the line is a real challenge and the
+ * library answers it, so the refusal that follows is about the arming gate. And it
+ * holds whichever terminator arrived, or none.
  */
 EXO_TEST(dropcheck_an_unarmed_check_answers_no_challenge,
 {
@@ -187,7 +195,6 @@ EXO_TEST(dropcheck_an_unarmed_check_answers_no_challenge,
 
 	std::string response;
 
-	/* The line is a challenge, and the library answers it. */
 	EXO_ASSERT(Drop::TcpResponder::handleChallenge(CHALLENGE, response));
 	EXO_ASSERT(!response.empty());
 	response.clear();
@@ -195,7 +202,6 @@ EXO_TEST(dropcheck_an_unarmed_check_answers_no_challenge,
 	EXO_ASSERT(!check.answerChallenge(CHALLENGE, response));
 	EXO_ASSERT(response.empty());
 
-	/* Whichever terminator arrived, or none. */
 	EXO_ASSERT(!check.answerChallenge("DROP/1 CHALLENGE 4a1f9c2e\r\n", response));
 	EXO_ASSERT(!check.answerChallenge("DROP/1 CHALLENGE 4a1f9c2e", response));
 	EXO_ASSERT(response.empty());
@@ -205,6 +211,11 @@ EXO_TEST(dropcheck_an_unarmed_check_answers_no_challenge,
 /*
  * And the bytes that actually share that port are not challenges either, which
  * is what lets the protocol probe hand this everything it could not place.
+ *
+ * The bytes are the ones that really turn up there: an ADC client-to-client
+ * greeting, the first bytes of the TLS ClientHello that ADCS opens with, and
+ * nothing at all. None of them is a challenge to the library either, so a run
+ * being open would not have changed any of the above.
  */
 EXO_TEST(dropcheck_ordinary_peer_port_bytes_are_not_a_challenge,
 {
@@ -213,21 +224,16 @@ EXO_TEST(dropcheck_ordinary_peer_port_bytes_are_not_a_challenge,
 
 	std::string response;
 
-	/* An ADC client-to-client greeting. */
 	EXO_ASSERT(!check.answerChallenge("CSUP ADBASE ADTIGR\n", response));
 
-	/* The first bytes of a TLS ClientHello, which is what ADCS opens with. */
 	EXO_ASSERT(!check.answerChallenge(std::string_view("\x16\x03\x01\x00\x9a\x01", 6),
 	                                  response));
 
-	/* And nothing at all. */
 	EXO_ASSERT(!check.answerChallenge("", response));
 	EXO_ASSERT(!check.answerChallenge("\n", response));
 
 	EXO_ASSERT(response.empty());
 
-	/* None of those is a challenge to the library either, so a run being open
-	   would not have changed any of the above. */
 	EXO_ASSERT(!Drop::TcpResponder::handleChallenge("CSUP ADBASE ADTIGR\n", response));
 	EXO_ASSERT(!Drop::TcpResponder::handleChallenge("DROP/1 CHALLENGE ", response));
 	return 1;
@@ -242,6 +248,11 @@ EXO_TEST(dropcheck_ordinary_peer_port_bytes_are_not_a_challenge,
  * port measured is the one this client advertises and there is no substitute for
  * it: a check of some ephemeral port would be a true answer about a port nobody
  * will ever connect to.
+ *
+ * The reason has to be something a user can read, since it is shown beside the
+ * connection settings it is about. The check is idle again afterwards, so the next
+ * start is not refused as a second one. And there is still no verdict, because a
+ * failure to measure says nothing about whether this client is reachable.
  */
 EXO_TEST(dropcheck_a_start_without_a_peer_port_fails_at_once,
 {
@@ -253,16 +264,8 @@ EXO_TEST(dropcheck_a_start_without_a_peer_port_fails_at_once,
 
 	EXO_ASSERT(events.failed == 1);
 	EXO_ASSERT(events.finished == 0);
-
-	/* Something a user can read, since this is shown beside the connection
-	   settings it is about. */
 	EXO_ASSERT(!events.reason.empty());
-
-	/* Idle again, so the next start is not refused as a second one. */
 	EXO_ASSERT(!check.isBusy());
-
-	/* And a failure to measure says nothing about whether this client is
-	   reachable, so there is still no verdict. */
 	EXO_ASSERT(!check.verdict().ran);
 	return 1;
 });

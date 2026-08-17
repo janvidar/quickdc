@@ -94,12 +94,6 @@ void QuickDC::Reachability::measured(State tcp_, State udp_, time_t observedAt)
 
 bool QuickDC::Reachability::measurementApplies() const
 {
-	/*
-	 * How long ago it was taken and nothing else. A clock that has stepped
-	 * backwards makes that negative rather than enormous, which is the wanted
-	 * answer: a measurement is discarded for being old, and one dated in the
-	 * future is not old.
-	 */
 	return time(0) - measured_at <= QUICKDC_REACHABILITY_MEASUREMENT_AGE;
 }
 
@@ -109,14 +103,10 @@ QuickDC::Reachability::State QuickDC::Reachability::tcp() const
 	/*
 	 * Something that arrived settles it, whatever anyone says afterwards. A
 	 * refusal is a peer's account of its own failure and can be mistaken or
-	 * malicious, and a measurement is one attempt among the many that were
-	 * already getting through; a connection that arrived is not an account of
-	 * anything.
+	 * malicious; a connection that arrived is not an account of anything.
 	 */
 	if (inbound_connection) return State::Reachable;
 
-	/* Then what was measured from outside, which answers the question the two
-	   below it can only infer an answer to. See the header for why it expires. */
 	if (measured_tcp != State::Unknown && measurementApplies())
 		return measured_tcp;
 
@@ -133,16 +123,8 @@ QuickDC::Reachability::State QuickDC::Reachability::tcp() const
 
 QuickDC::Reachability::State QuickDC::Reachability::udp() const
 {
-	/* A datagram that arrived settles it, for the reason a connection does. */
 	if (inbound_datagram) return State::Reachable;
 
-	/*
-	 * And a measurement is the only thing that can decide it against. A peer that
-	 * cannot reach our UDP port has nothing to report it with - there is no
-	 * datagram it could send to say so, which is the whole difficulty - so silence
-	 * is the only symptom and silence is not proof. A server that was asked to
-	 * send one can be asked afterwards whether it did.
-	 */
 	if (measured_udp != State::Unknown && measurementApplies())
 		return measured_udp;
 

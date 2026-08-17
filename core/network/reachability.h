@@ -166,8 +166,9 @@ class Reachability
 		 * What is known about the peer port, weighing the evidence in one order.
 		 *
 		 * A connection that arrived comes first, because it is proof rather than a
-		 * claim: a measurement that reached nothing cannot unsay a peer that got
-		 * through, whatever the measurement makes of the port afterwards.
+		 * claim: a measurement is one attempt among the many that were already
+		 * getting through, so what it reached or failed to reach afterwards cannot
+		 * unsay a peer that got here.
 		 *
 		 * Then a measurement that has not expired, because an observation made
 		 * from outside answers the question directly where everything below it
@@ -184,9 +185,15 @@ class Reachability
 		 * A datagram that arrived outranks a measurement for the reason a
 		 * connection does. Below that a measurement is the only thing that can
 		 * decide this at all: a peer that cannot reach our UDP port has nothing to
-		 * report it with, so no quantity of peers saying nothing adds up to a
-		 * verdict, while a server that was asked to send a datagram can be asked
-		 * afterwards whether it did.
+		 * report it with - there is no datagram it could send to say so, which is
+		 * the whole difficulty - so silence is the only symptom, silence is not
+		 * proof, and no quantity of peers saying nothing adds up to a verdict. A
+		 * server that was asked to send a datagram can be asked afterwards whether
+		 * it did, which is why a measurement can put this at Unreachable and
+		 * nothing else can.
+		 *
+		 * State::Unknown from a measurement decides nothing here either, leaving
+		 * what arrived to answer rather than masking it.
 		 */
 		State udp() const;
 
@@ -203,6 +210,11 @@ class Reachability
 		 * One rule covers both a measurement that has expired and one that was
 		 * never taken, which is the intent: an expired verdict counts for exactly
 		 * as much as no verdict, and a measured_at left at the epoch is old.
+		 *
+		 * How long ago it was taken and nothing else. A clock that has stepped
+		 * backwards makes that negative rather than enormous, which is the wanted
+		 * answer: a measurement is discarded for being old, and one dated in the
+		 * future is not old.
 		 */
 		bool measurementApplies() const;
 

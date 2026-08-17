@@ -127,15 +127,33 @@ class DropCheckListener
  * default and the case a caller should expect.
  */
 
-/** Point the measurement at 'listener', replacing whatever the core set up. */
+/**
+ * Point the measurement at 'listener', replacing whatever the core set up.
+ *
+ * A measurement is made on demand where the core has none, so that a server
+ * named after this started is usable without a restart: the check is only absent
+ * because nothing had been configured to ask.
+ *
+ * A run in flight belongs to whoever is being displaced, and is abandoned rather
+ * than left going. The connect-back is recognised through whichever check this
+ * names - the protocol probe asks it - so a run whose listener has changed would
+ * answer the challenge and report to somebody who is no longer there, and one
+ * whose listener is gone would conclude passive on no evidence.
+ */
 void setDropCheckListener(DropCheckListener* listener);
 
 /**
  * Measure again, reading the server and the port from the configuration as it
  * stands now rather than as it stood at start-up.
  *
+ * The family's own hostname is what is asked, never the dual-stack name: one
+ * connection has one source address, so the unprefixed name would measure
+ * whichever family that connection used rather than the one being asked about.
+ *
  * @return false when there is nothing to ask, which is not a failure: no server
  *         is configured, or a run is already going and will report by itself.
+ *         Asking a second time would only spend a session the server counts
+ *         against us.
  */
 bool startDropCheck();
 

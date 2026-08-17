@@ -173,8 +173,13 @@ class Core {
 		 * arrive by itself and can wait for ever, while this asks for it and
 		 * gets an answer or a reason there is none. Null unless a server was
 		 * configured to ask - the request tells that server this client's
-		 * address and the port it listens on, which is a disclosure a user
-		 * chooses rather than one this makes for them.
+		 * address and the port it listens on and has it connect back to prove
+		 * the answer, which is a disclosure a user chooses rather than one this
+		 * makes for them, so a measurement is taken because somebody asked for
+		 * it and not because the program started.
+		 *
+		 * Destroyed before Core::portforward, since a run in flight holds a
+		 * socket the monitor is still walking and stops answering as it goes.
 		 */
 		QuickDC::DropCheck* dropcheck;
 

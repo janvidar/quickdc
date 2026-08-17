@@ -907,6 +907,16 @@ void ADC::HubSession::forgetAnnouncedInfo()
 }
 
 
+/**
+ * Describe this client to the hub, as the fields an INF is built from.
+ *
+ * Advertising an endpoint here is also what makes a measurement usable, so one
+ * taken before there was an endpoint is offered again once there is: the
+ * reachability record ignores a verdict until something has been advertised,
+ * since a verdict is about an endpoint, and the check made at start-up routinely
+ * finishes before the first login - so without offering it again, the one answer
+ * that was actually measured would be the one thrown away.
+ */
 void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 {
 	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
@@ -985,14 +995,6 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	if (core->reachability && endpoint.active)
 	{
 		core->reachability->advertising(endpoint.address, endpoint.port);
-
-		/*
-		 * And a measurement taken before there was an endpoint is offered again
-		 * now that there is one. The record ignores one until something has been
-		 * advertised - a verdict is about an endpoint - and the check at start-up
-		 * routinely finishes before the first login, so without this the one
-		 * answer that was actually measured would be the one thrown away.
-		 */
 		QuickDC::applyDropMeasurement();
 	}
 
