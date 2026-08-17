@@ -37,6 +37,22 @@
 namespace {
 
 /*
+ * Whether a port mapping was asked for because a measurement said passive.
+ *
+ * The whole of the state the check-map-recheck loop needs, and it needs some: a
+ * gateway grants a mapping and reports success without knowing whether anything
+ * upstream honours it, so the only evidence that the mapping helped is a second
+ * measurement taken through it. That means the two listeners below have to agree
+ * on which pass they are in - one asks for the mapping, the other measures again
+ * when it appears - and on whose mapping it is, since a forward this did not
+ * create is not this one's to take away.
+ *
+ * A file static beside the listeners for the same reason they are: only one Core
+ * may exist, and this has to outlive the objects that point at them.
+ */
+bool mapping_asked_for = false;
+
+/*
  * What the core does with the outcome, which is to record it.
  *
  * Nothing here decides anything: whether the client is reachable is answered by
@@ -56,6 +72,15 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			(void) external;
 			(void) address;
 			announce();
+
+			/*
+			 * And measure again, through the mapping, when it was asked for
+			 * because a measurement said passive. This is the point of the loop:
+			 * the gateway has just reported success, which says nothing about
+			 * whether a second NAT above it will let a packet through, and only
+			 * measuring from outside settles that.
+			 */
+			if (mapping_asked_for) QuickDC::startDropCheck();
 		}
 
 		void EventPortForwardFailure(const char* reason) override
@@ -67,6 +92,14 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			QDBG("The peer port could not be forwarded, staying passive: %s", reason);
 			(void) reason;
 			announce();
+
+			/*
+			 * And the loop stops rather than waiting for a mapping that is not
+			 * coming. Left set, this would make the next passive verdict read as
+			 * the pass that releases a mapping - of which there is none, and the
+			 * measurement that produced it would be the one being answered.
+			 */
+			mapping_asked_for = false;
 		}
 
 	private:
@@ -105,11 +138,27 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener
 		{
 			QDBG("A DROP server reports this client %s on port %d",
 			     QuickDC::toString(verdict.mode), static_cast<int>(verdict.port));
-			(void) verdict;
 
-			const QuickDC::Core* core = QuickDC::Core::getInstance();
-			if (!core || !core->hubs) return;
-			core->hubs->requestClientInfoUpdate();
+			QuickDC::Core* core = QuickDC::Core::getInstance();
+			if (!core) return;
+
+			/*
+			 * Into the reachability record, which is what the INF is built from.
+			 * A measurement outranks anything inferred from what peers report and
+			 * is outranked in turn by a connection that actually arrived; see
+			 * Reachability::tcp() for the order and why it is that way round.
+			 */
+			QuickDC::applyDropMeasurement();
+
+			if (verdict.mode == QuickDC::DropMode::Passive) considerMapping(core, verdict);
+
+			/*
+			 * Whatever it concluded, the loop is over once the answer is not
+			 * passive: there is nothing left to try and nothing to undo.
+			 */
+			if (verdict.mode != QuickDC::DropMode::Passive) mapping_asked_for = false;
+
+			if (core->hubs) core->hubs->requestClientInfoUpdate();
 		}
 
 		void EventDropCheckFailed(const char* reason) override
@@ -118,6 +167,72 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener
 			   this client, and re-publishing an unchanged INF would be noise. */
 			QDBG("The reachability check did not complete: %s", reason);
 			(void) reason;
+
+			/*
+			 * The loop stops here too. A measurement that could not be taken is
+			 * no reason to keep a mapping this asked for on the strength of one
+			 * that could - but it is also no evidence the mapping is useless, so
+			 * what was granted is left alone and only the loop is abandoned.
+			 */
+			mapping_asked_for = false;
+		}
+
+	private:
+		/**
+		 * Ask the gateway to forward the port, or conclude that doing so did not
+		 * help.
+		 *
+		 * Two passes, and which one this is depends on whether a mapping has
+		 * already been asked for. The first asks; the second is reached only
+		 * because the answer is still passive with the mapping in place, which
+		 * means something above the gateway is dropping the packets - so the
+		 * forward is released. Leaving one open to a port that could not be
+		 * reached through it has no upside, and it is a hole in somebody's
+		 * network that nothing is using.
+		 *
+		 * A forward this did not ask for is never released. It may be there
+		 * because the configuration asked for it at start-up, or because a front
+		 * end asked, and neither is this loop's to undo.
+		 */
+		static void considerMapping(QuickDC::Core* core,
+		                            const QuickDC::DropVerdict& verdict)
+		{
+			if (!core->portforward || !core->config) return;
+
+			if (mapping_asked_for)
+			{
+				if (core->portforward->isForwarded())
+				{
+					QDBG("The mapping did not help; releasing it");
+					core->portforward->stop();
+				}
+
+				mapping_asked_for = false;
+				return;
+			}
+
+			/*
+			 * Only where forwarding was asked for at all. A search tells every
+			 * host on the local segment what this machine runs, which is the same
+			 * disclosure the configuration already gates - a measurement saying
+			 * passive is not consent to start announcing.
+			 */
+			core->config->setGroup("Network");
+			if (!core->config->getBool("UseUPnP", false)) return;
+
+			/* Nothing to add, or something already in flight to wait for. */
+			if (core->portforward->isForwarded()) return;
+			if (core->portforward->isBusy()) return;
+
+			const uint16_t port = verdict.port
+				? verdict.port
+				: static_cast<uint16_t>(core->config->getNumber("Port", 1411));
+
+			QDBG("Passive on port %d; asking the gateway to forward it",
+			     static_cast<int>(port));
+
+			mapping_asked_for = true;
+			core->portforward->start(port);
 		}
 };
 

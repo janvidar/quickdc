@@ -7,6 +7,7 @@
 #include "network/dropcheck.h"
 #include "api/core.h"
 #include "config/preferences.h"
+#include "network/reachability.h"
 
 #include <drop/responder.h>
 #include <drop/stun.h>
@@ -14,6 +15,53 @@
 #include <samurai/io/net/inetaddress.h>
 
 #include <time.h>
+
+namespace {
+
+/**
+ * One port's outcome, as something to decide on.
+ *
+ * Refused and Occupied are blocked rather than reached even though both mean a
+ * packet arrived: the first says nothing was listening and the second that what
+ * answered was not this client, and neither is a port a peer can be told to
+ * connect to. Error is Unknown on purpose - the server could not run the probe,
+ * which is a statement about the server.
+ */
+QuickDC::DropReach reachOf(Drop::Verdict verdict)
+{
+	switch (verdict)
+	{
+		case Drop::Verdict::Open:
+			return QuickDC::DropReach::Reached;
+
+		case Drop::Verdict::Occupied:
+		case Drop::Verdict::Refused:
+		case Drop::Verdict::Filtered:
+		case Drop::Verdict::NoResponse:
+			return QuickDC::DropReach::Blocked;
+
+		case Drop::Verdict::Unknown:
+		case Drop::Verdict::Error:
+			return QuickDC::DropReach::Unknown;
+	}
+
+	return QuickDC::DropReach::Unknown;
+}
+
+/** The same, in the vocabulary the reachability record keeps. */
+QuickDC::Reachability::State stateOf(QuickDC::DropReach reach)
+{
+	switch (reach)
+	{
+		case QuickDC::DropReach::Reached: return QuickDC::Reachability::State::Reachable;
+		case QuickDC::DropReach::Blocked: return QuickDC::Reachability::State::Unreachable;
+		case QuickDC::DropReach::Unknown: return QuickDC::Reachability::State::Unknown;
+	}
+
+	return QuickDC::Reachability::State::Unknown;
+}
+
+}
 
 QuickDC::DropCheck::DropCheck(DropCheckListener* listener_) : listener(listener_)
 {
@@ -264,6 +312,9 @@ void QuickDC::DropCheck::EventDropInbound(Drop::Client*, const Drop::InboundResu
 		default:                  result.mode = DropMode::Unknown; break;
 	}
 
+	result.tcpReached = reachOf(decision.tcp);
+	result.udpReached = want_udp ? reachOf(decision.udp) : DropReach::Unknown;
+
 	result.tcp = Drop::toString(decision.tcp);
 	result.udp = want_udp ? Drop::toString(decision.udp) : std::string();
 	result.reason = decision.reason;
@@ -365,4 +416,17 @@ QuickDC::DropVerdict QuickDC::lastDropVerdict()
 	if (!core || !core->dropcheck) return DropVerdict();
 
 	return core->dropcheck->verdict();
+}
+
+void QuickDC::applyDropMeasurement()
+{
+	Core* core = Core::getInstance();
+	if (!core || !core->reachability) return;
+
+	const DropVerdict verdict = lastDropVerdict();
+	if (!verdict.ran) return;
+
+	core->reachability->measured(stateOf(verdict.tcpReached),
+	                             stateOf(verdict.udpReached),
+	                             verdict.observedAt);
 }

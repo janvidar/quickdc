@@ -8,6 +8,7 @@
 
 #include "quickdc.h"
 #include "api/core.h"
+#include "api/dropverdict.h"
 #include "network/portforward.h"
 #include "network/reachability.h"
 #include "api/server.h"
@@ -982,7 +983,18 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	/* Evidence belongs to the endpoint it was gathered for; announcing a different
 	   one discards what was known about the old. */
 	if (core->reachability && endpoint.active)
+	{
 		core->reachability->advertising(endpoint.address, endpoint.port);
+
+		/*
+		 * And a measurement taken before there was an endpoint is offered again
+		 * now that there is one. The record ignores one until something has been
+		 * advertised - a verdict is about an endpoint - and the check at start-up
+		 * routinely finishes before the first login, so without this the one
+		 * answer that was actually measured would be the one thrown away.
+		 */
+		QuickDC::applyDropMeasurement();
+	}
 
 	/*
 	 * What we can do, as the other clients see it. Built up rather than written out

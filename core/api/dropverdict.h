@@ -39,6 +39,20 @@ enum class DropMode
 
 const char* toString(DropMode mode);
 
+/**
+ * Whether the measurement got through to one port.
+ *
+ * Beside the words below rather than derived from them, because the two are for
+ * different readers: the strings are what a person is shown, and this is what a
+ * decision is made on. Reducing one to the other would mean matching on display
+ * text, which changes when the wording does.
+ *
+ * 'Unknown' is not a soft 'Blocked'. A probe the server could not perform says
+ * nothing whatever about this client, and treating that as blocked would withdraw
+ * an active claim on the strength of somebody else's outage.
+ */
+enum class DropReach { Unknown, Reached, Blocked };
+
 struct DropVerdict
 {
 	/** False until a check has completed; every field below is then unset. */
@@ -58,6 +72,10 @@ struct DropVerdict
 	/* The per-port outcomes, named. Empty where the test was not run. */
 	std::string tcp;
 	std::string udp;
+
+	/* And the same two as something to decide on; see DropReach. */
+	DropReach tcpReached = DropReach::Unknown;
+	DropReach udpReached = DropReach::Unknown;
 
 	/** The port that was tested, which is the one this client advertises. */
 	uint16_t port = 0;
@@ -123,6 +141,17 @@ bool startDropCheck();
 
 /** The last verdict, with ran false when nothing has been measured. */
 DropVerdict lastDropVerdict();
+
+/**
+ * Feed the last verdict into the reachability record again.
+ *
+ * Needed because the record ignores a measurement until something has been
+ * advertised - a verdict is about an endpoint, and before a login there is none
+ * for it to be about. The check at start-up routinely finishes first, so the
+ * measurement it took has to be offered again once there is an endpoint. Harmless
+ * where there is nothing to offer, or where it has already been applied.
+ */
+void applyDropMeasurement();
 
 }
 

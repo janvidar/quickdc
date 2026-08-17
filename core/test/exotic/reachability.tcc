@@ -17,12 +17,20 @@
  * to come from several distinct peers, because the reports are written by whoever
  * is on the hub - a single one is as likely to be their firewall as ours, and one
  * peer must not be able to argue us into being passive by repeating itself.
+ *
+ * A measurement sits between the two. It is not asked for by this class either,
+ * but it is an observation from outside rather than somebody's account of their own
+ * failure, so it settles what the reports can only suggest - and it is the one
+ * thing that can decide UDP against. It still loses to traffic that arrived, and it
+ * stops counting once it is old enough to be about a network this client may have
+ * left, which is the case the ages here are about.
  */
 
 #include "quickdc.h"
 #include "network/reachability.h"
 
 #include <string>
+#include <time.h>
 
 using State = QuickDC::Reachability::State;
 
@@ -395,5 +403,239 @@ EXO_TEST(reachability_a_failed_check_repeated_changes_nothing,
 
 	EXO_ASSERT(r.tcp() == State::Unreachable);
 	EXO_ASSERT_EQ_UINT(r.reporters(), 0u);
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* What a server outside measured                                            */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A measurement is an observation from outside rather than an inference from what
+ * other people report, so it decides the question in either direction - and unlike
+ * everything else here, that includes deciding UDP against. What it cannot do is
+ * contradict traffic that arrived, and it stops counting once it is old enough to
+ * be describing a network this client may have left.
+ */
+
+static time_t reachability_just_now() { return time(0); }
+
+static time_t reachability_too_long_ago()
+{
+	return time(0) - QUICKDC_REACHABILITY_MEASUREMENT_AGE - 1;
+}
+
+EXO_TEST(reachability_a_measurement_decides_tcp_both_ways,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.measured(State::Reachable, State::Unknown, reachability_just_now());
+	EXO_ASSERT(r.tcp() == State::Reachable);
+
+	r.measured(State::Unreachable, State::Unknown, reachability_just_now());
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+	return 1;
+});
+
+/* A run that tested neither port says nothing, and must not silence what does. */
+EXO_TEST(reachability_a_measurement_of_nothing_decides_nothing,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+	r.connectionCheckFailed();
+
+	r.measured(State::Unknown, State::Unknown, reachability_just_now());
+
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+	EXO_ASSERT(r.udp() == State::Unknown);
+	return 1;
+});
+
+/*
+ * A connection that got through outranks a measurement that could not get one
+ * through: one attempt failing is not an account of the ones that succeeded.
+ */
+EXO_TEST(reachability_a_connection_that_arrived_outranks_a_passive_measurement,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.measured(State::Unreachable, State::Unknown, reachability_just_now());
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+
+	r.inboundConnection();
+	EXO_ASSERT(r.tcp() == State::Reachable);
+	return 1;
+});
+
+/* In either order: measuring nothing after a connection arrived changes nothing. */
+EXO_TEST(reachability_a_passive_measurement_does_not_undo_a_connection_that_arrived,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.inboundConnection();
+	r.measured(State::Unreachable, State::Unknown, reachability_just_now());
+
+	EXO_ASSERT(r.tcp() == State::Reachable);
+	return 1;
+});
+
+/* But it outranks the hub that could not connect, which only tried once too. */
+EXO_TEST(reachability_a_measurement_outranks_a_failed_check,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.connectionCheckFailed();
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+
+	r.measured(State::Reachable, State::Unknown, reachability_just_now());
+	EXO_ASSERT(r.tcp() == State::Reachable);
+	return 1;
+});
+
+/* And the peers who said they could not get in, however many of them there are. */
+EXO_TEST(reachability_a_measurement_outranks_the_refusal_threshold,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	for (int n = 0; n < QUICKDC_REACHABILITY_REFUSALS * 4; n++)
+		r.connectionRefused("CID" + std::to_string(n));
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+
+	r.measured(State::Reachable, State::Unknown, reachability_just_now());
+	EXO_ASSERT(r.tcp() == State::Reachable);
+	return 1;
+});
+
+/*
+ * Old enough and it is ignored entirely, as though it had never been taken: a
+ * laptop that moved network holds a verdict about a network it is no longer on.
+ */
+EXO_TEST(reachability_an_expired_measurement_decides_nothing,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.measured(State::Unreachable, State::Unreachable, reachability_too_long_ago());
+
+	EXO_ASSERT(r.tcp() == State::Unknown);
+	EXO_ASSERT(r.udp() == State::Unknown);
+	return 1;
+});
+
+/* Which means it stops outranking anything, rather than being weighed lower. */
+EXO_TEST(reachability_an_expired_measurement_leaves_the_inference_alone,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.measured(State::Reachable, State::Unknown, reachability_too_long_ago());
+	r.connectionCheckFailed();
+
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+	return 1;
+});
+
+/*
+ * UDP can be decided against, but only here. A server asked to send a datagram
+ * can be asked afterwards whether it did, which is what nobody else can answer.
+ */
+EXO_TEST(reachability_a_measurement_decides_udp_both_ways,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.measured(State::Unknown, State::Unreachable, reachability_just_now());
+	EXO_ASSERT(r.udp() == State::Unreachable);
+
+	/* And says nothing about TCP, which is a separate mapping. */
+	EXO_ASSERT(r.tcp() == State::Unknown);
+
+	r.measured(State::Unknown, State::Reachable, reachability_just_now());
+	EXO_ASSERT(r.udp() == State::Reachable);
+	return 1;
+});
+
+/* A datagram that arrived outranks it, for the reason a connection does. */
+EXO_TEST(reachability_a_datagram_that_arrived_outranks_a_passive_measurement,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.measured(State::Unknown, State::Unreachable, reachability_just_now());
+	EXO_ASSERT(r.udp() == State::Unreachable);
+
+	r.inboundDatagram();
+	EXO_ASSERT(r.udp() == State::Reachable);
+
+	/* In either order. */
+	r.measured(State::Unknown, State::Unreachable, reachability_just_now());
+	EXO_ASSERT(r.udp() == State::Reachable);
+	return 1;
+});
+
+/* A measurement belongs to the endpoint it was taken against, like everything
+   else here: it answered for a port that is no longer the one being published. */
+EXO_TEST(reachability_a_new_endpoint_discards_a_measurement,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+
+	r.measured(State::Reachable, State::Reachable, reachability_just_now());
+	EXO_ASSERT(r.tcp() == State::Reachable);
+
+	r.advertising("198.51.100.9", 40001);
+	EXO_ASSERT(r.tcp() == State::Unknown);
+	EXO_ASSERT(r.udp() == State::Unknown);
+
+	r.measured(State::Reachable, State::Reachable, reachability_just_now());
+	r.advertising("203.0.113.7", 40001);
+	EXO_ASSERT(r.tcp() == State::Unknown);
+	EXO_ASSERT(r.udp() == State::Unknown);
+	return 1;
+});
+
+/* The same endpoint announced again keeps it, as it keeps everything else. */
+EXO_TEST(reachability_readvertising_the_same_endpoint_keeps_a_measurement,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+	r.measured(State::Unreachable, State::Unreachable, reachability_just_now());
+
+	for (int n = 0; n < 10; n++) r.advertising("198.51.100.9", 1411);
+
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+	EXO_ASSERT(r.udp() == State::Unreachable);
+	return 1;
+});
+
+/* And forgetting forgets it too. */
+EXO_TEST(reachability_forgetting_discards_a_measurement,
+{
+	QuickDC::Reachability r;
+	r.advertising("198.51.100.9", 1411);
+	r.measured(State::Unreachable, State::Unreachable, reachability_just_now());
+	EXO_ASSERT(r.tcp() == State::Unreachable);
+
+	r.forget();
+
+	EXO_ASSERT(r.tcp() == State::Unknown);
+	EXO_ASSERT(r.udp() == State::Unknown);
+	return 1;
+});
+
+/* Nothing has been advertised, so there is no endpoint for this to be about. */
+EXO_TEST(reachability_a_measurement_before_anything_is_advertised_is_ignored,
+{
+	QuickDC::Reachability r;
+
+	r.measured(State::Reachable, State::Reachable, reachability_just_now());
+
+	EXO_ASSERT(r.tcp() == State::Unknown);
+	EXO_ASSERT(r.udp() == State::Unknown);
 	return 1;
 });
