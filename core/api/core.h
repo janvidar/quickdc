@@ -167,6 +167,30 @@ class Core {
 		QuickDC::Reachability* reachability;
 
 		/**
+		 * The same for the IPv6 endpoint, which is a different endpoint.
+		 *
+		 * One record answers for one advertised address and port, and the two
+		 * families are two of those: a client can be reached natively over IPv6
+		 * while every IPv4 attempt dies in a carrier-grade NAT, and either
+		 * record standing in for the other would report one family's luck as
+		 * the other's. Kept apart for the same reason Reachability discards
+		 * everything when the endpoint changes.
+		 */
+		QuickDC::Reachability* reachability6;
+
+		/**
+		 * Whichever of the two answers for 'ipv6'.
+		 *
+		 * Here so that a caller holding an address decides once, at the point it
+		 * knows the family, rather than every site picking a member by name and
+		 * one of them picking wrong.
+		 */
+		QuickDC::Reachability* reachabilityFor(bool ipv6) const
+		{
+			return ipv6 ? reachability6 : reachability;
+		}
+
+		/**
 		 * What a DROP server measured about being reachable from outside.
 		 *
 		 * Beside Reachability rather than inside it because the two answer the

@@ -406,6 +406,7 @@ QuickDC::Core::Core()
 	messageHandler = Samurai::MessageHandler::getInstance();
 	securityManager = new QuickDC::SecurityManager();
 	reachability = new QuickDC::Reachability();
+	reachability6 = new QuickDC::Reachability();
 	searchTokens = new QuickDC::SearchTokens();
 
 	ensureCertificate(QUICKDC_PRIVATE_KEY_FILE, QUICKDC_CERTIFICATE_FILE);
@@ -491,6 +492,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	/* Peer sessions reach for this without checking whether there is one. */
 	securityManager = new QuickDC::SecurityManager();
 	reachability = new QuickDC::Reachability();
+	reachability6 = new QuickDC::Reachability();
 	searchTokens = new QuickDC::SearchTokens();
 
 	/* Only when asked for: it reads and writes the file it is given. */
@@ -571,6 +573,7 @@ QuickDC::Core::~Core()
 	delete server; server = 0;
 	delete hubs; hubs = 0;
 	delete securityManager; securityManager = 0;
+	delete reachability6; reachability6 = 0;
 	delete reachability; reachability = 0;
 	delete searchTokens; searchTokens = 0;
 	delete shares; shares = 0;

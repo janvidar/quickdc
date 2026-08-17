@@ -346,7 +346,11 @@ void QuickDC::applyDropMeasurement()
 	const DropVerdict verdict = lastDropVerdict();
 	if (!verdict.ran) return;
 
-	core->reachability->measured(stateOf(verdict.tcpReached),
-	                             stateOf(verdict.udpReached),
-	                             verdict.observedAt);
+	/* A run answers for the family it asked about and for no other. */
+	Reachability* record = core->reachabilityFor(verdict.ipv6);
+	if (!record) return;
+
+	record->measured(stateOf(verdict.tcpReached),
+	                 stateOf(verdict.udpReached),
+	                 verdict.observedAt);
 }

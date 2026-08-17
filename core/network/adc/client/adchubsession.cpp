@@ -2061,7 +2061,18 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 
 					if (core && core->reachability)
 					{
+						/*
+						 * Against both families, because the report names
+						 * neither. A hub says its attempt failed and not which
+						 * address it tried, so attributing this to one family
+						 * would be a guess - and it is the weakest evidence
+						 * there is, outranked by anything either endpoint has
+						 * of its own, so it only decides a family that has
+						 * nothing better to say.
+						 */
 						core->reachability->connectionCheckFailed();
+						if (core->reachability6)
+							core->reachability6->connectionCheckFailed();
 
 						/* Said again without the claim, so peers stop being told
 						   to connect somewhere nothing answers - and so NATT is
@@ -2075,7 +2086,12 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 					&& core->queue->lookupRequest(job);
 
 				if (ours && who && *who && core->reachability)
+				{
+					/* Both, and for the reason the hub's own failed check is; a
+					   peer reports that it could not get in, never over what. */
 					core->reachability->connectionRefused(who);
+					if (core->reachability6) core->reachability6->connectionRefused(who);
+				}
 				else
 					QDBG("A connect error for a job we did not ask for; ignoring it");
 

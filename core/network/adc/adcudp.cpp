@@ -137,7 +137,12 @@ void ADC::DatagramHandler::noteReachable(Samurai::IO::Net::DatagramPacket* packe
 	const Samurai::IO::Net::InetAddress* address = from->getAddress();
 	if (!address || address->isLoopback()) return;
 
-	core->reachability->inboundDatagram();
+	/* Against the family it arrived on; see DCServer::EventAcceptSocket(). */
+	const bool six =
+		address->getType() == Samurai::IO::Net::InetAddress::Version::IPv6;
+
+	if (QuickDC::Reachability* record = core->reachabilityFor(six))
+		record->inboundDatagram();
 }
 
 

@@ -118,8 +118,19 @@ void QuickDC::DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*,
 	 * there is then no telling which of the two it was.
 	 */
 	Core* core = Core::getInstance();
-	if (core && core->reachability && from && !from->isLoopback())
-		core->reachability->inboundConnection();
+	if (core && from && !from->isLoopback())
+	{
+		/*
+		 * Against the family it arrived on, which is now a distinction worth
+		 * making: the two ports are two endpoints, and a peer that reached us
+		 * over IPv6 has proven nothing whatever about the IPv4 one.
+		 */
+		const bool six =
+			from->getType() == Samurai::IO::Net::InetAddress::Version::IPv6;
+
+		if (Reachability* record = core->reachabilityFor(six))
+			record->inboundConnection();
+	}
 
 	Connection* connection = new ProtocolProbe(socket);
 	socket->setEventHandler(connection);

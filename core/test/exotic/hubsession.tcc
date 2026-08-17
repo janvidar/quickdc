@@ -4280,3 +4280,46 @@ EXO_TEST(hubsession_only_a_connection_that_lasted_resets_the_backoff,
 	EXO_ASSERT(QuickDC::Hub::connectionHeld(100000));
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Each family keeps its own evidence, because each is its own endpoint.
+ *
+ * A client can be reached natively over IPv6 while every IPv4 attempt dies in a
+ * carrier-grade NAT, so one record standing in for the other would report one
+ * family's luck as the other's - and the claim a hub is given is per family.
+ */
+EXO_TEST(hubsession_the_two_families_keep_their_own_evidence,
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	EXO_ASSERT(core != 0);
+
+	EXO_ASSERT(core->reachability != 0);
+	EXO_ASSERT(core->reachability6 != 0);
+	EXO_ASSERT(core->reachability != core->reachability6);
+
+	/* And the one a caller holding an address asks for is the one it means. */
+	EXO_ASSERT(core->reachabilityFor(false) == core->reachability);
+	EXO_ASSERT(core->reachabilityFor(true) == core->reachability6);
+
+	core->reachability->forget();
+	core->reachability6->forget();
+
+	core->reachability6->advertising("2001:db8::5", 1411);
+	core->reachability6->inboundConnection();
+
+	EXO_ASSERT(core->reachability6->tcp() == QuickDC::Reachability::State::Reachable);
+	EXO_ASSERT(core->reachability->tcp() == QuickDC::Reachability::State::Unknown);
+
+	/* And the same the other way, so neither is merely the one that was written. */
+	core->reachability6->forget();
+	core->reachability->advertising("198.51.100.9", 1411);
+	core->reachability->inboundDatagram();
+
+	EXO_ASSERT(core->reachability->udp() == QuickDC::Reachability::State::Reachable);
+	EXO_ASSERT(core->reachability6->udp() == QuickDC::Reachability::State::Unknown);
+
+	core->reachability->forget();
+	return 1;
+});
