@@ -31,6 +31,7 @@ QuickDC::DCServer::DCServer()
 
 	uint16_t port = config->getNumber("Port", 1411);
 	std::string bindaddr = config->getString("Bind", "0.0.0.0");
+	std::string bindaddr6 = config->getString("Bind6", "::");
 
 	QDBG("Starting up server at port %d, listening on %s", port, bindaddr.c_str());
 
@@ -39,22 +40,55 @@ QuickDC::DCServer::DCServer()
 
 	socket = Samurai::IO::Net::ServerSocket::create(this, bindAddr);
 	dgram  = Samurai::IO::Net::DatagramSocket::create(this, bindAddr);
-	
+
 	if (!socket->listen())
 	{
 		QDBG("Error: could not bind to port for TCP service. Disabling service");
 		socket.reset();
 	}
-	       
+
 	if (!dgram->listen())
 	{
 		QDBG("Error: could not bind to port for UDP service. Disabling service");
 		dgram.reset();
 	}
+
+	/*
+	 * The same port on the other family, in sockets of its own: a wildcard bound
+	 * for IPv6 answers for IPv6 alone - see SocketBase::setV6Only() - so the pair
+	 * above is untouched by this one whether or not it comes up.
+	 *
+	 * A host with no IPv6 fails to bind here and is left as it was. That is not an
+	 * error to report: a machine that has no IPv6 is not misconfigured, and the
+	 * client is simply reachable on one family. Nothing is advertised for a family
+	 * that has no socket, so a peer is never sent to a port nothing is listening on.
+	 */
+	if (bindaddr6.empty()) return;
+
+	Samurai::IO::Net::InetAddress localAddr6(bindaddr6.c_str(),
+	                                         Samurai::IO::Net::InetAddress::Version::IPv6);
+	Samurai::IO::Net::InetSocketAddress bindAddr6(localAddr6, port);
+
+	socket6 = Samurai::IO::Net::ServerSocket::create(this, bindAddr6);
+	dgram6  = Samurai::IO::Net::DatagramSocket::create(this, bindAddr6);
+
+	if (!socket6 || !socket6->listen())
+	{
+		QDBG("No IPv6 peer port: could not listen on %s", bindaddr6.c_str());
+		socket6.reset();
+	}
+
+	if (!dgram6 || !dgram6->listen())
+	{
+		QDBG("No IPv6 search port: could not listen on %s", bindaddr6.c_str());
+		dgram6.reset();
+	}
 }
 
 QuickDC::DCServer::~DCServer()
 {
+	dgram6.reset();
+	socket6.reset();
 	dgram.reset();
 	socket.reset();
 }
@@ -104,10 +138,24 @@ void QuickDC::DCServer::EventDatagramError(const Samurai::IO::Net::DatagramSocke
 
 void QuickDC::DCServer::send(Samurai::IO::Net::DatagramPacket* packet)
 {
+	Samurai::IO::Net::SocketAddress* to = packet ? packet->getAddress() : nullptr;
+	if (!to) return;
+
+	/*
+	 * Out of the socket bound to the family being addressed. Each answers for one
+	 * family and neither can reach the other's, so sending a datagram meant for an
+	 * IPv6 peer down the IPv4 socket is not a slower route to it but no route at
+	 * all - and the search it answers would go unanswered with nothing said.
+	 */
+	const bool six = to->getSockAddrFamily() == AF_INET6;
+
 	// NOTE: Might not be initialized if socket was busy
-	if (dgram)
+	if (six)
 	{
-		dgram->send(packet);
+		if (dgram6) dgram6->send(packet);
+		return;
 	}
+
+	if (dgram) dgram->send(packet);
 }
 

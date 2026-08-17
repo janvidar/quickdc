@@ -39,6 +39,18 @@ class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samur
 	protected:
 		std::shared_ptr<Samurai::IO::Net::ServerSocket> socket;
 		std::shared_ptr<Samurai::IO::Net::DatagramSocket> dgram;
+
+		/**
+		 * The same two on IPv6, null where the host has none to bind.
+		 *
+		 * Sockets of their own rather than one pair carrying both families,
+		 * because what carries what is a decision the system makes differently
+		 * from platform to platform - see SocketBase::setV6Only(). A pair each
+		 * is the arrangement that reads the same everywhere, and it is also
+		 * what lets one family be listening while the other is not.
+		 */
+		std::shared_ptr<Samurai::IO::Net::ServerSocket> socket6;
+		std::shared_ptr<Samurai::IO::Net::DatagramSocket> dgram6;
 };
 
 }
