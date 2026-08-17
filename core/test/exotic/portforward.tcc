@@ -512,3 +512,56 @@ EXO_TEST(portforward_an_observed_address_does_not_make_a_passive_client_active,
 	
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * IPv6 is the shorter decision: no gateway, no translated port, and an address
+ * the host carries itself. What is left is whether there is an endpoint at all.
+ */
+
+/* Asked for, but nothing is listening on this family - a host with no IPv6. */
+EXO_TEST(portforward_ipv6_without_a_listening_socket_is_passive,
+{
+	const QuickDC::PeerEndpoint e =
+		QuickDC::peerEndpoint6(true, false, "2001:db8::5", 1411);
+	EXO_ASSERT(!e.active);
+	return 1;
+});
+
+/* Not asked for at all, whatever is listening. */
+EXO_TEST(portforward_ipv6_is_passive_when_active_mode_was_not_asked_for,
+{
+	const QuickDC::PeerEndpoint e =
+		QuickDC::peerEndpoint6(false, true, "2001:db8::5", 1411);
+	EXO_ASSERT(!e.active);
+	return 1;
+});
+
+/*
+ * Listening, but nobody has said where we are.
+ *
+ * Passive rather than advertised with a blank or a wildcard: an INF naming an
+ * address peers cannot reach is worse than one claiming no IPv6 endpoint, since
+ * the first has every peer trying and failing while the second has them use the
+ * family that works.
+ */
+EXO_TEST(portforward_ipv6_is_passive_until_something_says_where_we_are,
+{
+	const QuickDC::PeerEndpoint e =
+		QuickDC::peerEndpoint6(true, true, "", 1411);
+	EXO_ASSERT(!e.active);
+	EXO_ASSERT(e.address.empty());
+	return 1;
+});
+
+/* And with all three, the address observed and the port bound. */
+EXO_TEST(portforward_ipv6_advertises_the_address_observed_and_the_port_bound,
+{
+	const QuickDC::PeerEndpoint e =
+		QuickDC::peerEndpoint6(true, true, "2001:db8::5", 1411);
+	EXO_ASSERT(e.active);
+	EXO_ASSERT(e.address == "2001:db8::5");
+	EXO_ASSERT(e.port == 1411);
+	return 1;
+});

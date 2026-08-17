@@ -125,13 +125,14 @@ static bool peerCanTraverse(const QuickDC::User* user)
  * Overridable both ways round for the same reason the evidence is bounded: the
  * reports come from whoever is on the hub.
  */
-static bool reachable(QuickDC::Preferences* config)
+static bool reachable(QuickDC::Preferences* config, bool ipv6)
 {
 	config->setGroup("Network");
 
 	if (config->getBool("Force active mode", false)) return true;
 
-	const QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	const QuickDC::Reachability* known =
+		QuickDC::Core::getInstance()->reachabilityFor(ipv6);
 	if (!known) return true;
 
 	return known->tcp() != QuickDC::Reachability::State::Unreachable;
@@ -990,13 +991,28 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 
 	QDBG("Active mode %d (server=%p)\n", endpoint.active ? 1 : 0, core->server);
 
+	/*
+	 * The IPv6 endpoint, which no gateway is involved in: the address is the one
+	 * a server outside reported for that family, since there is nothing
+	 * configured to fall back on and no wildcard a hub would fill in.
+	 */
+	const QuickDC::PeerEndpoint endpoint6 = QuickDC::peerEndpoint6(
+		config->getBool("Active mode"),
+		core->server != 0 && core->server->listening(true),
+		QuickDC::lastDropVerdict(true).publicAddress,
+		static_cast<uint16_t>(config->getNumber("Port")));
+
 	/* Evidence belongs to the endpoint it was gathered for; announcing a different
 	   one discards what was known about the old. */
 	if (core->reachability && endpoint.active)
-	{
 		core->reachability->advertising(endpoint.address, endpoint.port);
+
+	if (core->reachability6 && endpoint6.active)
+		core->reachability6->advertising(endpoint6.address, endpoint6.port);
+
+	if ((core->reachability && endpoint.active)
+	    || (core->reachability6 && endpoint6.active))
 		QuickDC::applyDropMeasurement();
-	}
 
 	/*
 	 * What we can do, as the other clients see it. Built up rather than written out
@@ -1071,7 +1087,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 		 * entitled to say so, and a peer that lies about failing to connect must
 		 * not be the last word.
 		 */
-		if (reachable(config)) claim(ADC_EXT_TCP4);
+		if (reachable(config, false)) claim(ADC_EXT_TCP4);
 
 		/*
 		 * UDP4 is not withdrawn, because nothing can disprove it: a peer that
@@ -1079,6 +1095,24 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 		 * whenever the port is open, as before.
 		 */
 		claim(ADC_EXT_UDP4);
+	}
+
+	/*
+	 * And the same for IPv6, claimed from that family's own evidence.
+	 *
+	 * Sent only where there is an endpoint: unlike I4 there is no wildcard that
+	 * asks a hub to fill the address in, so a client that does not know its own
+	 * IPv6 address says nothing rather than naming one no peer could reach. An
+	 * empty field is what withdraws a claim made while we did know.
+	 */
+	fields.emplace_back("I6", endpoint6.active ? endpoint6.address : std::string());
+	fields.emplace_back("U6", endpoint6.active ? std::to_string(endpoint6.port)
+	                                           : std::string());
+
+	if (endpoint6.active)
+	{
+		if (reachable(config, true)) claim(ADC_EXT_TCP6);
+		claim(ADC_EXT_UDP6);
 	}
 
 	/*

@@ -222,6 +222,31 @@ PeerEndpoint peerEndpoint(bool wanted, bool listening,
                           uint16_t configuredPort,
                           const PortForward* forward);
 
+/**
+ * The same decision for IPv6, which is a shorter one.
+ *
+ * No gateway is involved and no port is translated: an IPv6 host carries its own
+ * global address, so the port advertised is the port bound and there is nothing
+ * for a forward to have changed. What is left to decide is whether there is an
+ * endpoint at all.
+ *
+ * There is one only where the address is known. Unlike IPv4 there is no
+ * configured value to fall back on and no "0.0.0.0" to hand a hub meaning 'use
+ * what you see' - so until something outside has reported where we are, the
+ * honest INF is one that claims no IPv6 endpoint rather than one naming an
+ * address peers would fail to reach. A measurement supplies it within seconds of
+ * start-up and the hubs are told again when it does.
+ *
+ * @param wanted     whether the user asked to be active at all
+ * @param listening  whether the IPv6 peer socket came up; see DCServer::listening()
+ * @param observedAddress  where something outside says it sees us on this family,
+ *        which is the measurement's own answer where there is one
+ * @param port       the port bound, which is the port advertised
+ */
+PeerEndpoint peerEndpoint6(bool wanted, bool listening,
+                           const std::string& observedAddress,
+                           uint16_t port);
+
 }
 
 #endif // HAVE_QUICKDC_PORTFORWARD_H

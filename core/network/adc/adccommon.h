@@ -68,6 +68,16 @@ typedef uint32_t sid_t;
 #define ADC_EXT_UDP4                    "UDP4"
 
 /*
+ * And the same two claims about the IPv6 endpoint, which is a different endpoint
+ * with a different answer: a home connection routinely carries native IPv6 while
+ * every IPv4 attempt dies in the carrier's NAT, so a client can be worth dialling
+ * on one family and not on the other. Claimed and withdrawn independently, from
+ * the evidence gathered for that family alone.
+ */
+#define ADC_EXT_TCP6                    "TCP6"
+#define ADC_EXT_UDP6                    "UDP6"
+
+/*
  * Rich text: markdown chat, the RT flag on MSG.
  *
  * One fourcc in two places. In SUP a client offers it with "ADRTF0" and may only send the

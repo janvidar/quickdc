@@ -354,3 +354,23 @@ QuickDC::PeerEndpoint QuickDC::peerEndpoint(bool wanted, bool listening,
 
 	return endpoint;
 }
+
+
+QuickDC::PeerEndpoint QuickDC::peerEndpoint6(bool wanted, bool listening,
+                                             const std::string& observedAddress,
+                                             uint16_t port)
+{
+	PeerEndpoint endpoint;
+
+	if (!wanted || !listening) return endpoint;
+
+	/* Nothing to advertise until something outside has said where we are; see
+	   the note on the declaration for why there is nothing to fall back on. */
+	if (observedAddress.empty()) return endpoint;
+
+	endpoint.active = true;
+	endpoint.address = observedAddress;
+	endpoint.port = port;
+
+	return endpoint;
+}

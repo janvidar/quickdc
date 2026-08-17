@@ -4323,3 +4323,40 @@ EXO_TEST(hubsession_the_two_families_keep_their_own_evidence,
 	core->reachability->forget();
 	return 1;
 });
+
+/*
+ * A client that does not know its own IPv6 address claims no IPv6 endpoint.
+ *
+ * There is no wildcard for I6 the way "0.0.0.0" asks a hub to fill in I4, so the
+ * only honest INF is one that says nothing: naming an address no peer can reach
+ * has every one of them try it and fail, where saying nothing has them use the
+ * family that works. And TCP6 is a claim peers act on, so it must not be made
+ * merely because the client supports the field.
+ */
+EXO_TEST(hubsession_no_ipv6_endpoint_is_claimed_before_one_is_known,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+
+	EXO_ASSERT(!claims(inf, "TCP6"));
+	EXO_ASSERT(!claims(inf, "UDP6"));
+
+	/*
+	 * And the field itself carries nothing. Sent empty rather than left out, which
+	 * is what withdraws one announced while we did know - so what is checked is
+	 * that no address went out with it, not that the field is absent.
+	 */
+	const size_t at = inf.find(" I6");
+	if (at != std::string::npos)
+	{
+		const size_t after = at + 3;
+		EXO_ASSERT(after >= inf.size() || inf[after] == ' ');
+	}
+	return 1;
+});
