@@ -128,17 +128,20 @@ class DropCheckListener
  */
 
 /**
- * Point the measurement at 'listener', replacing whatever the core set up.
+ * Also report every verdict to 'listener', or to nobody when null.
  *
- * A measurement is made on demand where the core has none, so that a server
- * named after this started is usable without a restart: the check is only absent
- * because nothing had been configured to ask.
+ * Beside what the core does with one, never instead of it. The core records the
+ * measurement, asks the gateway to forward a port that nothing reached, and has
+ * the hubs republish; none of that is a front end's to take over by drawing the
+ * same answer, and a client that behaved differently depending on whether a
+ * window was open would be two different clients.
  *
- * A run in flight belongs to whoever is being displaced, and is abandoned rather
- * than left going. The connect-back is recognised through whichever check this
- * names - the protocol probe asks it - so a run whose listener has changed would
- * answer the challenge and report to somebody who is no longer there, and one
- * whose listener is gone would conclude passive on no evidence.
+ * A run in flight is left going. It was started for the core's own reasons and
+ * reports to the core either way, so there is nothing to abandon - and the run
+ * this displaces at start-up would be the one the core began on launch.
+ *
+ * Does nothing in a core built without a listening socket, where there is no
+ * port worth measuring and so no check to attach to.
  */
 void setDropCheckListener(DropCheckListener* listener);
 

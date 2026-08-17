@@ -133,7 +133,9 @@ void QuickDC::DropCheck::internal_fail(const std::string& reason)
 	internal_disarm();
 
 	QERR("The reachability check could not be completed: %s", reason.c_str());
+
 	if (listener) listener->EventDropCheckFailed(reason.c_str());
+	if (observer) observer->EventDropCheckFailed(reason.c_str());
 }
 
 void QuickDC::DropCheck::internal_finish()
@@ -148,7 +150,10 @@ void QuickDC::DropCheck::internal_finish()
 	     toString(result.mode), result.ipv6 ? "IPv6" : "IPv4",
 	     static_cast<int>(result.port), result.publicAddress.c_str());
 
-	if (listener) listener->EventDropCheckFinished(result);
+	const DropVerdict reported = result;
+
+	if (listener) listener->EventDropCheckFinished(reported);
+	if (observer) observer->EventDropCheckFinished(reported);
 }
 
 bool QuickDC::DropCheck::answerChallenge(std::string_view line, std::string& response) const
@@ -291,16 +296,9 @@ void QuickDC::setDropCheckListener(QuickDC::DropCheckListener* listener)
 	Core* core = Core::getInstance();
 	if (!core) return;
 
-	if (!core->dropcheck)
-	{
-		if (!listener) return;
-		core->dropcheck = new DropCheck(listener);
-		return;
-	}
+	if (!core->dropcheck) return;
 
-	if (core->dropcheck->isBusy()) core->dropcheck->cancel();
-
-	core->dropcheck->setListener(listener);
+	core->dropcheck->setObserver(listener);
 }
 
 bool QuickDC::startDropCheck()

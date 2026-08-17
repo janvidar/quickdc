@@ -387,3 +387,96 @@ EXO_TEST(dropcheck_a_measurement_from_the_future_is_not_believed,
 	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(measuredAt(now + 86400), now));
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * Who hears about a verdict, which is the core and anything else that asked.
+ *
+ * What the core does with one - record the measurement, ask the gateway to
+ * forward a port nothing reached, have the hubs republish - happens whether or
+ * not a front end is drawing the same answer. A client that behaved one way with
+ * a settings page open and another without it would be two different clients.
+ */
+
+/** Records what it was told, and when, relative to every other one of these. */
+static int drop_order = 0;
+
+class OrderedRecorder : public QuickDC::DropCheckListener
+{
+	public:
+		int failed = 0;
+		int failedAt = 0;
+
+		void EventDropCheckFinished(const QuickDC::DropVerdict&) override { }
+
+		void EventDropCheckFailed(const char*) override
+		{
+			failed++;
+			failedAt = ++drop_order;
+		}
+};
+
+/* Both are told, and the core first, so the record is written before it is read. */
+EXO_TEST(dropcheck_a_front_end_watching_does_not_take_the_core_off_the_verdict,
+{
+	drop_order = 0;
+
+	OrderedRecorder core;
+	OrderedRecorder front;
+
+	QuickDC::DropCheck check(&core);
+	check.setObserver(&front);
+
+	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
+	            0, 1411, std::nullopt);
+
+	EXO_ASSERT(core.failed == 1);
+	EXO_ASSERT(front.failed == 1);
+	EXO_ASSERT(core.failedAt < front.failedAt);
+	return 1;
+});
+
+/*
+ * And the core keeps hearing once the front end has gone.
+ *
+ * The window closing is what takes the observer off, and a measurement taken
+ * after that is still the client's own business.
+ */
+EXO_TEST(dropcheck_the_core_still_hears_a_verdict_after_the_front_end_goes,
+{
+	OrderedRecorder core;
+	OrderedRecorder front;
+
+	QuickDC::DropCheck check(&core);
+	check.setObserver(&front);
+
+	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
+	            0, 1411, std::nullopt);
+	EXO_ASSERT(core.failed == 1 && front.failed == 1);
+
+	check.setObserver(nullptr);
+	EXO_ASSERT(check.getObserver() == nullptr);
+
+	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
+	            0, 1411, std::nullopt);
+
+	EXO_ASSERT(core.failed == 2);
+	EXO_ASSERT(front.failed == 1);
+	return 1;
+});
+
+/* A check nobody is watching still reports to the core, and does not crash. */
+EXO_TEST(dropcheck_a_check_with_no_front_end_reports_to_the_core_alone,
+{
+	OrderedRecorder core;
+	QuickDC::DropCheck check(&core);
+
+	EXO_ASSERT(check.getObserver() == nullptr);
+
+	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
+	            0, 1411, std::nullopt);
+
+	EXO_ASSERT(core.failed == 1);
+	return 1;
+});

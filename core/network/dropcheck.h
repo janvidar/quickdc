@@ -95,16 +95,23 @@ class DropCheck final : public Drop::ClientEventHandler
 		void cancel();
 
 		/**
-		 * Send the results somewhere else from now on.
+		 * Also report to 'observer_' from now on, or to nobody when null.
 		 *
-		 * The core sets up a listener of its own so that a verdict reaches the
-		 * hubs whether or not anything is drawing; a front end replaces it and is
-		 * then responsible for doing that itself. Null silences reporting without
-		 * stopping a run that is already going.
+		 * Beside the core's own listener rather than in place of it. What the
+		 * core does with a verdict - record the measurement, ask the gateway to
+		 * forward a port that nothing reached, have the hubs republish - is not
+		 * a front end's to take over by drawing the same answer, and a client
+		 * whose behaviour depended on whether a window happened to be open would
+		 * be two different clients.
+		 *
+		 * The core is told first, so that anything reading the record when the
+		 * front end draws sees the measurement already in it. Both are given the
+		 * same copy rather than the member itself, so that a verdict cannot be
+		 * overwritten underneath the second one by a run the first started.
 		 */
-		void setListener(DropCheckListener* listener_) { listener = listener_; }
+		void setObserver(DropCheckListener* observer_) { observer = observer_; }
 
-		DropCheckListener* getListener() const { return listener; }
+		DropCheckListener* getObserver() const { return observer; }
 
 		bool isBusy() const { return state != State::Idle; }
 
@@ -225,7 +232,14 @@ class DropCheck final : public Drop::ClientEventHandler
 		/** Forget the session and with it the credentials that answer a probe. */
 		void internal_disarm();
 
+		/**
+		 * The core's own, given at construction and never replaced: what the core
+		 * does with a verdict happens whether or not anything is drawing.
+		 */
 		DropCheckListener* listener;
+
+		/** A front end's, beside the above rather than instead of it. */
+		DropCheckListener* observer = nullptr;
 
 		/**
 		 * Kept past the end of a run and replaced only by the next one.

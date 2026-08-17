@@ -443,20 +443,17 @@ QuickDC::Core::Core()
 	if (config->getBool("UseUPnP", false))
 		portforward->start(config->getNumber("Port", 1411));
 
-	if (std::string(config->getString("Reachability server", "")).length())
-	{
-		dropcheck = new DropCheck(&dropcheck_listener);
-		startDropCheck();
-	}
-
 	/*
-	 * Whether or not one was configured above. A server named later is measured
-	 * without a restart - the check is built on demand when a front end attaches
-	 * a listener - and a refresh made only where one was configured at start-up
-	 * would leave exactly that case never measured again. It costs a comparison
-	 * every few minutes to ask, and asks a server nothing until there is one.
+	 * Built whether or not there is a server to ask, because naming one is a
+	 * setting rather than a restart: the check holds no resources until it is
+	 * started, and it is what a front end attaches to and what the probes hand a
+	 * challenge to. Only the measuring is conditional.
 	 */
+	dropcheck = new DropCheck(&dropcheck_listener);
 	dropRefresh = new Samurai::Timer(&dropcheck_listener, DROP_REFRESH_TICK, false);
+
+	if (std::string(config->getString("Reachability server", "")).length())
+		startDropCheck();
 
 	shares->initialize();
 }
