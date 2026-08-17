@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include <samurai/io/dir.h>
+#include <samurai/io/file.h>
 #include "share/sharedir.h"
 #include "share/sharefile.h"
 #include "share/sharemanager.h"
@@ -136,6 +137,20 @@ void QuickDC::Share::Dir::scan() {
 			path.c_str(), MAX_SHARE_DEPTH);
 		return;
 	}
+
+	/*
+	 * A file offered by its hash alone is given a directory of its own whose path
+	 * is that file, so that its Share::File has something to report its size
+	 * through without joining a share - see Share::Manager::registerAttachment(),
+	 * which is the only place that sets this flag. There is nothing below a
+	 * regular file to find, so opening it as a directory could only fail, and the
+	 * failure said nothing: it put a line in the error log for every remembered
+	 * attachment on every start-up, among the failures that do mean something.
+	 * Asked about a share root the error stands, because a root that names a file
+	 * rather than a directory is a mistake somebody has to be told about.
+	 */
+	if (manager && manager->attaching && Samurai::IO::File(path).isRegular())
+		return;
 
 	Samurai::IO::Directory dir(path);
 	if (!dir.open()) {

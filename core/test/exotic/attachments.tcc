@@ -35,6 +35,7 @@
 #include <samurai/io/net/socket.h>
 
 #include <chrono>
+#include <fcntl.h>
 #include <memory>
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,6 +78,60 @@ static std::string readFile(const std::string& path)
 	fclose(fh);
 	return out;
 }
+
+/*
+ * Everything written to stderr while this is alive, which is where QERR goes in
+ * every build: without tracing it is the whole of the error log, and with it the
+ * message is written there as well as to the debug file. A case that says
+ * offering a file must be quiet has nothing else to look at.
+ *
+ * text() puts stderr back before returning, so an assertion on what it collected
+ * is reported to the terminal rather than into the capture.
+ */
+class Stderr
+{
+	public:
+		Stderr() : path(scratch("stderr.txt"))
+		{
+			fflush(stderr);
+			saved = dup(STDERR_FILENO);
+			sink = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+			if (sink >= 0 && saved >= 0) dup2(sink, STDERR_FILENO);
+		}
+
+		~Stderr()
+		{
+			restore();
+			Samurai::IO::File(path).remove();
+		}
+
+		Stderr(const Stderr&) = delete;
+		Stderr& operator=(const Stderr&) = delete;
+
+		std::string text()
+		{
+			restore();
+			return readFile(path);
+		}
+
+	private:
+		void restore()
+		{
+			if (saved < 0) return;
+
+			fflush(stderr);
+			dup2(saved, STDERR_FILENO);
+			close(saved);
+			saved = -1;
+
+			if (sink >= 0) close(sink);
+			sink = -1;
+		}
+
+		std::string path;
+		int saved = -1;
+		int sink = -1;
+};
 
 /* What the share manager said about the files handed to attach(). */
 class Attacher : public QuickDC::Share::AttachmentListener
@@ -842,6 +897,69 @@ EXO_TEST(attachments_an_attachment_is_promoted_to_slot_free_and_not_back,
 		EXO_ASSERT(f.shares->attach(path.c_str(), &again));
 		EXO_ASSERT(again.ready == 1);
 		EXO_ASSERT(f.shares->isSlotFreeByTTH(post.lastTTH.c_str()));
+
+	return 1;
+});
+
+/*
+ * An attachment is one file, and it is given a directory of its own whose path is
+ * that file, so that a Share::File has something to report its size through
+ * without joining a share. Scanning that directory found a regular file where a
+ * directory was expected and said the file could not be opened - which is not a
+ * failure at all, and which the error log has no use for.
+ */
+EXO_TEST(attachments_offering_a_file_says_nothing_about_opening_a_directory,
+{
+		Fixture f;
+		f.build(false);
+		EXO_ASSERT(f.scan());
+
+		const std::string path = f.looseFile("quiet.txt", std::string(20000, 's'));
+
+		Attacher who;
+		Stderr log;
+		const bool attached = f.shares->attach(path.c_str(), &who);
+		const bool drained = f.drain();
+		const std::string said = log.text();
+
+		EXO_ASSERT(attached);
+		EXO_ASSERT(drained);
+		EXO_ASSERT(who.ready == 1);
+
+		EXO_ASSERT(said.find("Unable to open directory") == std::string::npos);
+		EXO_ASSERT(said.find(path) == std::string::npos);
+
+	return 1;
+});
+
+/*
+ * And the start-up that the noise was actually seen on: every remembered
+ * attachment is offered again as the share is read, so one line for each of them
+ * went into the log before the user had done anything at all.
+ */
+EXO_TEST(attachments_a_remembered_attachment_is_offered_again_without_complaint,
+{
+		Fixture f;
+		f.build(false);
+		EXO_ASSERT(f.scan());
+
+		const std::string path = f.looseFile("remembered.txt", std::string(20000, 't'));
+
+		Attacher who;
+		EXO_ASSERT(f.shares->attach(path.c_str(), &who, Persistence::Remembered));
+		EXO_ASSERT(f.drain());
+		EXO_ASSERT(who.ready == 1);
+		EXO_ASSERT(f.remembered() == 1);
+
+		Stderr log;
+		const bool restarted = f.restart();
+		const std::string said = log.text();
+
+		EXO_ASSERT(restarted);
+		EXO_ASSERT(f.shares->getFileByTTH(who.lastTTH.c_str()));
+
+		EXO_ASSERT(said.find("Unable to open directory") == std::string::npos);
+		EXO_ASSERT(said.find(path) == std::string::npos);
 
 	return 1;
 });
