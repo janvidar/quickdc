@@ -56,19 +56,35 @@ static std::string peerAddress(const Samurai::IO::Net::Socket* socket)
 	HUB->send(x_cmd, USER); \
 }
 
-#define INF_CHECK_IP(CMD, SOCKET, HUB) { \
-	if (CMD->haveArgument("I4", 2)) { \
-		Samurai::IO::Net::InetAddress ip(CMD->getArgument("I4", 2), Samurai::IO::Net::InetAddress::Version::IPv4); \
-		Samurai::IO::Net::InetAddress any("0.0.0.0", Samurai::IO::Net::InetAddress::Version::IPv4); \
-		const Samurai::IO::Net::InetAddress* actualIP = SOCKET->getAddress(); \
-		if (!actualIP) { \
-			/* No peer to compare against, and none to substitute. */ \
-			CMD->removeArgument("I4", 2); \
+/*
+ * Hold an announced endpoint to what the connection itself shows.
+ *
+ * A client's address is the one thing in an INF the hub can check rather than
+ * take on trust, and it checks it by comparing what was claimed against where
+ * the connection came from. That comparison only means anything on the family
+ * the connection actually uses: a peer reaching this hub over IPv4 has no IPv6
+ * address here to be checked against, so a claim about the other family is
+ * stripped rather than believed or argued with - unverifiable is not the same as
+ * wrong, and answering it with "Invalid IP" would quote an address of the wrong
+ * family back at them.
+ *
+ * The wildcard is a request rather than a claim: a client that does not know
+ * where it is says so, and the hub fills in what it sees.
+ */
+#define INF_CHECK_ADDRESS(CMD, SOCKET, HUB, FIELD, PORTFIELD, VERSION, ANY) { \
+	const Samurai::IO::Net::InetAddress* actualIP = SOCKET->getAddress(); \
+	const bool sameFamily = actualIP && actualIP->getType() == VERSION; \
+	if (CMD->haveArgument(FIELD, 2)) { \
+		Samurai::IO::Net::InetAddress ip(CMD->getArgument(FIELD, 2), VERSION); \
+		Samurai::IO::Net::InetAddress any(ANY, VERSION); \
+		if (!sameFamily) { \
+			/* No address of this family to compare against, nor to substitute. */ \
+			CMD->removeArgument(FIELD, 2); \
 		} else if (ip == any) { \
-			CMD->removeArgument("I4", 2); \
-			CMD->addArgument("I4", actualIP->toString()); \
+			CMD->removeArgument(FIELD, 2); \
+			CMD->addArgument(FIELD, actualIP->toString()); \
 		} else if (ip != *actualIP) { \
-			CMD->removeArgument("I4", 2); \
+			CMD->removeArgument(FIELD, 2); \
 			ADC::Command* x_cmd = new ADC::Command(FOURCC('I','S','T','A')); \
 			/* Severity 1 and ADC_CODE_PROTOCOL_IP_INF_ERROR, which is the code \
 			   that carries 'IP'. This said 145, which is the feature error and \
@@ -80,18 +96,27 @@ static std::string peerAddress(const Samurai::IO::Net::Socket* socket)
 			HUB->send(x_cmd, this); \
 		} \
 	} \
-	if (CMD->haveArgument("U4", 2)) { \
-		char* str_port = CMD->getArgument("U4", 2); \
+	if (CMD->haveArgument(PORTFIELD, 2)) { \
+		char* str_port = CMD->getArgument(PORTFIELD, 2); \
 		int port = Samurai::Util::Convert::to_int32(str_port); \
-		if (port <= 0 || port > 65535) { \
-			CMD->removeArgument("U4", 2); \
-			ADC::Command* x_cmd = new ADC::Command(FOURCC('I','S','T','A')); \
-			x_cmd->addArgument("143"); \
-			x_cmd->addArgument("Invalid port"); \
-			x_cmd->addArgument("FL", "U4"); \
-			HUB->send(x_cmd, this); \
+		if (!sameFamily || port <= 0 || port > 65535) { \
+			CMD->removeArgument(PORTFIELD, 2); \
+			if (sameFamily) { \
+				ADC::Command* x_cmd = new ADC::Command(FOURCC('I','S','T','A')); \
+				x_cmd->addArgument("143"); \
+				x_cmd->addArgument("Invalid port"); \
+				x_cmd->addArgument("FL", PORTFIELD); \
+				HUB->send(x_cmd, this); \
+			} \
 		} \
 	} \
+}
+
+#define INF_CHECK_IP(CMD, SOCKET, HUB) { \
+	INF_CHECK_ADDRESS(CMD, SOCKET, HUB, "I4", "U4", \
+	                  Samurai::IO::Net::InetAddress::Version::IPv4, "0.0.0.0"); \
+	INF_CHECK_ADDRESS(CMD, SOCKET, HUB, "I6", "U6", \
+	                  Samurai::IO::Net::InetAddress::Version::IPv6, "::"); \
 }
 
 #define INF_EXTRACT_FEATURE(CMD) { \
@@ -193,8 +218,6 @@ bool ADC::LocalHub::User::setINF(ADC::Command* cmd, ADC::LocalHub::Hub* hub) {
 	INF_STRIP_ARGUMENT(cmd, "HU");
 	INF_STRIP_ARGUMENT(cmd, "BO");
 	INF_STRIP_ARGUMENT(cmd, "TO");
-	INF_STRIP_ARGUMENT(cmd, "I6"); // FIXME: we don't support this - and cannot verify it!
-	INF_STRIP_ARGUMENT(cmd, "U6"); // FIXME: we don't support this - and cannot verify it!
 	
 	if (state == State_Normal && command_inf) {
 	

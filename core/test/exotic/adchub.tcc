@@ -1981,3 +1981,39 @@ EXO_TEST(adchub_a_hub_that_goes_away_takes_its_checks_with_it,
 	pump([] { return false; }, 1500);
 	return 1;
 });
+
+/*
+ * A claim about the family the connection is not on cannot be checked, so it is
+ * dropped rather than believed.
+ *
+ * The hub verifies an address by comparing it with where the connection came
+ * from, and a peer reaching it over IPv4 offers no IPv6 address to compare
+ * against. Passing the claim on would have the hub vouching for something it
+ * never saw - it is the one party other clients trust to have checked - and
+ * every peer on the hub would dial an address of the user's choosing.
+ *
+ * Refusing it with "Invalid IP" would be wrong for a different reason: that
+ * answer quotes the address the hub does see, which is of the other family and
+ * says nothing about what was claimed. Unverifiable is not the same as wrong.
+ */
+EXO_TEST(adchub_an_address_of_the_family_the_connection_is_not_on_is_dropped,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Client alice;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(makeIdentity(41), "alice"));
+
+	/* Connected over IPv4, claiming an IPv6 endpoint nobody here can check. */
+	alice.send("BINF " + alice.sid + " I62001:db8::5 U61411 DEwatching");
+
+	std::string line;
+	EXO_ASSERT(alice.waitFor("BINF", line));
+
+	/* The rest of the update went through; only what could not be checked went. */
+	EXO_ASSERT(line.find("DEwatching") != std::string::npos);
+	EXO_ASSERT(line.find("2001:db8::5") == std::string::npos);
+	EXO_ASSERT(line.find("U61411") == std::string::npos);
+	return 1;
+});
