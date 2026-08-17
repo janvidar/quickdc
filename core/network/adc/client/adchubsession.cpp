@@ -983,7 +983,8 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 */
 	const QuickDC::Core* core = QuickDC::Core::getInstance();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		config->getBool("Active mode"), core->server != 0,
+		config->getBool("Active mode"),
+		core->server != 0 && core->server->listening(false),
 		config->getString("Address", "0.0.0.0"),
 		observedAddress,
 		static_cast<uint16_t>(config->getNumber("Port")),
@@ -1314,7 +1315,8 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	 */
 	const QuickDC::Core* core = QuickDC::Core::getInstance();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		config->getBool("Active mode"), core->server != 0,
+		config->getBool("Active mode"),
+		core->server != 0 && core->server->listening(false),
 		config->getString("Address", "0.0.0.0"),
 		observedAddress,
 		static_cast<uint16_t>(config->getNumber("Port")),
@@ -2593,7 +2595,8 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	   sendConnectionRequest(): a gateway may have granted another port. */
 	const QuickDC::Core* core = QuickDC::Core::getInstance();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		config->getBool("Active mode"), core->server != 0,
+		config->getBool("Active mode"),
+		core->server != 0 && core->server->listening(false),
 		config->getString("Address", "0.0.0.0"),
 		observedAddress,
 		static_cast<uint16_t>(config->getNumber("Port")),
