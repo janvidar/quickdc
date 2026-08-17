@@ -52,6 +52,31 @@ namespace {
  */
 bool mapping_asked_for = false;
 
+/**
+ * Measure 'ipv6', unless there is nothing to measure or nothing to learn.
+ *
+ * Nothing to measure is a family with no peer port: a run against it would come
+ * back blocked and be perfectly right, having tested a port nothing listens on.
+ * Nothing to learn is a measurement still young enough to be believed - the same
+ * age the record weighs one by, so what is believed and what is worth asking
+ * again cannot disagree.
+ *
+ * @return whether a run was started, which is how the caller knows the family it
+ *         asked about is now busy rather than simply not worth asking about.
+ */
+bool measureIfStale(bool ipv6)
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	if (!core || !core->server) return false;
+
+	if (!core->server->listening(ipv6)) return false;
+
+	if (QuickDC::dropMeasurementIsFresh(QuickDC::lastDropVerdict(ipv6), time(0)))
+		return false;
+
+	return QuickDC::startDropCheck(ipv6);
+}
+
 /*
  * How old the measurement in hand may be before another is taken.
  *
@@ -105,7 +130,7 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			(void) address;
 			announce();
 
-			if (mapping_asked_for) QuickDC::startDropCheck();
+			if (mapping_asked_for) QuickDC::startDropCheck(false);
 		}
 
 		/**
@@ -185,13 +210,11 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 		 */
 		void EventTimeout(Samurai::Timer*) override
 		{
-			if (QuickDC::dropMeasurementIsFresh(QuickDC::lastDropVerdict(), time(0)))
-				return;
-
-			QDBG("Nothing measured within the last %d seconds; measuring again",
+			QDBG("Looking for a family measured longer than %d seconds ago",
 			     static_cast<int>(DROP_REFRESH_AGE));
 
-			QuickDC::startDropCheck();
+			if (measureIfStale(false)) return;
+			measureIfStale(true);
 		}
 
 		/**
@@ -221,6 +244,15 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			if (verdict.mode != QuickDC::DropMode::Passive) mapping_asked_for = false;
 
 			if (core->hubs) core->hubs->requestClientInfoUpdate();
+
+			/*
+			 * One family at a time, because one check has one session and one
+			 * armed window. IPv4 having finished is what makes the run for the
+			 * other family possible, so it is started from here rather than
+			 * asked for alongside - and only forward, so that two families
+			 * cannot take turns starting each other.
+			 */
+			if (!verdict.ipv6) measureIfStale(true);
 		}
 
 		/**
@@ -239,6 +271,17 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			(void) reason;
 
 			mapping_asked_for = false;
+
+			/*
+			 * The other family is still owed its run: one family's server being
+			 * unreachable says nothing about the other, and they are commonly
+			 * two different machines. Never the family that just failed, which
+			 * has recorded no verdict and would therefore read as owed one
+			 * again immediately - that is left to the refresh timer.
+			 */
+			QuickDC::Core* core = QuickDC::Core::getInstance();
+			if (core && core->dropcheck && !core->dropcheck->lastFamilyWasIPv6())
+				measureIfStale(true);
 		}
 
 	private:
@@ -454,7 +497,7 @@ QuickDC::Core::Core()
 	dropRefresh = new Samurai::Timer(&dropcheck_listener, DROP_REFRESH_TICK, false);
 
 	if (std::string(config->getString("Reachability server", "")).length())
-		startDropCheck();
+		startDropCheck(false);
 
 	shares->initialize();
 }

@@ -105,9 +105,9 @@ EXO_TEST(dropcheck_a_check_that_never_ran_is_idle_and_has_no_verdict,
 	QuickDC::DropCheck check(&events);
 
 	EXO_ASSERT(!check.isBusy());
-	EXO_ASSERT(!check.verdict().ran);
-	EXO_ASSERT(check.verdict().mode == QuickDC::DropMode::Unknown);
-	EXO_ASSERT(check.verdict().port == 0);
+	EXO_ASSERT(!check.verdict(false).ran);
+	EXO_ASSERT(check.verdict(false).mode == QuickDC::DropMode::Unknown);
+	EXO_ASSERT(check.verdict(false).port == 0);
 	EXO_ASSERT(events.finished == 0);
 	EXO_ASSERT(events.failed == 0);
 	return 1;
@@ -122,7 +122,7 @@ EXO_TEST(dropcheck_cancelling_a_check_that_is_not_running_changes_nothing,
 	for (int n = 0; n < 10; n++) check.cancel();
 
 	EXO_ASSERT(!check.isBusy());
-	EXO_ASSERT(!check.verdict().ran);
+	EXO_ASSERT(!check.verdict(false).ran);
 
 	EXO_ASSERT(events.finished == 0);
 	EXO_ASSERT(events.failed == 0);
@@ -267,7 +267,7 @@ EXO_TEST(dropcheck_a_start_without_a_peer_port_fails_at_once,
 	EXO_ASSERT(events.finished == 0);
 	EXO_ASSERT(!events.reason.empty());
 	EXO_ASSERT(!check.isBusy());
-	EXO_ASSERT(!check.verdict().ran);
+	EXO_ASSERT(!check.verdict(false).ran);
 	return 1;
 });
 
@@ -478,5 +478,58 @@ EXO_TEST(dropcheck_a_check_with_no_front_end_reports_to_the_core_alone,
 	            0, 1411, std::nullopt);
 
 	EXO_ASSERT(core.failed == 1);
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+
+/*
+ * A run answers for one family, and the check keeps the two apart.
+ *
+ * Native IPv6 alongside an IPv4 address behind a carrier-grade NAT is the
+ * ordinary home connection, so one slot would leave whichever ran last
+ * describing both - and the claim a hub is given is per family.
+ */
+EXO_TEST(dropcheck_neither_family_starts_out_measured,
+{
+	Recorder events;
+	QuickDC::DropCheck check(&events);
+
+	EXO_ASSERT(!check.verdict(false).ran);
+	EXO_ASSERT(!check.verdict(true).ran);
+
+	/* And a run that could not start records nothing for either. */
+	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
+	            0, 1411, std::nullopt);
+
+	EXO_ASSERT(events.failed == 1);
+	EXO_ASSERT(!check.verdict(false).ran);
+	EXO_ASSERT(!check.verdict(true).ran);
+	return 1;
+});
+
+/*
+ * Which family a run concerned survives the run failing.
+ *
+ * A caller works out what to do next from this - the other family is still owed
+ * a measurement - so a refusal that reported the family of some earlier run
+ * would send it back to the one just refused. On a client with no peer port at
+ * all, where every start is refused, that is a loop with no way out of it.
+ */
+EXO_TEST(dropcheck_a_refused_start_still_names_the_family_it_was_asked_about,
+{
+	Recorder events;
+	QuickDC::DropCheck check(&events);
+
+	/* IPv4 first, so that the IPv6 answer below cannot be the value it began with. */
+	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
+	            0, 0, std::nullopt);
+	EXO_ASSERT(events.failed == 1);
+	EXO_ASSERT(!check.lastFamilyWasIPv6());
+
+	check.start("https://ipv6.drop.example.org", Drop::Family::IPv6,
+	            0, 0, std::nullopt);
+	EXO_ASSERT(events.failed == 2);
+	EXO_ASSERT(check.lastFamilyWasIPv6());
 	return 1;
 });

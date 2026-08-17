@@ -153,15 +153,23 @@ void setDropCheckListener(DropCheckListener* listener);
  * connection has one source address, so the unprefixed name would measure
  * whichever family that connection used rather than the one being asked about.
  *
+ * @param ipv6 which family to measure. One run answers for one of them, because
+ *        one run reaches the client over one of them - and the two answers
+ *        routinely differ, native IPv6 alongside an IPv4 address behind a
+ *        carrier-grade NAT being the ordinary home connection.
+ *
  * @return false when there is nothing to ask, which is not a failure: no server
  *         is configured, or a run is already going and will report by itself.
  *         Asking a second time would only spend a session the server counts
  *         against us.
  */
-bool startDropCheck();
+bool startDropCheck(bool ipv6);
 
-/** The last verdict, with ran false when nothing has been measured. */
-DropVerdict lastDropVerdict();
+/**
+ * The last verdict for 'ipv6', with ran false where that family has not been
+ * measured - which is not the same as having been measured and found blocked.
+ */
+DropVerdict lastDropVerdict(bool ipv6);
 
 /**
  * Whether 'held' still describes the network, as of 'now'.

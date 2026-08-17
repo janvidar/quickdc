@@ -116,7 +116,21 @@ class DropCheck final : public Drop::ClientEventHandler
 		bool isBusy() const { return state != State::Idle; }
 
 		/** What the last completed run established; ran is false until one has. */
-		const DropVerdict& verdict() const { return result; }
+		/**
+		 * What the last completed run for 'ipv6' established.
+		 *
+		 * One per family, because a run answers for the family it asked about
+		 * and the answers routinely differ - native IPv6 and an IPv4 address
+		 * behind a carrier-grade NAT is the ordinary home connection. A single
+		 * slot would leave whichever ran last describing both.
+		 *
+		 * 'ran' is false where that family has not been measured, which is not
+		 * the same as having been measured and found unreachable.
+		 */
+		const DropVerdict& verdict(bool ipv6) const { return ipv6 ? held_v6 : held_v4; }
+
+		/** Which family the run that just ended concerned; see startDropCheck(). */
+		bool lastFamilyWasIPv6() const { return family == Drop::Family::IPv6; }
 
 		/**
 		 * Answer a DROP challenge that arrived on the peer port.
@@ -269,7 +283,11 @@ class DropCheck final : public Drop::ClientEventHandler
 
 		Drop::Family family = Drop::Family::IPv4;
 
+		/** The run in progress, which is copied into its family's slot when it ends. */
 		DropVerdict result;
+
+		DropVerdict held_v4;
+		DropVerdict held_v6;
 };
 
 }

@@ -83,13 +83,21 @@ void QuickDC::DropCheck::start(const std::string& baseUrl, Drop::Family family_,
 		return;
 	}
 
+	/*
+	 * Before anything that can refuse, so that a refusal still names the family
+	 * it was asked about. A caller deciding what to do next from the family of
+	 * the run that just ended - measure the other one - would otherwise be told
+	 * about the previous run, and on a client with no peer port at all would be
+	 * sent back to the same family it had just been refused for, for ever.
+	 */
+	family = family_;
+
 	if (!tcpPort)
 	{
 		internal_fail("there is no peer port to test");
 		return;
 	}
 
-	family = family_;
 	tcp_port = tcpPort;
 	udp_port = udpPort;
 	want_udp = false;
@@ -149,6 +157,13 @@ void QuickDC::DropCheck::internal_finish()
 	QDBG("Reachability: %s on %s port %d, seen at %s",
 	     toString(result.mode), result.ipv6 ? "IPv6" : "IPv4",
 	     static_cast<int>(result.port), result.publicAddress.c_str());
+
+	/*
+	 * Into its family's slot before anybody is told, so that a listener asking
+	 * what is known - to decide whether the other family is still owed a run -
+	 * is answered with this one rather than with what it replaced.
+	 */
+	(result.ipv6 ? held_v6 : held_v4) = result;
 
 	const DropVerdict reported = result;
 
@@ -301,7 +316,7 @@ void QuickDC::setDropCheckListener(QuickDC::DropCheckListener* listener)
 	core->dropcheck->setObserver(listener);
 }
 
-bool QuickDC::startDropCheck()
+bool QuickDC::startDropCheck(bool ipv6)
 {
 	Core* core = Core::getInstance();
 	if (!core || !core->dropcheck || !core->config) return false;
@@ -315,17 +330,26 @@ bool QuickDC::startDropCheck()
 
 	const uint16_t port = static_cast<uint16_t>(core->config->getNumber("Port", 1411));
 
-	core->dropcheck->start("https://ipv4." + server, Drop::Family::IPv4, port, port,
+	/*
+	 * The family's own name, never the unprefixed one: a connection has one
+	 * source address, so the dual-stack name would measure whichever family that
+	 * connection happened to use rather than the one being asked about.
+	 */
+	const std::string host = (ipv6 ? "https://ipv6." : "https://ipv4.") + server;
+
+	core->dropcheck->start(host,
+	                       ipv6 ? Drop::Family::IPv6 : Drop::Family::IPv4,
+	                       port, port,
 	                       std::optional<Samurai::IO::Net::InetAddress>());
 	return true;
 }
 
-QuickDC::DropVerdict QuickDC::lastDropVerdict()
+QuickDC::DropVerdict QuickDC::lastDropVerdict(bool ipv6)
 {
 	Core* core = Core::getInstance();
 	if (!core || !core->dropcheck) return DropVerdict();
 
-	return core->dropcheck->verdict();
+	return core->dropcheck->verdict(ipv6);
 }
 
 
@@ -341,16 +365,19 @@ bool QuickDC::dropMeasurementIsFresh(const QuickDC::DropVerdict& held, time_t no
 void QuickDC::applyDropMeasurement()
 {
 	Core* core = Core::getInstance();
-	if (!core || !core->reachability) return;
+	if (!core) return;
 
-	const DropVerdict verdict = lastDropVerdict();
-	if (!verdict.ran) return;
+	/* Each family's own, into the record that answers for it and no other. */
+	for (const bool ipv6 : {false, true})
+	{
+		const DropVerdict verdict = lastDropVerdict(ipv6);
+		if (!verdict.ran) continue;
 
-	/* A run answers for the family it asked about and for no other. */
-	Reachability* record = core->reachabilityFor(verdict.ipv6);
-	if (!record) return;
+		Reachability* record = core->reachabilityFor(ipv6);
+		if (!record) continue;
 
-	record->measured(stateOf(verdict.tcpReached),
-	                 stateOf(verdict.udpReached),
-	                 verdict.observedAt);
+		record->measured(stateOf(verdict.tcpReached),
+		                 stateOf(verdict.udpReached),
+		                 verdict.observedAt);
+	}
 }

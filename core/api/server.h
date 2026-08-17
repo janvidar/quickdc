@@ -29,6 +29,20 @@ class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samur
 		virtual ~DCServer();
 		
 		void send(Samurai::IO::Net::DatagramPacket*);
+
+		/**
+		 * Whether a peer could reach this client on 'ipv6' at all.
+		 *
+		 * False where that family's socket never came up, which for IPv6 is every
+		 * host that has none. Worth asking before advertising an endpoint or
+		 * measuring one: both would otherwise be about a port nothing is
+		 * listening on, and a measurement of it would come back blocked and be
+		 * perfectly correct.
+		 */
+		bool listening(bool ipv6) const
+		{
+			return ipv6 ? socket6 != nullptr : socket != nullptr;
+		}
 		
 	protected:
 		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char* msg) override;
