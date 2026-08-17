@@ -23,6 +23,7 @@
 #include "network/connectionmanager.h"
 #include "network/downloadqueue.h"
 #include "network/hubmanager.h"
+#include "network/dropcheck.h"
 #include "network/portforward.h"
 #include "network/reachability.h"
 #include "network/searchtokens.h"
@@ -90,6 +91,37 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 };
 
 CorePortForwardListener portforward_listener;
+
+/*
+ * What a measured verdict does, which for now is what a forwarded port does:
+ * ask the hubs to say again what they know about this client. The verdict is
+ * kept on the check itself, so anything showing it reads it there rather than
+ * being handed a copy that goes stale the moment the next run finishes.
+ */
+class CoreDropCheckListener : public QuickDC::DropCheckListener
+{
+	public:
+		void EventDropCheckFinished(const QuickDC::DropVerdict& verdict) override
+		{
+			QDBG("A DROP server reports this client %s on port %d",
+			     QuickDC::toString(verdict.mode), static_cast<int>(verdict.port));
+			(void) verdict;
+
+			const QuickDC::Core* core = QuickDC::Core::getInstance();
+			if (!core || !core->hubs) return;
+			core->hubs->requestClientInfoUpdate();
+		}
+
+		void EventDropCheckFailed(const char* reason) override
+		{
+			/* Nothing is announced: a check that did not run says nothing about
+			   this client, and re-publishing an unchanged INF would be noise. */
+			QDBG("The reachability check did not complete: %s", reason);
+			(void) reason;
+		}
+};
+
+CoreDropCheckListener dropcheck_listener;
 
 /**
  * The hash cache to use for a core whose files were named rather than assumed.
@@ -219,6 +251,7 @@ QuickDC::Core::Core()
 	queue = new QuickDC::QueueManager();
 	chat = new QuickDC::ChatArchive(QUICKDC_CHAT_DIR);
 
+	dropcheck = 0;
 	portforward = new PortForward(&portforward_listener);
 
 	/*
@@ -230,6 +263,23 @@ QuickDC::Core::Core()
 	config->setGroup("Network");
 	if (config->getBool("UseUPnP", false))
 		portforward->start(config->getNumber("Port", 1411));
+
+	/*
+	 * And the measurement, on the same terms and for the same reason: asking
+	 * tells that server this client's address and the port it listens on, and
+	 * has it connect back to prove the answer - so it happens because somebody
+	 * asked for it, not because the program started.
+	 *
+	 * The family's own name rather than the bare one. One connection has one
+	 * source address, so a check against the dual-stack name measures whichever
+	 * family that connection happened to use rather than the one being asked
+	 * about.
+	 */
+	if (std::string(config->getString("Reachability server", "")).length())
+	{
+		dropcheck = new DropCheck(&dropcheck_listener);
+		startDropCheck();
+	}
 
 	shares->initialize();
 }
@@ -284,6 +334,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 
 	server = 0;
 	/* Nothing to forward to without a listening socket. */
+	dropcheck = 0;
 	portforward = 0;
 	localHub = 0;
 	bandwidthManager = 0;
@@ -334,6 +385,10 @@ QuickDC::Core::~Core()
 	 * the gateway to release anything: that would mean talking to it while the
 	 * event loop is being torn down. The finite lease is what cleans up.
 	 */
+	/* Before the port forward, since a run in flight holds a socket the
+	   monitor is still walking and stops answering as it goes. */
+	delete dropcheck; dropcheck = 0;
+
 	delete portforward; portforward = 0;
 
 	delete transfers; transfers = 0;

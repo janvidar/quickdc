@@ -236,6 +236,31 @@ if(QUICKDC_ALLOW_LOOPBACK_AUTH)
         "the whole share. Do not ship a build with this on.")
 endif()
 
+# ---------------------------------------------------------------------------
+# libdrop-cpp
+#
+# The reachability measurement in core/network/dropcheck.cpp. Found the same
+# three ways samurai is, and for the same reason: a superproject building all of
+# them together has already added it, and a second copy would collide on the
+# target names rather than build twice.
+# ---------------------------------------------------------------------------
+
+set(DROP_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../libdrop-cpp" CACHE PATH
+    "Where libdrop-cpp is checked out, when it is not provided or installed")
+
+if(NOT TARGET drop::drop)
+    if(EXISTS ${DROP_SOURCE_DIR}/CMakeLists.txt)
+        # Its own suite and its command line tool are not part of a QuickDC
+        # build; configure it standalone for those.
+        set(DROP_BUILD_TESTS OFF CACHE BOOL "Build the libdrop-cpp test suite" FORCE)
+        set(DROP_BUILD_TOOLS OFF CACHE BOOL "Build the dropcheck command line tool" FORCE)
+
+        add_subdirectory(${DROP_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/libdrop-cpp)
+    else()
+        find_package(drop REQUIRED)
+    endif()
+endif()
+
 add_subdirectory(core)
 
 # ---------------------------------------------------------------------------

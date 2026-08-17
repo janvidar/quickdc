@@ -49,6 +49,7 @@ class DCCommandProxy;
 class DCHubSession;
 class DCServer;
 class HubManager;
+class DropCheck;
 class PortForward;
 class Reachability;
 class SearchTokens;
@@ -163,6 +164,19 @@ class Core {
 		 * this client is reachable is asking one question, not one per hub.
 		 */
 		QuickDC::Reachability* reachability;
+
+		/**
+		 * What a DROP server measured about being reachable from outside.
+		 *
+		 * Beside Reachability rather than inside it because the two answer the
+		 * same question from opposite ends: that one waits for evidence to
+		 * arrive by itself and can wait for ever, while this asks for it and
+		 * gets an answer or a reason there is none. Null unless a server was
+		 * configured to ask - the request tells that server this client's
+		 * address and the port it listens on, which is a disclosure a user
+		 * chooses rather than one this makes for them.
+		 */
+		QuickDC::DropCheck* dropcheck;
 
 		/**
 		 * The searches sent, so a datagram answering one can be told from a

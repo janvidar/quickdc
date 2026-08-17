@@ -28,7 +28,30 @@
  *   [Network]     Port (1411), Bind (0.0.0.0), Address, Active mode,
  *                 Slots (3), Chunk size (1 MiB), Max downloads (3),
  *                 Keep alive interval (120) - seconds an ADC connection may sit
- *                 silent before a newline is sent over it, zero to send none
+ *                 silent before a newline is sent over it, zero to send none.
+ *                 Force active mode - keep announcing that a peer told to connect
+ *                 here will get through, whatever the evidence says. Nothing can
+ *                 prove that claim before somebody has acted on it, so this is how
+ *                 a user who knows their gateway forwards the port says so instead
+ *                 of waiting to be proven right by a peer that arrives.
+ *                 UseUPnP - ask the internet gateway to forward the peer port at
+ *                 start-up. Off unless asked for: a search tells every host on the
+ *                 local segment that this one is here and what it runs, which is a
+ *                 disclosure a user should choose.
+ *                 Reachability server - the base host name of a DROP server
+ *                 (Diagnostic Reachability & Obstacle Probe), "drop.quickdc.org"
+ *                 and the like. When set, the core asks that server at start-up
+ *                 what public address it sees this client at and whether it can
+ *                 open a connection back to the port this client listens on, which
+ *                 is the only way reachability is established rather than guessed.
+ *                 The family's own name is prefixed ("https://ipv4." + the value),
+ *                 because one connection has one source address and the dual-stack
+ *                 name would measure whichever family that connection happened to
+ *                 use rather than the one being asked about. Empty unless asked
+ *                 for, on the same terms as UseUPnP beside it: asking tells that
+ *                 server this client's address and the port it listens on, and has
+ *                 it connect back to prove the answer, which is a disclosure a
+ *                 user should choose.
  *   [Shares]      Total shares, Share 0 .. Share N
  *   [Chat media]  Fetch automatically, Maximum size, Keep pasted for days - all
  *                 read by the user interface, none by the core.

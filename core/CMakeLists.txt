@@ -25,6 +25,7 @@ set(QUICKDC_SOURCES
     network/hubmanager.cpp
     network/keyprint.cpp
     network/leafhashes.cpp
+    network/dropcheck.cpp
     network/portforward.cpp
     network/reachability.cpp
     network/searchtokens.cpp
@@ -144,6 +145,12 @@ endif()
 # <openssl/ssl.h>. PUBLIC here too: QuickDC's headers include samurai headers,
 # so consumers need all of it as well.
 target_link_libraries(quickdc PUBLIC samurai::samurai_static)
+
+# The reachability measurement. PRIVATE, and network/dropcheck.h is the only
+# header that names Drop at all: the verdict crosses out of here in QuickDC's
+# own types, through api/dropverdict.h, so that neither an exported target nor
+# a front end has to have Drop on its include path to read one.
+target_link_libraries(quickdc PRIVATE drop::drop)
 
 # -Wall -Wextra, the curated -Werror set, and the stack, bounds and branch
 # protections. See cmake/QuickDCHardening.cmake.

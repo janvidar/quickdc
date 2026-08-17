@@ -5,6 +5,7 @@
 
 #include "api/core.h"
 #include "network/probe.h"
+#include "network/dropcheck.h"
 #include "network/connectionmanager.h"
 #include "network/dc/dcconnection.h"
 #include "network/dc/clientsession.h"
@@ -235,6 +236,44 @@ void QuickDC::ProtocolProbe::probeDatagram(Samurai::IO::Net::DatagramSocket* soc
 	Samurai::IO::Buffer* buffer = packet->getBuffer();
 	const char head[4] = { buffer->at(0), buffer->at(1), buffer->at(2), buffer->at(3) };
 
+	/*
+	 * A DROP probe, before the datagram is identified: STUN has its top two bits
+	 * zero and a fixed magic cookie, while every ADC message starts with an ASCII
+	 * context letter, so the two cannot be confused - but identifyDatagram() knows
+	 * nothing of STUN and would drop it as junk.
+	 *
+	 * On this socket because this is the one named in U4, which is what a search
+	 * result arrives on and therefore the only one worth measuring.
+	 *
+	 * Answered only while a session is open, and only when the request verifies
+	 * against that session's credentials. Anything else gets silence: a reply to
+	 * a datagram whose source was never proven is a reflection an attacker aims
+	 * by spoofing it, and this socket would be the amplifier.
+	 */
+	QuickDC::DropCheck* check = QuickDC::Core::getInstance()->dropcheck;
+
+	if (check) {
+		std::vector<uint8_t> datagram(packet->size());
+		for (size_t n = 0; n < datagram.size(); n++)
+			datagram[n] = static_cast<uint8_t>(buffer->at(n));
+
+		Samurai::IO::Net::InetSocketAddress* from =
+			dynamic_cast<Samurai::IO::Net::InetSocketAddress*>(packet->getAddress());
+		const Samurai::IO::Net::InetAddress* address = from ? from->getAddress() : nullptr;
+		std::vector<uint8_t> reply;
+
+		if (address && check->answerStunProbe(datagram,
+		                                      address->toString(),
+		                                      from->getPort(),
+		                                      address->getType() == Samurai::IO::Net::InetAddress::Version::IPv6,
+		                                      reply)) {
+			Samurai::IO::Net::DatagramPacket answer(reply.data(), reply.size());
+			answer.setAddress(from);
+			socket->send(&answer);
+			return;
+		}
+	}
+
 	switch (QuickDC::identifyDatagram(head, sizeof(head))) {
 		case Protocol::ADC:
 			ADC::DatagramHandler::onDatagram(socket, packet);
@@ -286,6 +325,31 @@ void QuickDC::ProtocolProbe::probe() {
 	 */
 	ssize_t len = socket->peek(buf, 16);
 	if (len <= 0) return;
+
+	/*
+	 * A DROP challenge, before the protocol is identified at all: it is neither
+	 * ADC nor a TLS handshake, so identify() would call it unknown and drop the
+	 * connection - and the connection is one this client asked for a moment ago.
+	 *
+	 * It has to be answered on this port rather than a fresh one. The whole
+	 * question is whether the port in this client's own INF can be reached, and
+	 * a check of some other port would be true about a port nobody connects to.
+	 *
+	 * Answered only while a check is waiting to be connected back to; see
+	 * DropCheck::answerChallenge(). One line each way and the connection closes.
+	 */
+	QuickDC::DropCheck* check = QuickDC::Core::getInstance()->dropcheck;
+
+	if (check) {
+		std::string response;
+
+		if (check->answerChallenge(std::string_view(buf, static_cast<size_t>(len)),
+		                           response)) {
+			socket->write(response.data(), response.size());
+			close();
+			return;
+		}
+	}
 
 	switch (QuickDC::identify(buf, static_cast<size_t>(len))) {
 		case Protocol::ADCHub:
