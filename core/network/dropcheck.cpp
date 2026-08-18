@@ -140,10 +140,19 @@ void QuickDC::DropCheck::internal_fail(const std::string& reason)
 	state = State::Idle;
 	internal_disarm();
 
-	QERR("The reachability check could not be completed: %s", reason.c_str());
+	/*
+	 * Which family failed, because one run answers for one of them and the two
+	 * are commonly two different servers: a reader told only that the check
+	 * failed cannot tell a host with no IPv6 route - where nothing is wrong and
+	 * nothing is owed - from a server that is down for both.
+	 */
+	const std::string said =
+		std::string(family == Drop::Family::IPv6 ? "IPv6" : "IPv4") + ": " + reason;
 
-	if (listener) listener->EventDropCheckFailed(reason.c_str());
-	if (observer) observer->EventDropCheckFailed(reason.c_str());
+	QERR("The reachability check could not be completed: %s", said.c_str());
+
+	if (listener) listener->EventDropCheckFailed(said.c_str());
+	if (observer) observer->EventDropCheckFailed(said.c_str());
 }
 
 void QuickDC::DropCheck::internal_finish()
@@ -286,7 +295,25 @@ void QuickDC::DropCheck::EventDropError(Drop::Client*, const Drop::ErrorInfo& in
 {
 	if (!isBusy()) return;
 
-	internal_fail(info.message());
+	std::string reason = info.message();
+
+	/*
+	 * A family-specific name that could not be reached at all, before anything
+	 * had been established, is most often this host having no connectivity in
+	 * that family rather than anything to fix: the check is pointed at the
+	 * ipv4. or ipv6. name precisely so that one family is measured, and a host
+	 * with no route of one resolves its name to nothing. Saying so is the
+	 * difference between a failure to act on and one to ignore.
+	 */
+	if (info.error == Drop::Error::Transport && state == State::ServerInfo)
+	{
+		reason += "; this host may have no ";
+		reason += family == Drop::Family::IPv6 ? "IPv6" : "IPv4";
+		reason += " connectivity, in which case there is nothing to test and "
+		          "nothing wrong";
+	}
+
+	internal_fail(reason);
 }
 
 const char* QuickDC::toString(QuickDC::DropMode mode)
