@@ -115,6 +115,18 @@ void QuickDC::DropCheck::start(const std::string& baseUrl, Drop::Family family_,
 	client = std::make_unique<Drop::Client>(this, baseUrl, family, options);
 
 	state = State::ServerInfo;
+
+	/*
+	 * Announced before the first request goes out, and after the state says a run
+	 * is going: a listener told about it is entitled to ask what is happening, and
+	 * one told afterwards would be told about a run that had already answered on a
+	 * server that responds fast enough.
+	 */
+	const bool ipv6 = (family == Drop::Family::IPv6);
+
+	if (listener) listener->EventDropCheckStarted(ipv6);
+	if (observer) observer->EventDropCheckStarted(ipv6);
+
 	client->requestServerInfo();
 }
 

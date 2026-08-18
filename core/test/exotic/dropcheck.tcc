@@ -58,6 +58,15 @@ class Recorder : public QuickDC::DropCheckListener
 			failed++;
 			reason = why ? why : "(null)";
 		}
+
+		int started = 0;
+		bool startedIPv6 = false;
+
+		void EventDropCheckStarted(bool ipv6) override
+		{
+			started++;
+			startedIPv6 = ipv6;
+		}
 };
 
 /* The line a DROP server sends to the peer port, terminator and all. */
@@ -206,6 +215,61 @@ EXO_TEST(dropcheck_an_unarmed_check_answers_no_challenge,
 	EXO_ASSERT(!check.answerChallenge("DROP/1 CHALLENGE 4a1f9c2e\r\n", response));
 	EXO_ASSERT(!check.answerChallenge("DROP/1 CHALLENGE 4a1f9c2e", response));
 	EXO_ASSERT(response.empty());
+	return 1;
+});
+
+/**
+ * A run says that it started, and which family it is about.
+ *
+ * Reported from start() itself, before the first request leaves, so that a front
+ * end can say a check is going without having asked for it - the core starts them
+ * at launch, when a measurement ages out, and whenever a gateway grants a mapping,
+ * and a page that only knew about its own would sit still through all of those.
+ *
+ * Nothing here completes: no loop is being driven, so the run is announced and then
+ * sits at its first request until the check is destroyed. That is the whole span
+ * being pinned - a listener told at the start, before any outcome is known.
+ */
+EXO_TEST(dropcheck_a_run_says_that_it_started,
+{
+	Recorder events;
+	QuickDC::DropCheck check(&events);
+
+	EXO_ASSERT(events.started == 0);
+	EXO_ASSERT(!check.isBusy());
+
+	check.start("https://ipv4.drop.invalid", Drop::Family::IPv4, 1411, 1411,
+	            std::optional<Samurai::IO::Net::InetAddress>());
+
+	EXO_ASSERT(events.started == 1);
+	EXO_ASSERT(events.startedIPv6 == false);
+	EXO_ASSERT(check.isBusy());
+
+	/* Announced, and nothing concluded on the strength of it. */
+	EXO_ASSERT(events.finished == 0);
+	EXO_ASSERT(events.failed == 0);
+
+	check.cancel();
+	return 1;
+});
+
+/**
+ * A run refused before it starts is not announced.
+ *
+ * There is no peer port to test, so nothing goes out - and a front end told a check
+ * had started would wait for an outcome that is already in the same call.
+ */
+EXO_TEST(dropcheck_a_refused_run_is_not_announced,
+{
+	Recorder events;
+	QuickDC::DropCheck check(&events);
+
+	check.start("https://ipv4.drop.invalid", Drop::Family::IPv4, 0, 0,
+	            std::optional<Samurai::IO::Net::InetAddress>());
+
+	EXO_ASSERT(events.started == 0);
+	EXO_ASSERT(events.failed == 1);
+	EXO_ASSERT(!check.isBusy());
 	return 1;
 });
 

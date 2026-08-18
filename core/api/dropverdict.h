@@ -100,6 +100,20 @@ class DropCheckListener
 	public:
 		virtual ~DropCheckListener() { }
 
+		/**
+		 * A run has begun, and one of the two below will follow it.
+		 *
+		 * Not pure, unlike the two that report an outcome: a listener that only
+		 * records what was established has nothing to do here, and every one of
+		 * them would otherwise carry an empty override. What it is for is a front
+		 * end saying so on screen - checks are started by the core as well as by a
+		 * user, and a page that only knew about the ones it asked for itself would
+		 * sit still through the rest.
+		 *
+		 * @param ipv6 which family the run is about.
+		 */
+		virtual void EventDropCheckStarted(bool ipv6) { (void) ipv6; }
+
 		/** A run completed, whatever it concluded. */
 		virtual void EventDropCheckFinished(const DropVerdict& verdict) = 0;
 
