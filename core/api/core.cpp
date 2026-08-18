@@ -52,6 +52,24 @@ namespace {
  */
 bool mapping_asked_for = false;
 
+/*
+ * Whether a measurement is owed once the gateway has been dealt with.
+ *
+ * A mapping takes a search, a description fetch and two calls to settle, and a
+ * verdict reached before it existed answers for a different network: it would have
+ * the client record passive and announce it for the life of a measurement, through
+ * a port that works. So a run that would race the gateway is owed rather than
+ * started, and whichever way the gateway answers releases it - both outcomes are
+ * reported, exactly once, including a search that nothing answered.
+ *
+ * Separate from 'mapping_asked_for' because the two are about different things:
+ * that one decides whose mapping it is and therefore who may take it away, and
+ * this one only says that what is held is older than the mapping. A forward asked
+ * for at start-up or by a front end is measured through for the same reason the
+ * loop's own is, and neither is released by this.
+ */
+bool measurement_owed = false;
+
 /**
  * Measure 'ipv6', unless there is nothing to measure or nothing to learn.
  *
@@ -75,6 +93,22 @@ bool measureIfStale(bool ipv6)
 		return false;
 
 	return QuickDC::startDropCheck(ipv6);
+}
+
+/**
+ * Take the measurement a mapping made necessary, once one can be started.
+ *
+ * Cleared only when a run actually started, because one check has one session and
+ * one armed window: a request refused because the other family is going is not the
+ * run this owes, and forgetting it there would leave the verdict that predates the
+ * mapping standing until the refresh timer noticed. Every path that ends a run
+ * calls this, so the owed run is taken at the first moment there is room for it.
+ */
+void measureAgainIfOwed()
+{
+	if (!measurement_owed) return;
+
+	if (QuickDC::startDropCheck(false)) measurement_owed = false;
 }
 
 /*
@@ -112,14 +146,20 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 {
 	public:
 		/**
-		 * The gateway granted a mapping, so the hubs are told and, where the
-		 * mapping was asked for because a measurement said passive, the
+		 * The gateway granted a mapping, so the hubs are told and the
 		 * measurement is taken again through it.
 		 *
 		 * That second measurement is the whole point of the loop: the gateway
 		 * reports success without knowing whether anything upstream honours it,
 		 * so only asking a server outside to reach the port settles whether a
 		 * second NAT above the gateway lets a packet through.
+		 *
+		 * Whoever asked for the mapping, and not only where this loop did. A
+		 * forward that arrived because the configuration asked for it at start-up
+		 * or because a front end did changes the same thing about the network,
+		 * and anything measured before it answers for the network as it was: left
+		 * alone, the client would sit announcing passive through a port that had
+		 * begun to work and say so only when the verdict aged out.
 		 */
 		void EventPortForwarded(uint16_t external,
 			const Samurai::IO::Net::InetAddress& address) override
@@ -130,7 +170,8 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			(void) address;
 			announce();
 
-			if (mapping_asked_for) QuickDC::startDropCheck(false);
+			measurement_owed = true;
+			measureAgainIfOwed();
 		}
 
 		/**
@@ -152,6 +193,14 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			announce();
 
 			mapping_asked_for = false;
+
+			/*
+			 * A run held back so that it would not race the gateway is taken now:
+			 * nothing was granted, so there is nothing to wait for, and the
+			 * network is still worth measuring - a port can be reachable through a
+			 * forward somebody made by hand.
+			 */
+			measureAgainIfOwed();
 		}
 
 	private:
@@ -253,6 +302,8 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			 * cannot take turns starting each other.
 			 */
 			if (!verdict.ipv6) measureIfStale(true);
+
+			measureAgainIfOwed();
 		}
 
 		/**
@@ -282,6 +333,8 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			QuickDC::Core* core = QuickDC::Core::getInstance();
 			if (core && core->dropcheck && !core->dropcheck->lastFamilyWasIPv6())
 				measureIfStale(true);
+
+			measureAgainIfOwed();
 		}
 
 	private:
@@ -484,8 +537,19 @@ QuickDC::Core::Core()
 	 * passive.
 	 */
 	config->setGroup("Network");
-	if (config->getBool("UseUPnP", false))
+
+	const bool forwarding = config->getBool("UseUPnP", false);
+	if (forwarding)
 		portforward->start(config->getNumber("Port", 1411));
+
+	/*
+	 * The first measurement waits for the gateway rather than going out beside it;
+	 * see 'measurement_owed'. Read from whether the ask is under way rather than
+	 * from the setting, so that a start() which failed outright - it reports
+	 * before it returns - has already released the wait. Assigned either way,
+	 * since what it holds belongs to no particular core.
+	 */
+	measurement_owed = forwarding && portforward->isBusy();
 
 	/*
 	 * Built whether or not there is a server to ask, because naming one is a
@@ -496,7 +560,8 @@ QuickDC::Core::Core()
 	dropcheck = new DropCheck(&dropcheck_listener);
 	dropRefresh = new Samurai::Timer(&dropcheck_listener, DROP_REFRESH_TICK, false);
 
-	if (std::string(config->getString("Reachability server", "")).length())
+	if (std::string(config->getString("Reachability server", "")).length()
+	    && !measurement_owed)
 		startDropCheck(false);
 
 	shares->initialize();
