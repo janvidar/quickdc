@@ -110,8 +110,9 @@ bool Share::XMLFileListHandler::parse() {
 	 * arrived is a list that can be read. The depth matches the one this handler
 	 * enforces on the tree it builds, plus the <FileListing> around it. An
 	 * element is a directory or a file, so the count is what bounds a share; the
-	 * attributes per element are Name, Size and TTH with room to spare; and a
-	 * file list carries no character data at all.
+	 * attributes per element are Name, Size and TTH with room to spare; and the
+	 * only character data a file list carries is the whitespace it is laid out
+	 * with, which is measured one run at a time rather than added up.
 	 */
 	Samurai::IO::XmlReader::Limits limits;
 	limits.maxDocumentSize = QUICKDC_FILELIST_MAX_PLAIN;
