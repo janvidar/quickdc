@@ -93,6 +93,23 @@ struct DropVerdict
 
 	/** When it was established, for deciding whether to ask again. */
 	time_t observedAt = 0;
+
+	/**
+	 * True where nothing connected back, so this is an address and not a measurement.
+	 *
+	 * A lookup asks a DROP server only what address it sees and stops there: it is
+	 * what a client that has declared itself passive can still be shown, since no
+	 * stranger dials its peer port for it. Everything about reachability is then
+	 * unset - the mode is unknown and both reach values are Unknown - and that is
+	 * not the same as having measured and found nothing.
+	 *
+	 * Marked rather than inferred from the empty fields, because the two callers
+	 * that must not confuse the one for the other decide on this: a verdict from a
+	 * lookup is never fresh evidence, and never written into the reachability
+	 * record, or looking an address up would suppress the next real measurement for
+	 * a quarter of an hour and overwrite what the last one established.
+	 */
+	bool addressOnly = false;
 };
 
 class DropCheckListener
@@ -180,6 +197,28 @@ void setDropCheckListener(DropCheckListener* listener);
 bool startDropCheck(bool ipv6);
 
 /**
+ * Ask a DROP server only what address it sees this client at, and stop there.
+ *
+ * The same server and the same family-specific hostname as startDropCheck(), and
+ * everything else about it left undone: no session is opened, nothing is armed to
+ * answer a stranger, and no port is probed - so this is what a client which is not
+ * trying to be reachable can still be shown, and it needs no peer port to ask.
+ *
+ * The verdict it leaves carries the public address and how the server classified
+ * it, with 'addressOnly' set. That mark is what keeps it out of the reachability
+ * record and out of the freshness test, so a lookup can be taken as often as a
+ * page is opened without displacing a measurement.
+ *
+ * @param ipv6 which family to ask about. One run answers for one of them, since
+ *        one connection carries one source address.
+ *
+ * @return false when there is nothing to ask: no server is configured, or a run is
+ *         already going - a lookup shares the one client with a measurement, and
+ *         the measurement is the one worth having.
+ */
+bool startAddressLookup(bool ipv6);
+
+/**
  * The last verdict for 'ipv6', with ran false where that family has not been
  * measured - which is not the same as having been measured and found blocked.
  */
@@ -199,6 +238,11 @@ DropVerdict lastDropVerdict(bool ipv6);
  * moment it is being judged from. Treating that as fresh would hold a stale
  * answer for however far the clock was out.
  *
+ * Neither is an address-only verdict, however recent: nothing connected back for
+ * it, so there is no measurement in it to be fresh, and answering yes would let a
+ * lookup taken when a settings page opened stand in for the real run this is asked
+ * in order to schedule.
+ *
  * Unlike the three above this touches nothing and may be called from anywhere.
  */
 bool dropMeasurementIsFresh(const DropVerdict& held, time_t now);
@@ -211,6 +255,10 @@ bool dropMeasurementIsFresh(const DropVerdict& held, time_t now);
  * for it to be about. The check at start-up routinely finishes first, so the
  * measurement it took has to be offered again once there is an endpoint. Harmless
  * where there is nothing to offer, or where it has already been applied.
+ *
+ * An address-only verdict is passed over. Its reach values are Unknown because
+ * nothing was probed, and writing those into the record would take away what a
+ * real measurement had established.
  */
 void applyDropMeasurement();
 

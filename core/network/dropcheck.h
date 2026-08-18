@@ -91,6 +91,33 @@ class DropCheck final : public Drop::ClientEventHandler
 		           uint16_t tcpPort, uint16_t udpPort,
 		           const std::optional<Samurai::IO::Net::InetAddress>& localAddress);
 
+		/**
+		 * Ask a DROP server what address it sees, and nothing further.
+		 *
+		 * The first two requests of a check and then the end of the run: no session
+		 * is opened, so nothing is ever armed to answer a stranger, and no port is
+		 * probed. That is what makes it the right question for a client which is not
+		 * trying to be reachable - a passive client is still behind an address, and
+		 * the address is the part it can be shown without a third party dialling a
+		 * port nobody is offering.
+		 *
+		 * No peer port is asked for, and none is needed: start() refuses without one
+		 * because it would otherwise measure a port nothing listens on, while a
+		 * lookup has no port to offer in the first place.
+		 *
+		 * The verdict left behind carries the address and the server's
+		 * classification of it, and is marked addressOnly so that nothing mistakes
+		 * it for a measurement; see QuickDC::DropVerdict.
+		 *
+		 * @param baseUrl the family's own name, as start() takes it and for the same
+		 *        reason: one connection has one source address.
+		 * @param localAddress the address to bind, where this host has more than one
+		 *        of the family; without it the kernel chooses per destination and the
+		 *        server reports whichever it was reached from.
+		 */
+		void startAddressLookup(const std::string& baseUrl, Drop::Family family,
+		                        const std::optional<Samurai::IO::Net::InetAddress>& localAddress);
+
 		/** Abandon a run in flight. Nothing is reported for it. */
 		void cancel();
 
@@ -188,6 +215,11 @@ class DropCheck final : public Drop::ClientEventHandler
 		 * about are the ones already up: the peer port and the search port are
 		 * bound for as long as the client runs. What a session adds is the
 		 * credentials that let a probe be told apart from a stranger.
+		 *
+		 * An address lookup has what it came for here and finishes instead of
+		 * opening that session, which is the whole of the difference between the
+		 * two runs: no credentials are ever held, so no window in which this
+		 * client answers a stranger is opened by one.
 		 */
 		void EventDropWhoami(Drop::Client*, const Drop::Whoami&) override;
 
@@ -231,6 +263,18 @@ class DropCheck final : public Drop::ClientEventHandler
 		 * inside the call, so the handler can run before the call returns.
 		 */
 		enum class State { Idle, ServerInfo, Whoami, Session, Inbound };
+
+		/**
+		 * Build the client and ask for the server's capabilities.
+		 *
+		 * What the two entry points have in common, which is everything from the
+		 * first request onwards: they differ only in what they establish before it
+		 * and in where the run stops. Shared rather than repeated so that a run
+		 * cannot be announced by one and not the other, or begin at a different
+		 * request depending on which was called.
+		 */
+		void internal_begin(const std::string& baseUrl,
+		                    const std::optional<Samurai::IO::Net::InetAddress>& localAddress);
 
 		void internal_fail(const std::string& reason);
 
@@ -280,6 +324,15 @@ class DropCheck final : public Drop::ClientEventHandler
 
 		/** Whether this server offers the UDP test for the family under test. */
 		bool want_udp = false;
+
+		/**
+		 * Whether the run in progress stops once the address is known.
+		 *
+		 * Kept for the run rather than asked of the caller again, because the
+		 * question is answered in one handler and by then the call that started
+		 * things has long returned; see startAddressLookup().
+		 */
+		bool address_only = false;
 
 		Drop::Family family = Drop::Family::IPv4;
 

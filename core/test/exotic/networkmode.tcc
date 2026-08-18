@@ -87,9 +87,8 @@ EXO_TEST(networkmode_automatic_asks_for_everything_it_needs,
 });
 
 /*
- * Advanced answers with the file's own values, because advanced means the plumbing
- * is as somebody left it - including a server they never named, which is what lets
- * an upgraded installation go on contacting nobody.
+ * Advanced answers with the file's own plumbing, because advanced means the port and
+ * the forwarding are as somebody left them.
  */
 EXO_TEST(networkmode_advanced_answers_with_what_the_file_holds,
 {
@@ -99,14 +98,40 @@ EXO_TEST(networkmode_advanced_answers_with_what_the_file_holds,
 	EXO_ASSERT(off.activeMode);
 	EXO_ASSERT(!off.useUpnp);
 	EXO_ASSERT(!off.forceActive);
-	EXO_ASSERT(off.reachabilityServer.empty());
 
 	const NetworkModeKeys on =
 		QuickDC::networkModeKeys(NetworkMode::Advanced, true, true, "drop.example.org");
 
 	EXO_ASSERT(on.useUpnp);
 	EXO_ASSERT(on.forceActive);
+
+	/*
+	 * A name the file already holds is never replaced. There is no field on the page
+	 * for one, so this is how a server somebody runs themselves is configured, and
+	 * overwriting it would take that away with no way to put it back.
+	 */
 	EXO_ASSERT(on.reachabilityServer == "drop.example.org");
+	return 1;
+});
+
+/*
+ * Every mode answers with somebody to ask, advanced included.
+ *
+ * With no field on the page for a server, a mode that answered with an empty name
+ * would leave whoever chose it unable to measure and with nothing on screen saying
+ * why. What keeps an upgraded installation from being opted in is the migration,
+ * which settles the mode and touches nothing else - not this, which is only ever
+ * reached because somebody chose a mode.
+ */
+EXO_TEST(networkmode_no_mode_is_left_with_nobody_to_ask,
+{
+	for (const NetworkMode mode : { NetworkMode::Automatic, NetworkMode::Advanced,
+	                                NetworkMode::Passive })
+	{
+		const NetworkModeKeys keys = QuickDC::networkModeKeys(mode, false, false, "");
+
+		EXO_ASSERT(keys.reachabilityServer == QuickDC::defaultReachabilityServer());
+	}
 	return 1;
 });
 

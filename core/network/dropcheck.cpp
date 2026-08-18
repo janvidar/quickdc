@@ -101,10 +101,48 @@ void QuickDC::DropCheck::start(const std::string& baseUrl, Drop::Family family_,
 	tcp_port = tcpPort;
 	udp_port = udpPort;
 	want_udp = false;
+	address_only = false;
 
+	internal_begin(baseUrl, localAddress);
+}
+
+void QuickDC::DropCheck::startAddressLookup(const std::string& baseUrl, Drop::Family family_,
+                                            const std::optional<Samurai::IO::Net::InetAddress>& localAddress)
+{
+	if (isBusy())
+	{
+		internal_fail("a reachability check is already running");
+		return;
+	}
+
+	family = family_;
+
+	/*
+	 * No ports at all, and nothing left over from an earlier run either: the
+	 * verdict this leaves names the port it tested, and a lookup tested none.
+	 */
+	tcp_port = 0;
+	udp_port = 0;
+	want_udp = false;
+	address_only = true;
+
+	internal_begin(baseUrl, localAddress);
+}
+
+void QuickDC::DropCheck::internal_begin(const std::string& baseUrl,
+                                        const std::optional<Samurai::IO::Net::InetAddress>& localAddress)
+{
 	server = Drop::ServerInfo();
 	whoami = Drop::Whoami();
 	internal_disarm();
+
+	/*
+	 * The verdict starts empty, so that a run says only what it established. A
+	 * lookup leaves the reachability fields alone by never reaching them, and
+	 * without this it would report whatever the last measurement had put there.
+	 */
+	result = DropVerdict();
+	result.addressOnly = address_only;
 
 	Drop::Client::Options options;
 
@@ -175,9 +213,19 @@ void QuickDC::DropCheck::internal_finish()
 	result.observedAt = time(0);
 	result.ran = true;
 
-	QDBG("Reachability: %s on %s port %d, seen at %s",
-	     toString(result.mode), result.ipv6 ? "IPv6" : "IPv4",
-	     static_cast<int>(result.port), result.publicAddress.c_str());
+	/*
+	 * Said differently for a lookup, because the words the measurement uses are
+	 * about a port and a mode and a lookup established neither: a line reading
+	 * "not known on port 0" describes a failed measurement, which this is not.
+	 */
+	if (result.addressOnly)
+		QDBG("The public %s address is %s (%s)",
+		     result.ipv6 ? "IPv6" : "IPv4", result.publicAddress.c_str(),
+		     result.classification.c_str());
+	else
+		QDBG("Reachability: %s on %s port %d, seen at %s",
+		     toString(result.mode), result.ipv6 ? "IPv6" : "IPv4",
+		     static_cast<int>(result.port), result.publicAddress.c_str());
 
 	/*
 	 * Into its family's slot before anybody is told, so that a listener asking
@@ -223,7 +271,12 @@ void QuickDC::DropCheck::EventDropServerInfo(Drop::Client*, const Drop::ServerIn
 
 	want_udp = udp_port && server.supports(family, "udp");
 
-	if (server.minPort && tcp_port < server.minPort)
+	/*
+	 * The bound is on ports the server will probe, so it says nothing about a run
+	 * that asks it to probe none. Applied to a lookup it would refuse every server
+	 * that names one, over the port a lookup does not have.
+	 */
+	if (!address_only && server.minPort && tcp_port < server.minPort)
 	{
 		internal_fail("this server does not test ports below "
 		              + std::to_string(server.minPort)
@@ -249,6 +302,19 @@ void QuickDC::DropCheck::EventDropWhoami(Drop::Client*, const Drop::Whoami& seen
 		? Drop::toString(seen.classification) : seen.advice;
 
 	result.port = tcp_port;
+
+	/*
+	 * A lookup is over here, with the address it came for and nothing else. The
+	 * session is what would arm the peer port and the search port to answer a
+	 * stranger, so a run that wants no probe must never open one: there is nothing
+	 * for it to hold credentials against, and the window would be open for as long
+	 * as the run took anyway.
+	 */
+	if (address_only)
+	{
+		internal_finish();
+		return;
+	}
 
 	state = State::Session;
 	client->openSession();
@@ -355,6 +421,32 @@ void QuickDC::setDropCheckListener(QuickDC::DropCheckListener* listener)
 	core->dropcheck->setObserver(listener);
 }
 
+namespace {
+
+/**
+ * The server to ask about 'ipv6', or nothing where there is nobody to ask.
+ *
+ * The family's own name, never the unprefixed one: a connection has one source
+ * address, so the dual-stack name would answer for whichever family that
+ * connection happened to use rather than the one being asked about. Shared by both
+ * entry points below, so that a lookup and a measurement cannot come to ask two
+ * different servers about the same family.
+ */
+std::string dropServerFor(bool ipv6)
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	if (!core || !core->config) return std::string();
+
+	core->config->setGroup("Network");
+
+	const std::string server = core->config->getString("Reachability server", "");
+	if (server.empty()) return std::string();
+
+	return (ipv6 ? "https://ipv6." : "https://ipv4.") + server;
+}
+
+}
+
 bool QuickDC::startDropCheck(bool ipv6)
 {
 	Core* core = Core::getInstance();
@@ -362,24 +454,38 @@ bool QuickDC::startDropCheck(bool ipv6)
 
 	if (core->dropcheck->isBusy()) return false;
 
+	const std::string host = dropServerFor(ipv6);
+	if (host.empty()) return false;
+
 	core->config->setGroup("Network");
 
-	const std::string server = core->config->getString("Reachability server", "");
-	if (server.empty()) return false;
-
 	const uint16_t port = static_cast<uint16_t>(core->config->getNumber("Port", 1411));
-
-	/*
-	 * The family's own name, never the unprefixed one: a connection has one
-	 * source address, so the dual-stack name would measure whichever family that
-	 * connection happened to use rather than the one being asked about.
-	 */
-	const std::string host = (ipv6 ? "https://ipv6." : "https://ipv4.") + server;
 
 	core->dropcheck->start(host,
 	                       ipv6 ? Drop::Family::IPv6 : Drop::Family::IPv4,
 	                       port, port,
 	                       std::optional<Samurai::IO::Net::InetAddress>());
+	return true;
+}
+
+bool QuickDC::startAddressLookup(bool ipv6)
+{
+	Core* core = Core::getInstance();
+	if (!core || !core->dropcheck) return false;
+
+	/*
+	 * A measurement in flight is not displaced for this. The two share the one
+	 * client, and the run that probes a port is the one worth waiting for - it
+	 * reports the address as well.
+	 */
+	if (core->dropcheck->isBusy()) return false;
+
+	const std::string host = dropServerFor(ipv6);
+	if (host.empty()) return false;
+
+	core->dropcheck->startAddressLookup(host,
+	                                    ipv6 ? Drop::Family::IPv6 : Drop::Family::IPv4,
+	                                    std::optional<Samurai::IO::Net::InetAddress>());
 	return true;
 }
 
@@ -396,6 +502,15 @@ bool QuickDC::dropMeasurementIsFresh(const QuickDC::DropVerdict& held, time_t no
 {
 	if (!held.ran || !held.observedAt) return false;
 
+	/*
+	 * A lookup is not a measurement, however recently it was taken: nothing
+	 * connected back for it, so there is nothing in it to be fresh. Answering yes
+	 * would let an address looked up when a settings page opened stand in for the
+	 * run this question is asked in order to schedule, and suppress it for the
+	 * whole of QUICKDC_REACHABILITY_MEASUREMENT_AGE.
+	 */
+	if (held.addressOnly) return false;
+
 	if (now < held.observedAt) return false;
 
 	return now - held.observedAt <= QUICKDC_REACHABILITY_MEASUREMENT_AGE;
@@ -411,6 +526,14 @@ void QuickDC::applyDropMeasurement()
 	{
 		const DropVerdict verdict = lastDropVerdict(ipv6);
 		if (!verdict.ran) continue;
+
+		/*
+		 * A lookup probed nothing, so both of its reach values are Unknown, and
+		 * Unknown is written into the record like any other answer. Offering one
+		 * here would take away what the last real measurement established, on the
+		 * strength of a run that never asked the question.
+		 */
+		if (verdict.addressOnly) continue;
 
 		Reachability* record = core->reachabilityFor(ipv6);
 		if (!record) continue;

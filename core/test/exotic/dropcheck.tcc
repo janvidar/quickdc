@@ -597,3 +597,168 @@ EXO_TEST(dropcheck_a_refused_start_still_names_the_family_it_was_asked_about,
 	EXO_ASSERT(check.lastFamilyWasIPv6());
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* An address lookup, which is a run that probes nothing                     */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * A lookup announces itself exactly as a measurement does.
+ *
+ * A front end draws "asking..." from that event and has no other way to know one is
+ * going, and the core starts lookups of its own - a passive client is shown the
+ * address the world sees whether or not a settings page asked for it. A run that
+ * stayed quiet until it answered would leave the page still saying what the last one
+ * concluded.
+ *
+ * Nothing completes here: no loop is being driven, so the run sits at its first
+ * request until it is abandoned. What is pinned is the span up to that point - the
+ * check is busy, the family is the one asked about, and nothing has been concluded.
+ */
+EXO_TEST(dropcheck_an_address_lookup_says_that_it_started,
+{
+	Recorder events;
+	QuickDC::DropCheck check(&events);
+
+	check.startAddressLookup("https://ipv6.drop.invalid", Drop::Family::IPv6,
+	                         std::optional<Samurai::IO::Net::InetAddress>());
+
+	EXO_ASSERT(events.started == 1);
+	EXO_ASSERT(events.startedIPv6 == true);
+	EXO_ASSERT(check.isBusy());
+	EXO_ASSERT(check.lastFamilyWasIPv6());
+
+	EXO_ASSERT(events.finished == 0);
+	EXO_ASSERT(events.failed == 0);
+
+	/* And it armed nothing on the way in; only a session does that, and it opens none. */
+	std::string response;
+	std::vector<uint8_t> reply;
+
+	EXO_ASSERT(!check.answerChallenge(CHALLENGE, response));
+	EXO_ASSERT(!check.answerStunProbe(authenticatedProbe(), "198.51.100.9", 1411,
+	                                  false, reply));
+
+	check.cancel();
+	EXO_ASSERT(!check.isBusy());
+	return 1;
+});
+
+/**
+ * And it needs no peer port, which is the whole reason it exists.
+ *
+ * A measurement without one is refused because it would test a port nothing listens
+ * on and report a true answer about nobody's port. A lookup asks the server for an
+ * address and nothing else, so there is no port for it to offer and none to refuse
+ * it over - which is what makes it the question a client with no listening socket,
+ * or one that has declared itself passive, can still have answered.
+ *
+ * The same call is shown being refused for a measurement first, so that the case is
+ * about the two runs differing rather than about the port being optional anywhere.
+ */
+EXO_TEST(dropcheck_an_address_lookup_does_not_need_a_peer_port,
+{
+	Recorder events;
+	QuickDC::DropCheck check(&events);
+
+	check.start("https://ipv4.drop.invalid", Drop::Family::IPv4, 0, 0,
+	            std::optional<Samurai::IO::Net::InetAddress>());
+
+	EXO_ASSERT(events.failed == 1);
+	EXO_ASSERT(events.started == 0);
+	EXO_ASSERT(!check.isBusy());
+
+	check.startAddressLookup("https://ipv4.drop.invalid", Drop::Family::IPv4,
+	                         std::optional<Samurai::IO::Net::InetAddress>());
+
+	EXO_ASSERT(events.failed == 1);
+	EXO_ASSERT(events.started == 1);
+	EXO_ASSERT(check.isBusy());
+
+	check.cancel();
+	return 1;
+});
+
+/**
+ * A lookup asked for while a measurement is going is refused, not run.
+ *
+ * The two share the one client and the client answers one request at a time, and
+ * of the two the measurement is the one worth having: it reports the address as
+ * well as the reachability. So the lookup is turned away where it arrives, which
+ * is a refusal reported like any other rather than a silent no - a settings page
+ * that asked for an address is owed an answer either way.
+ */
+EXO_TEST(dropcheck_an_address_lookup_does_not_displace_a_measurement,
+{
+	Recorder events;
+	QuickDC::DropCheck check(&events);
+
+	check.start("https://ipv4.drop.invalid", Drop::Family::IPv4, 1411, 1411,
+	            std::optional<Samurai::IO::Net::InetAddress>());
+	EXO_ASSERT(events.started == 1);
+
+	check.startAddressLookup("https://ipv4.drop.invalid", Drop::Family::IPv4,
+	                         std::optional<Samurai::IO::Net::InetAddress>());
+
+	/* Nothing was announced for it, and the refusal says what happened. */
+	EXO_ASSERT(events.started == 1);
+	EXO_ASSERT(events.failed == 1);
+	EXO_ASSERT(events.reason.find("already running") != std::string::npos);
+	EXO_ASSERT(events.finished == 0);
+
+	check.cancel();
+	return 1;
+});
+
+/**
+ * An address is never a fresh measurement, however recently it was looked up.
+ *
+ * Nothing connected back for it, so there is no reachability in it to be fresh - and
+ * the core asks this question in order to decide whether to measure. Answering yes
+ * would have an address looked up when a settings page opened suppress the real run
+ * for the whole of QUICKDC_REACHABILITY_MEASUREMENT_AGE, which is the one outcome
+ * that would make showing the address cost something.
+ *
+ * Paired with an ordinary verdict of exactly the same age, so that the case is about
+ * the mark and not about the clock.
+ */
+EXO_TEST(dropcheck_an_address_only_verdict_is_never_a_fresh_measurement,
+{
+	const time_t now = 1000000;
+	const time_t age = QUICKDC_REACHABILITY_MEASUREMENT_AGE;
+
+	QuickDC::DropVerdict looked = measuredAt(now);
+	looked.addressOnly = true;
+	looked.publicAddress = "198.51.100.9";
+
+	EXO_ASSERT(QuickDC::dropMeasurementIsFresh(measuredAt(now), now));
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(looked, now));
+
+	/* At every age the measurement is still believed at, and past it as well. */
+	QuickDC::DropVerdict older = looked;
+	older.observedAt = now - age + 1;
+	EXO_ASSERT(QuickDC::dropMeasurementIsFresh(measuredAt(now - age + 1), now));
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(older, now));
+
+	older.observedAt = now - age;
+	EXO_ASSERT(QuickDC::dropMeasurementIsFresh(measuredAt(now - age), now));
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(older, now));
+
+	older.observedAt = now - age - 1;
+	EXO_ASSERT(!QuickDC::dropMeasurementIsFresh(older, now));
+	return 1;
+});
+
+/*
+ * And an ordinary verdict is not marked as one by accident.
+ *
+ * The default is what every reader of a verdict it did not build relies on: a struct
+ * that came from a measurement must not have to remember to say so, or a field added
+ * beside this one would quietly stop measurements being believed.
+ */
+EXO_TEST(dropcheck_an_ordinary_verdict_is_not_marked_as_an_address,
+{
+	EXO_ASSERT(!QuickDC::DropVerdict().addressOnly);
+	EXO_ASSERT(!measuredAt(1000000).addressOnly);
+	return 1;
+});

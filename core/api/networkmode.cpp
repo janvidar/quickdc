@@ -58,9 +58,14 @@ QuickDC::NetworkModeKeys QuickDC::networkModeKeys(QuickDC::NetworkMode mode,
 
 	/*
 	 * Somebody has to be asked before a verdict can be shown, so an empty name
-	 * becomes the default. Only where the mode asks for one: advanced answers with
-	 * what the file holds, empty included, which is what lets an installation that
-	 * predates the setting keep contacting nobody.
+	 * becomes the default in every mode - there is no field on the page for one, so
+	 * a mode that answered with an empty name would leave the user no way to ever
+	 * measure and nothing to say about why. A name the file already holds is kept
+	 * exactly as it is, which is what a self-hosted server is configured by.
+	 *
+	 * This is not what opts an existing installation in. Nothing derives these keys
+	 * until somebody chooses a mode; the migration settles the mode alone and leaves
+	 * an empty server empty, so an upgrade contacts nobody until it is asked to.
 	 */
 	keys.reachabilityServer = storedServer.empty() ? defaultReachabilityServer()
 	                                               : storedServer;
@@ -84,7 +89,6 @@ QuickDC::NetworkModeKeys QuickDC::networkModeKeys(QuickDC::NetworkMode mode,
 			keys.activeMode = true;
 			keys.useUpnp = storedUseUpnp;
 			keys.forceActive = storedForceActive;
-			keys.reachabilityServer = storedServer;
 			break;
 
 		case NetworkMode::Passive:

@@ -78,7 +78,8 @@ bool measurement_owed = false;
  * back blocked and be perfectly right, having tested a port nothing listens on.
  * Nothing to learn is a measurement still young enough to be believed - the same
  * age the record weighs one by, so what is believed and what is worth asking
- * again cannot disagree.
+ * again cannot disagree. Nothing to act on is a passive client, which is not
+ * offering the port whichever way the answer came back.
  *
  * @return whether a run was started, which is how the caller knows the family it
  *         asked about is now busy rather than simply not worth asking about.
@@ -86,9 +87,22 @@ bool measurement_owed = false;
 bool measureIfStale(bool ipv6)
 {
 	QuickDC::Core* core = QuickDC::Core::getInstance();
-	if (!core || !core->server) return false;
+	if (!core || !core->server || !core->config) return false;
 
 	if (!core->server->listening(ipv6)) return false;
+
+	/*
+	 * Nothing to act on is a client that has declared itself passive. Inbound
+	 * reachability is measured by having a stranger's server dial the peer port,
+	 * which costs that third party a request and this client an open window, for an
+	 * answer that changes nothing: a passive client is not offering the port
+	 * whatever the answer turns out to be.
+	 *
+	 * Peeked rather than read, because the ordinary accessor stores its default when
+	 * the key is absent - and this is reached from a timer, so it would mark the
+	 * file dirty every few minutes over a question it only asked.
+	 */
+	if (!core->config->peekBool("Network", "Active mode", false)) return false;
 
 	if (QuickDC::dropMeasurementIsFresh(QuickDC::lastDropVerdict(ipv6), time(0)))
 		return false;
@@ -281,8 +295,22 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 		 */
 		void EventDropCheckFinished(const QuickDC::DropVerdict& verdict) override
 		{
-			QDBG("A DROP server reports this client %s on port %d",
-			     QuickDC::toString(verdict.mode), static_cast<int>(verdict.port));
+			/*
+			 * A lookup is said differently. It carries no port and no mode, so the
+			 * ordinary line would read "not known on port 0" - which is what a
+			 * measurement that failed looks like, and this one answered.
+			 */
+			if (verdict.addressOnly)
+			{
+				QDBG("A DROP server sees this client at %s",
+				     verdict.publicAddress.c_str());
+			}
+			else
+			{
+				QDBG("A DROP server reports this client %s on port %d",
+				     QuickDC::toString(verdict.mode),
+				     static_cast<int>(verdict.port));
+			}
 
 			QuickDC::Core* core = QuickDC::Core::getInstance();
 			if (!core) return;
@@ -551,7 +579,30 @@ QuickDC::Core::Core()
 	 */
 	config->setGroup("Network");
 
-	const bool forwarding = config->getBool("UseUPnP", false);
+	/*
+	 * What the mode in force asks for, not what the raw key says.
+	 *
+	 * The two come apart on exactly one file: an installation that predates [Network]
+	 * Mode and was passive keeps every value it had, UseUPnP among them, because in
+	 * such a file those values are the state being described and rewriting them would
+	 * be this client changing behaviour because somebody upgraded. So the key can say
+	 * to forward while the mode says nothing is told to connect here, and honouring
+	 * the key would leave a hole in somebody's network that nothing uses while the
+	 * settings page says in as many words that passive forwards no port.
+	 *
+	 * The consequence is a behaviour change at the next start for that one
+	 * combination - passive with UseUPnP still true stops forwarding - and it is the
+	 * right one: the mapping was for peers that are never sent here.
+	 *
+	 * The stored values are peeked, since the ordinary accessors would write their
+	 * defaults back and this read is meant to leave the file as it found it.
+	 */
+	const NetworkModeKeys wanted = networkModeKeys(storedNetworkMode(*config),
+		config->peekBool("Network", "UseUPnP", false),
+		config->peekBool("Network", "Force active mode", false),
+		config->peekString("Network", "Reachability server", ""));
+
+	const bool forwarding = wanted.useUpnp;
 	if (forwarding)
 		portforward->start(config->getNumber("Port", 1411));
 
@@ -561,6 +612,10 @@ QuickDC::Core::Core()
 	 * from the setting, so that a start() which failed outright - it reports
 	 * before it returns - has already released the wait. Assigned either way,
 	 * since what it holds belongs to no particular core.
+	 *
+	 * Which is also what keeps this in step with the mode above at no cost: a mode
+	 * that forwards nothing leaves nothing to wait for, so the first measurement
+	 * goes out immediately rather than waiting on a gateway nobody asked.
 	 */
 	measurement_owed = forwarding && portforward->isBusy();
 
@@ -573,9 +628,29 @@ QuickDC::Core::Core()
 	dropcheck = new DropCheck(&dropcheck_listener);
 	dropRefresh = new Samurai::Timer(&dropcheck_listener, DROP_REFRESH_TICK, false);
 
-	if (std::string(config->getString("Reachability server", "")).length()
-	    && !measurement_owed)
-		startDropCheck(false);
+	/*
+	 * The first run against whoever is named, and which run depends on the mode.
+	 *
+	 * A passive client asks only what address the world sees it at. It has announced
+	 * that nothing is to connect here, so having a stranger's server dial the peer
+	 * port in order to tell us our own address is the one thing it must not arrange -
+	 * and the answer would be about a port nobody will be sent to anyway. The
+	 * measuring proper is for the two modes that intend to be reachable.
+	 *
+	 * Peeked, because the ordinary read would write the default back: this decides
+	 * whether to contact a third party at all, and a read that created the key would
+	 * be the client answering that question for itself.
+	 */
+	const bool named =
+		!config->peekString("Network", "Reachability server", "").empty();
+
+	if (named && !measurement_owed)
+	{
+		if (wanted.activeMode)
+			startDropCheck(false);
+		else
+			startAddressLookup(false);
+	}
 
 	shares->initialize();
 }
