@@ -16,7 +16,7 @@ Preferences::Preferences(const std::string& file) : IniParser(file) {
 	   header lands in a group with no name - which is written back out as "[]"
 	   and refused the next time the file is read. */
 	current = "Default";
-	read();
+	had_file = read();
 	dirty = false;
 }
 

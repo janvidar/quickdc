@@ -76,6 +76,7 @@ set(QUICKDC_SOURCES
     debug/dbg.cpp
     api/core.cpp
     api/hub.cpp
+    api/networkmode.cpp
     api/server.cpp
     hash/hashmanager.cpp
     hash/hashjob.cpp

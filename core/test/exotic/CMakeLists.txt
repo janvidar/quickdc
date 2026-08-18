@@ -69,6 +69,7 @@ set(QUICKDC_EXOTIC_TESTS
     portforward.tcc
     reachability.tcc
     dropcheck.tcc
+    networkmode.tcc
     searchtokens.tcc
     queuecomplete.tcc
     zupload.tcc)

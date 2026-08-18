@@ -24,6 +24,7 @@
 #include "network/downloadqueue.h"
 #include "network/hubmanager.h"
 #include "network/dropcheck.h"
+#include "api/networkmode.h"
 #include "network/portforward.h"
 #include "network/reachability.h"
 #include "network/searchtokens.h"
@@ -494,6 +495,18 @@ QuickDC::Core::Core()
 	Samurai::IO::File::mkdir(QUICKDC_DOWNLOAD_DIR, 0700);
 	
 	config = new Preferences("~/.quickdc/quickdc.conf");
+
+	/*
+	 * Settled before anything else looks at [Network], and that ordering is the
+	 * whole of why it is here rather than somewhere tidier. Every other reader of
+	 * the group writes its default back when a key is missing, so the first such
+	 * read makes the group exist - and a decision about whether this is a first run
+	 * has to be taken before that happens. It answers from the file's own absence
+	 * rather than from the group's, which is what keeps it correct whatever moves
+	 * below it.
+	 */
+	networkMode(*config, config->existed() == false);
+
 	session = new Preferences("~/.quickdc/session.conf");
 	quickdc_core = this;
 	

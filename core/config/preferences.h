@@ -85,10 +85,31 @@ class Preferences : public IniParser {
 		virtual bool write() override;
 		virtual bool read() override;
 
+		/**
+		 * Whether there was a file to read when this was constructed.
+		 *
+		 * Captured at construction rather than answered on demand, and that is the
+		 * point: it is the one question about a store whose answer a later read
+		 * cannot change. The getters write their defaults back, so by the time
+		 * anything has asked after a setting the file exists and every other
+		 * "has this been configured" signal has decayed - which makes this the only
+		 * dependable way to tell a first run from a run that has simply never
+		 * changed anything.
+		 *
+		 * A file that exists but cannot be opened answers false. Such an
+		 * installation cannot be written either, so nothing is persisted on the
+		 * strength of it.
+		 */
+		bool existed() const { return had_file; }
+
 	protected:
 		void readSectionStart(const std::string& group) override;
 		void readSectionEnd(const std::string& group) override;
 		void readSetting(const std::string& name, const std::string& value) override;
+
+	private:
+		/** Whether read() found a file; see existed(). */
+		bool had_file = false;
 
 	protected:
 		/** The stored value, or null where there is no such group or key. */
