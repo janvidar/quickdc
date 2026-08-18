@@ -16,6 +16,8 @@
 #include "quickdc.h"
 #include "network/probe.h"
 
+#include <drop/responder.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -228,6 +230,42 @@ EXO_TEST(probe_a_greeting_only_counts_at_the_start,
 		EXO_ASSERT(expect("xxCSUP ADBASE", Protocol::Unknown, "a greeting further in"));
 		EXO_ASSERT(expect("\r\nGET / HTTP/1.1\r\n", Protocol::Unknown, "a leading blank line"));
 	
+	return 1;
+});
+
+/*
+ * A DROP challenge is not a protocol this client speaks, and does not fit in what
+ * telling the protocols apart needs.
+ *
+ * The dispatch peeks once and shows those bytes to both, so the buffer has to be
+ * the larger of the two demands - and they are nowhere near each other. Eight bytes
+ * settle every protocol above, while a challenge is recognised by a
+ * seventeen-character prefix and answered by echoing the nonce after it: a buffer
+ * sized for the fingerprint cannot hold even the prefix, so every challenge is
+ * refused and the connection dropped as unknown.
+ *
+ * That failure is invisible from the outside and says nothing about the network. It
+ * reads as a port nothing can reach, on a client whose port is wide open, so the
+ * bound is asserted here rather than left to a comment beside the buffer.
+ */
+EXO_TEST(probe_a_challenge_needs_more_room_than_a_fingerprint,
+{
+	const std::string challenge = "DROP/1 CHALLENGE 4a1f9c2e\n";
+
+	std::string response;
+
+	EXO_ASSERT(Drop::TcpResponder::handleChallenge(challenge, response));
+
+	/* Room for the longest line the protocol allows, nonce included. */
+	EXO_ASSERT(Drop::TcpResponder::MaxChallenge >= challenge.size());
+
+	/* Cut to what a fingerprint needs, the same line answers nothing. */
+	EXO_ASSERT(!Drop::TcpResponder::handleChallenge(challenge.substr(0, 8), response));
+	EXO_ASSERT(!Drop::TcpResponder::handleChallenge(challenge.substr(0, 16), response));
+
+	/* And it is not mistaken for one of the protocols on the way past. */
+	EXO_ASSERT(expect(challenge, Protocol::Unknown, "a DROP challenge"));
+
 	return 1;
 });
 

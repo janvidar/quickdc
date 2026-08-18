@@ -89,14 +89,15 @@ foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF)
 
-    # network/dropcheck.h is the one QuickDC header that names Drop, and Drop is
-    # a PRIVATE dependency of the library, so its include directories stop at
-    # the library and never reach a consumer - which is the point, since nothing
-    # outside reads a verdict in Drop's types. A test that constructs the class
-    # includes that header, so this one target needs them back. Added here
-    # rather than to the whole list, so that a test which has no business
-    # knowing about Drop still cannot include it.
-    if(stem STREQUAL "dropcheck")
+    # Drop is a PRIVATE dependency of the library, so its include directories
+    # stop at the library and never reach a consumer - which is the point, since
+    # nothing outside reads a verdict in Drop's types. Two tests do have business
+    # with it and need them back: dropcheck constructs the class declared in
+    # network/dropcheck.h, the one QuickDC header that names Drop, and probe
+    # answers the DROP challenge on the peer port, so what a challenge line
+    # needs is part of what it is testing. Named here rather than added to the
+    # whole list, so that a test with no such business still cannot include it.
+    if(stem STREQUAL "dropcheck" OR stem STREQUAL "probe")
         target_link_libraries(quickdc_test_${stem} PRIVATE drop::drop)
     endif()
 

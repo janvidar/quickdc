@@ -6,6 +6,8 @@
 #include "api/core.h"
 #include "network/probe.h"
 #include "network/dropcheck.h"
+
+#include <drop/responder.h>
 #include "network/connectionmanager.h"
 #include "network/dc/dcconnection.h"
 #include "network/dc/clientsession.h"
@@ -326,7 +328,14 @@ void QuickDC::ProtocolProbe::EventTLSConnected(const Samurai::IO::Net::Socket*) 
  * DropCheck::answerChallenge(). One line each way and the connection closes.
  */
 void QuickDC::ProtocolProbe::probe() {
-	char buf[16] = {0,};
+	/*
+	 * Sized for a whole DROP challenge line rather than for identifying a
+	 * protocol, which takes eight bytes at most. A challenge is recognised by its
+	 * prefix but answered by echoing the nonce that follows it, so a buffer that
+	 * stops short of the line cannot answer one - and a port that never answers
+	 * measures as unreachable however open it is.
+	 */
+	char buf[Drop::TcpResponder::MaxChallenge + 1] = {0,};
 
 	/*
 	 * Not the result returning peek(): that one reads the descriptor directly
@@ -340,7 +349,7 @@ void QuickDC::ProtocolProbe::probe() {
 	 * for more instead of dropping the connection. Nothing is leaked by
 	 * waiting: the 30 second timer closes a connection that stays silent.
 	 */
-	ssize_t len = socket->peek(buf, 16);
+	ssize_t len = socket->peek(buf, sizeof(buf) - 1);
 	if (len <= 0) return;
 
 	QuickDC::DropCheck* check = QuickDC::Core::getInstance()->dropcheck;
