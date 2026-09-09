@@ -521,6 +521,16 @@ class Hub
 		bool withdrawPost(const char* tth, const char* board);
 
 		const User* getLocalUser() const;
+
+		/**
+		 * Whether this identifier - the one a file source is keyed on - names our
+		 * own session here.
+		 *
+		 * False before login and for a hub with no session: this answers "that is
+		 * certainly us", and callers refuse things on it.
+		 */
+		bool isLocalUser(const char* cid) const;
+
 		UserManager* getUserManager() const;
 
 		void sendSearchRequest(Share::SearchRequest* request);

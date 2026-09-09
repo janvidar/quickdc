@@ -610,6 +610,12 @@ void DC::HubSession::onOpList()
 
 void DC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 {
+	/*
+	 * Our own search, handed back to us; see ADC::HubSession::onSearch(). Only a
+	 * passive search says who sent it, so that is the half this can catch.
+	 */
+	if (request && request->getUser() && request->getUser() == getLocalUser()) return;
+
 	QuickDC::Share::Manager* shares = QuickDC::Core::getInstance()->shares;
 	if (!shares) return;
 
@@ -706,9 +712,11 @@ void DC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
 	/*
 	 * Match on the TTH, not the name: the point of queueing by hash is that
 	 * the same file is called something else on someone else's disk. A reply
-	 * without a TTH is still shown, it just cannot become a source.
+	 * without a TTH is still shown, it just cannot become a source. And never
+	 * ourselves; see ADC::HubSession::onSearchResult().
 	 */
-	if (queue && hubUrl && result->getTTH() && result->getUser())
+	if (queue && hubUrl && result->getTTH() && result->getUser()
+		&& result->getUser() != getLocalUser())
 	{
 		QuickDC::QueueFile* qfile = queue->getFileByTTH(result->getTTH());
 

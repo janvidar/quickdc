@@ -797,8 +797,12 @@ void ADC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
 	/*
 	 * Match on the TTH rather than the name: the whole point of queueing by
 	 * hash is that the same file can be called different things elsewhere.
+	 *
+	 * Never ourselves: onSearch() sees to it that we do not answer our own
+	 * searches, and this is the other half of that rule.
 	 */
-	if (queue && hubUrl && result->getTTH() && result->getUser())
+	if (queue && hubUrl && result->getTTH() && result->getUser()
+		&& result->getUser() != getLocalUser())
 	{
 		QuickDC::QueueFile* qfile = queue->getFileByTTH(result->getTTH());
 		const char* cid = reinterpret_cast<const char*>(result->getUser()->getClientID());
@@ -2662,6 +2666,13 @@ void ADC::HubSession::sendPeerError(const char* remote_sid, const char* code, co
 void ADC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 {
 	if (userState != QuickDC::HubSession::StateNormal) return;
+
+	/*
+	 * Our own search, handed back to us: a broadcast goes to every session the hub
+	 * has, and the sender is one of them. Answering it makes this client a source
+	 * for a file it is itself looking for, which ends in it dialling its own port.
+	 */
+	if (request && request->getUser() && request->getUser() == getLocalUser()) return;
 
 	QuickDC::Share::Manager* shares = QuickDC::Core::getInstance()->shares;
 	if (!shares) return;

@@ -81,6 +81,14 @@ class Manager : public QuickDC::Hash::JobListener {
 		 */
 		void rebuild();
 		void createFileLists(bool incomplete);
+
+		/**
+		 * The directory createFileLists() writes files.xml and files.xml.bz2 to.
+		 *
+		 * As it was configured, tilde and all: Samurai::IO::File is what expands
+		 * it, and what wrote the list.
+		 */
+		const std::string& getFilelistDirectory() const { return listdir; }
 		
 		/**
 		 * Search the local file database.

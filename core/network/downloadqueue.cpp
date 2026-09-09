@@ -733,6 +733,22 @@ bool isRecordablePeer(const char* hubUrl, const char* cid)
 	return strchr(cid, '/') == 0;
 }
 
+/**
+ * Whether {hub, cid} is this client's own session on that hub.
+ *
+ * A hub we are not logged in to answers false, which is the safe way round: this is
+ * asked to refuse something, and "we cannot tell" must never refuse a download.
+ */
+bool isOurselves(const char* hubUrl, const char* cid)
+{
+	QuickDC::Core* core = QuickDC::Core::getInstance();
+	if (!core || !core->hubs || !hubUrl || !cid) return false;
+
+	QuickDC::Hub* hub = core->hubs->getHubByUrl(hubUrl);
+
+	return hub && hub->isLocalUser(cid);
+}
+
 }
 
 QuickDC::QueueManager::QueueManager(const char* path_)
@@ -936,6 +952,9 @@ bool QuickDC::QueueManager::requestSourceSearch(const char* tth, SourceSearchRes
 bool QuickDC::QueueManager::addKnownSource(const char* tth, const char* hubUrl, const char* cid)
 {
 	if (!isTigerRoot(tth) || !isRecordablePeer(hubUrl, cid)) return false;
+
+	/* The author of a post is a known source for it, and sometimes that is us. */
+	if (isOurselves(hubUrl, cid)) return false;
 
 	QueueFile* file = getFileByTTH(tth);
 	if (!file) return false;
@@ -1397,6 +1416,14 @@ QuickDC::FilelistRequest* QuickDC::QueueManager::requestFilelist(const char* hub
 	FilelistRequest* existing = getFilelistRequest(hub, cid);
 	if (existing) return existing;
 
+	/* Whoever asked reads our own list off the disk instead. */
+	if (isOurselves(hub, cid))
+	{
+		QDBG("Refusing a file list request: '%s' on '%s' is us", cid ? cid : "",
+			hub ? hub : "");
+		return 0;
+	}
+
 	FilelistRequest* request = new FilelistRequest(hub, cid);
 	if (!request->isValid())
 	{
@@ -1724,6 +1751,10 @@ void QuickDC::QueueManager::schedule()
 		QuickDC::Hub* hub = core->hubs->getHubByUrl(list->getHubUrl());
 		if (!hub) continue;   /* not logged in there at the moment */
 
+		/* requestFilelist() turns these away; a queue saved before it did, or a
+		   nickname that has since become ours, arrives here instead. */
+		if (hub->isLocalUser(list->getClientID())) continue;
+
 		const char* created = createRequest(list);
 		if (!created) continue;
 
@@ -1765,6 +1796,8 @@ void QuickDC::QueueManager::schedule()
 
 				QuickDC::Hub* hub = core->hubs->getHubByUrl(source->getHubUrl());
 				if (!hub) continue;   /* not logged in there at the moment */
+
+				if (hub->isLocalUser(source->getClientID())) continue;
 
 				const char* created = createRequest(file, source);
 				if (!created) continue;

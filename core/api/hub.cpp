@@ -340,6 +340,23 @@ const QuickDC::User* QuickDC::Hub::getLocalUser() const
 	return (session) ? session->getLocalUser() : 0;
 }
 
+bool QuickDC::Hub::isLocalUser(const char* cid) const
+{
+	if (!session || !cid || !*cid) return false;
+
+	const QuickDC::User* me = session->getLocalUser();
+	if (!me) return false;
+
+	/* The two lookups connectUserByClientID() makes, so the two cannot disagree
+	   about who a caller meant. */
+	QuickDC::UserManager* users = session->getUserManager();
+
+	const QuickDC::User* named = (users) ? users->getUserByClientID(cid) : 0;
+	if (!named) named = session->getUser(cid);
+
+	return named == me;
+}
+
 QuickDC::UserManager* QuickDC::Hub::getUserManager() const
 {
 	return (session) ? session->getUserManager() : 0;

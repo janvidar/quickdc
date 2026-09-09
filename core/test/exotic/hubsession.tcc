@@ -30,6 +30,9 @@
 #include "network/adc/parser.h"
 #include "network/searchtokens.h"
 #include "network/downloadqueue.h"
+#include "api/attachments.h"
+#include "hash/hashmanager.h"
+#include "share/sharemanager.h"
 
 #include "fakegateway.h"
 #include "network/adc/adccommon.h"
@@ -3635,6 +3638,151 @@ EXO_TEST(hubsession_a_search_that_went_out_is_remembered,
 });
 
 /*
+ * One file this client offers by hash, and somewhere to write the file lists.
+ *
+ * Attached rather than shared, because attaching hashes exactly one named file
+ * where a share would have to be scanned. The manager is replaced for the length
+ * of the case: the fixture's own is pointed at the account's directory, and
+ * hashing ends in a file list being written there.
+ */
+class Offered
+{
+	public:
+		std::string tth;
+		bool ready = false;
+
+		Offered()
+			: file(scratch("offered.bin")), lists(scratch("lists")),
+			  cache(scratch("offered.cache"))
+		{
+			Samurai::IO::File::mkdir(lists.c_str());
+
+			FILE* fh = fopen(file.c_str(), "wb");
+			if (!fh) return;
+			const std::string bytes(4096, 'q');
+			const bool written = fwrite(bytes.data(), 1, bytes.size(), fh) == bytes.size();
+			fclose(fh);
+			if (!written) return;
+
+			QuickDC::Core* core = QuickDC::Core::getInstance();
+
+			hashes = new QuickDC::Hash::Manager(cache.c_str());
+			replaced = core->shares;
+			mine = new QuickDC::Share::Manager(core->config, hashes, lists.c_str());
+			core->shares = mine;
+
+			if (!mine->attach(file.c_str(), &listener,
+					QuickDC::Share::Manager::Persistence::Session,
+					QuickDC::Share::Manager::SlotCost::Free))
+				return;
+
+			/* Hashed on the worker; nothing is known until this thread collects it. */
+			const auto deadline = std::chrono::steady_clock::now()
+				+ std::chrono::seconds(30);
+
+			while (hashes->process() || hashes->isBusy())
+			{
+				if (std::chrono::steady_clock::now() > deadline) return;
+				usleep(1000);
+			}
+
+			tth = listener.tth;
+			ready = !tth.empty();
+		}
+
+		~Offered()
+		{
+			if (replaced)
+			{
+				QuickDC::Core::getInstance()->shares = replaced;
+				delete mine;
+			}
+
+			delete hashes;
+
+			Samurai::IO::File(file).remove();
+			Samurai::IO::File(cache).remove();
+			Samurai::IO::File(cache + ".new").remove();
+			Samurai::IO::File(lists + "/files.xml").remove();
+			Samurai::IO::File(lists + "/files.xml.bz2").remove();
+			Samurai::IO::File::rmdir(lists.c_str());
+		}
+
+		Offered(const Offered&) = delete;
+		Offered& operator=(const Offered&) = delete;
+
+	private:
+		class Told : public QuickDC::Share::AttachmentListener
+		{
+			public:
+				void EventAttachmentReady(const char*, const char* root,
+				                          uint64_t) override
+				{
+					tth = root ? root : "";
+				}
+
+				void EventAttachmentFailed(const char*, const char*) override { }
+
+				std::string tth;
+		};
+
+		std::string file;
+		std::string lists;
+		std::string cache;
+		Told listener;
+		QuickDC::Hash::Manager* hashes = 0;
+		QuickDC::Share::Manager* mine = 0;
+		QuickDC::Share::Manager* replaced = 0;
+};
+
+/*
+ * A stranger's search for something we offer is answered, and our own is not.
+ *
+ * Both halves, because only the pair says anything: that the file is findable at
+ * all, and that the very same search carrying our own session as its sender leaves
+ * this client silent.
+ */
+EXO_TEST(hubsession_our_own_search_is_not_answered,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	Offered offered;
+	if (!offered.ready) EXO_SKIP("could not hash a file to offer");
+
+	/* Somebody else on the hub, who has no address, so a reply goes through it. */
+	s.say("BINF BBBB NIalice");
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.say(std::string("BSCH BBBB TR") + offered.tth + " TOstranger");
+	pump([&] {
+		s.hub.drain();
+		return s.hub.received.find("DRES") != std::string::npos;
+	}, 500);
+
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.find("DRES") != std::string::npos);
+	EXO_ASSERT(s.hub.received.find(offered.tth) != std::string::npos);
+
+	s.hub.received.clear();
+
+	/* The same search, said to come from us - which is what an echo looks like. */
+	s.say(std::string("BSCH AAAA TR") + offered.tth + " TOourselves");
+	pump([&] {
+		s.hub.drain();
+		return s.hub.received.find("DRES") != std::string::npos;
+	}, 500);
+
+	s.hub.drain();
+	EXO_ASSERT(s.hub.received.find("DRES") == std::string::npos);
+	return 1;
+});
+
+/*
  * A logged-in hub the manager can see, which is what a fan-out walks.
  *
  * Driven through Hub::connect() rather than by building the session directly, because
@@ -3698,6 +3846,46 @@ class ManagedHub
 			return fake.received.find(what) != std::string::npos;
 		}
 };
+
+/*
+ * We are never a source for ourselves, and never somebody to browse.
+ *
+ * Our own client ID reaches the queue by the ordinary routes - a search reply, and
+ * the author of a bulletin post - so what is refused is the request itself.
+ */
+EXO_TEST(hubsession_our_own_share_is_not_asked_for,
+{
+	ManagedHub hub;
+	if (!hub.fake.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(hub.ready);
+
+	const QuickDC::User* me = hub.ui->getLocalUser();
+	EXO_ASSERT_NOT_NULL(me);
+
+	const char* mine = reinterpret_cast<const char*>(me->getClientID());
+	EXO_ASSERT_NOT_NULL(mine);
+	EXO_ASSERT(*mine);
+
+	EXO_ASSERT(hub.ui->isLocalUser(mine));
+	EXO_ASSERT(!hub.ui->isLocalUser("AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJK"));
+
+	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	EXO_ASSERT_NOT_NULL(queue);
+
+	const char* url = hub.ui->getUrl();
+	EXO_ASSERT_NOT_NULL(url);
+
+	/* Ourselves: nothing is queued, so nothing is ever connected to. */
+	EXO_ASSERT(queue->requestFilelist(url, mine) == 0);
+	EXO_ASSERT(queue->getFilelistRequest(url, mine) == 0);
+
+	/* And a stranger on the same hub, so the refusal is about who and not about
+	   the hub or the queue. */
+	QuickDC::FilelistRequest* asked =
+		queue->requestFilelist(url, "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJK");
+	EXO_ASSERT_NOT_NULL(asked);
+	return 1;
+});
 
 /*
  * A post is looked for on the hub whose board it is on, and on no other.
