@@ -548,3 +548,118 @@ EXO_TEST(config_the_file_we_write_is_one_we_can_read,
 	
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* Being told of changes                                                     */
+/* ------------------------------------------------------------------------- */
+
+namespace {
+
+class ChangeRecorder : public QuickDC::PreferencesListener {
+	public:
+		struct Change {
+			std::string group;
+			std::string key;
+			bool removed;
+			std::string value;
+		};
+
+		void EventSettingChanged(const QuickDC::Preferences&, const std::string& group,
+		                         const std::string& key, const std::string* value) override
+		{
+			changes.push_back(Change{group, key, value == nullptr, value ? *value : ""});
+		}
+
+		std::vector<Change> changes;
+};
+
+}
+
+EXO_TEST(config_a_change_is_told_whichever_way_it_is_made,
+{
+	const std::string path = scratch("told.conf");
+	{
+		QuickDC::Preferences prefs(path);
+		ChangeRecorder recorder;
+		QuickDC::Subscription subscription = prefs.subscribe(&recorder);
+		const uint64_t before = prefs.revision();
+
+		prefs.setString("Network", "Address", "192.0.2.1");
+		prefs.setGroup("Network");
+		prefs.setNumber("Port", 1412);
+		prefs.setBool("User", "Away", true);
+
+		EXO_ASSERT_EQ_UINT(recorder.changes.size(), 3u);
+		EXO_ASSERT(recorder.changes[0].group == "Network" && recorder.changes[0].key == "Address");
+		EXO_ASSERT(recorder.changes[0].value == "192.0.2.1");
+		EXO_ASSERT(recorder.changes[1].key == "Port" && recorder.changes[1].value == "1412");
+		EXO_ASSERT(recorder.changes[2].group == "User" && recorder.changes[2].value == "true");
+		EXO_ASSERT_EQ_UINT(prefs.revision() - before, 3u);
+	}
+	Samurai::IO::File(path).remove();
+	return 1;
+});
+
+/* Writing what is already there is not a change, and nobody is told of one. */
+EXO_TEST(config_setting_a_key_to_what_it_holds_is_not_a_change,
+{
+	const std::string path = scratch("same.conf");
+	{
+		QuickDC::Preferences prefs(path);
+		prefs.setString("Network", "Address", "192.0.2.1");
+
+		ChangeRecorder recorder;
+		QuickDC::Subscription subscription = prefs.subscribe(&recorder);
+		const uint64_t before = prefs.revision();
+
+		prefs.setString("Network", "Address", "192.0.2.1");
+
+		EXO_ASSERT(recorder.changes.empty());
+		EXO_ASSERT_EQ_UINT(prefs.revision(), before);
+	}
+	Samurai::IO::File(path).remove();
+	return 1;
+});
+
+/* A removal is told as one; removing what is not there is not. */
+EXO_TEST(config_a_removal_is_told_and_removing_nothing_is_not,
+{
+	const std::string path = scratch("removed.conf");
+	{
+		QuickDC::Preferences prefs(path);
+		prefs.setString("Network", "Address", "192.0.2.1");
+
+		ChangeRecorder recorder;
+		QuickDC::Subscription subscription = prefs.subscribe(&recorder);
+
+		prefs.remove("Network", "Address");
+		prefs.remove("Network", "Address");
+		prefs.remove("Nowhere", "Nothing");
+
+		EXO_ASSERT_EQ_UINT(recorder.changes.size(), 1u);
+		EXO_ASSERT(recorder.changes[0].removed);
+		EXO_ASSERT(recorder.changes[0].key == "Address");
+	}
+	Samurai::IO::File(path).remove();
+	return 1;
+});
+
+/* A read that fills in a default writes it, and that write is told too. */
+EXO_TEST(config_a_default_written_by_a_read_is_told,
+{
+	const std::string path = scratch("defaulted.conf");
+	{
+		QuickDC::Preferences prefs(path);
+		ChangeRecorder recorder;
+		QuickDC::Subscription subscription = prefs.subscribe(&recorder);
+
+		prefs.setGroup("Network");
+		EXO_ASSERT_EQ_INT(prefs.getNumber("Port", 1411), 1411);
+		EXO_ASSERT_EQ_INT(prefs.getNumber("Port", 1411), 1411);
+
+		EXO_ASSERT_EQ_UINT(recorder.changes.size(), 1u);
+		EXO_ASSERT(recorder.changes[0].value == "1411");
+	}
+	Samurai::IO::File(path).remove();
+	return 1;
+});

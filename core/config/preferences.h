@@ -7,12 +7,30 @@
 #define HAVE_QUICKDC_CONFIG_PREFERENCES_H
 
 #include "iniparser.h"
+#include "api/subscription.h"
+
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
 #include <samurai/timestamp.h>
 
 namespace QuickDC {
+
+class Preferences;
+
+/** Told of every change to a store's contents, whoever made it. */
+class PreferencesListener {
+	public:
+		virtual ~PreferencesListener() { }
+
+		/**
+		 * 'key' in 'group' now holds 'value', or was removed where it is null.
+		 * Only a change is told: setting a key to what it already holds is not one.
+		 */
+		virtual void EventSettingChanged(const Preferences& store, const std::string& group,
+		                                 const std::string& key, const std::string* value) = 0;
+};
 
 class Preferences : public IniParser {
 	public:
@@ -102,6 +120,12 @@ class Preferences : public IniParser {
 		 */
 		bool existed() const { return had_file; }
 
+		/** Ends when the returned subscription is destroyed. */
+		Subscription subscribe(PreferencesListener* listener) { return listeners.subscribe(listener); }
+
+		/** Counts the changes made since the store was read. */
+		uint64_t revision() const { return changes; }
+
 	protected:
 		void readSectionStart(const std::string& group) override;
 		void readSectionEnd(const std::string& group) override;
@@ -116,12 +140,20 @@ class Preferences : public IniParser {
 		const std::string* find(const std::string& group,
 		                        const std::string& key) const;
 
+		/** Every change goes through these two, which is what gets it told. */
+		void put(const std::string& group, const std::string& key, const std::string& value);
+		void erase(const std::string& group, const std::string& key);
+
 	protected:
 		bool dirty;
 
 		// groups
 		std::string current;
 		groupmap groups;
+
+	private:
+		ListenerList<PreferencesListener> listeners;
+		uint64_t changes = 0;
 };
 
 }

@@ -67,23 +67,19 @@ bool Preferences::getBool(const std::string& key, const bool defval) {
 }
 
 void Preferences::setNumber(const std::string& key, int val) {
-	groups[current][key] = std::to_string(val);
-	dirty = true;
+	put(current, key, std::to_string(val));
 }
 
 void Preferences::setString(const std::string& key, const std::string& val) {
-	groups[current][key] = val;
-	dirty = true;
+	put(current, key, val);
 }
 
 void Preferences::setBool(const std::string& key, bool val) {
-	groups[current][key] = std::string(val ? "true" : "false");
-	dirty = true;
+	put(current, key, val ? "true" : "false");
 }
 
 void Preferences::setTime(const std::string& key, const Samurai::TimeStamp& time) {
-	groups[current][key] = std::to_string(time.getInternalData());
-	dirty = true;
+	put(current, key, std::to_string(time.getInternalData()));
 }
 
 Samurai::TimeStamp Preferences::getTime(const std::string& key) {
@@ -101,9 +97,7 @@ Samurai::TimeStamp Preferences::getTime(const std::string& key) {
 
 
 void Preferences::remove(const std::string& key) {
-	group& settings = groups[current];
-	if (settings.erase(key))
-		dirty = true;
+	erase(current, key);
 }
 
 bool Preferences::haveSetting(const std::string& key) {
@@ -145,26 +139,41 @@ std::vector<std::string> Preferences::keysIn(const std::string& group) const {
 }
 
 void Preferences::setNumber(const std::string& group, const std::string& key, int val) {
-	groups[group][key] = std::to_string(val);
-	dirty = true;
+	put(group, key, std::to_string(val));
 }
 
 void Preferences::setString(const std::string& group, const std::string& key, const std::string& val) {
-	groups[group][key] = val;
-	dirty = true;
+	put(group, key, val);
 }
 
 void Preferences::setBool(const std::string& group, const std::string& key, bool val) {
-	groups[group][key] = std::string(val ? "true" : "false");
-	dirty = true;
+	put(group, key, val ? "true" : "false");
 }
 
 void Preferences::remove(const std::string& group, const std::string& key) {
-	auto section = groups.find(group);
-	if (section == groups.end()) return;
+	erase(group, key);
+}
 
-	if (section->second.erase(key))
-		dirty = true;
+void Preferences::put(const std::string& group, const std::string& key, const std::string& value) {
+	Preferences::group& section = groups[group];
+	const auto found = section.find(key);
+	if (found != section.end() && found->second == value) return;
+
+	section[key] = value;
+	dirty = true;
+	changes++;
+
+	listeners.notify([&](PreferencesListener& l) { l.EventSettingChanged(*this, group, key, &value); });
+}
+
+void Preferences::erase(const std::string& group, const std::string& key) {
+	const auto section = groups.find(group);
+	if (section == groups.end() || !section->second.erase(key)) return;
+
+	dirty = true;
+	changes++;
+
+	listeners.notify([&](PreferencesListener& l) { l.EventSettingChanged(*this, group, key, nullptr); });
 }
 
 bool Preferences::haveSetting(const std::string& group, const std::string& key) const {
