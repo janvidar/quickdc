@@ -83,9 +83,9 @@ static bool canAcceptTls()
  * transfer downgraded, since ADC/1.0 is what those clients have. Whoever would
  * rather have neither can say so here.
  */
-static bool requireEncryptedTransfers()
+static bool requireEncryptedTransfers(QuickDC::Core& core)
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core.config;
 	config->setGroup("Network");
 	return config->getBool("Require encrypted transfers", false);
 }
@@ -125,14 +125,14 @@ static bool peerCanTraverse(const QuickDC::User* user)
  * Overridable both ways round for the same reason the evidence is bounded: the
  * reports come from whoever is on the hub.
  */
-static bool reachable(QuickDC::Preferences* config, bool ipv6)
+static bool reachable(QuickDC::Core& core, QuickDC::Preferences* config, bool ipv6)
 {
 	config->setGroup("Network");
 
 	if (config->getBool("Force active mode", false)) return true;
 
 	const QuickDC::Reachability* known =
-		QuickDC::Core::getInstance()->reachabilityFor(ipv6);
+		core.reachabilityFor(ipv6);
 	if (!known) return true;
 
 	return known->tcp() != QuickDC::Reachability::State::Unreachable;
@@ -157,7 +157,7 @@ std::string ADC::HubSession::announcedAddress(const QuickDC::PeerEndpoint& endpo
 
 	if (!observedAddress.empty()) return observedAddress;
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = getCore().config;
 	config->setGroup("Network");
 	const char* configured = config->getString("Address", "0.0.0.0");
 
@@ -208,7 +208,7 @@ void ADC::HubSession::refuseUnencrypted(const char* from, const char* token,
 
 ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Samurai::IO::Net::URL* url, bool secure_)
 	: QuickDC::HubSession(ui)
-	, QuickDC::Connection(url, secure_ ? "ADCS hub" : "ADC hub")
+	, QuickDC::Connection(ui->getCore(), url, secure_ ? "ADCS hub" : "ADC hub")
 	, proxy(0)
 	, listener(listener_)
 	, infoTimer(0)
@@ -231,7 +231,7 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	proxy = new ADC::CommandProxy(socket, this);
 	users = new QuickDC::UserManager(this);
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = getCore().config;
 
 	/*
 	 * Read once rather than per timer: a connection tracking firewall forgets a
@@ -250,7 +250,7 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 
 	/* Borrowed from the core, and shared with every other hub session; see
 	   Core::session. Not ours to delete, and its group is not ours to leave set. */
-	session = QuickDC::Core::getInstance()->session;
+	session = getCore().session;
 
 	/*
 	 * The canonical "{scheme}://{host}:{port}" rather than the address as it was
@@ -693,7 +693,7 @@ void ADC::HubSession::EventUserInfo(const QuickDC::User* data)
 			markEstablished();
 			listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
 			/* One more hub we are on, which the others were told a count of. */
-			QuickDC::Core::getInstance()->hubs->requestClientInfoUpdate();
+			getCore().hubs->requestClientInfoUpdate();
 		}
 	}
 	listener->EventUserUpdate(data);
@@ -739,11 +739,11 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 	const QuickDC::User* user = reply->getRequest()->getUser();
 	QuickDC::Share::File* file = reply->getFile();
 
-	if (user->getAddressIPv4() && user->getPortIPv4() && QuickDC::Core::getInstance()->server)
+	if (user->getAddressIPv4() && user->getPortIPv4() && getCore().server)
 	{
 		/* Send UDP packet */
 
-		ADC::Command cmd(FOURCC('U','R','E','S'), ADC::CID::getInstance()->getCID());
+		ADC::Command cmd(FOURCC('U','R','E','S'), getCore().identity->getCID());
 		cmd.addArgument("FN", file->getPublicName());
 		cmd.addArgument("SI", std::to_string(file->getSize()));
 		cmd.addArgument("TR", file->getTTH());
@@ -756,7 +756,7 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		Samurai::IO::Net::DatagramPacket packet(&buffer);
 		Samurai::IO::Net::InetSocketAddress peerAddr(user->getAddressIPv4(), user->getPortIPv4(), Samurai::IO::Net::InetAddress::Version::IPv4);
 		packet.setAddress(&peerAddr);
-		QuickDC::Core::getInstance()->server->send(&packet);
+		getCore().server->send(&packet);
 
 	}
 	else
@@ -785,7 +785,7 @@ void ADC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
 {
 	if (!result) return;
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	const char* hubUrl = (hub) ? hub->getUrl() : 0;
 
@@ -924,18 +924,18 @@ void ADC::HubSession::forgetAnnouncedInfo()
  */
 void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = getCore().config;
 	config->setGroup("Network");
 
 	fields.emplace_back("NI", nickname);
 	fields.emplace_back("SL", std::to_string(config->getNumber("Slots", 3)));
-	fields.emplace_back("SS", std::to_string(QuickDC::Core::getInstance()->shares->getSharedSize()));
-	fields.emplace_back("SF", std::to_string(QuickDC::Core::getInstance()->shares->getFiles()));
+	fields.emplace_back("SS", std::to_string(getCore().shares->getSharedSize()));
+	fields.emplace_back("SF", std::to_string(getCore().shares->getFiles()));
 	fields.emplace_back("DE", description);
 	fields.emplace_back("EM", email);
 	fields.emplace_back("VE", PRODUCT " " VERSION);
-	fields.emplace_back("ID", ADC::CID::getInstance()->getCID());
-	fields.emplace_back("PD", ADC::CID::getInstance()->getPID());
+	fields.emplace_back("ID", getCore().identity->getCID());
+	fields.emplace_back("PD", getCore().identity->getPID());
 
 	/*
 	 * How many hubs this client is on, counting this one - which the manager is
@@ -951,7 +951,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * what had gone out a moment earlier. Being made an operator is the rare
 	 * case, and still costs the one correction it always did.
 	 */
-	QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+	QuickDC::HubManager* hubs = getCore().hubs;
 	size_t normal = hubs->countHubsNormal(this);
 	size_t registered = hubs->countHubsRegistered(this);
 	size_t op = hubs->countHubsOperator(this);
@@ -985,7 +985,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * there is one rather than the port that was configured: a gateway may have
 	 * granted a different one, and it is the granted one anything can reach.
 	 */
-	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
 		config->getBool("Active mode"),
 		core->server != 0 && core->server->listening(false),
@@ -1004,7 +1004,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	const QuickDC::PeerEndpoint endpoint6 = QuickDC::peerEndpoint6(
 		config->getBool("Active mode"),
 		core->server != 0 && core->server->listening(true),
-		QuickDC::lastDropVerdict(true).publicAddress,
+		QuickDC::lastDropVerdict(*core, true).publicAddress,
 		static_cast<uint16_t>(config->getNumber("Port")));
 
 	/* Evidence belongs to the endpoint it was gathered for; announcing a different
@@ -1017,7 +1017,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 
 	if ((core->reachability && endpoint.active)
 	    || (core->reachability6 && endpoint6.active))
-		QuickDC::applyDropMeasurement();
+		QuickDC::applyDropMeasurement(*core);
 
 	/*
 	 * What we can do, as the other clients see it. Built up rather than written out
@@ -1092,7 +1092,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 		 * entitled to say so, and a peer that lies about failing to connect must
 		 * not be the last word.
 		 */
-		if (reachable(config, false)) claim(ADC_EXT_TCP4);
+		if (reachable(getCore(), config, false)) claim(ADC_EXT_TCP4);
 
 		/*
 		 * UDP4 is not withdrawn, because nothing can disprove it: a peer that
@@ -1116,7 +1116,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 
 	if (endpoint6.active)
 	{
-		if (reachable(config, true)) claim(ADC_EXT_TCP6);
+		if (reachable(getCore(), config, true)) claim(ADC_EXT_TCP6);
 		claim(ADC_EXT_UDP6);
 	}
 
@@ -1264,7 +1264,7 @@ void ADC::HubSession::sendSearchRequest(QuickDC::Share::SearchRequest* request)
 
 bool ADC::HubSession::mustEncryptPeers() const
 {
-	return secure || requireEncryptedTransfers();
+	return secure || requireEncryptedTransfers(getCore());
 }
 
 
@@ -1301,7 +1301,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	if (!user) return;
 	if (!token) return;
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = getCore().config;
 	config->setGroup("Network");
 
 	/*
@@ -1317,7 +1317,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	 * the INF could disagree: a client that told the hub it was passive could still
 	 * answer with a CTM.
 	 */
-	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	const QuickDC::Core* core = &getCore();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
 		config->getBool("Active mode"),
 		core->server != 0 && core->server->listening(false),
@@ -1375,7 +1375,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 				this,
 				reinterpret_cast<const char*>(user->getClientID()),
 				token);
-		QuickDC::Core::getInstance()->securityManager->grant(clearance);
+		getCore().securityManager->grant(clearance);
 
 	}
 	else
@@ -1393,7 +1393,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 				this,
 				reinterpret_cast<const char*>(user->getClientID()),
 				token);
-		QuickDC::Core::getInstance()->securityManager->grant(clearance);
+		getCore().securityManager->grant(clearance);
 		send(cmd);
 	}
 }
@@ -1438,7 +1438,7 @@ void ADC::HubSession::onUserInfo(const char* id, QuickDC::User* data, uint64_t o
 			   been moved. */
 			listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
 			/* One more hub we are on, which the others were told a count of. */
-			QuickDC::Core::getInstance()->hubs->requestClientInfoUpdate();
+			getCore().hubs->requestClientInfoUpdate();
 			break;
 
 		case QuickDC::HubSession::StateNormal:
@@ -2081,7 +2081,7 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 				const char* job = cmd->getArgument("TO", 2);
 				const char* who = cmd->getSourceID();
 
-				QuickDC::Core* core = QuickDC::Core::getInstance();
+				QuickDC::Core* core = &getCore();
 
 				/*
 				 * The hub reporting on a connection it made itself, rather than
@@ -2099,7 +2099,7 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 					QERR("The hub could not connect to the port we published: %s",
 						mesg ? mesg : "no reason given");
 
-					if (core && core->reachability)
+					if (core->reachability)
 					{
 						/*
 						 * Against both families, because the report names
@@ -2122,7 +2122,7 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 					break;
 				}
 
-				const bool ours = job && *job && core && core->queue
+				const bool ours = job && *job && core->queue
 					&& core->queue->lookupRequest(job);
 
 				if (ours && who && *who && core->reachability)
@@ -2185,7 +2185,7 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 
 				/* Coalesced with everything else that changes what a hub was
 				   told, so a hub correcting us does not race our own update. */
-				QuickDC::Core::getInstance()->hubs->requestClientInfoUpdate();
+				getCore().hubs->requestClientInfoUpdate();
 				break;
 			}
 
@@ -2296,7 +2296,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 			this,
 			reinterpret_cast<const char*>(user->getClientID()),
 			token);
-	QuickDC::Core::getInstance()->securityManager->grant(clearance);
+	getCore().securityManager->grant(clearance);
 
 	/*
 	 * Use the port from the CTM, and only that.
@@ -2369,7 +2369,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	}
 
 	auto csock = Samurai::IO::Net::Socket::create(nullptr, ip, port);
-	ADC::ClientSession* connection = new ADC::ClientSession(csock, this, token, from, peerSecure, peerKeyprint);
+	ADC::ClientSession* connection = new ADC::ClientSession(getCore(), csock, this, token, from, peerSecure, peerKeyprint);
 	csock->setEventHandler(connection);
 	csock->connect();
 }
@@ -2444,7 +2444,7 @@ bool ADC::HubSession::dialFromHubPort(const QuickDC::User* user, const char* pro
 	/* Before connect(), which is the only moment a local port can be chosen. */
 	csock->setReuseLocalPort(mine);
 
-	ADC::ClientSession* connection = new ADC::ClientSession(csock, this, token,
+	ADC::ClientSession* connection = new ADC::ClientSession(getCore(), csock, this, token,
 		user->getID(), peerSecure, peerKeyprint);
 	csock->setEventHandler(connection);
 	csock->connect();
@@ -2533,7 +2533,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 
 	QDBG("Requested to setup connection to '%s' using '%s' (token=%s)", from, proto, token);
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = getCore().config;
 	config->setGroup("Network");
 
 	/*
@@ -2597,7 +2597,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 
 	/* The endpoint the INF advertised, for the same reason as in
 	   sendConnectionRequest(): a gateway may have granted another port. */
-	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	const QuickDC::Core* core = &getCore();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
 		config->getBool("Active mode"),
 		core->server != 0 && core->server->listening(false),
@@ -2620,7 +2620,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 				this,
 				reinterpret_cast<const char*>(user->getClientID()),
 				token);
-		QuickDC::Core::getInstance()->securityManager->grant(clearance);
+		getCore().securityManager->grant(clearance);
 
 		send(cmd);
 	} else if (canTraverse() && peerCanTraverse(user)) {
@@ -2642,7 +2642,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 				this,
 				reinterpret_cast<const char*>(user->getClientID()),
 				token);
-		QuickDC::Core::getInstance()->securityManager->grant(clearance);
+		getCore().securityManager->grant(clearance);
 
 		send(cmd);
 	} else {
@@ -2674,7 +2674,7 @@ void ADC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 	 */
 	if (request && request->getUser() && request->getUser() == getLocalUser()) return;
 
-	QuickDC::Share::Manager* shares = QuickDC::Core::getInstance()->shares;
+	QuickDC::Share::Manager* shares = getCore().shares;
 	if (!shares) return;
 
 	shares->search(request);
@@ -2686,7 +2686,7 @@ void ADC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 
 void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	if (!queue || !request || !request->getTTH()) return;
 
@@ -2725,7 +2725,7 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 
 	if (user && user->getAddressIPv4() && user->getPortIPv4() && core->server)
 	{
-		ADC::Command cmd(FOURCC('U','P','S','R'), ADC::CID::getInstance()->getCID());
+		ADC::Command cmd(FOURCC('U','P','S','R'), getCore().identity->getCID());
 		cmd.addArgument("HI", hubIpPort.c_str());
 		cmd.addArgument("U4", std::to_string(port));
 		cmd.addArgument("TR", request->getTTH());
@@ -2757,7 +2757,7 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 
 void ADC::HubSession::onPartialStatus(const char* cid, const char* tth, const char* indexes)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	const char* url = (hub) ? hub->getUrl() : 0;
 

@@ -295,9 +295,7 @@ class Fixture
 		 * can still vouch for is all it has to go on.
 		 *
 		 * The core's manager is replaced rather than a second one built beside it,
-		 * because a Share::File announces its hash through Core::getInstance()
-		 * ->shares - so two managers at once would have one filling the other's
-		 * tables with files it does not own.
+		 * since both would register for the same hash manager's idle callback.
 		 */
 		bool restart()
 		{

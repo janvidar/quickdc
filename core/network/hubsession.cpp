@@ -43,11 +43,13 @@ bool QuickDC::HubSession::recordChat(const User* user, const char* hubName,
 	 * the answer is yes, show it. A core built without an archive still has
 	 * working chat; it just does not remember it.
 	 */
-	QuickDC::Core* core = QuickDC::Core::getInstance();
-	if (!core || !core->chat || !core->chat->isUsable()) return true;
+	if (!hub) return true;
+
+	QuickDC::Core* core = &hub->getCore();
+	if (!core->chat || !core->chat->isUsable()) return true;
 
 	/* The address the session is on, which is what a transcript is filed under. */
-	if (!hub || !hub->getUrl()) return true;
+	if (!hub->getUrl()) return true;
 
 	ChatArchive::Line line;
 

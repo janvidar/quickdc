@@ -16,8 +16,8 @@
  * scans the shares and opens listening sockets of its own, none of which the hub
  * needs, so this uses the constructor that builds only what it does.
  *
- * That core is a singleton reading its configuration from disk, so it is a
- * per-file fixture. Everything else a case needs - the hub, the listening socket
+ * That core reads its configuration from disk and runs on samurai's process-wide
+ * reactor, so it is a per-file fixture. Everything else a case needs - the hub, the listening socket
  * and the clients - it builds itself and lets go of again, so no case depends on
  * what the one before it left behind.
  */
@@ -56,6 +56,9 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
+
+/* The fixture's core; built in EXO_SETUP below. */
+static QuickDC::Core* core = 0;
 
 static const int TIMEOUT_MS = 5000;
 
@@ -149,6 +152,8 @@ static std::string escapedArgument(const std::string& text)
 class TestHub : public ADC::LocalHub::Hub
 {
 	public:
+		TestHub() : ADC::LocalHub::Hub(*core->config) { }
+
 		using ADC::LocalHub::Hub::EventError;
 
 		/* What a hub does at startup, so a case can watch it read a setting. */
@@ -359,7 +364,6 @@ class Client : public Samurai::IO::Net::SocketEventHandler
  */
 static std::string cfg;
 static std::string ses;
-static QuickDC::Core* core = 0;
 
 static std::string scratch(const char* leaf)
 {
@@ -377,7 +381,7 @@ EXO_SETUP({
 
 	/* Every case reads the hub's limits through this, so a core without one is
 	   not a fixture the cases can run against. */
-	return (QuickDC::Core::getInstance() == core && core->config) ? 1 : 0;
+	return (core == core && core->config) ? 1 : 0;
 });
 
 EXO_TEARDOWN({
@@ -1284,7 +1288,7 @@ EXO_TEST(adchub_the_chat_history_keeps_what_it_is_configured_to,
 /* Every configured limit is one the hub can work with. */
 EXO_TEST(adchub_a_configured_limit_that_makes_no_sense_is_clamped,
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Local hub");
 	config->setNumber("Max users", 0);
 	config->setNumber("Max history", -1);
@@ -1295,7 +1299,7 @@ EXO_TEST(adchub_a_configured_limit_that_makes_no_sense_is_clamped,
 	config->setNumber("Idle timeout", -1);
 
 	{
-		ADC::LocalHub::Hub hub;
+		ADC::LocalHub::Hub hub(*config);
 		EXO_ASSERT(hub.maxUsers >= 1);
 		EXO_ASSERT(hub.maxHistory == 0);
 		EXO_ASSERT(hub.maxSendQ >= 4096);
@@ -1898,7 +1902,7 @@ EXO_TEST(adchub_an_operator_can_turn_claim_checking_off,
 /* On by default, which is the whole point: a claim nobody checks is a claim. */
 EXO_TEST(adchub_claim_checking_is_on_unless_it_is_turned_off,
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Local hub");
 	config->remove("Check reachability claims");
 

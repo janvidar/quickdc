@@ -744,7 +744,7 @@ static void cmd_tthsearch(const std::vector<std::string>& args)
 	QuickDC::Share::SearchRequest* request =
 		new QuickDC::Share::SearchRequest(QuickDC::Share::SearchRequest::SizeAny, 0, tth, "consoletth", 0);
 
-	QuickDC::Core::getInstance()->shares->search(request);
+	core->shares->search(request);
 
 	delete request;
 	free(tth);
@@ -782,7 +782,7 @@ static void cmd_connections(const std::vector<std::string>&)
 
 static void cmd_hubkick(const std::vector<std::string>& args)
 {
-	ADC::LocalHub::Hub* localHub = QuickDC::Core::getInstance()->localHub;
+	ADC::LocalHub::Hub* localHub = core->localHub;
 	if (!localHub)
 	{
 		cmd_error("Local hub not started");
@@ -802,7 +802,7 @@ static void cmd_hubkick(const std::vector<std::string>& args)
 
 static void cmd_hubstats(const std::vector<std::string>&)
 {
-	ADC::LocalHub::Hub* localHub = QuickDC::Core::getInstance()->localHub;
+	ADC::LocalHub::Hub* localHub = core->localHub;
 	if (!localHub)
 	{
 		cmd_error("Local hub not started");

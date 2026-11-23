@@ -12,8 +12,8 @@
  * and the client has to answer with a key derived from it before anything else
  * happens. So the login exchange runs the other way round from the ADC one.
  *
- * QuickDC::Core is a singleton reading its configuration from disk, so it is a
- * per-file fixture. Each case builds its own hub and its own session: every one
+ * QuickDC::Core reads its configuration from disk and runs on samurai's
+ * process-wide reactor, so it is a per-file fixture. Each case builds its own hub and its own session: every one
  * of them is a separate process under CTest, so nothing a case leaves behind is
  * there for the next one to read.
  */
@@ -44,6 +44,9 @@
 #include <unistd.h>
 #include <vector>
 
+/* The fixture's core; built in EXO_SETUP below. */
+static QuickDC::Core* core = 0;
+
 /*
  * Where the core under test keeps its configuration and its session data.
  * Named after the process so that two of these running at once do not read and
@@ -52,7 +55,6 @@
 static std::string configFile;
 static std::string sessionFile;
 
-static QuickDC::Core* core = 0;
 
 static std::string scratch(const char* leaf)
 {
@@ -301,7 +303,7 @@ class Session
 				"dchub://127.0.0.1:" + std::to_string(hub.port());
 			url = std::make_unique<Samurai::IO::Net::URL>(address);
 
-			ui = std::make_unique<QuickDC::Hub>(&listener, url.get());
+			ui = std::make_unique<QuickDC::Hub>(*core, &listener, url.get());
 			session = new DC::HubSession(ui.get(), &listener, url.get());
 
 			session->connect();
@@ -1455,14 +1457,14 @@ namespace {
 
 void setAllowPlaintextPasswords(bool allowed)
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	config->setBool("Allow plaintext passwords", allowed);
 }
 
 void forgetPlaintextPasswordSetting()
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	config->remove("Allow plaintext passwords");
 }

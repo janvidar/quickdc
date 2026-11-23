@@ -191,12 +191,7 @@ bool QuickDC::Hash::Manager::process()
 			QDBG("*** All hash jobs are now complete!");
 			saveCache();
 
-			// Make sure we regenerate the file lists since we now have all TTH roots.
-			/* A manager pointed at a cache of its own runs without a core at
-			   all, and the core has no share manager until it has built one. */
-			QuickDC::Core* core = QuickDC::Core::getInstance();
-			if (core && core->shares)
-				core->shares->createFileLists(false);
+			if (onIdle) onIdle();
 		}
 		return false;
 	}

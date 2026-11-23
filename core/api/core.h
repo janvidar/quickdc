@@ -38,6 +38,7 @@ namespace Samurai {
 
 
 namespace ADC {
+	class CID;
 	namespace LocalHub { class Hub; }
 }
 
@@ -80,12 +81,6 @@ class Core {
 		 */
 		void run();
 		
-		/**
-		 * Returns an instance of the running Core, 
-		 * or it will create one if none is running.
-		 */
-		static Core* getInstance();
-		
 #if 0
 		/**
 		 * Add a server listener. This will be notified 
@@ -119,6 +114,16 @@ class Core {
 		 * immediately before reading or writing, never rely on one set earlier.
 		 */
 		Preferences* session;
+
+		/**
+		 * This client's identity, read from 'config' or made and stored there.
+		 * Null in a core built without one, where nothing announces itself.
+		 */
+		ADC::CID* identity;
+
+		/** Network state the core acts on by itself; see api/core.cpp. */
+		class Automation;
+		Automation* automation;
 
 		QuickDC::Share::Manager* shares;
 		DCServer* server;
@@ -237,8 +242,11 @@ class Core {
 
 	public:
 		/**
-		 * Note: only one Core object can exist
-		 * Constructing multiple will throw an error.
+		 * The client proper, over ~/.quickdc.
+		 *
+		 * More than one can be built, but every core runs on samurai's
+		 * process-wide socket monitor, timers and message handler, so two in
+		 * one process share a reactor and must be driven from the same thread.
 		 */
 		Core();
 
@@ -271,11 +279,5 @@ class Core {
 };
 
 }
-
-/*
- * NOTE: not extern "C". The definition in api/server.cpp is not either, and
- * MSVC mangles a global variable's name, so the two have to agree.
- */
-extern QuickDC::Core* quickdc_core;
 
 #endif // HAVE_QUICKDC_CORE_API_H

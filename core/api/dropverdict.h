@@ -11,6 +11,8 @@
 #include <time.h>
 #include <vector>
 
+#include "api/subscription.h"
+
 /*
  * What a reachability measurement concluded, and nothing about how.
  *
@@ -23,6 +25,8 @@
  */
 
 namespace QuickDC {
+
+class Core;
 
 /** What the measurement says this client should do. */
 enum class DropMode
@@ -174,7 +178,10 @@ class DropCheckListener
  * Does nothing in a core built without a listening socket, where there is no
  * port worth measuring and so no check to attach to.
  */
-void setDropCheckListener(DropCheckListener* listener);
+void setDropCheckListener(Core& core, DropCheckListener* listener);
+
+/** Also report to 'listener' until the subscription ends; null without a check. */
+Subscription observeDropCheck(Core& core, DropCheckListener* listener);
 
 /**
  * Measure again, reading the server and the port from the configuration as it
@@ -194,7 +201,7 @@ void setDropCheckListener(DropCheckListener* listener);
  *         Asking a second time would only spend a session the server counts
  *         against us.
  */
-bool startDropCheck(bool ipv6);
+bool startDropCheck(Core& core, bool ipv6);
 
 /**
  * Ask a DROP server only what address it sees this client at, and stop there.
@@ -216,13 +223,13 @@ bool startDropCheck(bool ipv6);
  *         already going - a lookup shares the one client with a measurement, and
  *         the measurement is the one worth having.
  */
-bool startAddressLookup(bool ipv6);
+bool startAddressLookup(Core& core, bool ipv6);
 
 /**
  * The last verdict for 'ipv6', with ran false where that family has not been
  * measured - which is not the same as having been measured and found blocked.
  */
-DropVerdict lastDropVerdict(bool ipv6);
+DropVerdict lastDropVerdict(const Core& core, bool ipv6);
 
 /**
  * Whether 'held' still describes the network, as of 'now'.
@@ -260,7 +267,7 @@ bool dropMeasurementIsFresh(const DropVerdict& held, time_t now);
  * nothing was probed, and writing those into the record would take away what a
  * real measurement had established.
  */
-void applyDropMeasurement();
+void applyDropMeasurement(Core& core);
 
 }
 

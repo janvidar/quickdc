@@ -60,6 +60,9 @@
 #include <unistd.h>
 #include <vector>
 
+/* The fixture's core; built in EXO_SETUP below. */
+QuickDC::Core* core = 0;
+
 static std::string scratch(const char* leaf)
 {
 	static int counter = 0;
@@ -320,7 +323,7 @@ class Session
 				"adc://127.0.0.1:" + std::to_string(hub.port()) + tail;
 			url = std::make_unique<Samurai::IO::Net::URL>(address);
 
-			ui = std::make_unique<QuickDC::Hub>(&listener, url.get());
+			ui = std::make_unique<QuickDC::Hub>(*core, &listener, url.get());
 			session = new ADC::HubSession(ui.get(), &listener, url.get(), secure);
 
 			session->connect();
@@ -374,12 +377,11 @@ class Session
 namespace {
 
 /*
- * The fixture. One core for the whole process, because it is a singleton,
- * expensive to build, and has to be pointed at scratch files rather than the
+ * The fixture. One core for the whole process, because it runs on samurai's
+ * process-wide reactor, is expensive to build, and has to be pointed at scratch files rather than the
  * user's own configuration.
  */
 std::string config_file;
-QuickDC::Core* core = 0;
 
 /*
  * The value of one INF field, or nothing when the field is absent.
@@ -584,7 +586,7 @@ EXO_TEST(hubsession_a_sid_is_answered_with_binf,
  */
 EXO_TEST(hubsession_an_unset_email_is_not_announced,
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("User");
 	config->setString("E-mail", "");
 
@@ -612,7 +614,7 @@ EXO_TEST(hubsession_an_unset_email_is_not_announced,
 /* And one the user did fill in is announced. */
 EXO_TEST(hubsession_a_configured_email_is_announced,
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("User");
 	config->setString("E-mail", "someone@example.com");
 
@@ -669,7 +671,7 @@ EXO_TEST(hubsession_a_status_update_says_only_what_changed,
 	s.hub.received.clear();
 
 	/* Something the hub was told once and is no longer true. */
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	config->setNumber("Slots", 17);
 
@@ -734,7 +736,7 @@ EXO_TEST(hubsession_twenty_update_requests_send_nothing_straight_away,
 	EXO_ASSERT(s.ready);
 	EXO_ASSERT(s.login());
 
-	QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+	QuickDC::HubManager* hubs = core->hubs;
 	s.hub.drain();
 	s.hub.received.clear();
 
@@ -764,9 +766,9 @@ EXO_TEST(hubsession_three_requests_inside_the_window_become_one_update,
 
 	const std::string address = "adc://127.0.0.1:" + std::to_string(fake.port());
 	Samurai::IO::Net::URL url(address);
-	QuickDC::Hub ui(&listener, &url);
+	QuickDC::Hub ui(*core, &listener, &url);
 
-	QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+	QuickDC::HubManager* hubs = core->hubs;
 	ui.connect();
 
 	EXO_ASSERT(fake.accepted());
@@ -801,7 +803,7 @@ EXO_TEST(hubsession_three_requests_inside_the_window_become_one_update,
 
 	/* Something for the update to be about, since one with nothing to report
 	   is not sent - which is what the case after this one is for. */
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	config->setNumber("Slots", 11);
 
@@ -851,9 +853,9 @@ EXO_TEST(hubsession_the_login_inf_already_counts_this_hub,
 
 	const std::string address = "adc://127.0.0.1:" + std::to_string(fake.port());
 	Samurai::IO::Net::URL url(address);
-	QuickDC::Hub ui(&listener, &url);
+	QuickDC::Hub ui(*core, &listener, &url);
 
-	QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+	QuickDC::HubManager* hubs = core->hubs;
 
 	/* Whatever earlier cases left behind, which this one is measured against. */
 	const size_t before = hubs->countHubsNormal();
@@ -1079,7 +1081,7 @@ EXO_TEST(hubsession_settings_are_filed_under_the_canonical_address,
 	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
 	EXO_ASSERT(s.ready);
 
-	QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+	QuickDC::Preferences* store = core->session;
 	EXO_ASSERT(store != 0);
 
 	const std::string canonical =
@@ -1787,7 +1789,7 @@ namespace {
    a plain hub may still broker an encrypted peer connection. */
 void setRequireEncryption(bool required)
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	config->setBool("Require encrypted transfers", required);
 }
@@ -1795,7 +1797,7 @@ void setRequireEncryption(bool required)
 /* No setting at all, which is what a client that has never been configured has. */
 void forgetEncryptionSetting()
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	config->remove("Require encrypted transfers");
 }
@@ -1905,7 +1907,7 @@ class ActiveCore
 	public:
 		ActiveCore()
 		{
-			QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+			QuickDC::Preferences* config = core->config;
 			config->setGroup("Network");
 
 			previous_active = config->getBool("Active mode");
@@ -1915,18 +1917,18 @@ class ActiveCore
 			bound = sparePort();
 			config->setNumber("Port", bound);
 
-			server = new QuickDC::DCServer();
-			QuickDC::Core::getInstance()->server = server;
+			server = new QuickDC::DCServer(*core);
+			core->server = server;
 		}
 
 		uint16_t port() const { return bound; }
 
 		~ActiveCore()
 		{
-			QuickDC::Core::getInstance()->server = 0;
+			core->server = 0;
 			delete server;
 
-			QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+			QuickDC::Preferences* config = core->config;
 			config->setGroup("Network");
 			config->setBool("Active mode", previous_active);
 		}
@@ -2174,7 +2176,7 @@ EXO_TEST(hubsession_an_adcs_hub_requires_encrypted_peer_connections,
 
 	Listener listener;
 	Samurai::IO::Net::URL url("adcs://127.0.0.1:1511");
-	QuickDC::Hub ui(&listener, &url);
+	QuickDC::Hub ui(*core, &listener, &url);
 
 	Probe encrypted(&ui, &listener, &url, true);
 	EXO_ASSERT(encrypted.mustEncryptPeers());
@@ -2335,7 +2337,7 @@ EXO_TEST(hubsession_a_salt_this_hub_used_before_is_not_answered,
 	EXO_ASSERT(reachIdentify(s));
 
 	/* What the previous login left behind, filed against this hub. */
-	QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+	QuickDC::Preferences* store = core->session;
 	store->setGroup(s.url->toString());
 	store->setString(QUICKDC_ADC_SALT_SETTING, SALT_OK);
 
@@ -2357,7 +2359,7 @@ EXO_TEST(hubsession_a_salt_this_hub_has_not_used_is_answered,
 	EXO_ASSERT(s.ready);
 	EXO_ASSERT(reachIdentify(s));
 
-	QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+	QuickDC::Preferences* store = core->session;
 	store->setGroup(s.url->toString());
 	store->setString(QUICKDC_ADC_SALT_SETTING, SALT_OK2);
 
@@ -2376,7 +2378,7 @@ EXO_TEST(hubsession_the_salt_answered_is_remembered_against_the_hub,
 	EXO_ASSERT(s.ready);
 	EXO_ASSERT(reachIdentify(s));
 
-	QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+	QuickDC::Preferences* store = core->session;
 	store->setGroup(s.url->toString());
 	store->remove(QUICKDC_ADC_SALT_SETTING);
 
@@ -2403,7 +2405,7 @@ EXO_TEST(hubsession_a_different_salt_gives_a_different_answer,
 		EXO_ASSERT(s.ready);
 		EXO_ASSERT(reachIdentify(s));
 
-		QuickDC::Preferences* store = QuickDC::Core::getInstance()->session;
+		QuickDC::Preferences* store = core->session;
 		store->setGroup(s.url->toString());
 		store->remove(QUICKDC_ADC_SALT_SETTING);
 
@@ -2480,7 +2482,7 @@ EXO_TEST(hubsession_an_active_client_asks_the_peer_to_connect_to_it,
 	EXO_ASSERT(line.find("job1") != std::string::npos);
 
 	/* And the port is the one the INF advertised. */
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	const std::string port = std::to_string(config->getNumber("Port"));
 	EXO_ASSERT(line.find(" " + port + " ") != std::string::npos);
@@ -2516,7 +2518,6 @@ EXO_TEST(hubsession_an_active_client_names_the_port_the_gateway_granted,
 	EXO_ASSERT(events.forwarded == 1);
 	EXO_ASSERT(events.port == 40001);
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
 	QuickDC::PortForward* previous = core->portforward;
 	core->portforward = &forward;
 
@@ -2770,7 +2771,7 @@ EXO_TEST(hubsession_an_active_client_claims_tcp4,
 	ActiveCore active;
 	EXO_ASSERT(s.login());
 
-	QuickDC::Core::getInstance()->reachability->forget();
+	core->reachability->forget();
 
 	std::string inf;
 	EXO_ASSERT(announcedSupport(s, inf));
@@ -2793,7 +2794,7 @@ EXO_TEST(hubsession_the_tcp4_claim_is_withdrawn_once_peers_report_failing,
 	ActiveCore active;
 	EXO_ASSERT(s.login());
 
-	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	QuickDC::Reachability* known = core->reachability;
 	known->forget();
 	reportRefusals(known);
 
@@ -2823,7 +2824,7 @@ EXO_TEST(hubsession_a_connection_that_arrived_keeps_the_claim,
 	ActiveCore active;
 	EXO_ASSERT(s.login());
 
-	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	QuickDC::Reachability* known = core->reachability;
 	known->forget();
 	reportRefusals(known);
 	known->inboundConnection();
@@ -2844,11 +2845,11 @@ EXO_TEST(hubsession_forcing_active_mode_overrules_the_reports,
 	ActiveCore active;
 	EXO_ASSERT(s.login());
 
-	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	QuickDC::Reachability* known = core->reachability;
 	known->forget();
 	reportRefusals(known);
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	config->setBool("Force active mode", true);
 
@@ -2881,7 +2882,7 @@ EXO_TEST(hubsession_a_loopback_connection_is_not_evidence_of_reachability,
 	ActiveCore active;
 	if (!active.port()) EXO_SKIP("could not reserve a port for the peer listener");
 
-	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	QuickDC::Reachability* known = core->reachability;
 	known->forget();
 	EXO_ASSERT(known->tcp() == QuickDC::Reachability::State::Unknown);
 
@@ -2997,7 +2998,7 @@ EXO_TEST(hubsession_a_client_with_no_known_address_asks_for_one,
 	EXO_ASSERT(s.ready);
 	EXO_ASSERT(s.login());
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	config->setString("Address", "0.0.0.0");
 
@@ -3050,7 +3051,7 @@ EXO_TEST(hubsession_a_hub_that_could_not_connect_withdraws_the_claim,
 	ActiveCore active;
 	EXO_ASSERT(s.login());
 
-	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
+	QuickDC::Reachability* known = core->reachability;
 	known->forget();
 
 	/* Claimed to begin with, so what follows is a change and not the status quo. */
@@ -3089,9 +3090,9 @@ EXO_TEST(hubsession_a_failed_check_asks_for_the_claim_to_be_said_again,
 	ActiveCore active;
 	EXO_ASSERT(s.login());
 
-	QuickDC::Core::getInstance()->reachability->forget();
+	core->reachability->forget();
 
-	QuickDC::HubManager* hubs = QuickDC::Core::getInstance()->hubs;
+	QuickDC::HubManager* hubs = core->hubs;
 
 	/* Long enough that nothing scheduled goes out while the case is running, so
 	   what is observed is this request and not the tail of an earlier one. */
@@ -3128,7 +3129,7 @@ EXO_TEST(hubsession_a_status_naming_a_transfer_is_not_the_hubs_own_check,
 	ActiveCore active;
 	EXO_ASSERT(s.login());
 
-	QuickDC::Core::getInstance()->reachability->forget();
+	core->reachability->forget();
 
 	s.say("ISTA 142 Could\\snot\\sconnect TOsometoken PRADC/1.0");
 
@@ -3147,7 +3148,7 @@ EXO_TEST(hubsession_a_status_from_a_peer_is_not_the_hubs_own_check,
 	ActiveCore active;
 	EXO_ASSERT(s.login());
 
-	QuickDC::Core::getInstance()->reachability->forget();
+	core->reachability->forget();
 
 	s.say("DSTA BBBB AAAA 142 Could\\snot\\sconnect PRADC/1.0");
 
@@ -3166,11 +3167,11 @@ EXO_TEST(hubsession_forcing_active_mode_overrules_the_hubs_check,
 	ActiveCore active;
 	EXO_ASSERT(s.login());
 
-	QuickDC::Core::getInstance()->reachability->forget();
+	core->reachability->forget();
 
 	s.say("ISTA 142 Nothing\\sanswered PRADC/1.0");
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 	config->setBool("Force active mode", true);
 
@@ -3540,7 +3541,7 @@ bool arrives(const char* from, const char* token)
 	Samurai::IO::Net::DatagramPacket packet;
 	packet.setAddress(&source);
 
-	ADC::DatagramHandler::noteReachable(&packet, &cmd);
+	ADC::DatagramHandler::noteReachable(*core, &packet, &cmd);
 	return true;
 }
 
@@ -3553,8 +3554,8 @@ bool arrives(const char* from, const char* token)
  */
 EXO_TEST(hubsession_a_datagram_answering_our_search_shows_udp_works,
 {
-	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
-	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	QuickDC::Reachability* known = core->reachability;
+	QuickDC::SearchTokens* tokens = core->searchTokens;
 	known->forget();
 	tokens->forget();
 
@@ -3578,8 +3579,8 @@ EXO_TEST(hubsession_a_datagram_answering_our_search_shows_udp_works,
  */
 EXO_TEST(hubsession_a_datagram_answering_nothing_is_not_evidence,
 {
-	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
-	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	QuickDC::Reachability* known = core->reachability;
+	QuickDC::SearchTokens* tokens = core->searchTokens;
 	known->forget();
 	tokens->forget();
 
@@ -3597,8 +3598,8 @@ EXO_TEST(hubsession_a_datagram_answering_nothing_is_not_evidence,
  */
 EXO_TEST(hubsession_a_datagram_from_this_machine_is_not_evidence,
 {
-	QuickDC::Reachability* known = QuickDC::Core::getInstance()->reachability;
-	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	QuickDC::Reachability* known = core->reachability;
+	QuickDC::SearchTokens* tokens = core->searchTokens;
 	known->forget();
 	tokens->forget();
 
@@ -3620,7 +3621,7 @@ EXO_TEST(hubsession_a_search_that_went_out_is_remembered,
 	EXO_ASSERT(s.ready);
 	EXO_ASSERT(s.login());
 
-	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	QuickDC::SearchTokens* tokens = core->searchTokens;
 	tokens->forget();
 
 	s.hub.drain();
@@ -3628,7 +3629,7 @@ EXO_TEST(hubsession_a_search_that_went_out_is_remembered,
 
 	QuickDC::Share::SearchRequest request(QuickDC::Share::SearchRequest::SizeAny,
 		0, "AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A", 0, 0);
-	QuickDC::Core::getInstance()->hubs->searchAllHubs(&request);
+	core->hubs->searchAllHubs(&request);
 
 	/* Whatever token it went out with is one an answer can be checked against. */
 	const char* went = request.getToken();
@@ -3664,8 +3665,7 @@ class Offered
 			fclose(fh);
 			if (!written) return;
 
-			QuickDC::Core* core = QuickDC::Core::getInstance();
-
+		
 			hashes = new QuickDC::Hash::Manager(cache.c_str());
 			replaced = core->shares;
 			mine = new QuickDC::Share::Manager(core->config, hashes, lists.c_str());
@@ -3694,7 +3694,7 @@ class Offered
 		{
 			if (replaced)
 			{
-				QuickDC::Core::getInstance()->shares = replaced;
+				core->shares = replaced;
 				delete mine;
 			}
 
@@ -3805,7 +3805,7 @@ class ManagedHub
 			const std::string address =
 				"adc://127.0.0.1:" + std::to_string(fake.port());
 			url = std::make_unique<Samurai::IO::Net::URL>(address);
-			ui = std::make_unique<QuickDC::Hub>(&listener, url.get());
+			ui = std::make_unique<QuickDC::Hub>(*core, &listener, url.get());
 
 			ui->connect();
 			if (!fake.accepted()) return;
@@ -3869,7 +3869,7 @@ EXO_TEST(hubsession_our_own_share_is_not_asked_for,
 	EXO_ASSERT(hub.ui->isLocalUser(mine));
 	EXO_ASSERT(!hub.ui->isLocalUser("AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJK"));
 
-	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	QuickDC::QueueManager* queue = core->queue;
 	EXO_ASSERT_NOT_NULL(queue);
 
 	const char* url = hub.ui->getUrl();
@@ -3905,7 +3905,7 @@ EXO_TEST(hubsession_a_post_is_looked_for_on_its_own_hub_and_no_other,
 	if (!hub.fake.listening) EXO_SKIP("could not listen on a loopback port");
 	EXO_ASSERT(hub.ready);
 
-	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	QuickDC::QueueManager* queue = core->queue;
 	EXO_ASSERT_NOT_NULL(queue);
 
 	const char* post = "AAXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A";
@@ -3979,7 +3979,7 @@ EXO_TEST(hubsession_the_rotation_does_not_repeat_a_search_just_asked_for,
 	if (!hub.fake.listening) EXO_SKIP("could not listen on a loopback port");
 	EXO_ASSERT(hub.ready);
 
-	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	QuickDC::QueueManager* queue = core->queue;
 	EXO_ASSERT_NOT_NULL(queue);
 
 	const char* post = "AAYFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A";
@@ -4034,7 +4034,7 @@ EXO_TEST(hubsession_a_file_whose_hub_is_gone_does_not_stop_the_others_being_sear
 	if (!hub.fake.listening) EXO_SKIP("could not listen on a loopback port");
 	EXO_ASSERT(hub.ready);
 
-	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	QuickDC::QueueManager* queue = core->queue;
 	EXO_ASSERT_NOT_NULL(queue);
 
 	/* One confined to a hub this client is not on, and one ordinary download. */
@@ -4480,7 +4480,6 @@ EXO_TEST(hubsession_only_a_connection_that_lasted_resets_the_backoff,
  */
 EXO_TEST(hubsession_the_two_families_keep_their_own_evidence,
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
 	EXO_ASSERT(core != 0);
 
 	EXO_ASSERT(core->reachability != 0);

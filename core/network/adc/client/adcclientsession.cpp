@@ -36,8 +36,8 @@
 #include <string>
 #include <string_view>
 
-ADC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* hubsession_) :
-	QuickDC::Connection(url, "ADC client"),
+ADC::ClientSession::ClientSession(QuickDC::Core& core_, Samurai::IO::Net::URL* url, ADC::HubSession* hubsession_) :
+	QuickDC::Connection(core_, url, "ADC client"),
 	hubsession(hubsession_),
 	isClient(true),
 	secure(false)
@@ -47,8 +47,8 @@ ADC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, ADC::HubSession* h
 	QDBG("ADC::ClientSession()");
 }
 
-ADC::ClientSession::ClientSession(std::shared_ptr<Samurai::IO::Net::Socket> sock, ADC::HubSession* hubsession_, const char* token_, const char* sid_, bool secure_, const char* keyprint_) :
-	QuickDC::Connection(std::move(sock), secure_ ? "ADCS client" : "ADC client"),
+ADC::ClientSession::ClientSession(QuickDC::Core& core_, std::shared_ptr<Samurai::IO::Net::Socket> sock, ADC::HubSession* hubsession_, const char* token_, const char* sid_, bool secure_, const char* keyprint_) :
+	QuickDC::Connection(core_, std::move(sock), secure_ ? "ADCS client" : "ADC client"),
 	hubsession(hubsession_),
 	isClient(false),
 	secure(secure_)
@@ -125,7 +125,7 @@ void ADC::ClientSession::sendINF()
 	inf_sent = true;
 
 	ADC::Command* cmd = new ADC::Command(FOURCC('C','I','N','F'));
-	cmd->addArgument("ID", ADC::CID::getInstance()->getCID());
+	cmd->addArgument("ID", getCore().identity->getCID());
 	cmd->addArgument("VE", PRODUCT " " VERSION);
 	if (!token.empty()) cmd->addArgument("TO", token);
 	send(cmd);
@@ -194,7 +194,7 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 	/* Remember who this is; a FileSource is keyed on the CID, not the SID. */
 	if (cid) remote_cid = cid;
 
-	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+	QuickDC::SecurityManager* security = getCore().securityManager;
 
 	/*
 	 * Whichever side dialled, the token has to be one we issued and granted a
@@ -222,7 +222,7 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 		security->revoke(QuickDC::Clearance::ADC, hubsession, cid, job);
 
 	/* The token is also what ties this connection to a queued download. */
-	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	QuickDC::QueueManager* queue = getCore().queue;
 
 	if (queue && job && queue->lookupRequest(job))
 	{
@@ -237,7 +237,7 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 
 void ADC::ClientSession::requestNextChunk()
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 
 	if (!queue || token.empty())
@@ -380,7 +380,7 @@ void ADC::ClientSession::onSTA(const char* code, const char* message)
 	 */
 	if (download_approved && !token.empty())
 	{
-		QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+		QuickDC::QueueManager* queue = getCore().queue;
 		if (queue) queue->onRequestFailed(token.c_str());
 	}
 
@@ -466,7 +466,7 @@ void ADC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 		return;
 	}
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 
 	/* Work out how it went before the transfer object goes away. */
@@ -569,14 +569,14 @@ void ADC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 
 Samurai::IO::File* ADC::ClientSession::openQueuedLeaves(const char* tth, uint64_t& length)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	return (queue) ? queue->openLeafFile(tth, length) : 0;
 }
 
 Samurai::IO::File* ADC::ClientSession::openQueuedFile(const char* tth, uint64_t offset, int64_t length, uint64_t& servable)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	return (queue) ? queue->openVerifiedRange(tth, offset, length, servable) : 0;
 }
@@ -623,11 +623,11 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	uint64_t internal_offset = 0; // Our internal file position (might differ from what we send).
 	uint64_t internal_length = 0; // Our internal length (might differ from the file's length, when only a part of it is being transferred).
 
-	QuickDC::Share::Manager* sharemgr = QuickDC::Core::getInstance()->shares;
-	QuickDC::Hash::Manager*   hashmgr = QuickDC::Core::getInstance()->hash;
-	QuickDC::TransferManager*  xfrmgr = QuickDC::Core::getInstance()->transfers;
+	QuickDC::Share::Manager* sharemgr = getCore().shares;
+	QuickDC::Hash::Manager*   hashmgr = getCore().hash;
+	QuickDC::TransferManager*  xfrmgr = getCore().transfers;
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = getCore().config;
 	config->setGroup("Network");
 	int slots = config->getNumber("Slots", 3);
 	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= static_cast<size_t>(slots));
@@ -808,7 +808,7 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 	QDBG("Receiving file (ADCSND): '%s', offset=%d, length=%d", filename, static_cast<int>(offset), static_cast<int>(length));
 	(void) filename;
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	QuickDC::TransferManager* xfrmgr = (core) ? core->transfers : 0;
 
@@ -1046,7 +1046,7 @@ void ADC::ClientSession::abandonDownload()
 {
 	if (!download_approved || token.empty()) return;
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	if (!queue) return;
 

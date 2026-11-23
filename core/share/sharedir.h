@@ -35,6 +35,14 @@ class Dir
 		 */
 		Dir(const std::string& path, const std::string& name, QuickDC::Share::Manager* manager);
 
+		/** The manager of the share this is in; only a share's top level holds it. */
+		QuickDC::Share::Manager* getManager() const
+		{
+			const Dir* dir = this;
+			while (!dir->manager && dir->parent) dir = dir->parent;
+			return dir->manager;
+		}
+
 		/**
 		 * Creates a shared subdirectory.
 		 */

@@ -19,8 +19,8 @@
  * case reading what the one before it left behind.
  *
  * The core is the reduced one, as in adchub.tcc: the full one scans shares and
- * opens listening sockets that none of this needs. It is a singleton reading from
- * disk and so is a per-file fixture; everything else a case needs it builds and
+ * opens listening sockets that none of this needs. It reads from disk and runs on
+ * samurai's process-wide reactor, and so is a per-file fixture; everything else a case needs it builds and
  * lets go of again.
  */
 
@@ -59,6 +59,9 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
+
+/* The fixture's core; built in EXO_SETUP below. */
+static QuickDC::Core* core = 0;
 
 static const int TIMEOUT_MS = 5000;
 
@@ -182,6 +185,8 @@ static size_t countLines(const std::vector<std::string>& log,
 class TestHub : public ADC::LocalHub::Hub
 {
 	public:
+		TestHub() : ADC::LocalHub::Hub(*core->config) { }
+
 		using ADC::LocalHub::Hub::readConfiguration;
 		using ADC::LocalHub::Hub::hasBoards;
 };
@@ -394,7 +399,6 @@ class Client : public Samurai::IO::Net::SocketEventHandler
 static std::string cfg;
 static std::string ses;
 static std::string bbs;
-static QuickDC::Core* core = 0;
 
 static std::string scratch(const char* leaf)
 {
@@ -413,7 +417,7 @@ static void configureBoard(const std::string& name, int userPermissions,
                            int maxSize = 262144, int maxEntries = 512,
                            int maxPerAuthor = 64)
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	const std::string group = "Local hub board " + name;
 
 	config->setString(group, "Title", "Board " + name);
@@ -436,7 +440,7 @@ EXO_SETUP({
 	Samurai::IO::File(ses).remove();
 
 	core = new QuickDC::Core(cfg, ses);
-	if (QuickDC::Core::getInstance() != core || !core->config) return 0;
+	if (core != core || !core->config) return 0;
 
 	/* Not ~/.quickdc/hub/bbs: a test writes its indexes where it can throw them
 	   away again, and where a developer's own boards are not what it reads. */
@@ -512,7 +516,7 @@ EXO_TEST(bbs_hub_a_hub_whose_store_is_unusable_announces_nothing,
 {
 	configureBoard("unusable", 15);
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setString("Local hub", "Bulletin directory", "/dev/null/boards");
 
 	{
@@ -1061,7 +1065,7 @@ EXO_TEST(bbs_hub_a_post_past_the_board_limit_is_refused_against_it,
  */
 EXO_TEST(bbs_hub_a_board_that_says_nothing_takes_two_megabytes,
 {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = core->config;
 	config->setString("Local hub board unbounded", "Title", "Unbounded");
 	config->setNumber("Local hub board unbounded", "User permissions", 15);
 
@@ -1764,7 +1768,7 @@ EXO_TEST(bbs_hub_a_clock_that_moves_backwards_does_not_move_the_board_back,
 	configureBoard("clock", 15);
 
 	FrozenStore store(bbs);
-	store.readConfiguration(QuickDC::Core::getInstance()->config);
+	store.readConfiguration(core->config);
 	EXO_ASSERT(store.isUsable());
 	EXO_ASSERT(store.exists("clock"));
 
@@ -1831,7 +1835,7 @@ EXO_TEST(bbs_hub_an_author_holds_a_bounded_number_of_entries,
 	configureBoard("quota", 15, 262144, 512, 2);
 
 	FrozenStore store(bbs);
-	store.readConfiguration(QuickDC::Core::getInstance()->config);
+	store.readConfiguration(core->config);
 
 	QuickDC::BoardEntry post;
 	post.cid = makeIdentity(37).cid;
@@ -1881,7 +1885,7 @@ EXO_TEST(bbs_hub_a_full_board_drops_its_oldest_and_says_so,
 	configureBoard("bounded", 15, 262144, 3);
 
 	FrozenStore store(bbs);
-	store.readConfiguration(QuickDC::Core::getInstance()->config);
+	store.readConfiguration(core->config);
 
 	QuickDC::BoardEntry post;
 	post.cid = makeIdentity(36).cid;

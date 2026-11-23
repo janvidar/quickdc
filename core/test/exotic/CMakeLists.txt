@@ -2,13 +2,12 @@
 ## The QuickDC test suite (exotic/*.tcc)
 ##
 ## One exotic_add_tests() target per file, rather than one target for all of
-## them, because QuickDC::Core is a process-wide singleton: its constructor
-## assigns a global that the next one would overwrite, and its destructor sets
-## that global back to null. exotic's per-file EXO_SETUP hooks are documented as
-## being able to have two fixtures alive at once when --sort interleaves files,
-## which for a Core would mean one file's teardown clearing the pointer the next
-## file's tests are still using. A target per file makes interleaving impossible
-## by construction.
+## them, because every QuickDC::Core runs on samurai's process-wide socket
+## monitor, timer manager and message handler. exotic's per-file EXO_SETUP hooks
+## are documented as being able to have two fixtures alive at once when --sort
+## interleaves files, which would have two cores sharing one reactor and each
+## file's teardown deleting sockets and timers the other is still walking. A
+## target per file makes interleaving impossible by construction.
 ##
 ## DISCOVER registers one CTest entry per EXO_TEST, so a failure names the case,
 ## `ctest -R` selects it, and a crash takes down that test rather than the run.

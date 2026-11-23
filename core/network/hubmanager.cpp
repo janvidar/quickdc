@@ -16,8 +16,9 @@
 #include "api/core.h"
 #include "api/hub.h"
 
-QuickDC::HubManager::HubManager()
-	: info_timer(0)
+QuickDC::HubManager::HubManager(Core& core_)
+	: core(core_)
+	, info_timer(0)
 	, info_delay(std::chrono::seconds(QUICKDC_HUB_INFO_UPDATE_DELAY_SECONDS))
 {
 	// FIXME: We should add a load()/save() functions here
@@ -39,6 +40,7 @@ QuickDC::HubManager::~HubManager()
 	while (hubs.size()) {
 		QuickDC::Hub* hub = hubs.back();
 		hubs.pop_back();
+		hub->forgetManager();
 		delete hub;
 	}
 }
@@ -132,7 +134,7 @@ QuickDC::Hub* QuickDC::HubManager::lookupUserByNick(const char* nick) {
  * places, and a reply from any of them answers it.
  */
 void QuickDC::HubManager::rememberSearchToken(QuickDC::Share::SearchRequest* request) {
-	QuickDC::SearchTokens* tokens = QuickDC::Core::getInstance()->searchTokens;
+	QuickDC::SearchTokens* tokens = core.searchTokens;
 	if (!tokens) return;
 
 	if (const char* existing = request->getToken())

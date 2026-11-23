@@ -12,18 +12,17 @@
 #include "network/connectionmanager.h"
 #include "network/dc/dcconnection.h"
 
-QuickDC::Connection::Connection(std::shared_ptr<Samurai::IO::Net::Socket> sock, const char* proto)
-	: socket(std::move(sock)), protocol(proto)
+QuickDC::Connection::Connection(Core& core_, std::shared_ptr<Samurai::IO::Net::Socket> sock, const char* proto)
+	: core(core_), socket(std::move(sock)), manager(core_.connections), protocol(proto)
 {
 	socket->setEventHandler(this);
-	manager = QuickDC::Core::getInstance()->connections;
 }
 
 
-QuickDC::Connection::Connection(Samurai::IO::Net::URL* url, const char* proto) : protocol(proto)
+QuickDC::Connection::Connection(Core& core_, Samurai::IO::Net::URL* url, const char* proto)
+	: core(core_), manager(core_.connections), protocol(proto)
 {
 	socket = Samurai::IO::Net::Socket::create(this, url->getHost(), url->getPort());
-	manager = QuickDC::Core::getInstance()->connections;
 }
 
 QuickDC::Connection::~Connection()

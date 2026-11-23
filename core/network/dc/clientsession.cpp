@@ -39,8 +39,8 @@
 		state = newstate; \
 	}
 
-DC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, DC::HubSession* hubsession_) :
-	QuickDC::Connection(url, "NMDC client"),
+DC::ClientSession::ClientSession(QuickDC::Core& core_, Samurai::IO::Net::URL* url, DC::HubSession* hubsession_) :
+	QuickDC::Connection(core_, url, "NMDC client"),
 	hubsession(hubsession_),
 	isClient(true)
 {
@@ -50,8 +50,8 @@ DC::ClientSession::ClientSession(Samurai::IO::Net::URL* url, DC::HubSession* hub
 }
 
 
-DC::ClientSession::ClientSession(std::shared_ptr<Samurai::IO::Net::Socket> sock, DC::HubSession* hubsession_) :
-	QuickDC::Connection(std::move(sock), "NMDC client"),
+DC::ClientSession::ClientSession(QuickDC::Core& core_, std::shared_ptr<Samurai::IO::Net::Socket> sock, DC::HubSession* hubsession_) :
+	QuickDC::Connection(core_, std::move(sock), "NMDC client"),
 	hubsession(hubsession_),
 	isClient(false)
 {
@@ -116,7 +116,7 @@ const char* DC::ClientSession::hubUrl() const
 
 bool DC::ClientSession::wantToDownload()
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	if (!queue) return false;
 
@@ -136,7 +136,7 @@ void DC::ClientSession::abandonDownload()
 {
 	if (!download_approved || token.empty()) return;
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	if (!queue) return;
 
@@ -378,7 +378,7 @@ void DC::ClientSession::onKey(const char* key_)
 	upload_approved = false;
 	if (!weDownload)
 	{
-		QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+		QuickDC::SecurityManager* security = getCore().securityManager;
 		upload_approved = security && security->isAuthorized(QuickDC::Clearance::NMDC,
 			hubsession, proxy->socket.get(), getNick(), 0);
 
@@ -416,7 +416,7 @@ void DC::ClientSession::onKey(const char* key_)
 		 * somewhere else instead of treating the source as busy for minutes.
 		 * The peer did answer us, so this is not counted as a failure.
 		 */
-		QuickDC::Core* core = QuickDC::Core::getInstance();
+		QuickDC::Core* core = &getCore();
 		QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 		const char* hub = hubUrl();
 
@@ -434,7 +434,7 @@ void DC::ClientSession::onKey(const char* key_)
 
 void DC::ClientSession::requestNextChunk()
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 
 	if (!queue)
@@ -588,7 +588,7 @@ void DC::ClientSession::onNick(const char* nick)
 		 * would match a session ID instead on an ADC hub, so any four
 		 * characters that happened to be someone's SID got in.
 		 */
-		QuickDC::Hub* hub = QuickDC::Core::getInstance()->hubs->lookupUserByNick(nick);
+		QuickDC::Hub* hub = getCore().hubs->lookupUserByNick(nick);
 		if (hub)
 		{
 			hubsession = hub->session;
@@ -663,7 +663,7 @@ void DC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 		return;
 	}
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 
 	/* Work out how it went before the transfer object goes away. */
@@ -763,7 +763,7 @@ void DC::ClientSession::onGetListLen()
 {
 	if (upload_approved && state == StateIdle)
 	{
-		QuickDC::Share::Manager* sharemgr = QuickDC::Core::getInstance()->shares;
+		QuickDC::Share::Manager* sharemgr = getCore().shares;
 		file = sharemgr->getFile("MyList.DcLst");
 		if (file)
 		{
@@ -792,7 +792,7 @@ void DC::ClientSession::onGet(const char* fn, uint64_t offset, int64_t chunklen)
 		std::replace(filename.begin(), filename.end(), '\\', '/');
 
 		QDBG("looking up file: '%s'", filename.c_str());
-		QuickDC::Share::Manager* sharemgr = QuickDC::Core::getInstance()->shares;
+		QuickDC::Share::Manager* sharemgr = getCore().shares;
 		file = sharemgr->getFile(filename.c_str());
 
 		if (file)
@@ -866,7 +866,7 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 
 	releaseTransfer();
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::Share::Manager* sharemgr = core->shares;
 	QuickDC::TransferManager* xfrmgr = core->transfers;
 
@@ -986,7 +986,7 @@ void DC::ClientSession::onADCSend(const char* filename, uint32_t type, uint64_t 
 	QDBG("Receiving file (ADCSND): '%s', offset=%d, length=%d", filename, static_cast<int>(offset), static_cast<int>(length));
 	(void) filename;
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	QuickDC::TransferManager* xfrmgr = (core) ? core->transfers : 0;
 
@@ -1117,7 +1117,7 @@ void DC::ClientSession::onSend()
 		delete transfer;
 		transfer = 0;
 
-		QuickDC::TransferManager* manager = QuickDC::Core::getInstance()->transfers;
+		QuickDC::TransferManager* manager = getCore().transfers;
 		transfer = new QuickDC::Upload(manager, this, proxy->socket, file, chunk_offset, chunk_length);
 	}
 	else

@@ -155,6 +155,7 @@ namespace QuickDC {
 class FileSource;
 class LeafHashes;
 class QueueManager;
+class Core;
 class QueueVerifier;
 class QueueXMLReader;
 
@@ -574,7 +575,10 @@ class QueueManager {
 		 * @param path_ where the queue is read from and written back to, so it
 		 *        can be pointed somewhere other than the real one.
 		 */
-		QueueManager(const char* path_ = QUICKDC_QUEUE_FILE);
+		explicit QueueManager(Core* core, const char* path_ = QUICKDC_QUEUE_FILE);
+
+		/** A queue run on its own, with nothing to schedule transfers through. */
+		explicit QueueManager(const char* path_ = QUICKDC_QUEUE_FILE) : QueueManager(static_cast<Core*>(nullptr), path_) { }
 		virtual ~QueueManager();
 
 		QueueManager(const QueueManager&) = delete;
@@ -940,6 +944,8 @@ class QueueManager {
 		size_t getMaxDownloads() const;
 
 	protected:
+		/** Null for a queue run on its own, which then schedules nothing. */
+		Core* core;
 		ListenerList<QueueListener> listeners;
 		std::vector<QueueFile*> files;
 		std::vector<QueueFile*>::iterator fileIterator;

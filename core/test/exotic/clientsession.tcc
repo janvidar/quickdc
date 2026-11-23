@@ -40,6 +40,9 @@
 #include <string>
 #include <unistd.h>
 
+/* The fixture's core; built in EXO_SETUP below. */
+static QuickDC::Core* core = 0;
+
 static const int TIMEOUT_MS = 5000;
 
 /* 39 base32 characters, which is all CID::verify() asks for. */
@@ -249,12 +252,12 @@ class Session
 			if (token)
 			{
 				granted_token = token;
-				QuickDC::Core::getInstance()->securityManager->grant(
+				core->securityManager->grant(
 					new QuickDC::Clearance(QuickDC::Clearance::AuthorizedUser,
 						QuickDC::Clearance::ADC, 0, PEER_CID, token));
 			}
 
-			session = new ADC::ClientSession(peer.theirs, 0, token, 0, false, 0);
+			session = new ADC::ClientSession(*core, peer.theirs, 0, token, 0, false, 0);
 			ready = true;
 		}
 
@@ -271,7 +274,7 @@ class Session
 			 */
 			if (!granted_token.empty())
 			{
-				QuickDC::Core::getInstance()->securityManager->revoke(
+				core->securityManager->revoke(
 					QuickDC::Clearance::ADC, 0, PEER_CID, granted_token.c_str());
 			}
 		}
@@ -307,7 +310,6 @@ class Session
 static std::string cfgPath;
 static std::string sesPath;
 static std::string queuePath;
-static QuickDC::Core* core = 0;
 
 /* Nothing to run against without one, so every case starts here. */
 static const char* CANNOT_CONNECT = "this host cannot make a loopback connection";
@@ -496,7 +498,7 @@ EXO_TEST(clientsession_a_file_we_do_not_have_is_refused,
  */
 EXO_TEST(clientsession_a_browse_asks_for_the_whole_list,
 {
-	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	QuickDC::QueueManager* queue = core->queue;
 
 	QuickDC::FilelistRequest* list =
 		queue->requestFilelist("adc://127.0.0.1:1511", PEER_CID);
@@ -649,7 +651,7 @@ EXO_TEST(clientsession_a_socket_error_is_not_repeated_to_the_peer,
 	Peer peer;
 	if (!peer.connect()) EXO_SKIP(CANNOT_CONNECT);
 
-	ErrorableSession session(peer.theirs, 0, "job1", 0, false, 0);
+	ErrorableSession session(*core, peer.theirs, 0, "job1", 0, false, 0);
 
 	RecordingHubSession hub;
 	session.setHubSession(&hub);
@@ -698,11 +700,11 @@ EXO_TEST(clientsession_an_error_after_the_connection_was_made_is_not_reported_to
 	if (!peer.connect()) EXO_SKIP(CANNOT_CONNECT);
 
 	/* What the hub granted when it asked this peer to connect; the CINF spends it. */
-	QuickDC::Core::getInstance()->securityManager->grant(
+	core->securityManager->grant(
 		new QuickDC::Clearance(QuickDC::Clearance::AuthorizedUser,
 			QuickDC::Clearance::ADC, 0, PEER_CID, "job9"));
 
-	ErrorableSession session(peer.theirs, 0, "job9", 0, false, 0);
+	ErrorableSession session(*core, peer.theirs, 0, "job9", 0, false, 0);
 
 	RecordingHubSession hub;
 	session.setHubSession(&hub);
@@ -725,7 +727,7 @@ EXO_TEST(clientsession_an_error_after_the_connection_was_made_is_not_reported_to
 
 	EXO_ASSERT(hub.errors == 0);
 
-	QuickDC::Core::getInstance()->securityManager->revoke(
+	core->securityManager->revoke(
 		QuickDC::Clearance::ADC, 0, PEER_CID, "job9");
 
 	return 1;
@@ -761,7 +763,7 @@ EXO_TEST(clientsession_the_peer_hanging_up_is_survived,
  */
 EXO_TEST(clientsession_a_session_left_running_is_torn_down_with_the_core,
 {
-	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	QuickDC::QueueManager* queue = core->queue;
 
 	QuickDC::FilelistRequest* list =
 		queue->requestFilelist("adc://127.0.0.1:1512", PEER_CID);
@@ -778,7 +780,7 @@ EXO_TEST(clientsession_a_session_left_running_is_torn_down_with_the_core,
 	if (!peer->connect()) EXO_SKIP(CANNOT_CONNECT);
 
 	ADC::ClientSession* session =
-		new ADC::ClientSession(peer->theirs, 0, token, 0, false, 0);
+		new ADC::ClientSession(*core, peer->theirs, 0, token, 0, false, 0);
 
 	/* Enough of a handshake to be given a transfer to hold. */
 	peer->send("CSUP ADBASE ADTIGR\n");
@@ -838,7 +840,7 @@ EXO_TEST(clientsession_a_wrong_token_does_not_spend_the_clearance,
 	Session s;
 	if (!s.ready) EXO_SKIP(CANNOT_CONNECT);
 
-	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+	QuickDC::SecurityManager* security = core->securityManager;
 	EXO_ASSERT_NOT_NULL(security);
 
 	/*
@@ -869,7 +871,7 @@ EXO_TEST(clientsession_the_right_token_spends_the_clearance,
 	Session s("realjob");
 	if (!s.ready) EXO_SKIP(CANNOT_CONNECT);
 
-	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+	QuickDC::SecurityManager* security = core->securityManager;
 	EXO_ASSERT_NOT_NULL(security);
 
 	EXO_ASSERT(s.handshake());

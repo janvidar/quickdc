@@ -23,9 +23,11 @@ namespace {
 
 namespace QuickDC {
 
+class Core;
+
 class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samurai::IO::Net::DatagramEventHandler {
 	public:
-		DCServer();
+		explicit DCServer(Core& core);
 		virtual ~DCServer();
 		
 		void send(Samurai::IO::Net::DatagramPacket*);
@@ -51,6 +53,7 @@ class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samur
 		void EventDatagramError(const Samurai::IO::Net::DatagramSocket*, const char* msg) override;
 
 	protected:
+		Core& core;
 		std::shared_ptr<Samurai::IO::Net::ServerSocket> socket;
 		std::shared_ptr<Samurai::IO::Net::DatagramSocket> dgram;
 

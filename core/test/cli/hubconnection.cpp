@@ -11,7 +11,7 @@
 #include "share/searchresult.h"
 #include "network/user.h"
 
-HubConnection::HubConnection(Samurai::IO::Net::URL* url) : QuickDC::Hub(this, url) {
+HubConnection::HubConnection(QuickDC::Core& core, Samurai::IO::Net::URL* url) : QuickDC::Hub(core, this, url) {
 	showjoins = true;
 	allowConnections = true;
 }

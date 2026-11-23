@@ -22,7 +22,7 @@
 #include "network/usermanager.h"
 #include "share/searchresult.h"
 
-void ADC::DatagramHandler::onDatagram(Samurai::IO::Net::DatagramSocket*, Samurai::IO::Net::DatagramPacket* packet)
+void ADC::DatagramHandler::onDatagram(QuickDC::Core& core, Samurai::IO::Net::DatagramSocket*, Samurai::IO::Net::DatagramPacket* packet)
 {
 	if (!packet || !packet->getBuffer()) return;
 
@@ -44,12 +44,12 @@ void ADC::DatagramHandler::onDatagram(Samurai::IO::Net::DatagramSocket*, Samurai
 		switch (cmd.getFourcc())
 		{
 			case FOURCC('U','R','E','S'):
-				noteReachable(packet, &cmd);
-				onSearchResult(&cmd);
+				noteReachable(core, packet, &cmd);
+				onSearchResult(core, &cmd);
 				break;
 
 			case FOURCC('U','P','S','R'):
-				onPartialStatus(&cmd);
+				onPartialStatus(core, &cmd);
 				break;
 
 			default:
@@ -63,7 +63,7 @@ void ADC::DatagramHandler::onDatagram(Samurai::IO::Net::DatagramSocket*, Samurai
 	}
 }
 
-void ADC::DatagramHandler::onPartialStatus(ADC::Command* cmd)
+void ADC::DatagramHandler::onPartialStatus(QuickDC::Core& core_, ADC::Command* cmd)
 {
 	char* tth  = cmd->getArgument("TR", 2, 0);
 	char* pi   = cmd->getArgument("PI", 2, 0);
@@ -72,8 +72,8 @@ void ADC::DatagramHandler::onPartialStatus(ADC::Command* cmd)
 
 	if (!tth || !pi) return;
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
-	if (!core || !core->hubs || !core->queue) return;
+	QuickDC::Core* core = &core_;
+	if (!core->hubs || !core->queue) return;
 
 	/* On an NMDC hub we will not know the sender's client ID; NI is what
 	   identifies them, and is how a FileSource records an NMDC user. */
@@ -110,11 +110,11 @@ void ADC::DatagramHandler::onPartialStatus(ADC::Command* cmd)
  * answer to something we asked" rather than "from the peer we expected", which is as
  * much as a datagram can be held to.
  */
-void ADC::DatagramHandler::noteReachable(Samurai::IO::Net::DatagramPacket* packet,
+void ADC::DatagramHandler::noteReachable(QuickDC::Core& core_, Samurai::IO::Net::DatagramPacket* packet,
                                          ADC::Command* cmd)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
-	if (!core || !core->reachability || !core->searchTokens) return;
+	QuickDC::Core* core = &core_;
+	if (!core->reachability || !core->searchTokens) return;
 
 	const char* token = cmd->getArgument("TO", 2, 0);
 	if (!core->searchTokens->issued(token))
@@ -146,7 +146,7 @@ void ADC::DatagramHandler::noteReachable(Samurai::IO::Net::DatagramPacket* packe
 }
 
 
-void ADC::DatagramHandler::onSearchResult(ADC::Command* cmd)
+void ADC::DatagramHandler::onSearchResult(QuickDC::Core& core_, ADC::Command* cmd)
 {
 	/* The argument names mirror what HubSession::EventSearchReply() sends. */
 	char* filename = cmd->getArgument("FN", 2, 0);
@@ -171,8 +171,8 @@ void ADC::DatagramHandler::onSearchResult(ADC::Command* cmd)
 		return;
 	}
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
-	if (!core || !core->hubs) return;
+	QuickDC::Core* core = &core_;
+	if (!core->hubs) return;
 
 	/* Nothing says which hub the search went out on, and the CID is globally
 	   unique, so any hub the sender is on will reach them. */

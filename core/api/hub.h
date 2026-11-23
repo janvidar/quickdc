@@ -40,6 +40,7 @@ class SearchRequest;
 namespace QuickDC {
 class ClientSession;
 class CommandProxy;
+class Core;
 class ConnectionManager;
 class HubManager;
 class HubSession;
@@ -421,7 +422,7 @@ class Hub
 {
 
 	public:
-		Hub(HubListener*, Samurai::IO::Net::URL* url);
+		Hub(Core& core, HubListener*, Samurai::IO::Net::URL* url);
 		virtual ~Hub();
 
 		Hub(const Hub&) = delete;
@@ -584,7 +585,14 @@ class Hub
 		static bool connectionHeld(uint64_t seconds);
 
 
+		Core& getCore() const { return core; }
+
+		/** Called by a HubManager going away first, so this does not reach back into it. */
+		void forgetManager() { manager = nullptr; }
+
 	protected:
+		Core& core;
+		HubManager* manager;
 		HubSession* session;
 		HubListener* listener;
 

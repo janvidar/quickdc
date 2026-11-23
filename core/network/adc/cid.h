@@ -12,12 +12,14 @@
 #include <string>
 #include <string_view>
 
+namespace QuickDC { class Preferences; }
+
 namespace ADC {
 
 
 class CID {
 	public:
-		static CID* getInstance();
+		explicit CID(QuickDC::Preferences& config);
 
 		virtual ~CID();
 
@@ -39,8 +41,6 @@ class CID {
 
 		static bool verifyCIDandPID(const char* cid, const char* pid);
 
-	protected:
-		CID();
 
 	private:
 		void generate();
@@ -52,6 +52,7 @@ class CID {
 		 * Both are 39 base32 characters when there is an identity at all, so an
 		 * empty one is no identity rather than a short one.
 		 */
+		QuickDC::Preferences& config;
 		std::string cid;
 		std::string pid;
 };
@@ -66,7 +67,6 @@ class SID {
 		static sid_t       fromString(const char*);
 };
 
-extern CID* global_cid;
 
 
 }

@@ -49,6 +49,9 @@
 #include <unistd.h>
 #include <vector>
 
+/* The fixture's core; built in EXO_SETUP below. */
+QuickDC::Core* core = 0;
+
 static std::string scratch(const char* leaf)
 {
 	static int counter = 0;
@@ -305,7 +308,7 @@ class Session
 				+ "://127.0.0.1:" + std::to_string(hub.port());
 			url = std::make_unique<Samurai::IO::Net::URL>(address);
 
-			ui = std::make_unique<QuickDC::Hub>(&listener, url.get());
+			ui = std::make_unique<QuickDC::Hub>(*core, &listener, url.get());
 			session = new ADC::HubSession(ui.get(), &listener, url.get(), secure);
 
 			session->connect();
@@ -414,14 +417,13 @@ class Certificate
 namespace {
 
 /*
- * The fixture. One core for the whole process, because it is a singleton,
- * expensive to build, and has to be pointed at scratch files rather than the
+ * The fixture. One core for the whole process, because it runs on samurai's
+ * process-wide reactor, is expensive to build, and has to be pointed at scratch files rather than the
  * user's own configuration.
  */
 std::string config_file;
 std::string session_file;
 std::string chat_dir;
-QuickDC::Core* core = 0;
 
 /*
  * The value of one named field of a command, or nothing where it is absent.

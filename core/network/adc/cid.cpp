@@ -83,16 +83,7 @@ bool ADC::CID::verifyCIDandPID(const char* cid, const char* pid) {
 	return Samurai::Util::iequals(x_cid, cid);
 }
 
-ADC::CID* ADC::global_cid = 0;
-
-ADC::CID* ADC::CID::getInstance() {
-	if (!global_cid) {
-		global_cid = new CID();
-	}
-	return global_cid;
-}
-
-ADC::CID::CID() {
+ADC::CID::CID(QuickDC::Preferences& config_) : config(config_) {
 	if (!load()) {
 		generate();
 		store();
@@ -148,15 +139,14 @@ void ADC::CID::generate() {
 
 bool ADC::CID::load() {
 	QDBG("Loading CID from configuration file...");
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
-	config->setGroup("User");
+	config.setGroup("User");
 	
 	/*
 	 * Nothing stored is the ordinary case on a first run and says nothing worth
 	 * reporting. Something stored that is not the length of a CID does: it is an
 	 * identity that is about to be replaced.
 	 */
-	const std::string_view stored(config->getString("Private ID", ""));
+	const std::string_view stored(config.getString("Private ID", ""));
 	if (stored.size() != static_cast<size_t>(HASH - 1)) {
 		if (!stored.empty()) QERR("The stored private ID is not a valid CID; generating a new identity");
 		return false;
@@ -189,11 +179,10 @@ bool ADC::CID::store() {
 	QDBG("Storing the identity for CID %s", cid.c_str());
 
 	if (verifyCIDandPID(cid.c_str(), pid.c_str())) {
-		QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
-		config->setGroup("User");
-		config->setString("Private ID", pid);
-		config->setString("Client ID", cid);
-		config->write();
+		config.setGroup("User");
+		config.setString("Private ID", pid);
+		config.setString("Client ID", cid);
+		config.write();
 		return true;
 	}
 	return false;

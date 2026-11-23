@@ -30,6 +30,7 @@
 #include "network/searchtokens.h"
 #include "network/securitymanager.h"
 #include "network/transfermanager.h"
+#include "network/adc/cid.h"
 #include "network/adc/server/hub.h"
 
 #include "share/sharemanager.h"
@@ -38,39 +39,45 @@
 namespace {
 
 /*
- * Whether a port mapping was asked for because a measurement said passive.
- *
- * The whole of the state the check-map-recheck loop needs, and it needs some: a
- * gateway grants a mapping and reports success without knowing whether anything
- * upstream honours it, so the only evidence that the mapping helped is a second
- * measurement taken through it. That means the two listeners below have to agree
- * on which pass they are in - one asks for the mapping, the other measures again
- * when it appears - and on whose mapping it is, since a forward this did not
- * create is not this one's to take away.
- *
- * A file static beside the listeners for the same reason they are: only one Core
- * may exist, and this has to outlive the objects that point at them.
+ * What the check-map-recheck loop keeps between events, one per core.
  */
-bool mapping_asked_for = false;
+struct AutomationState {
+	QuickDC::Core* core;
 
-/*
- * Whether a measurement is owed once the gateway has been dealt with.
- *
- * A mapping takes a search, a description fetch and two calls to settle, and a
- * verdict reached before it existed answers for a different network: it would have
- * the client record passive and announce it for the life of a measurement, through
- * a port that works. So a run that would race the gateway is owed rather than
- * started, and whichever way the gateway answers releases it - both outcomes are
- * reported, exactly once, including a search that nothing answered.
- *
- * Separate from 'mapping_asked_for' because the two are about different things:
- * that one decides whose mapping it is and therefore who may take it away, and
- * this one only says that what is held is older than the mapping. A forward asked
- * for at start-up or by a front end is measured through for the same reason the
- * loop's own is, and neither is released by this.
- */
-bool measurement_owed = false;
+	/*
+	 * Whether a port mapping was asked for because a measurement said passive.
+	 *
+	 * The whole of the state the check-map-recheck loop needs, and it needs some: a
+	 * gateway grants a mapping and reports success without knowing whether anything
+	 * upstream honours it, so the only evidence that the mapping helped is a second
+	 * measurement taken through it. That means the two listeners below have to agree
+	 * on which pass they are in - one asks for the mapping, the other measures again
+	 * when it appears - and on whose mapping it is, since a forward this did not
+	 * create is not this one's to take away.
+	 */
+	bool mapping_asked_for = false;
 
+	/*
+	 * Whether a measurement is owed once the gateway has been dealt with.
+	 *
+	 * A mapping takes a search, a description fetch and two calls to settle, and a
+	 * verdict reached before it existed answers for a different network: it would have
+	 * the client record passive and announce it for the life of a measurement, through
+	 * a port that works. So a run that would race the gateway is owed rather than
+	 * started, and whichever way the gateway answers releases it - both outcomes are
+	 * reported, exactly once, including a search that nothing answered.
+	 *
+	 * Separate from 'mapping_asked_for' because the two are about different things:
+	 * that one decides whose mapping it is and therefore who may take it away, and
+	 * this one only says that what is held is older than the mapping. A forward asked
+	 * for at start-up or by a front end is measured through for the same reason the
+	 * loop's own is, and neither is released by this.
+	 */
+	bool measurement_owed = false;
+
+	bool measureIfStale(bool ipv6);
+	void measureAgainIfOwed();
+};
 /**
  * Measure 'ipv6', unless there is nothing to measure or nothing to learn.
  *
@@ -84,10 +91,9 @@ bool measurement_owed = false;
  * @return whether a run was started, which is how the caller knows the family it
  *         asked about is now busy rather than simply not worth asking about.
  */
-bool measureIfStale(bool ipv6)
+bool AutomationState::measureIfStale(bool ipv6)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
-	if (!core || !core->server || !core->config) return false;
+	if (!core->server || !core->config) return false;
 
 	if (!core->server->listening(ipv6)) return false;
 
@@ -104,10 +110,10 @@ bool measureIfStale(bool ipv6)
 	 */
 	if (!core->config->peekBool("Network", "Active mode", false)) return false;
 
-	if (QuickDC::dropMeasurementIsFresh(QuickDC::lastDropVerdict(ipv6), time(0)))
+	if (QuickDC::dropMeasurementIsFresh(QuickDC::lastDropVerdict(*core, ipv6), time(0)))
 		return false;
 
-	return QuickDC::startDropCheck(ipv6);
+	return QuickDC::startDropCheck(*core, ipv6);
 }
 
 /**
@@ -119,11 +125,11 @@ bool measureIfStale(bool ipv6)
  * mapping standing until the refresh timer noticed. Every path that ends a run
  * calls this, so the owed run is taken at the first moment there is room for it.
  */
-void measureAgainIfOwed()
+void AutomationState::measureAgainIfOwed()
 {
 	if (!measurement_owed) return;
 
-	if (QuickDC::startDropCheck(false)) measurement_owed = false;
+	if (QuickDC::startDropCheck(*core, false)) measurement_owed = false;
 }
 
 /*
@@ -153,13 +159,13 @@ const time_t DROP_REFRESH_TICK = DROP_REFRESH_AGE / 3;
  *
  * Nothing here decides anything: whether the client is reachable is answered by
  * asking Core::portforward, so a front end reads the same state whether it
- * started the forwarding itself or left it to the configuration. A file static
- * because only one Core may exist, and it has to outlive the PortForward that
- * points at it.
+ * started the forwarding itself or left it to the configuration.
  */
 class CorePortForwardListener : public QuickDC::PortForwardListener
 {
 	public:
+		explicit CorePortForwardListener(AutomationState& owner) : owner(owner) { }
+
 		/**
 		 * The gateway granted a mapping, so the hubs are told and the
 		 * measurement is taken again through it.
@@ -185,8 +191,8 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			(void) address;
 			announce();
 
-			measurement_owed = true;
-			measureAgainIfOwed();
+			owner.measurement_owed = true;
+			owner.measureAgainIfOwed();
 		}
 
 		/**
@@ -207,7 +213,7 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			(void) reason;
 			announce();
 
-			mapping_asked_for = false;
+			owner.mapping_asked_for = false;
 
 			/*
 			 * A run held back so that it would not race the gateway is taken now:
@@ -215,7 +221,7 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			 * network is still worth measuring - a port can be reachable through a
 			 * forward somebody made by hand.
 			 */
-			measureAgainIfOwed();
+			owner.measureAgainIfOwed();
 		}
 
 	private:
@@ -227,19 +233,19 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 		 * left saying we are active would have peers waiting on a connection that
 		 * can no longer arrive.
 		 */
-		static void announce()
+		void announce()
 		{
-			const QuickDC::Core* core = QuickDC::Core::getInstance();
-			if (!core || !core->hubs) return;
+			const QuickDC::Core* core = owner.core;
+			if (!core->hubs) return;
 
 			/* Throttled with everything else that changes what a hub was told,
 			   so a network that comes and goes does not update every hub each
 			   time it does. */
 			core->hubs->requestClientInfoUpdate();
 		}
-};
 
-CorePortForwardListener portforward_listener;
+		AutomationState& owner;
+};
 
 /*
  * What a measured verdict does, which for now is what a forwarded port does:
@@ -251,6 +257,8 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
                               public Samurai::TimerListener
 {
 	public:
+		explicit CoreDropCheckListener(AutomationState& owner) : owner(owner) { }
+
 		/**
 		 * Take the measurement again once the one in hand has aged out.
 		 *
@@ -260,12 +268,8 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 		 * from what was measured to what can be guessed from what peers report,
 		 * having last been told the truth a quarter of an hour ago.
 		 *
-		 * What is held is read rather than remembered, because this object is
-		 * not reliably the one told about a verdict: a front end showing the
-		 * measurement displaces the core's listener with its own, and from then
-		 * on nothing here hears that a check finished. Reading the check's own
-		 * record instead means the decision is the same whoever was listening,
-		 * and that a measurement taken for any other reason postpones this one
+		 * What is held is read off the check rather than remembered here, so
+		 * that a measurement taken for any other reason postpones this one
 		 * rather than being followed by a redundant second.
 		 *
 		 * A verdict that never ran is treated as one that has expired, so a
@@ -277,8 +281,8 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			QDBG("Looking for a family measured longer than %d seconds ago",
 			     static_cast<int>(DROP_REFRESH_AGE));
 
-			if (measureIfStale(false)) return;
-			measureIfStale(true);
+			if (owner.measureIfStale(false)) return;
+			owner.measureIfStale(true);
 		}
 
 		/**
@@ -312,14 +316,13 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 				     static_cast<int>(verdict.port));
 			}
 
-			QuickDC::Core* core = QuickDC::Core::getInstance();
-			if (!core) return;
+			QuickDC::Core* core = owner.core;
 
-			QuickDC::applyDropMeasurement();
+			QuickDC::applyDropMeasurement(*core);
 
 			if (verdict.mode == QuickDC::DropMode::Passive) considerMapping(core, verdict);
 
-			if (verdict.mode != QuickDC::DropMode::Passive) mapping_asked_for = false;
+			if (verdict.mode != QuickDC::DropMode::Passive) owner.mapping_asked_for = false;
 
 			if (core->hubs) core->hubs->requestClientInfoUpdate();
 
@@ -330,9 +333,9 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			 * asked for alongside - and only forward, so that two families
 			 * cannot take turns starting each other.
 			 */
-			if (!verdict.ipv6) measureIfStale(true);
+			if (!verdict.ipv6) owner.measureIfStale(true);
 
-			measureAgainIfOwed();
+			owner.measureAgainIfOwed();
 		}
 
 		/**
@@ -350,7 +353,7 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			QDBG("The reachability check did not complete: %s", reason);
 			(void) reason;
 
-			mapping_asked_for = false;
+			owner.mapping_asked_for = false;
 
 			/*
 			 * The other family is still owed its run: one family's server being
@@ -359,11 +362,11 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			 * has recorded no verdict and would therefore read as owed one
 			 * again immediately - that is left to the refresh timer.
 			 */
-			QuickDC::Core* core = QuickDC::Core::getInstance();
-			if (core && core->dropcheck && !core->dropcheck->lastFamilyWasIPv6())
-				measureIfStale(true);
+			QuickDC::Core* core = owner.core;
+			if (core->dropcheck && !core->dropcheck->lastFamilyWasIPv6())
+				owner.measureIfStale(true);
 
-			measureAgainIfOwed();
+			owner.measureAgainIfOwed();
 		}
 
 	private:
@@ -389,12 +392,12 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 		 * gates - and a measurement saying passive is not consent to start
 		 * announcing this machine there.
 		 */
-		static void considerMapping(QuickDC::Core* core,
+		void considerMapping(QuickDC::Core* core,
 		                            const QuickDC::DropVerdict& verdict)
 		{
 			if (!core->portforward || !core->config) return;
 
-			if (mapping_asked_for)
+			if (owner.mapping_asked_for)
 			{
 				if (core->portforward->isForwarded())
 				{
@@ -402,7 +405,7 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 					core->portforward->stop();
 				}
 
-				mapping_asked_for = false;
+				owner.mapping_asked_for = false;
 				return;
 			}
 
@@ -419,12 +422,12 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			QDBG("Passive on port %d; asking the gateway to forward it",
 			     static_cast<int>(port));
 
-			mapping_asked_for = true;
+			owner.mapping_asked_for = true;
 			core->portforward->start(port);
 		}
-};
 
-CoreDropCheckListener dropcheck_listener;
+		AutomationState& owner;
+};
 
 /**
  * The hash cache to use for a core whose files were named rather than assumed.
@@ -505,6 +508,20 @@ void ensureCertificate(const char* key_path, const char* cert_path)
 
 }
 
+/** The listeners the core acts through, and the state they share. */
+class QuickDC::Core::Automation : public AutomationState {
+	public:
+		explicit Automation(Core* owner)
+			: AutomationState{owner}
+			, portforward(*this)
+			, dropcheck(*this)
+		{
+		}
+
+		CorePortForwardListener portforward;
+		CoreDropCheckListener dropcheck;
+};
+
 
 QuickDC::Core::Core()
 {
@@ -536,7 +553,8 @@ QuickDC::Core::Core()
 	networkMode(*config, config->existed() == false);
 
 	session = new Preferences("~/.quickdc/session.conf");
-	quickdc_core = this;
+	identity = new ADC::CID(*config);
+	automation = new Automation(this);
 	
 	monitor = Samurai::IO::Net::SocketMonitor::getInstance();
 	bandwidthManager = new Samurai::IO::Net::BandwidthManager();
@@ -551,9 +569,9 @@ QuickDC::Core::Core()
 
 	hash = new QuickDC::Hash::Manager();
 	shares = new QuickDC::Share::Manager(config, hash);
-	server = new DCServer();
+	server = new DCServer(*this);
 	connections = new ConnectionManager();
-	hubs = new HubManager();
+	hubs = new HubManager(*this);
 	transfers = new TransferManager();
 	/*
 	 * Borrowed, not made. Samurai::Timer registers itself with
@@ -563,13 +581,13 @@ QuickDC::Core::Core()
 	 * unprocessed while run() polled an empty list.
 	 */
 	timers = Samurai::TimerManager::getInstance();
-	localHub = new ADC::LocalHub::Hub();
-	queue = new QuickDC::QueueManager();
+	localHub = new ADC::LocalHub::Hub(*config);
+	queue = new QuickDC::QueueManager(this);
 	chat = new QuickDC::ChatArchive(QUICKDC_CHAT_DIR);
 
 	dropcheck = 0;
 	dropRefresh = 0;
-	portforward = new PortForward(&portforward_listener);
+	portforward = new PortForward(&automation->portforward);
 
 	/*
 	 * Off unless asked for. A search tells every host on the local segment that
@@ -617,7 +635,7 @@ QuickDC::Core::Core()
 	 * that forwards nothing leaves nothing to wait for, so the first measurement
 	 * goes out immediately rather than waiting on a gateway nobody asked.
 	 */
-	measurement_owed = forwarding && portforward->isBusy();
+	automation->measurement_owed = forwarding && portforward->isBusy();
 
 	/*
 	 * Built whether or not there is a server to ask, because naming one is a
@@ -625,8 +643,8 @@ QuickDC::Core::Core()
 	 * started, and it is what a front end attaches to and what the probes hand a
 	 * challenge to. Only the measuring is conditional.
 	 */
-	dropcheck = new DropCheck(&dropcheck_listener);
-	dropRefresh = new Samurai::Timer(&dropcheck_listener, DROP_REFRESH_TICK, false);
+	dropcheck = new DropCheck(&automation->dropcheck);
+	dropRefresh = new Samurai::Timer(&automation->dropcheck, DROP_REFRESH_TICK, false);
 
 	/*
 	 * The first run against whoever is named, and which run depends on the mode.
@@ -644,12 +662,12 @@ QuickDC::Core::Core()
 	const bool named =
 		!config->peekString("Network", "Reachability server", "").empty();
 
-	if (named && !measurement_owed)
+	if (named && !automation->measurement_owed)
 	{
 		if (wanted.activeMode)
-			startDropCheck(false);
+			startDropCheck(*this, false);
 		else
-			startAddressLookup(false);
+			startAddressLookup(*this, false);
 	}
 
 	shares->initialize();
@@ -666,7 +684,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	session = new Preferences(session_file);
 
 	connections = new ConnectionManager();
-	hubs = new HubManager();
+	hubs = new HubManager(*this);
 
 	/*
 	 * Beside the files this core was named with, and never at the usual place.
@@ -692,7 +710,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	searchTokens = new QuickDC::SearchTokens();
 
 	/* Only when asked for: it reads and writes the file it is given. */
-	queue = queue_file.empty() ? 0 : new QuickDC::QueueManager(queue_file.c_str());
+	queue = queue_file.empty() ? 0 : new QuickDC::QueueManager(this, queue_file.c_str());
 
 	/*
 	 * Only where it was told to. This constructor exists so a caller can have a
@@ -729,13 +747,12 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	messageHandler = Samurai::MessageHandler::getInstance();
 	timers = Samurai::TimerManager::getInstance();
 
-	quickdc_core = this;
+	identity = new ADC::CID(*config);
+	automation = new Automation(this);
 }
 
 QuickDC::Core::~Core()
 {
-	quickdc_core = 0;
-
 	/*
 	 * The connections first, and this order is not a preference.
 	 *
@@ -765,6 +782,8 @@ QuickDC::Core::~Core()
 	 */
 	delete portforward; portforward = 0;
 
+	delete automation; automation = 0;
+
 	delete transfers; transfers = 0;
 	delete server; server = 0;
 	delete hubs; hubs = 0;
@@ -774,6 +793,7 @@ QuickDC::Core::~Core()
 	delete searchTokens; searchTokens = 0;
 	delete shares; shares = 0;
 	/* After the hubs, which borrow it and write through it on the way out. */
+	delete identity; identity = 0;
 	delete session; session = 0;
 	delete config; config = 0;
 	delete hash; hash = 0;
@@ -830,10 +850,6 @@ void QuickDC::Core::run()
 }
 
 
-QuickDC::Core* QuickDC::Core::getInstance()
-{
-	return quickdc_core;
-}
 
 
 const char* QuickDC::Core::getVersion() const 

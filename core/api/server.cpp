@@ -22,11 +22,11 @@
 #include "network/dc/dcconnection.h"
 #include "network/connectionmanager.h"
 
-QuickDC::Core* quickdc_core;
 
-QuickDC::DCServer::DCServer()
+QuickDC::DCServer::DCServer(Core& core_)
+	: core(core_)
 {
-	Preferences* config = Core::getInstance()->config;
+	Preferences* config = core.config;
 	config->setGroup("Network");
 
 	uint16_t port = config->getNumber("Port", 1411);
@@ -117,8 +117,7 @@ void QuickDC::DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*,
 	 * which was never the question. Nor an address that cannot be read, since
 	 * there is then no telling which of the two it was.
 	 */
-	Core* core = Core::getInstance();
-	if (core && from && !from->isLoopback())
+	if (from && !from->isLoopback())
 	{
 		/*
 		 * Against the family it arrived on, which is now a distinction worth
@@ -128,18 +127,18 @@ void QuickDC::DCServer::EventAcceptSocket(const Samurai::IO::Net::ServerSocket*,
 		const bool six =
 			from->getType() == Samurai::IO::Net::InetAddress::Version::IPv6;
 
-		if (Reachability* record = core->reachabilityFor(six))
+		if (Reachability* record = core.reachabilityFor(six))
 			record->inboundConnection();
 	}
 
-	Connection* connection = new ProtocolProbe(socket);
+	Connection* connection = new ProtocolProbe(core, socket);
 	socket->setEventHandler(connection);
 	socket->setNonBlocking(true);
 }
 
 void QuickDC::DCServer::EventGotDatagram(Samurai::IO::Net::DatagramSocket* sock, Samurai::IO::Net::DatagramPacket* packet)
 {
-	ProtocolProbe::probeDatagram(sock, packet);
+	ProtocolProbe::probeDatagram(core, sock, packet);
 }
 
 void QuickDC::DCServer::EventDatagramError(const Samurai::IO::Net::DatagramSocket*, const char* msg)

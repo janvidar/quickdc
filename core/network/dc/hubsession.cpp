@@ -53,7 +53,7 @@
 
 DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Samurai::IO::Net::URL* url)
 	: QuickDC::HubSession(ui)
-	, QuickDC::Connection(url, "NMDC hub")
+	, QuickDC::Connection(ui->getCore(), url, "NMDC hub")
 	, flags(0x1)
 	, extendedProtocol(false)
 	, state(None)
@@ -65,11 +65,11 @@ DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Sa
 	proxy = new DC::CommandProxy(socket, this);
 	users = new QuickDC::UserManager(this);
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = getCore().config;
 
 	/* Borrowed from the core, and shared with every other hub session; see
 	   Core::session. Not ours to delete, and its group is not ours to leave set. */
-	session = QuickDC::Core::getInstance()->session;
+	session = getCore().session;
 
 	/*
 	 * The canonical "{scheme}://{host}:{port}" rather than the address as it was
@@ -353,7 +353,7 @@ void DC::HubSession::onLoggedIn()
 	listener->EventHubStatus(QuickDC::HubListener::HubLoggedIn);
 
 	/* One more hub we are on, which the others were told a count of. */
-	QuickDC::Core::getInstance()->hubs->requestClientInfoUpdate();
+	getCore().hubs->requestClientInfoUpdate();
 }
 
 /**
@@ -365,7 +365,7 @@ void DC::HubSession::expectPeer(const char* nick)
 {
 	if (!nick || !*nick) return;
 
-	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+	QuickDC::SecurityManager* security = getCore().securityManager;
 	if (!security) return;
 
 	QDBG("Expecting a peer connection from '%s'", nick);
@@ -392,7 +392,7 @@ void DC::HubSession::onActiveConnect(const char* address, uint16_t port, const c
 		if (user) expectPeer(user);
 
 		auto socket = Samurai::IO::Net::Socket::create(nullptr, address, port);
-		DC::ClientSession* connection = new DC::ClientSession(socket, this);
+		DC::ClientSession* connection = new DC::ClientSession(getCore(), socket, this);
 		socket->setEventHandler(connection);
 		socket->connect();
 	}
@@ -408,7 +408,7 @@ void DC::HubSession::onPassiveConnect(const char* user)
 	{
 		if (listener->EventClientConnect(u))
 		{
-			const QuickDC::Core* core = QuickDC::Core::getInstance();
+			const QuickDC::Core* core = &getCore();
 			QuickDC::Preferences* config = core->config;
 			config->setGroup("Network");
 
@@ -437,7 +437,7 @@ void DC::HubSession::onPassiveConnect(const char* user)
 
 void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 {
-	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	const QuickDC::Core* core = &getCore();
 	QuickDC::Preferences* config = core->config;
 	DC::Command* cmd = 0;
 	config->setGroup("Network");
@@ -487,7 +487,7 @@ void DC::HubSession::onRequestMyInfo(const char* nick_)
 
 void DC::HubSession::sendMyInfo()
 {
-	DC::Command* cmd = new DC::SendMyInfo(getNick(), getDescription(), getEmail(), QuickDC::Core::getInstance()->shares->getSharedSize());
+	DC::Command* cmd = new DC::SendMyInfo(getCore(), getNick(), getDescription(), getEmail(), getCore().shares->getSharedSize());
 	send(cmd);
 }
 
@@ -511,7 +511,7 @@ bool DC::HubSession::maySendPassword()
 {
 	if (password.empty()) return true;
 
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = getCore().config;
 	config->setGroup("Network");
 
 	if (!config->getBool("Allow plaintext passwords", true))
@@ -616,7 +616,7 @@ void DC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 	 */
 	if (request && request->getUser() && request->getUser() == getLocalUser()) return;
 
-	QuickDC::Share::Manager* shares = QuickDC::Core::getInstance()->shares;
+	QuickDC::Share::Manager* shares = getCore().shares;
 	if (!shares) return;
 
 	shares->search(request);
@@ -628,7 +628,7 @@ void DC::HubSession::onSearch(QuickDC::Share::SearchRequest* request)
 
 void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	if (!queue || !request || !request->getTTH() || !core->server) return;
 
@@ -671,7 +671,7 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	int myPort = config->getBool("Active mode") ? config->getNumber("Port", 0) : 0;
 
 	/* NI is what identifies us on an NMDC hub, where we have no client ID. */
-	ADC::Command cmd(FOURCC('U','P','S','R'), ADC::CID::getInstance()->getCID());
+	ADC::Command cmd(FOURCC('U','P','S','R'), getCore().identity->getCID());
 	cmd.addArgument("NI", nickname);
 	cmd.addArgument("HI", hubIpPort.c_str());
 	cmd.addArgument("U4", std::to_string(myPort));
@@ -700,7 +700,7 @@ void DC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
 {
 	if (!result) return;
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
+	QuickDC::Core* core = &getCore();
 	QuickDC::QueueManager* queue = (core) ? core->queue : 0;
 	const char* hubUrl = (hub) ? hub->getUrl() : 0;
 
@@ -916,7 +916,7 @@ void DC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 	}
 	
 	
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = getCore().config;
 	config->setGroup("Network");
 	int numslots = config->getNumber("Slots", 3);
 	
@@ -963,12 +963,12 @@ void DC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		buffer.append("|");
 		char* addr = strdup(req->getToken());
 		char* pos = strchr(addr, ':');
-		if (pos && QuickDC::Core::getInstance()->server) {
+		if (pos && getCore().server) {
 			pos[0] = '\0';
 			Samurai::IO::Net::DatagramPacket packet(&buffer);
 			Samurai::IO::Net::InetSocketAddress peerAddr(addr, Samurai::Util::Convert::to_int32(&pos[1]), Samurai::IO::Net::InetAddress::Version::IPv4);
 			packet.setAddress(&peerAddr);
-			QuickDC::Core::getInstance()->server->send(&packet);
+			getCore().server->send(&packet);
 		}
 		free(addr);
 	}

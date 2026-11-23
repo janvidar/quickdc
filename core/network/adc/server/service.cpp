@@ -19,7 +19,6 @@
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/timestamp.h>
 
-#define LOCALHUB QuickDC::Core::getInstance()->localHub
 
 ADC::LocalHub::Service::Service(ADC::LocalHub::ServiceMap* map, const char* name, const char* desc) {
 	service = strdup(name);
@@ -148,7 +147,7 @@ bool ADC::LocalHub::SrvHelp::invoke(Command* cmd) {
 
 bool ADC::LocalHub::SrvUptime::invoke(Command* cmd) {
 	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
-	Samurai::TimeStamp startup = QuickDC::Core::getInstance()->startup;
+	Samurai::TimeStamp startup = hub->startedAt();
 	uint32_t seconds = startup.elapsed();
 	uint32_t days  = static_cast<int>(seconds) / 86400;
 	uint32_t temp  = (seconds - (days * 86400));

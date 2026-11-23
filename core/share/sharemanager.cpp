@@ -47,7 +47,9 @@ QuickDC::Share::Manager::Manager(QuickDC::Preferences* config_, QuickDC::Hash::M
                                  const char* dir)
 	: size(0), files(0), config(config_), hash(mgr),
 	  listdir(dir ? dir : "~/.quickdc"), filelists(false), attaching(false) {
-
+	/* Every TTH root is known once hashing falls idle, so that is when the lists
+	   are worth building and when an attachment that never got one is given up. */
+	if (hash) hash->setIdleCallback([this] { createFileLists(false); });
 }
 
 QuickDC::Share::Manager::Attachment::~Attachment() {
@@ -109,6 +111,8 @@ void QuickDC::Share::Manager::initialize() {
 }
 
 QuickDC::Share::Manager::~Manager() {
+	if (hash) hash->setIdleCallback(nullptr);
+
 	/* delete all shares here, they will remove themselves */
 	while (dirs.size()) {
 		QuickDC::Share::Dir* dir = dirs.back();
@@ -647,14 +651,6 @@ bool QuickDC::Share::Manager::registerAttachment(QuickDC::Share::Manager::Attach
 	}
 
 	/*
-	 * A Share::File announces its hash through Core::getInstance()->shares
-	 * without checking that there is one, so building one without a core would
-	 * take the process down. There is nothing to do about that from here except
-	 * decline the file.
-	 */
-	if (!QuickDC::Core::getInstance()) return false;
-
-	/*
 	 * A Share::File expects a directory: it reports its size through it, and
 	 * finds the manager and the hash cache through it. This one is not among
 	 * 'dirs', which is what keeps the file out of every file list, and scanning
@@ -785,11 +781,11 @@ void QuickDC::Share::Manager::loadAttachments() {
 
 	QDBG("Attachments remembered: %d", total);
 
-	if (!hash || !QuickDC::Core::getInstance()) {
-		/* Nothing can be offered without these two, and that says nothing about
-		   the entries themselves, so they are left in the configuration rather
-		   than rewritten as if they were stale. */
-		QERR("Cannot offer %d remembered attachment(s) without a hash manager and a core", total);
+	if (!hash) {
+		/* Nothing can be offered without one, and that says nothing about the
+		   entries themselves, so they are left in the configuration rather than
+		   rewritten as if they were stale. */
+		QERR("Cannot offer %d remembered attachment(s) without a hash manager", total);
 		return;
 	}
 

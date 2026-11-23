@@ -739,9 +739,8 @@ bool isRecordablePeer(const char* hubUrl, const char* cid)
  * A hub we are not logged in to answers false, which is the safe way round: this is
  * asked to refuse something, and "we cannot tell" must never refuse a download.
  */
-bool isOurselves(const char* hubUrl, const char* cid)
+bool isOurselves(const QuickDC::Core* core, const char* hubUrl, const char* cid)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
 	if (!core || !core->hubs || !hubUrl || !cid) return false;
 
 	QuickDC::Hub* hub = core->hubs->getHubByUrl(hubUrl);
@@ -751,8 +750,9 @@ bool isOurselves(const char* hubUrl, const char* cid)
 
 }
 
-QuickDC::QueueManager::QueueManager(const char* path_)
-	: verifier(0)
+QuickDC::QueueManager::QueueManager(Core* core_, const char* path_)
+	: core(core_)
+	, verifier(0)
 	, dirty(false)
 	, tokenCounter(0)
 	, lastSourceSearch(0)
@@ -812,7 +812,6 @@ enum QuickDC::QueueManager::SourceSearchResult QuickDC::QueueManager::sendSource
 	/* Only a hash can find a source; a name is whatever it is called here. */
 	if (!file || file->tth.size() != QUICKDC_TTH_LENGTH) return SourceSearchBadHash;
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
 	if (!core || !core->hubs) return SourceSearchNotSent;
 
 	const std::string suffix = makeToken();
@@ -954,7 +953,7 @@ bool QuickDC::QueueManager::addKnownSource(const char* tth, const char* hubUrl, 
 	if (!isTigerRoot(tth) || !isRecordablePeer(hubUrl, cid)) return false;
 
 	/* The author of a post is a known source for it, and sometimes that is us. */
-	if (isOurselves(hubUrl, cid)) return false;
+	if (isOurselves(core, hubUrl, cid)) return false;
 
 	QueueFile* file = getFileByTTH(tth);
 	if (!file) return false;
@@ -1378,7 +1377,6 @@ uint64_t QuickDC::QueueManager::chunkSizeFor(const FileSource* source) const
 
 uint64_t QuickDC::QueueManager::getChunkSize() const
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
 	if (!core || !core->config) return QUICKDC_CHUNK_SIZE;
 
 	core->config->setGroup("Network");
@@ -1390,7 +1388,6 @@ uint64_t QuickDC::QueueManager::getChunkSize() const
 
 size_t QuickDC::QueueManager::getMaxDownloads() const
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
 	if (!core || !core->config) return 3;
 
 	core->config->setGroup("Network");
@@ -1408,7 +1405,7 @@ QuickDC::FilelistRequest* QuickDC::QueueManager::requestFilelist(const char* hub
 	if (existing) return existing;
 
 	/* Whoever asked reads our own list off the disk instead. */
-	if (isOurselves(hub, cid))
+	if (isOurselves(core, hub, cid))
 	{
 		QDBG("Refusing a file list request: '%s' on '%s' is us", cid ? cid : "",
 			hub ? hub : "");
@@ -1707,7 +1704,6 @@ void QuickDC::QueueManager::expire()
 
 void QuickDC::QueueManager::schedule()
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
 	if (!core || !core->hubs) return;
 
 	size_t budget = getMaxDownloads();
@@ -1828,7 +1824,6 @@ void QuickDC::QueueManager::onFileComplete(QueueFile* file)
 
 	QDBG("All chunks downloaded for '%s'; verifying the hash", file->getLocalFilename());
 
-	QuickDC::Core* core = QuickDC::Core::getInstance();
 	if (!core || !core->hash)
 	{
 		QERR("No hash manager available; cannot verify '%s'", file->getLocalFilename());

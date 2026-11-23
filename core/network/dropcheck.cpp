@@ -411,14 +411,18 @@ const char* QuickDC::toString(QuickDC::DropMode mode)
  * api/dropverdict.h for why they are free functions rather than methods.
  */
 
-void QuickDC::setDropCheckListener(QuickDC::DropCheckListener* listener)
+void QuickDC::setDropCheckListener(QuickDC::Core& core, QuickDC::DropCheckListener* listener)
 {
-	Core* core = Core::getInstance();
-	if (!core) return;
+	if (!core.dropcheck) return;
 
-	if (!core->dropcheck) return;
+	core.dropcheck->setObserver(listener);
+}
 
-	core->dropcheck->setObserver(listener);
+QuickDC::Subscription QuickDC::observeDropCheck(QuickDC::Core& core, QuickDC::DropCheckListener* listener)
+{
+	if (!core.dropcheck) return Subscription();
+
+	return core.dropcheck->observe(listener);
 }
 
 namespace {
@@ -432,10 +436,9 @@ namespace {
  * entry points below, so that a lookup and a measurement cannot come to ask two
  * different servers about the same family.
  */
-std::string dropServerFor(bool ipv6)
+std::string dropServerFor(QuickDC::Core* core, bool ipv6)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
-	if (!core || !core->config) return std::string();
+	if (!core->config) return std::string();
 
 	core->config->setGroup("Network");
 
@@ -447,14 +450,14 @@ std::string dropServerFor(bool ipv6)
 
 }
 
-bool QuickDC::startDropCheck(bool ipv6)
+bool QuickDC::startDropCheck(Core& core_, bool ipv6)
 {
-	Core* core = Core::getInstance();
-	if (!core || !core->dropcheck || !core->config) return false;
+	Core* core = &core_;
+	if (!core->dropcheck || !core->config) return false;
 
 	if (core->dropcheck->isBusy()) return false;
 
-	const std::string host = dropServerFor(ipv6);
+	const std::string host = dropServerFor(core, ipv6);
 	if (host.empty()) return false;
 
 	core->config->setGroup("Network");
@@ -468,10 +471,10 @@ bool QuickDC::startDropCheck(bool ipv6)
 	return true;
 }
 
-bool QuickDC::startAddressLookup(bool ipv6)
+bool QuickDC::startAddressLookup(Core& core_, bool ipv6)
 {
-	Core* core = Core::getInstance();
-	if (!core || !core->dropcheck) return false;
+	Core* core = &core_;
+	if (!core->dropcheck) return false;
 
 	/*
 	 * A measurement in flight is not displaced for this. The two share the one
@@ -480,7 +483,7 @@ bool QuickDC::startAddressLookup(bool ipv6)
 	 */
 	if (core->dropcheck->isBusy()) return false;
 
-	const std::string host = dropServerFor(ipv6);
+	const std::string host = dropServerFor(core, ipv6);
 	if (host.empty()) return false;
 
 	core->dropcheck->startAddressLookup(host,
@@ -489,10 +492,10 @@ bool QuickDC::startAddressLookup(bool ipv6)
 	return true;
 }
 
-QuickDC::DropVerdict QuickDC::lastDropVerdict(bool ipv6)
+QuickDC::DropVerdict QuickDC::lastDropVerdict(const Core& core_, bool ipv6)
 {
-	Core* core = Core::getInstance();
-	if (!core || !core->dropcheck) return DropVerdict();
+	const Core* core = &core_;
+	if (!core->dropcheck) return DropVerdict();
 
 	return core->dropcheck->verdict(ipv6);
 }
@@ -516,15 +519,14 @@ bool QuickDC::dropMeasurementIsFresh(const QuickDC::DropVerdict& held, time_t no
 	return now - held.observedAt <= QUICKDC_REACHABILITY_MEASUREMENT_AGE;
 }
 
-void QuickDC::applyDropMeasurement()
+void QuickDC::applyDropMeasurement(Core& core_)
 {
-	Core* core = Core::getInstance();
-	if (!core) return;
+	Core* core = &core_;
 
 	/* Each family's own, into the record that answers for it and no other. */
 	for (const bool ipv6 : {false, true})
 	{
-		const DropVerdict verdict = lastDropVerdict(ipv6);
+		const DropVerdict verdict = lastDropVerdict(core_, ipv6);
 		if (!verdict.ran) continue;
 
 		/*

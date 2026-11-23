@@ -204,7 +204,7 @@ QuickDC::Protocol QuickDC::identifyDatagram(const char* buffer, size_t length)
 }
 
 
-QuickDC::ProtocolProbe::ProtocolProbe(std::shared_ptr<Samurai::IO::Net::Socket> sock) : QuickDC::Connection(std::move(sock), "Probing"), secure(false) {
+QuickDC::ProtocolProbe::ProtocolProbe(QuickDC::Core& core_, std::shared_ptr<Samurai::IO::Net::Socket> sock) : QuickDC::Connection(core_, std::move(sock), "Probing"), secure(false) {
 	timer = new Samurai::Timer(this, 30, true); /* if nothing happens in 30 seconds, close the connection */
 	manager->add(this);
 }
@@ -250,12 +250,12 @@ void QuickDC::ProtocolProbe::EventTimeout(Samurai::Timer*) {
  * datagram whose source was never proven is a reflection an attacker aims by
  * spoofing it, and this socket would be the amplifier.
  */
-void QuickDC::ProtocolProbe::probeDatagram(Samurai::IO::Net::DatagramSocket* socket, Samurai::IO::Net::DatagramPacket* packet) {
+void QuickDC::ProtocolProbe::probeDatagram(QuickDC::Core& core, Samurai::IO::Net::DatagramSocket* socket, Samurai::IO::Net::DatagramPacket* packet) {
 	if (packet->size() < 4) return;
 	Samurai::IO::Buffer* buffer = packet->getBuffer();
 	const char head[4] = { buffer->at(0), buffer->at(1), buffer->at(2), buffer->at(3) };
 
-	QuickDC::DropCheck* check = QuickDC::Core::getInstance()->dropcheck;
+	QuickDC::DropCheck* check = core.dropcheck;
 
 	if (check) {
 		std::vector<uint8_t> datagram(packet->size());
@@ -281,12 +281,12 @@ void QuickDC::ProtocolProbe::probeDatagram(Samurai::IO::Net::DatagramSocket* soc
 
 	switch (QuickDC::identifyDatagram(head, sizeof(head))) {
 		case Protocol::ADC:
-			ADC::DatagramHandler::onDatagram(socket, packet);
+			ADC::DatagramHandler::onDatagram(core, socket, packet);
 			break;
 
 		case Protocol::ADCHub:
 		{
-			ADC::LocalHub::Hub* hub = QuickDC::Core::getInstance()->localHub;
+			ADC::LocalHub::Hub* hub = core.localHub;
 			if (hub) {
 				(void) socket;
 				// hub->onDatagram(socket, packet);
@@ -352,7 +352,7 @@ void QuickDC::ProtocolProbe::probe() {
 	ssize_t len = socket->peek(buf, sizeof(buf) - 1);
 	if (len <= 0) return;
 
-	QuickDC::DropCheck* check = QuickDC::Core::getInstance()->dropcheck;
+	QuickDC::DropCheck* check = getCore().dropcheck;
 
 	if (check) {
 		std::string response;
@@ -368,7 +368,7 @@ void QuickDC::ProtocolProbe::probe() {
 	switch (QuickDC::identify(buf, static_cast<size_t>(len))) {
 		case Protocol::ADCHub:
 		{
-			ADC::LocalHub::Hub* hub = QuickDC::Core::getInstance()->localHub;
+			ADC::LocalHub::Hub* hub = getCore().localHub;
 			if (hub) {
 #ifdef DATADUMP
 				QDBG("ADC hub connection");
@@ -385,7 +385,7 @@ void QuickDC::ProtocolProbe::probe() {
 #ifdef DATADUMP
 			QDBG("DC connection");
 #endif // DATADUMP
-			DC::ClientSession* connection = new DC::ClientSession(socket);
+			DC::ClientSession* connection = new DC::ClientSession(core, socket);
 			socket->setEventHandler(connection);
 			socket.reset();
 			break;
@@ -396,7 +396,7 @@ void QuickDC::ProtocolProbe::probe() {
 #ifdef DATADUMP
 			QDBG("ADC connection");
 #endif // DATADUMP
-			ADC::ClientSession* connection = new ADC::ClientSession(socket, 0, 0, 0, secure);
+			ADC::ClientSession* connection = new ADC::ClientSession(core, socket, 0, 0, 0, secure);
 			socket->setEventHandler(connection);
 			socket.reset();
 			break;

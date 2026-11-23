@@ -65,7 +65,7 @@ DC::SendGetInfo::SendGetInfo(const char* nick, const char* me) : DC::Command()
 }
 
 
-DC::SendMyInfo::SendMyInfo(const char* nick, const char* description, const char* email, uint64_t shared_size) : DC::Command()
+DC::SendMyInfo::SendMyInfo(const QuickDC::Core& core_, const char* nick, const char* description, const char* email, uint64_t shared_size) : DC::Command()
 {
 	const char* connection = "10";  // FIXME
 	char flags = 0x01;              // FIXME
@@ -77,7 +77,7 @@ DC::SendMyInfo::SendMyInfo(const char* nick, const char* description, const char
 	 * the same code, because a client advertising A that then hands out an
 	 * unreachable address is worse to use than one that admits it is passive.
 	 */
-	const QuickDC::Core* core = QuickDC::Core::getInstance();
+	const QuickDC::Core* core = &core_;
 	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
 
@@ -92,9 +92,9 @@ DC::SendMyInfo::SendMyInfo(const char* nick, const char* description, const char
 	char* tag = static_cast<char*>(malloc(50));
 	snprintf(tag, 50, "<" PRODUCT " V:" VERSION ",M:%c,H:%d/%d/%d,S:%d>",
 			active_mode ? 'A' : 'P',
-			static_cast<int>(QuickDC::Core::getInstance()->hubs->countHubsNormal())+1,
-			static_cast<int>(QuickDC::Core::getInstance()->hubs->countHubsRegistered()),
-			static_cast<int>(QuickDC::Core::getInstance()->hubs->countHubsOperator())+1, numslots
+			static_cast<int>(core->hubs->countHubsNormal())+1,
+			static_cast<int>(core->hubs->countHubsRegistered()),
+			static_cast<int>(core->hubs->countHubsOperator())+1, numslots
 		);
 	
 	buffer->append("$MyINFO $ALL ");

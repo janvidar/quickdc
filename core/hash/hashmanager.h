@@ -6,6 +6,7 @@
 #ifndef HAVE_QUICKDC_HASH_MANAGER_H
 #define HAVE_QUICKDC_HASH_MANAGER_H
 
+#include <functional>
 #include "quickdc.h"
 #include <string>
 #include <vector>
@@ -75,6 +76,9 @@ class Manager
 		 *        pointed somewhere other than the real one.
 		 */
 		Manager(const char* cache_file = "~/.quickdc/hashdb.cache");
+
+		/** Called on the thread that runs process() once every queued job is done. */
+		void setIdleCallback(std::function<void()> callback) { onIdle = std::move(callback); }
 		virtual ~Manager();
 
 		/**
@@ -130,6 +134,8 @@ class Manager
 		Samurai::IO::File* getLeafData(const Samurai::IO::File& file, uint64_t& offset, uint64_t& length);
 		
 	protected:
+		std::function<void()> onIdle;
+
 		void loadCache();
 		void saveCache();
 

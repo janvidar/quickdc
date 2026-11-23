@@ -6,6 +6,7 @@
 #ifndef HAVE_QUICKDC_ADC_LOCALHUB_H
 #define HAVE_QUICKDC_ADC_LOCALHUB_H
 
+#include <samurai/timestamp.h>
 #include "quickdc.h"
 #include <string.h>
 #include <memory>
@@ -15,6 +16,8 @@
 #include <string>
 #include "api/bulletins.h"
 #include "network/adc/adccommon.h"
+
+namespace QuickDC { class Preferences; }
 #include "network/clientsession.h"
 #include <samurai/io/net/socketevent.h>
 #include <samurai/timer.h>
@@ -75,8 +78,11 @@ namespace LocalHub {
 		public Samurai::MessageListener
 	{
 		public:
-			Hub();
+			explicit Hub(QuickDC::Preferences& config);
 			virtual ~Hub();
+
+			/** When this hub started, which is what its uptime counts from. */
+			Samurai::TimeStamp startedAt() const { return startup; }
 
 			Hub(const Hub&) = delete;
 			Hub& operator=(const Hub&) = delete;
@@ -180,6 +186,9 @@ namespace LocalHub {
 			void onQuit(User* user, const char* msg = 0);
 			
 		protected:
+			QuickDC::Preferences& config;
+			Samurai::TimeStamp startup;
+
 			void EventHostLookup(const Samurai::IO::Net::Socket*) override;
 			void EventHostFound(const Samurai::IO::Net::Socket*) override;
 			void EventConnecting(const Samurai::IO::Net::Socket*) override;

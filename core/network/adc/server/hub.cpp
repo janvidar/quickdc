@@ -77,7 +77,10 @@
 		return; \
 	}
 
-ADC::LocalHub::Hub::Hub() {
+ADC::LocalHub::Hub::Hub(QuickDC::Preferences& config_)
+	: config(config_)
+	, startup(time(0))
+{
 	welcome    = "This hub is running " PRODUCT " " VERSION " on " SYSTEM "/" CPU;
 	hubname    = 0;
 	hubdesc    = 0;
@@ -169,7 +172,7 @@ ADC::LocalHub::Hub::~Hub() {
 }
 
 void ADC::LocalHub::Hub::readConfiguration() {
-	QuickDC::Preferences* config = QuickDC::Core::getInstance()->config;
+	QuickDC::Preferences* config = &this->config;
 	config->setGroup("Local hub");
 	
 	free(hubname);

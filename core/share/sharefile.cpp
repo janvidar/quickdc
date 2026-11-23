@@ -24,17 +24,13 @@ tth(0) {
 		if (file.matchExtension(known_ext[i].ext))
 			ftype |= known_ext[i].ftype;
 
-	QuickDC::Share::Dir* d = directory;
-	while (!d->manager) d = d->parent;
-	d->manager->hash->addJob(file, this);
+	directory->getManager()->hash->addJob(file, this);
 }
 
 QuickDC::Share::File::~File() {
 	if (!tth) {
-		QuickDC::Share::Dir* d = directory;
-		while (d && !d->manager) d = d->parent;
-		if (d)
-			d->manager->hash->removeJob(file);
+		if (QuickDC::Share::Manager* manager = directory ? directory->getManager() : nullptr)
+			manager->hash->removeJob(file);
 	}
 	
 	free(tth);
@@ -78,10 +74,8 @@ void QuickDC::Share::File::EventFileHashed(const QuickDC::Hash::Job* job)
 {
 	tth = strdup(job->getHashSum());
 	
-	if (QuickDC::Core::getInstance()->shares)
-	{
-		QuickDC::Core::getInstance()->shares->addLookupFile(getBaseFileName().c_str(), tth, this);
-	}
+	if (directory && directory->getManager())
+		directory->getManager()->addLookupFile(getBaseFileName().c_str(), tth, this);
 }
 
 

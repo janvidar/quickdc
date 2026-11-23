@@ -20,12 +20,13 @@ namespace Samurai {
 
 namespace QuickDC {
 class ConnectionManager;
+class Core;
 
 class Connection : public Samurai::IO::Net::SocketEventHandler
 {
 	public:
-		Connection(std::shared_ptr<Samurai::IO::Net::Socket> sock, const char* protocol);
-		Connection(Samurai::IO::Net::URL* url, const char* protocol);
+		Connection(Core& core, std::shared_ptr<Samurai::IO::Net::Socket> sock, const char* protocol);
+		Connection(Core& core, Samurai::IO::Net::URL* url, const char* protocol);
 		virtual ~Connection();
 
 		Connection(const Connection&) = delete;
@@ -40,6 +41,7 @@ class Connection : public Samurai::IO::Net::SocketEventHandler
 		ConnectionManager* getManager() const { return manager; }
 
 		Samurai::IO::Net::Socket* getSocket() { return socket.get(); }
+		Core& getCore() const { return core; }
 
 		/**
 		 * @return the name of the current protocol.
@@ -58,6 +60,7 @@ class Connection : public Samurai::IO::Net::SocketEventHandler
 		virtual void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError error, const char*) override = 0;
 	
 	protected:
+		Core& core;
 		std::shared_ptr<Samurai::IO::Net::Socket> socket;
 		ConnectionManager* manager;
 		const char* protocol;

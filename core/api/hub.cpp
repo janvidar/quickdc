@@ -30,8 +30,10 @@
 #include "config/preferences.h"
 #include "share/searchresult.h"
 
-QuickDC::Hub::Hub(HubListener* listener_, Samurai::IO::Net::URL* url_)
-	: session(0)
+QuickDC::Hub::Hub(Core& core_, HubListener* listener_, Samurai::IO::Net::URL* url_)
+	: core(core_)
+	, manager(core_.hubs)
+	, session(0)
 	, listener(listener_)
 	, requestedDisconnect(false)
 	, attempts(0)
@@ -51,7 +53,7 @@ QuickDC::Hub::Hub(HubListener* listener_, Samurai::IO::Net::URL* url_)
 	canonical += std::to_string(url->getPort());
 	canonicalUrl = strdup(canonical.c_str());
 
-	QuickDC::Core::getInstance()->hubs->add(this);
+	if (manager) manager->add(this);
 }
 
 QuickDC::Hub::~Hub()
@@ -75,10 +77,7 @@ QuickDC::Hub::~Hub()
 	delete url;
 	free(canonicalUrl);
 
-	if (QuickDC::Core::getInstance())
-	{
-		QuickDC::Core::getInstance()->hubs->remove(this);
-	}
+	if (manager) manager->remove(this);
 }
 
 void QuickDC::Hub::connect()

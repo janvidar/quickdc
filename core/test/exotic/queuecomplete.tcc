@@ -35,6 +35,9 @@
 #include <string>
 #include <unistd.h>
 
+/* The fixture's core; built in EXO_SETUP below. */
+QuickDC::Core* core = 0;
+
 /* A scratch home, so "~/downloads/..." is somewhere harmless. It carries the
    process id, because under DISCOVER each case is a process of its own. */
 static const std::string TEST_HOME =
@@ -145,8 +148,6 @@ class Hasher : public QuickDC::Hash::JobListener
 template<typename Predicate>
 static bool pump(QuickDC::QueueManager* queue, Predicate ready, int timeout_ms = 10000)
 {
-	QuickDC::Core* core = QuickDC::Core::getInstance();
-
 	for (int waited = 0; waited <= timeout_ms; waited += 10)
 	{
 		if (core && core->hash) core->hash->process();
@@ -161,7 +162,7 @@ static bool pump(QuickDC::QueueManager* queue, Predicate ready, int timeout_ms =
 static std::string tthOf(const std::string& path)
 {
 	Hasher hasher;
-	QuickDC::Core::getInstance()->hash->addJob(Samurai::IO::File(path), &hasher);
+	core->hash->addJob(Samurai::IO::File(path), &hasher);
 
 	pump(0, [&] { return hasher.done; });
 	return hasher.tth;
@@ -185,7 +186,7 @@ class Download
 			if (!writeFile(source_path, bytes)) ok = false;
 			tth = withTTH ? tthOf(source_path) : std::string();
 
-			queue = std::make_unique<QuickDC::QueueManager>(queue_path.c_str());
+			queue = std::make_unique<QuickDC::QueueManager>(core, queue_path.c_str());
 			queue->addListener(&watcher);
 
 			file = queue->add(name.c_str(), withTTH ? tth.c_str() : 0, size);
@@ -239,7 +240,6 @@ namespace {
 std::string config_file;
 std::string session_file;
 std::string hashdb_file;
-QuickDC::Core* core = 0;
 
 }
 

@@ -46,6 +46,9 @@
 #include <unistd.h>
 #include <vector>
 
+/* The fixture's core; built in EXO_SETUP below. */
+static QuickDC::Core* core = 0;
+
 static const int TIMEOUT_MS = 5000;
 
 /* Long enough for a key to be derived from, as a real peer sends. */
@@ -251,7 +254,7 @@ class Fixture
 				"dchub://127.0.0.1:" + std::to_string(hub.port());
 			url = std::make_unique<Samurai::IO::Net::URL>(address);
 
-			ui = std::make_unique<QuickDC::Hub>(&listener, url.get());
+			ui = std::make_unique<QuickDC::Hub>(*core, &listener, url.get());
 			hubsession = new DC::HubSession(ui.get(), &listener, url.get());
 			hubsession->connect();
 			if (!hub.accepted()) return;
@@ -272,7 +275,7 @@ class Fixture
 			 */
 			hubsession->expectPeer("peernick");
 
-			session = new DC::ClientSession(peer.theirs, hubsession);
+			session = new DC::ClientSession(*core, peer.theirs, hubsession);
 			ready = true;
 		}
 
@@ -353,7 +356,6 @@ class Fixture
 static std::string cfgPath;
 static std::string sesPath;
 static std::string queuePath;
-static QuickDC::Core* core = 0;
 
 /*
  * A Fixture that never became ready could not listen, dial or log in over the
@@ -492,7 +494,7 @@ EXO_TEST(dcclientsession_a_file_we_do_not_have_is_refused,
  */
 EXO_TEST(dcclientsession_a_browse_asks_for_the_whole_list,
 {
-	QuickDC::QueueManager* queue = QuickDC::Core::getInstance()->queue;
+	QuickDC::QueueManager* queue = core->queue;
 
 	bool connected = false;
 	bool shookHands = false;
@@ -742,7 +744,7 @@ EXO_TEST(dcclientsession_the_right_answer_to_our_lock_is_accepted,
 	 * so what bounds that is it authorising one connection rather than every
 	 * connection until the process ends.
 	 */
-	QuickDC::SecurityManager* security = QuickDC::Core::getInstance()->securityManager;
+	QuickDC::SecurityManager* security = core->securityManager;
 	EXO_ASSERT_NOT_NULL(security);
 	EXO_ASSERT(!security->isAuthorized(QuickDC::Clearance::NMDC, 0, 0, "peernick", 0));
 	return 1;

@@ -41,9 +41,11 @@ namespace Share {
 /**
  * This class manages multiple hub connections.
  */
+class Core;
+
 class HubManager : public Samurai::TimerListener {
 	public:
-		HubManager();
+		explicit HubManager(Core& core);
 		~HubManager() override;
 	
 		void add(Hub* hub);
@@ -152,6 +154,7 @@ class HubManager : public Samurai::TimerListener {
 		size_t countHubsOperator(const HubSession* except = 0);
 
 	protected:
+		Core& core;
 		void EventTimeout(Samurai::Timer* timer) override;
 
 		/**

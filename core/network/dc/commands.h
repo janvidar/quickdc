@@ -8,6 +8,8 @@
 
 #include "network/dc/dccommandparser.h"
 
+namespace QuickDC { class Core; }
+
 namespace DC {
 
 /* Client-to-hub commands */
@@ -50,7 +52,7 @@ class SendGetInfo : public Command
 class SendMyInfo : public Command
 {
 	public:
-		SendMyInfo(const char* nick, const char* description, const char* email, uint64_t shared_size);
+		SendMyInfo(const QuickDC::Core& core, const char* nick, const char* description, const char* email, uint64_t shared_size);
 };
 
 class SendTo : public Command

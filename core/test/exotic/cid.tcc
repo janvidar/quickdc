@@ -13,8 +13,7 @@
  * adc_parser.tcc; what is here is the relationship between a CID and its PID,
  * and the identity surviving a restart.
  *
- * QuickDC::Core is a singleton reading its configuration from disk, so it is a
- * per-file fixture. Each case establishes whatever identity it needs rather than
+ * QuickDC::Core reads its configuration from disk, so it is a per-file fixture. Each case establishes whatever identity it needs rather than
  * inheriting one from the case before it: the identity lives in a file, and a
  * test that only passes because an earlier one wrote something is a test that
  * cannot be run on its own.
@@ -36,6 +35,9 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
+
+/* The fixture's core; built in EXO_SETUP below. */
+QuickDC::Core* core = 0;
 
 #define CID_LENGTH 39
 
@@ -70,12 +72,14 @@ bool writeFile(const std::string& path, const std::string& content)
 	return ok;
 }
 
-/* Throws the singleton away, so the next getInstance() starts over. */
+std::unique_ptr<ADC::CID> held_identity;
+
+/* An identity read from the fixture's configuration, as a core starting up would. */
 ADC::CID* freshIdentity()
 {
-	delete ADC::global_cid;
-	ADC::global_cid = 0;
-	return ADC::CID::getInstance();
+	held_identity.reset();
+	held_identity = std::make_unique<ADC::CID>(*core->config);
+	return held_identity.get();
 }
 
 /*
@@ -105,12 +109,10 @@ std::string stored(QuickDC::Preferences* config, const char* key)
 }
 
 /*
- * The fixture. One Core, because it is a singleton and the identity reads its
- * configuration through it.
+ * The fixture. One Core, whose configuration every identity here is read from.
  */
 std::string cfg;
 std::string ses;
-QuickDC::Core* core = 0;
 
 QuickDC::Preferences* config()
 {
@@ -143,8 +145,7 @@ EXO_SETUP({
 });
 
 EXO_TEARDOWN({
-	delete ADC::global_cid;
-	ADC::global_cid = 0;
+	held_identity.reset();
 
 	/* Before the files, which it holds open and rewrites as it goes. */
 	delete core;

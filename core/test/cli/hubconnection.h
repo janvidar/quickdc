@@ -9,7 +9,7 @@
 
 class HubConnection : public QuickDC::Hub, public QuickDC::HubListener {
 	public:
-		HubConnection(Samurai::IO::Net::URL* url);
+		HubConnection(QuickDC::Core& core, Samurai::IO::Net::URL* url);
 		virtual ~HubConnection();
 		
 		void status(const char* string, const char* string2);
