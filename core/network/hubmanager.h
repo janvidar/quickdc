@@ -103,6 +103,9 @@ class HubManager : public Samurai::TimerListener {
 		 */
 		void requestClientInfoUpdate();
 
+		/** Have every hub take on the identity the settings now give it; see Hub::refreshIdentity(). */
+		void refreshIdentity();
+
 		/** True while an update is scheduled but has not been sent. */
 		bool isClientInfoUpdatePending() const { return info_timer != 0; }
 

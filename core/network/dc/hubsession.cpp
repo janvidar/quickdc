@@ -95,7 +95,6 @@ DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Sa
 	{
 		nickname = QuickDC::Settings::read(*config, QuickDC::Settings::Nickname);
 		if (nickname.empty()) nickname = PRODUCT;
-		session->setString("Nickname", nickname);
 	}
 
 	session->setTime("Last Connect", time(0));
@@ -110,7 +109,6 @@ DC::HubSession::~HubSession()
 	/* The group is shared, and every other hub session moves it, so it is
 	   selected here rather than relied on from the constructor. */
 	session->setGroup(address);
-	session->setString("Nickname", nickname);
 	session->setString("Password", password);
 	session->write();
 

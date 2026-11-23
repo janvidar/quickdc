@@ -572,6 +572,7 @@ class QuickDC::Core::Automation : public AutomationState, private PreferencesLis
 			, portforward(*this)
 			, dropcheck(*this)
 			, watched(owner->config ? owner->config->subscribe(this) : Subscription())
+			, watchedSession(owner->session ? owner->session->subscribe(this) : Subscription())
 		{
 		}
 
@@ -588,9 +589,17 @@ class QuickDC::Core::Automation : public AutomationState, private PreferencesLis
 		CoreDropCheckListener dropcheck;
 
 	private:
-		void EventSettingChanged(const Preferences&, const std::string& group,
-		                         const std::string&, const std::string*) override
+		void EventSettingChanged(const Preferences& store, const std::string& group,
+		                         const std::string& key, const std::string*) override
 		{
+			/* The session store files a hub's own identity under its address. */
+			if (&store == core->session)
+			{
+				if (key == "Nickname" || key == "Description" || key == "E-mail")
+					identityChanged = true;
+				return;
+			}
+
 			if (group == "Network") networkChanged = true;
 			else if (group == "User") identityChanged = true;
 			else if (group == "Local hub") localHubChanged = true;
@@ -600,6 +609,7 @@ class QuickDC::Core::Automation : public AutomationState, private PreferencesLis
 		void measure(const NetworkPlan& plan);
 
 		Subscription watched;
+		Subscription watchedSession;
 		NetworkPlan applied;
 		bool networkChanged = false;
 		bool identityChanged = false;
@@ -651,7 +661,10 @@ void QuickDC::Core::Automation::reconcile()
 	if (!core->config) return;
 
 	const NetworkPlan plan = planFrom(*core->config);
-	bool tellHubs = identityChanged;
+	bool tellHubs = false;
+
+	/* Before anything is announced, so that what is announced is the new identity. */
+	if (identityChanged && core->hubs) core->hubs->refreshIdentity();
 
 	if (networkChanged && !(plan == applied))
 	{

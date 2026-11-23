@@ -253,3 +253,10 @@ size_t QuickDC::HubManager::countHubsOperator(const HubSession* except) {
 	return n;
 }
 
+
+void QuickDC::HubManager::refreshIdentity() {
+	for (size_t i = 0; i < hubs.size(); i++) hubs[i]->refreshIdentity();
+
+	/* Throttled: a description changed on several hubs is one update to each. */
+	requestClientInfoUpdate();
+}

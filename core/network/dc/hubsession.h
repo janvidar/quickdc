@@ -70,6 +70,16 @@ class HubSession
 		/* $MyINFO is NMDC's status update, and re-sending it is how a hub is
 		   told that something in it changed. */
 		void sendClientInfo() override { if (isLoggedIn()) sendMyInfo(); }
+
+		std::string currentNick() const override { return nickname; }
+
+		void setIdentity(const std::string& nick, const std::string& description_,
+		                 const std::string& email_) override
+		{
+			if (!isLoggedIn()) nickname = nick;
+			description = description_;
+			email = email_;
+		}
 		void sendSearchRequest(QuickDC::Share::SearchRequest* request) override;
 		void sendConnectionRequest(const QuickDC::User*, const char* token) override;
 		

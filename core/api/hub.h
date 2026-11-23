@@ -432,6 +432,14 @@ class Hub
 		void disconnect();
 
 		/**
+		 * Bring the session in line with the identity the settings now give this
+		 * hub. A changed nickname reconnects, since a hub knows a logged-in user
+		 * by it and many refuse to have it changed under them; anything else
+		 * goes out with the next INF.
+		 */
+		void refreshIdentity();
+
+		/**
 		 * @param richText the text is markdown, and the message should carry the RT
 		 *        flag saying so. ADC only; NMDC has nowhere to put it.
 		 */

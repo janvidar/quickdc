@@ -27,6 +27,7 @@
 #include "network/hubmanager.h"
 #include "api/hub.h"
 #include "api/core.h"
+#include "config/settings.h"
 #include "config/preferences.h"
 #include "share/searchresult.h"
 
@@ -490,3 +491,25 @@ void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 	listener->EventReconnectScheduled(wait);
 }
 
+
+void QuickDC::Hub::refreshIdentity()
+{
+	if (!session || !core.config || !core.session) return;
+
+	const std::string group = getUrl();
+
+	std::string nick = Settings::readForHub(*core.session, group, *core.config, Settings::Nickname);
+	if (nick.empty()) nick = Settings::read(*core.config, Settings::Nickname);
+	if (nick.empty()) nick = PRODUCT;
+
+	if (session->isLoggedIn() && nick != session->currentNick())
+	{
+		QDBG("Reconnecting to '%s' as '%s'", canonicalUrl, nick.c_str());
+		connect();
+		return;
+	}
+
+	session->setIdentity(nick,
+		Settings::readForHub(*core.session, group, *core.config, Settings::Description),
+		Settings::readForHub(*core.session, group, *core.config, Settings::Email));
+}

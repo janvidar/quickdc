@@ -4554,3 +4554,129 @@ EXO_TEST(hubsession_no_ipv6_endpoint_is_claimed_before_one_is_known,
 	}
 	return 1;
 });
+
+/* ------------------------------------------------------------------------- */
+/* Following the identity in the settings                                    */
+/* ------------------------------------------------------------------------- */
+
+namespace {
+
+/* Puts a [User] setting back as it was, since every case here shares the core. */
+class UserSetting {
+	public:
+		explicit UserSetting(const char* key)
+			: key(key)
+			, had(core->config->haveSetting("User", key))
+			, was(core->config->peekString("User", key, ""))
+		{
+		}
+
+		~UserSetting()
+		{
+			if (had) core->config->setString("User", key, was);
+			else core->config->remove("User", key);
+		}
+
+	private:
+		const char* key;
+		bool had;
+		std::string was;
+};
+
+/* Answer a client's HSUP and INF on 'fake' until it is logged in; its INF is returned. */
+std::string loginOn(FakeHub& fake, const char* sid = "AAAA")
+{
+	std::string line;
+	if (!fake.nextLine(line) || line.compare(0, 4, "HSUP") != 0) return std::string();
+	fake.send("ISUP ADBASE ADTIGR");
+	pump([] { return false; }, 60);
+	fake.send(std::string("ISID ") + sid);
+	pump([] { return false; }, 60);
+	if (!fake.nextLine(line) || line.compare(0, 4, "BINF") != 0) return std::string();
+	fake.send(line);
+	pump([] { return false; }, 60);
+	return line;
+}
+
+}
+
+/* A description changed while logged in goes out with the next INF, and nothing reconnects. */
+EXO_TEST(hubsession_a_changed_description_goes_out_without_reconnecting,
+{
+	UserSetting keep("Description");
+	core->config->setString("User", "Description", "before");
+
+	FakeHub fake;
+	Listener listener;
+	if (!fake.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Samurai::IO::Net::URL url("adc://127.0.0.1:" + std::to_string(fake.port()));
+	QuickDC::Hub ui(*core, &listener, &url);
+	ui.connect();
+	EXO_ASSERT(fake.accepted());
+	EXO_ASSERT(infField(loginOn(fake), "DE") == "before");
+
+	const auto first = fake.peer;
+	fake.drain();
+	fake.received.clear();
+
+	core->config->setString("User", "Description", "after");
+	ui.refreshIdentity();
+	core->hubs->sendClientInfoToAllHubs();
+
+	std::string line;
+	EXO_ASSERT(fake.nextLine(line));
+	EXO_ASSERT(line.compare(0, 4, "BINF") == 0);
+	EXO_ASSERT(infField(line, "DE") == "after");
+	EXO_ASSERT(fake.peer == first);
+	EXO_ASSERT(!fake.disconnected);
+	return 1;
+});
+
+/*
+ * A nickname changed while logged in reconnects under the new one: a hub knows a
+ * logged-in user by it, and many refuse to see it change.
+ */
+EXO_TEST(hubsession_a_changed_nickname_reconnects_under_it,
+{
+	UserSetting keep("Nickname");
+	core->config->setString("User", "Nickname", "first-name");
+
+	FakeHub fake;
+	Listener listener;
+	if (!fake.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	Samurai::IO::Net::URL url("adc://127.0.0.1:" + std::to_string(fake.port()));
+	QuickDC::Hub ui(*core, &listener, &url);
+	ui.connect();
+	EXO_ASSERT(fake.accepted());
+	EXO_ASSERT(infField(loginOn(fake), "NI") == "first-name");
+
+	const auto first = fake.peer;
+	core->config->setString("User", "Nickname", "second-name");
+	ui.refreshIdentity();
+
+	EXO_ASSERT(pump([&] { return fake.peer && fake.peer != first; }));
+	fake.received.clear();
+	EXO_ASSERT(infField(loginOn(fake, "BBBB"), "NI") == "second-name");
+	return 1;
+});
+
+/* The name a session used is not left behind as this hub's own, outranking the setting. */
+EXO_TEST(hubsession_a_closed_session_leaves_no_nickname_behind,
+{
+	UserSetting keep("Nickname");
+	core->config->setString("User", "Nickname", "global-name");
+
+	std::string group;
+	{
+		Session s;
+		if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+		EXO_ASSERT(s.ready);
+		EXO_ASSERT(s.login());
+		group = "adc://127.0.0.1:" + std::to_string(s.hub.port());
+	}
+
+	EXO_ASSERT(!core->session->haveSetting(group, "Nickname"));
+	return 1;
+});

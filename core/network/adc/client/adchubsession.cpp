@@ -278,7 +278,6 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	{
 		const std::string fallback = QuickDC::Settings::read(*config, QuickDC::Settings::Nickname);
 		nickname = fallback.empty() ? std::string(PRODUCT) : fallback;
-		session->setString("Nickname", nickname);
 	}
 
 	session->setTime("Last Connect", time(0));
@@ -293,7 +292,6 @@ ADC::HubSession::~HubSession()
 	/* The group is shared, and every other hub session moves it, so it is
 	   selected here rather than relied on from the constructor. */
 	session->setGroup(address);
-	session->setString("Nickname", nickname);
 	session->setString("Password", password);
 	session->write();
 

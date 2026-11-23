@@ -9,6 +9,7 @@
 /* Named below, and this header is otherwise reached only through others that
    happen to have included them first. */
 #include <stdint.h>
+#include <string>
 #include <time.h>
 
 namespace QuickDC {
@@ -102,6 +103,17 @@ class HubSession {
 		 * often as some hubs see this as unnesesary traffic.
 		 */
 		virtual void sendClientInfo() = 0;
+
+		/** The nickname this session goes by on the hub. */
+		virtual std::string currentNick() const = 0;
+
+		/**
+		 * Take on this identity for what is sent from now on. The nickname is
+		 * taken only before logging in: once logged in, a hub knows us by it,
+		 * and changing it is Hub::refreshIdentity()'s business.
+		 */
+		virtual void setIdentity(const std::string& nick, const std::string& description,
+		                         const std::string& email) = 0;
 		
 		
 

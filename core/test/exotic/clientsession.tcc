@@ -212,6 +212,8 @@ class RecordingHubSession : public QuickDC::HubSession
 		void sendConnectionRequest(const QuickDC::User*, const char*) override { }
 		void sendSearchRequest(QuickDC::Share::SearchRequest*) override { }
 		void sendClientInfo() override { }
+		std::string currentNick() const override { return std::string(); }
+		void setIdentity(const std::string&, const std::string&, const std::string&) override { }
 		void sendPassword(const char*) override { }
 		const QuickDC::User* getUser(const char*) override { return 0; }
 		const QuickDC::User* getLocalUser() override { return 0; }

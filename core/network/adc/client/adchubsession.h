@@ -107,6 +107,16 @@ class HubSession :
 		void sendAdminUserKick(const QuickDC::User*) override;
 		void sendAdminUserRedirect(const QuickDC::User*, const char*, const char*) override;
 		void sendClientInfo() override;
+
+		std::string currentNick() const override { return nickname; }
+
+		void setIdentity(const std::string& nick, const std::string& description_,
+		                 const std::string& email_) override
+		{
+			if (!isLoggedIn()) nickname = nick;
+			description = description_;
+			email = email_;
+		}
 		void sendSearchRequest(QuickDC::Share::SearchRequest* request) override;
 		void sendConnectionRequest(const QuickDC::User*, const char* token) override;
 
