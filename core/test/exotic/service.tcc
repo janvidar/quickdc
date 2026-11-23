@@ -203,3 +203,24 @@ EXO_TEST(service_an_ended_subscription_is_told_nothing_more,
 	running.onCore([&] { b.reset(); });
 	return 1;
 });
+
+/* A source that cannot name a file list is refused rather than left waiting. */
+EXO_TEST(service_a_file_list_nobody_could_be_asked_for_is_refused,
+{
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::RequestFilelist{
+		"adc://hub.example.org:412", "../escape"}));
+	EXO_ASSERT(recorder.waitFor(1));
+
+	const std::vector<QuickDC::Api::Event> events = recorder.taken();
+	const auto* failed = events[0].as<QuickDC::Api::Events::FilelistFailed>();
+	EXO_ASSERT(failed != nullptr);
+	if (failed) EXO_ASSERT(failed->sourceId == "../escape");
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});

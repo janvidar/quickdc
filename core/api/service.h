@@ -8,6 +8,7 @@
 
 #include "api/attachments.h"
 #include "api/protocol.h"
+#include "network/downloadqueue.h"
 #include "api/subscription.h"
 
 #include <map>
@@ -27,7 +28,8 @@ namespace Api {
  * objects never have to be handed out: what the core lends a listener here is
  * copied into an Event before anybody outside sees it.
  */
-class Service : private DropCheckListener, private Share::AttachmentListener {
+class Service : private DropCheckListener, private Share::AttachmentListener,
+                private QueueListener {
 	public:
 		explicit Service(Core& core);
 		~Service() override;
@@ -51,6 +53,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener {
 		void run(const Commands::ApplyPortForwarding& command);
 		void run(const Commands::RepublishClientInfo& command);
 		void run(const Commands::AttachFile& command);
+		void run(const Commands::RequestFilelist& command);
 
 		/** Whether there is a server to ask; publishes why not where there is not. */
 		bool haveReachabilityServer();
@@ -62,9 +65,12 @@ class Service : private DropCheckListener, private Share::AttachmentListener {
 		void EventAttachmentReady(const char* path, const char* tth, uint64_t size) override;
 		void EventAttachmentFailed(const char* path, const char* reason) override;
 
+		void EventFilelistFinished(const FilelistRequest* request) override;
+
 		Core& core;
 		ListenerList<EventSink> sinks;
 		Subscription dropObserved;
+		Subscription queueObserved;
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
 };
 

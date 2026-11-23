@@ -10,6 +10,9 @@
 #include "config/preferences.h"
 #include "network/dropcheck.h"
 #include "network/hublist.h"
+#include "api/hub.h"
+#include "share/dcfilelist.h"
+#include <samurai/io/file.h>
 #include "network/hubmanager.h"
 #include "network/portforward.h"
 #include "share/sharemanager.h"
@@ -56,9 +59,57 @@ class QuickDC::Api::Service::HubListFetch final : public QuickDC::HubListListene
 		QuickDC::HubList list;
 };
 
+namespace {
+
+QuickDC::Api::RemoteDirectory converted(const Share::RemoteDir* dir)
+{
+	QuickDC::Api::RemoteDirectory out;
+	if (!dir) return out;
+
+	out.name = dir->getName() ? dir->getName() : "";
+	out.size = dir->getSize();
+	out.fileCount = dir->getFiles();
+
+	out.files.reserve(dir->countEntries());
+	for (size_t n = 0; n < dir->countEntries(); ++n)
+	{
+		const Share::RemoteFile* file = dir->getEntry(n);
+		if (!file) continue;
+
+		QuickDC::Api::RemoteFile entry;
+		entry.name = file->getName() ? file->getName() : "";
+		entry.size = file->getSize();
+		if (const char* tth = file->getTTH()) entry.tth = tth;
+		out.files.push_back(std::move(entry));
+	}
+
+	out.dirs.reserve(dir->countSubdirs());
+	for (size_t n = 0; n < dir->countSubdirs(); ++n)
+		if (const Share::RemoteDir* subdir = dir->getSubdir(n))
+			out.dirs.push_back(converted(subdir));
+
+	return out;
+}
+
+/* The list at 'path', decoded; false where there is none or it cannot be read. */
+bool decodeList(const std::string& path, QuickDC::Api::RemoteDirectory& root)
+{
+	Samurai::IO::File file(path);
+	if (!file.exists()) return false;
+
+	Share::RemoteFileList list(&file);
+	if (!list.decode()) return false;
+
+	root = converted(list.root);
+	return true;
+}
+
+}
+
 QuickDC::Api::Service::Service(Core& core_)
 	: core(core_)
 	, dropObserved(observeDropCheck(core_, this))
+	, queueObserved(core_.queue ? core_.queue->subscribe(this) : Subscription())
 {
 }
 
@@ -203,4 +254,53 @@ void QuickDC::Api::Service::EventAttachmentFailed(const char* path, const char* 
 {
 	using Failed = Events::AttachmentFailed;
 	publish(Failed{path ? path : "", Failed::Why::Failed, reason ? reason : ""});
+}
+
+void QuickDC::Api::Service::run(const Commands::RequestFilelist& command)
+{
+	using Failed = Events::FilelistFailed;
+
+	Hub* hub = core.hubs ? core.hubs->getHubByUrl(command.hubUrl.c_str()) : nullptr;
+	if (hub && hub->isLocalUser(command.sourceId.c_str()))
+	{
+		Events::FilelistReady ready{command.hubUrl, command.sourceId, RemoteDirectory()};
+		bool decoded = false;
+
+		if (core.shares)
+		{
+			const std::string path = core.shares->getFilelistDirectory() + "/files.xml";
+			if (!Samurai::IO::File(path).exists()) core.shares->createFileLists(true);
+			decoded = decodeList(path, ready.root);
+		}
+
+		if (decoded) publish(ready);
+		else publish(Failed{command.hubUrl, command.sourceId, Failed::Why::OwnListUnreadable});
+		return;
+	}
+
+	FilelistRequest* request = core.queue
+		? core.queue->requestFilelist(command.hubUrl.c_str(), command.sourceId.c_str())
+		: nullptr;
+
+	if (!request)
+	{
+		publish(Failed{command.hubUrl, command.sourceId, Failed::Why::Refused});
+		return;
+	}
+
+	/* Now rather than at the next turn, so the connection is asked for at once. */
+	core.queue->process();
+}
+
+void QuickDC::Api::Service::EventFilelistFinished(const FilelistRequest* request)
+{
+	using Failed = Events::FilelistFailed;
+
+	Events::FilelistReady ready{request->getHubUrl(), request->getClientID(), RemoteDirectory()};
+	const char* path = request->getLocalFilename();
+
+	if (path && decodeList(path, ready.root))
+		publish(ready);
+	else
+		publish(Failed{ready.hubUrl, ready.sourceId, Failed::Why::NotArrived});
 }

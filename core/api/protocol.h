@@ -31,11 +31,35 @@
 namespace QuickDC {
 namespace Api {
 
+struct RemoteFile {
+	std::string name;
+	uint64_t size = 0;
+	/** Empty where the list did not carry one. */
+	std::string tth;
+};
+
+struct RemoteDirectory {
+	std::string name;
+	uint64_t size = 0;
+	uint64_t fileCount = 0;
+	std::vector<RemoteFile> files;
+	std::vector<RemoteDirectory> dirs;
+};
+
 namespace Commands {
 
 /** Download and parse the hublist at 'url'; one at a time per address. */
 struct FetchHubList {
 	std::string url;
+};
+
+/**
+ * Browse what the user 'sourceId' shares on the hub at 'hubUrl'. Our own
+ * share is read off this disk rather than asked of the hub.
+ */
+struct RequestFilelist {
+	std::string hubUrl;
+	std::string sourceId;
 };
 
 /** Measure reachability against the configured server, IPv4 first. */
@@ -86,6 +110,27 @@ struct HubListFetched {
 struct HubListFailed {
 	std::string url;
 	std::string reason;
+};
+
+struct FilelistReady {
+	std::string hubUrl;
+	std::string sourceId;
+	RemoteDirectory root;
+};
+
+struct FilelistFailed {
+	enum class Why {
+		/** The download queue would not take the request. */
+		Refused,
+		/** It is this client's own list, and that could not be read. */
+		OwnListUnreadable,
+		/** The request ended without a list that could be read. */
+		NotArrived
+	};
+
+	std::string hubUrl;
+	std::string sourceId;
+	Why why = Why::NotArrived;
 };
 
 /** A file offered by AttachFile is hashed and can now be asked for. */
@@ -146,7 +191,8 @@ struct Command {
 		Commands::ReplayReachability,
 		Commands::ApplyPortForwarding,
 		Commands::RepublishClientInfo,
-		Commands::AttachFile
+		Commands::AttachFile,
+		Commands::RequestFilelist
 	>;
 
 	template<typename T>
@@ -163,7 +209,9 @@ struct Event {
 		Events::ReachabilityMeasured,
 		Events::ReachabilityCheckFailed,
 		Events::AttachmentReady,
-		Events::AttachmentFailed
+		Events::AttachmentFailed,
+		Events::FilelistReady,
+		Events::FilelistFailed
 	>;
 
 	template<typename T>

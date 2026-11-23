@@ -600,3 +600,40 @@ EXO_TEST(queue_empty_file,
 	EXO_ASSERT(check("empty file", "", ""));
 	return 1;
 });
+
+/* A file list request is announced as it ends, while it can still be read. */
+EXO_TEST(queue_a_file_list_request_is_announced_as_it_ends,
+{
+	class Watcher : public QuickDC::QueueListener {
+		public:
+			void EventFilelistFinished(const QuickDC::FilelistRequest* request) override
+			{
+				hub = request->getHubUrl();
+				cid = request->getClientID();
+				count++;
+			}
+
+			std::string hub;
+			std::string cid;
+			int count = 0;
+	};
+
+	const std::string path = queuePath();
+	{
+		QuickDC::QueueManager queue(path.c_str());
+		Watcher watcher;
+		QuickDC::Subscription subscription = queue.subscribe(&watcher);
+
+		QuickDC::FilelistRequest* request =
+			queue.requestFilelist("adc://hub.example.org:412", "SOMEBODYSCID");
+		EXO_ASSERT(request != nullptr);
+		EXO_ASSERT_EQ_INT(watcher.count, 0);
+
+		queue.removeFilelistRequest(request);
+		EXO_ASSERT_EQ_INT(watcher.count, 1);
+		EXO_ASSERT(watcher.hub == "adc://hub.example.org:412");
+		EXO_ASSERT(watcher.cid == "SOMEBODYSCID");
+	}
+	removeFile(path);
+	return 1;
+});

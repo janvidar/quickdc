@@ -567,6 +567,13 @@ class QueueListener {
 		 * tell a completed download from a cancelled one.
 		 */
 		virtual void EventQueueFileVerified(const QueueFile*) { }
+
+		/**
+		 * A file list request ended, however it ended: downloaded, given up on,
+		 * or refused. Where it arrived it is at getLocalFilename() by now.
+		 * Emitted just before the request is deleted.
+		 */
+		virtual void EventFilelistFinished(const FilelistRequest*) { }
 };
 
 class QueueManager {

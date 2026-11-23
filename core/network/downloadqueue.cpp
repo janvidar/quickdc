@@ -1463,6 +1463,8 @@ void QuickDC::QueueManager::removeFilelistRequest(FilelistRequest* request)
 		}
 	}
 
+	listeners.notify([request](QueueListener& l) { l.EventFilelistFinished(request); });
+
 	delete request;
 }
 
