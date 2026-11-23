@@ -6,6 +6,8 @@
 #ifndef HAVE_QUICKDC_PROTOCOL_PROBE_H
 #define HAVE_QUICKDC_PROTOCOL_PROBE_H
 
+#include <string>
+#include <string_view>
 #include "quickdc.h"
 #include "network/connection.h"
 #include <samurai/timer.h>
@@ -38,6 +40,20 @@ enum class Protocol { Unknown, TLS, ADC, ADCHub, DC, HTTP };
  *         few bytes to tell one from another yet.
  */
 Protocol identify(const char* buffer, size_t length);
+
+/** How far a DROP challenge line has arrived; see challengeProgress(). */
+enum class ChallengeProgress { NotChallenge, Incomplete, Complete };
+
+/**
+ * Whether the start of a stream is a DROP challenge: not one, one still arriving,
+ * or a whole line - ended by its newline, or as long as the protocol lets one be.
+ *
+ * Answered from what has arrived, which is not the whole line just because the
+ * connection became readable: a challenge split across two segments, answered
+ * from the first, echoes half its nonce, and the server reads the port as taken
+ * by something other than this client.
+ */
+ChallengeProgress challengeProgress(std::string_view data);
 
 /**
  * The same for a datagram, which is told apart by its four character code
@@ -92,6 +108,9 @@ class ProtocolProbe : public Connection, public Samurai::TimerListener {
 		 * fingerprints the decrypted stream rather than the ClientHello.
 		 */
 		bool secure;
+
+		/** A DROP challenge read so far; taken off the socket so it is not reported again. */
+		std::string challenge;
 };
 
 }

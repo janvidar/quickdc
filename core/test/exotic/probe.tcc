@@ -304,3 +304,47 @@ EXO_TEST(probe_a_datagram_we_have_no_use_for_is_unknown,
 	
 	return 1;
 });
+
+/*
+ * A challenge is answered from the whole line, never from the part of it that
+ * happened to arrive first.
+ *
+ * Split across two segments, a challenge used to be answered from the first: half
+ * the nonce went back, or none of it when the prefix itself was cut, and the server
+ * read a wide open port as taken by something that was not this client.
+ */
+EXO_TEST(probe_a_challenge_is_waited_for_until_the_whole_line_is_here,
+{
+	using Progress = QuickDC::ChallengeProgress;
+	const std::string line = "DROP/1 CHALLENGE 4a1f9c2e\n";
+
+	for (size_t cut = 1; cut < line.size(); cut++)
+		EXO_ASSERT(QuickDC::challengeProgress(line.substr(0, cut)) == Progress::Incomplete);
+
+	EXO_ASSERT(QuickDC::challengeProgress(line) == Progress::Complete);
+	return 1;
+});
+
+/* Anything that leaves the prefix is not one, and is not waited for. */
+EXO_TEST(probe_what_is_not_a_challenge_is_not_waited_for,
+{
+	using Progress = QuickDC::ChallengeProgress;
+
+	EXO_ASSERT(QuickDC::challengeProgress("CSUP ADBASE") == Progress::NotChallenge);
+	EXO_ASSERT(QuickDC::challengeProgress("$MyNick bob|") == Progress::NotChallenge);
+	EXO_ASSERT(QuickDC::challengeProgress("DELETE / HTTP/1.1") == Progress::NotChallenge);
+	EXO_ASSERT(QuickDC::challengeProgress("DROP/2 CHALLENGE x\n") == Progress::NotChallenge);
+	EXO_ASSERT(QuickDC::challengeProgress(std::string("\x16\x03\x01", 3)) == Progress::NotChallenge);
+	return 1;
+});
+
+/* A line with no newline is answered once it is as long as one may be, not waited on for ever. */
+EXO_TEST(probe_a_challenge_as_long_as_allowed_is_complete_without_its_newline,
+{
+	std::string line = "DROP/1 CHALLENGE ";
+	line.append(Drop::TcpResponder::MaxChallenge - line.size(), 'a');
+
+	EXO_ASSERT(QuickDC::challengeProgress(line.substr(0, line.size() - 1)) == QuickDC::ChallengeProgress::Incomplete);
+	EXO_ASSERT(QuickDC::challengeProgress(line) == QuickDC::ChallengeProgress::Complete);
+	return 1;
+});

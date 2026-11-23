@@ -5,6 +5,8 @@
 
 #include "api/core.h"
 #include "network/probe.h"
+
+#include <algorithm>
 #include "network/dropcheck.h"
 
 #include <drop/responder.h>
@@ -327,6 +329,21 @@ void QuickDC::ProtocolProbe::EventTLSConnected(const Samurai::IO::Net::Socket*) 
  * Answered only while a check is waiting to be connected back to; see
  * DropCheck::answerChallenge(). One line each way and the connection closes.
  */
+QuickDC::ChallengeProgress QuickDC::challengeProgress(std::string_view data)
+{
+	static constexpr std::string_view PREFIX = "DROP/1 CHALLENGE ";
+
+	const size_t shown = std::min(data.size(), PREFIX.size());
+	if (data.compare(0, shown, PREFIX.substr(0, shown)) != 0) return ChallengeProgress::NotChallenge;
+
+	if (data.size() <= PREFIX.size()) return ChallengeProgress::Incomplete;
+
+	if (data.find('\n') != std::string_view::npos) return ChallengeProgress::Complete;
+
+	return data.size() >= Drop::TcpResponder::MaxChallenge ? ChallengeProgress::Complete
+	                                                      : ChallengeProgress::Incomplete;
+}
+
 void QuickDC::ProtocolProbe::probe() {
 	/*
 	 * Sized for a whole DROP challenge line rather than for identifying a
@@ -352,17 +369,35 @@ void QuickDC::ProtocolProbe::probe() {
 	ssize_t len = socket->peek(buf, sizeof(buf) - 1);
 	if (len <= 0) return;
 
-	QuickDC::DropCheck* check = getCore().dropcheck;
+	/*
+	 * A challenge is read off the socket rather than peeked at, once its start is
+	 * recognised, and answered only when the whole line is here. Left unread, a
+	 * partial line would be reported again on every turn of the level-triggered
+	 * monitor until the rest arrived. Taking the bytes costs nothing: no protocol
+	 * this client hands a connection to begins the way a challenge does, and one
+	 * that diverges part way through is closed exactly as an unknown one is.
+	 */
+	if (!challenge.empty()
+	    || challengeProgress(std::string_view(buf, static_cast<size_t>(len))) != ChallengeProgress::NotChallenge)
+	{
+		const size_t room = Drop::TcpResponder::MaxChallenge - challenge.size();
+		size_t got = 0;
+		std::error_code ec;
+		if (room && socket->read(buf, std::min(room, sizeof(buf) - 1), got, ec) == Samurai::IO::ReadResult::Ok)
+			challenge.append(buf, got);
 
-	if (check) {
+		const ChallengeProgress progress = challengeProgress(challenge);
+		if (progress == ChallengeProgress::Incomplete) return;
+
+		QuickDC::DropCheck* check = getCore().dropcheck;
 		std::string response;
 
-		if (check->answerChallenge(std::string_view(buf, static_cast<size_t>(len)),
-		                           response)) {
+		if (progress == ChallengeProgress::Complete && check
+		    && check->answerChallenge(challenge, response))
 			socket->write(response.data(), response.size());
-			close();
-			return;
-		}
+
+		close();
+		return;
 	}
 
 	switch (QuickDC::identify(buf, static_cast<size_t>(len))) {
