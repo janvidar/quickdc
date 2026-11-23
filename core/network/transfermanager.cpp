@@ -40,27 +40,20 @@ void QuickDC::TransferManager::remove(QuickDC::Transfer* transfer) {
 	std::erase(pendingRemove, transfer);
 }
 
+QuickDC::Subscription QuickDC::TransferManager::subscribe(TransferListener* listener) {
+	return listeners.subscribe(listener);
+}
+
 void QuickDC::TransferManager::addListener(TransferListener* listener) {
-	if (!listener) return;
-
-	for (size_t n = 0; n < listeners.size(); n++)
-		if (listeners[n] == listener) return;
-
-	listeners.push_back(listener);
+	listeners.add(listener);
 }
 
 void QuickDC::TransferManager::removeListener(TransferListener* listener) {
-	for (std::vector<TransferListener*>::iterator it = listeners.begin(); it != listeners.end(); it++) {
-		if (*it == listener) {
-			listeners.erase(it);
-			return;
-		}
-	}
+	listeners.remove(listener);
 }
 
 void QuickDC::TransferManager::onTransferStarted(Transfer* xfer) {
-	for (size_t n = 0; n < listeners.size(); n++)
-		listeners[n]->EventTransferStarted(xfer);
+	listeners.notify([xfer](TransferListener& l) { l.EventTransferStarted(xfer); });
 }
 
 void QuickDC::TransferManager::onTransferStopped(Transfer* xfer) {
@@ -71,14 +64,14 @@ void QuickDC::TransferManager::onTransferStopped(Transfer* xfer) {
 	 * gone. Listeners only read the transfer, so reporting from inside
 	 * Transfer::exec() is safe; deleting it is what has to wait.
 	 */
-	for (size_t n = 0; n < listeners.size(); n++) {
+	listeners.notify([xfer](TransferListener& l) {
 		if (xfer->isFinished())
-			listeners[n]->EventTransferFinished(xfer);
+			l.EventTransferFinished(xfer);
 		else if (xfer->getStatus() != Transfer::OK)
-			listeners[n]->EventTransferError(xfer);
+			l.EventTransferError(xfer);
 		else
-			listeners[n]->EventTransferStopped(xfer);
-	}
+			l.EventTransferStopped(xfer);
+	});
 
 	pendingRemove.push_back(xfer);
 }

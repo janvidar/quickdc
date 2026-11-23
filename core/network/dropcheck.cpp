@@ -163,7 +163,7 @@ void QuickDC::DropCheck::internal_begin(const std::string& baseUrl,
 	const bool ipv6 = (family == Drop::Family::IPv6);
 
 	if (listener) listener->EventDropCheckStarted(ipv6);
-	if (observer) observer->EventDropCheckStarted(ipv6);
+	observers.notify([ipv6](DropCheckListener& l) { l.EventDropCheckStarted(ipv6); });
 
 	client->requestServerInfo();
 }
@@ -202,7 +202,7 @@ void QuickDC::DropCheck::internal_fail(const std::string& reason)
 	QERR("The reachability check could not be completed: %s", said.c_str());
 
 	if (listener) listener->EventDropCheckFailed(said.c_str());
-	if (observer) observer->EventDropCheckFailed(said.c_str());
+	observers.notify([&said](DropCheckListener& l) { l.EventDropCheckFailed(said.c_str()); });
 }
 
 void QuickDC::DropCheck::internal_finish()
@@ -237,7 +237,7 @@ void QuickDC::DropCheck::internal_finish()
 	const DropVerdict reported = result;
 
 	if (listener) listener->EventDropCheckFinished(reported);
-	if (observer) observer->EventDropCheckFinished(reported);
+	observers.notify([&reported](DropCheckListener& l) { l.EventDropCheckFinished(reported); });
 }
 
 bool QuickDC::DropCheck::answerChallenge(std::string_view line, std::string& response) const

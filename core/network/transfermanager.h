@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_TRANSFERMANAGER_H
 
 #include "quickdc.h"
+#include "api/subscription.h"
 
 namespace QuickDC {
 
@@ -69,6 +70,9 @@ class TransferManager
 		void add(Transfer*);
 		void remove(Transfer*);
 
+		/** Ends when the returned subscription is destroyed. */
+		Subscription subscribe(TransferListener*);
+
 		/** Listeners are not owned; remove them before they are destroyed. */
 		void addListener(TransferListener*);
 		void removeListener(TransferListener*);
@@ -98,7 +102,7 @@ class TransferManager
 		std::vector<Transfer*> transfers;
 		std::vector<Transfer*> pendingRemove;
 		std::vector<Transfer*>::iterator transferIterator;
-		std::vector<TransferListener*> listeners;
+		ListenerList<TransferListener> listeners;
 };
 
 }

@@ -762,3 +762,27 @@ EXO_TEST(dropcheck_an_ordinary_verdict_is_not_marked_as_an_address,
 	EXO_ASSERT(!measuredAt(1000000).addressOnly);
 	return 1;
 });
+
+/* Two front ends watching at once both hear, and either can leave alone. */
+EXO_TEST(dropcheck_two_observers_hear_and_leave_independently,
+{
+	OrderedRecorder core;
+	OrderedRecorder first;
+	OrderedRecorder second;
+
+	QuickDC::DropCheck check(&core);
+	QuickDC::Subscription a = check.observe(&first);
+	QuickDC::Subscription b = check.observe(&second);
+
+	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
+	            0, 1411, std::nullopt);
+	EXO_ASSERT(first.failed == 1 && second.failed == 1);
+
+	a.reset();
+	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
+	            0, 1411, std::nullopt);
+	EXO_ASSERT(core.failed == 2);
+	EXO_ASSERT(first.failed == 1);
+	EXO_ASSERT(second.failed == 2);
+	return 1;
+});

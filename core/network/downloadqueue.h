@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_DOWNLOADQUEUE_H
 
 #include "quickdc.h"
+#include "api/subscription.h"
 #include "network/chunkmap.h"
 #include <string.h>
 #include <stdlib.h>
@@ -580,6 +581,9 @@ class QueueManager {
 		QueueManager& operator=(const QueueManager&) = delete;
 
 	public:
+		/** Ends when the returned subscription is destroyed. */
+		Subscription subscribe(QueueListener*);
+
 		/** Listeners are not owned; remove them before they are destroyed. */
 		void addListener(QueueListener*);
 		void removeListener(QueueListener*);
@@ -936,7 +940,7 @@ class QueueManager {
 		size_t getMaxDownloads() const;
 
 	protected:
-		std::vector<QueueListener*> listeners;
+		ListenerList<QueueListener> listeners;
 		std::vector<QueueFile*> files;
 		std::vector<QueueFile*>::iterator fileIterator;
 		std::vector<FilelistRequest*> filelists;

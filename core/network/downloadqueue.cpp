@@ -977,26 +977,19 @@ bool QuickDC::QueueManager::addKnownSource(const char* tth, const char* hubUrl, 
 
 /* ---- contents ---- */
 
+QuickDC::Subscription QuickDC::QueueManager::subscribe(QueueListener* listener)
+{
+	return listeners.subscribe(listener);
+}
+
 void QuickDC::QueueManager::addListener(QueueListener* listener)
 {
-	if (!listener) return;
-
-	for (size_t n = 0; n < listeners.size(); n++)
-		if (listeners[n] == listener) return;
-
-	listeners.push_back(listener);
+	listeners.add(listener);
 }
 
 void QuickDC::QueueManager::removeListener(QueueListener* listener)
 {
-	for (std::vector<QueueListener*>::iterator it = listeners.begin(); it != listeners.end(); it++)
-	{
-		if (*it == listener)
-		{
-			listeners.erase(it);
-			return;
-		}
-	}
+	listeners.remove(listener);
 }
 
 QuickDC::QueueFile* QuickDC::QueueManager::add(const char* filename, const char* tth, uint64_t size)
@@ -1036,8 +1029,7 @@ void QuickDC::QueueManager::add(QueueFile* file)
 
 	if (file->isPersistent()) dirty = true;
 
-	for (size_t n = 0; n < listeners.size(); n++)
-		listeners[n]->EventQueueFileAdded(file);
+	listeners.notify([file](QueueListener& l) { l.EventQueueFileAdded(file); });
 }
 
 void QuickDC::QueueManager::remove(QueueFile* file)
@@ -1069,8 +1061,7 @@ void QuickDC::QueueManager::remove(QueueFile* file)
 	dirty = true;
 
 	/* Last thing before it goes, so a listener can still read it. */
-	for (size_t n = 0; n < listeners.size(); n++)
-		listeners[n]->EventQueueFileRemoved(file);
+	listeners.notify([file](QueueListener& l) { l.EventQueueFileRemoved(file); });
 
 	delete file;
 }
@@ -2123,8 +2114,7 @@ void QuickDC::QueueManager::processVerifications()
 				 * at which a completed download is distinguishable from one that
 				 * was cancelled.
 				 */
-				for (size_t i = 0; i < listeners.size(); i++)
-					listeners[i]->EventQueueFileVerified(file);
+				listeners.notify([file](QueueListener& l) { l.EventQueueFileVerified(file); });
 
 				remove(file);
 			}

@@ -8,6 +8,7 @@
 
 #include "quickdc.h"
 #include "api/dropverdict.h"
+#include "api/subscription.h"
 
 #include <drop/client.h>
 #include <drop/types.h>
@@ -136,7 +137,15 @@ class DropCheck final : public Drop::ClientEventHandler
 		 * same copy rather than the member itself, so that a verdict cannot be
 		 * overwritten underneath the second one by a run the first started.
 		 */
-		void setObserver(DropCheckListener* observer_) { observer = observer_; }
+		Subscription observe(DropCheckListener* observer_) { return observers.subscribe(observer_); }
+
+		/** The single observer of the old interface; replaces the previous one. */
+		void setObserver(DropCheckListener* observer_)
+		{
+			observers.remove(observer);
+			observer = observer_;
+			observers.add(observer);
+		}
 
 		DropCheckListener* getObserver() const { return observer; }
 
@@ -296,7 +305,10 @@ class DropCheck final : public Drop::ClientEventHandler
 		 */
 		DropCheckListener* listener;
 
-		/** A front end's, beside the above rather than instead of it. */
+		/** Front ends', beside the above rather than instead of it. */
+		ListenerList<DropCheckListener> observers;
+
+		/** The one setObserver() put in 'observers'. */
 		DropCheckListener* observer = nullptr;
 
 		/**

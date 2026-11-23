@@ -71,6 +71,7 @@ set(QUICKDC_EXOTIC_TESTS
     dropcheck.tcc
     networkmode.tcc
     searchtokens.tcc
+    subscription.tcc
     queuecomplete.tcc
     zupload.tcc)
 
