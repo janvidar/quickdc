@@ -22,6 +22,7 @@
 #include "api/dropverdict.h"
 #include "api/hublistentry.h"
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <variant>
@@ -60,6 +61,18 @@ struct ApplyPortForwarding { };
  */
 struct RepublishClientInfo { };
 
+/**
+ * Offer the file at 'path' by its hash alone, for a message or a post to name.
+ *
+ * 'remembered' keeps the offer across restarts; a post's document is offered
+ * for the session only. 'freeSlot' serves it without taking an upload slot.
+ */
+struct AttachFile {
+	std::string path;
+	bool remembered = true;
+	bool freeSlot = false;
+};
+
 }
 
 namespace Events {
@@ -72,6 +85,28 @@ struct HubListFetched {
 /** 'reason' is a sentence fit to show, without the address in it. */
 struct HubListFailed {
 	std::string url;
+	std::string reason;
+};
+
+/** A file offered by AttachFile is hashed and can now be asked for. */
+struct AttachmentReady {
+	std::string path;
+	std::string tth;
+	uint64_t size = 0;
+};
+
+struct AttachmentFailed {
+	enum class Why {
+		/** The core has nothing to offer files from. */
+		NoShares,
+		/** The path is not a file that can be read. */
+		Unreadable,
+		/** It was accepted, and then could not be offered; see 'reason'. */
+		Failed
+	};
+
+	std::string path;
+	Why why = Why::Failed;
 	std::string reason;
 };
 
@@ -110,7 +145,8 @@ struct Command {
 		Commands::LookupPublicAddress,
 		Commands::ReplayReachability,
 		Commands::ApplyPortForwarding,
-		Commands::RepublishClientInfo
+		Commands::RepublishClientInfo,
+		Commands::AttachFile
 	>;
 
 	template<typename T>
@@ -125,7 +161,9 @@ struct Event {
 		Events::HubListFailed,
 		Events::ReachabilityCheckStarted,
 		Events::ReachabilityMeasured,
-		Events::ReachabilityCheckFailed
+		Events::ReachabilityCheckFailed,
+		Events::AttachmentReady,
+		Events::AttachmentFailed
 	>;
 
 	template<typename T>

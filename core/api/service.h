@@ -6,6 +6,7 @@
 #ifndef HAVE_QUICKDC_API_SERVICE_H
 #define HAVE_QUICKDC_API_SERVICE_H
 
+#include "api/attachments.h"
 #include "api/protocol.h"
 #include "api/subscription.h"
 
@@ -26,7 +27,7 @@ namespace Api {
  * objects never have to be handed out: what the core lends a listener here is
  * copied into an Event before anybody outside sees it.
  */
-class Service : private DropCheckListener {
+class Service : private DropCheckListener, private Share::AttachmentListener {
 	public:
 		explicit Service(Core& core);
 		~Service() override;
@@ -49,6 +50,7 @@ class Service : private DropCheckListener {
 		void run(const Commands::ReplayReachability& command);
 		void run(const Commands::ApplyPortForwarding& command);
 		void run(const Commands::RepublishClientInfo& command);
+		void run(const Commands::AttachFile& command);
 
 		/** Whether there is a server to ask; publishes why not where there is not. */
 		bool haveReachabilityServer();
@@ -56,6 +58,9 @@ class Service : private DropCheckListener {
 		void EventDropCheckStarted(bool ipv6) override;
 		void EventDropCheckFinished(const DropVerdict& verdict) override;
 		void EventDropCheckFailed(const char* reason) override;
+
+		void EventAttachmentReady(const char* path, const char* tth, uint64_t size) override;
+		void EventAttachmentFailed(const char* path, const char* reason) override;
 
 		Core& core;
 		ListenerList<EventSink> sinks;

@@ -12,6 +12,7 @@
 #include "network/hublist.h"
 #include "network/hubmanager.h"
 #include "network/portforward.h"
+#include "share/sharemanager.h"
 
 #include <samurai/io/net/url.h>
 
@@ -61,7 +62,11 @@ QuickDC::Api::Service::Service(Core& core_)
 {
 }
 
-QuickDC::Api::Service::~Service() = default;
+QuickDC::Api::Service::~Service()
+{
+	/* An attachment still being hashed would otherwise report to this. */
+	if (core.shares) core.shares->forgetListener(this);
+}
 
 void QuickDC::Api::Service::execute(const Command& command)
 {
@@ -168,4 +173,34 @@ void QuickDC::Api::Service::EventDropCheckFailed(const char* reason)
 {
 	using Failed = Events::ReachabilityCheckFailed;
 	publish(Failed{Failed::Why::CheckFailed, reason ? reason : ""});
+}
+
+void QuickDC::Api::Service::run(const Commands::AttachFile& command)
+{
+	using Failed = Events::AttachmentFailed;
+	using Shares = Share::Manager;
+
+	if (!core.shares)
+	{
+		publish(Failed{command.path, Failed::Why::NoShares, std::string()});
+		return;
+	}
+
+	if (!core.shares->attach(command.path.c_str(), this,
+	                         command.remembered ? Shares::Persistence::Remembered
+	                                            : Shares::Persistence::Session,
+	                         command.freeSlot ? Shares::SlotCost::Free
+	                                          : Shares::SlotCost::Counted))
+		publish(Failed{command.path, Failed::Why::Unreadable, std::string()});
+}
+
+void QuickDC::Api::Service::EventAttachmentReady(const char* path, const char* tth, uint64_t size)
+{
+	publish(Events::AttachmentReady{path ? path : "", tth ? tth : "", size});
+}
+
+void QuickDC::Api::Service::EventAttachmentFailed(const char* path, const char* reason)
+{
+	using Failed = Events::AttachmentFailed;
+	publish(Failed{path ? path : "", Failed::Why::Failed, reason ? reason : ""});
 }
