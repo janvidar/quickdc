@@ -118,6 +118,20 @@ class UserManager {
 		size_t countOperators() const;
 		uint64_t countShared() const;
 
+		/**
+		 * Who is here without a client ID, for a diagnostic: how many there are
+		 * and up to `limit` of them named by session ID and nickname.
+		 *
+		 * A user's client ID is recorded only from the INF that first creates
+		 * their record, so one that arrived any other way carries none and can
+		 * never be found by it - which is what this is here to show. Bounded
+		 * because a busy hub holds thousands.
+		 *
+		 * Its own walk rather than first()/next(), which share one iterator with
+		 * whoever is already walking.
+		 */
+		std::string describeMissingClientIDs(size_t limit) const;
+
 		/* Built-in iterators */
 		User* first();
 		User* next();

@@ -275,7 +275,15 @@ bool QuickDC::Hub::connectUserByClientID(const char* cid, const char* token)
 
 	if (!u)
 	{
-		QDBG("connectUserByClientID(): '%s' is not on this hub", cid);
+		/*
+		 * Named with the hub it was looked for on and with who is there without
+		 * a client ID, because those are the two ways this fails while the user
+		 * is plainly on the hub: a source recorded against the wrong hub, or a
+		 * record that never picked up the client ID to be found by.
+		 */
+		QDBG("connectUserByClientID(): '%s' is not on '%s' (token=%s); %s",
+			cid, getUrl() ? getUrl() : "?", token,
+			users->describeMissingClientIDs(8).c_str());
 		return false;
 	}
 

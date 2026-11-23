@@ -178,6 +178,39 @@ uint64_t UserManager::countShared() const {
 	return shared;
 }
 
+std::string UserManager::describeMissingClientIDs(size_t limit) const {
+	size_t missing = 0;
+	size_t named = 0;
+	std::string who;
+
+	for (const auto& entry : users) {
+		const User* u = entry.second;
+		const char* cid = reinterpret_cast<const char*>(u->getClientID());
+		if (cid && *cid) continue;
+
+		missing++;
+		if (named >= limit) continue;
+
+		named++;
+		if (!who.empty()) who += ", ";
+		who += entry.first;
+		who += "/'";
+		who += u->getNick();
+		who += "'";
+	}
+
+	std::string text = std::to_string(missing) + " of " + std::to_string(users.size())
+		+ " carry no client ID";
+
+	if (!who.empty()) {
+		text += ": ";
+		text += who;
+		if (missing > named) text += ", ...";
+	}
+
+	return text;
+}
+
 
 User* UserManager::first() {
 	userIterator = users.begin();

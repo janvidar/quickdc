@@ -1791,14 +1791,25 @@ void QuickDC::QueueManager::schedule()
 				if (!created) continue;
 
 				std::string token(created);
+
+				/*
+				 * Claimed before the attempt rather than after it, so that one
+				 * that comes to nothing is still an attempt. isReadyToRetry()
+				 * answers true until a failure has been recorded, and this runs
+				 * several times a second - so a source that cannot be connected
+				 * to at all used to be asked for again on every pass, for ever,
+				 * and never aged out either: isExpired() counts the same
+				 * failures.
+				 */
+				source->onAttempt();
+
 				if (!hub->connectUserByClientID(source->getClientID(), token.c_str()))
 				{
 					removeRequest(token.c_str());
+					source->onFailure();
 					continue;
 				}
 
-				/* Claim the source now, so we do not ask it twice. */
-				source->onAttempt();
 				file->setSourceActive(source, true);
 				inFlight++;
 			}
