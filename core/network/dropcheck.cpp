@@ -8,6 +8,7 @@
 #include "api/core.h"
 #include "config/preferences.h"
 #include "network/reachability.h"
+#include "config/settings.h"
 
 #include <drop/responder.h>
 #include <drop/stun.h>
@@ -440,9 +441,7 @@ std::string dropServerFor(QuickDC::Core* core, bool ipv6)
 {
 	if (!core->config) return std::string();
 
-	core->config->setGroup("Network");
-
-	const std::string server = core->config->getString("Reachability server", "");
+	const std::string server = QuickDC::Settings::read(*core->config, QuickDC::Settings::ReachabilityServer);
 	if (server.empty()) return std::string();
 
 	return (ipv6 ? "https://ipv6." : "https://ipv4.") + server;
@@ -460,9 +459,7 @@ bool QuickDC::startDropCheck(Core& core_, bool ipv6)
 	const std::string host = dropServerFor(core, ipv6);
 	if (host.empty()) return false;
 
-	core->config->setGroup("Network");
-
-	const uint16_t port = static_cast<uint16_t>(core->config->getNumber("Port", 1411));
+	const uint16_t port = static_cast<uint16_t>(QuickDC::Settings::read(*core->config, QuickDC::Settings::Port));
 
 	core->dropcheck->start(host,
 	                       ipv6 ? Drop::Family::IPv6 : Drop::Family::IPv4,

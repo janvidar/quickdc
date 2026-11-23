@@ -30,6 +30,7 @@
 #include "network/dc/hubsession.h"
 #include "network/dc/dccommandproxy.h"
 #include "network/dc/lock.h"
+#include "config/settings.h"
 #include <samurai/io/file.h>
 #include <samurai/util/random.h>
 
@@ -871,8 +872,7 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 	QuickDC::TransferManager* xfrmgr = core->transfers;
 
 	QuickDC::Preferences* config = core->config;
-	config->setGroup("Network");
-	int slots = config->getNumber("Slots", 3);
+	int slots = QuickDC::Settings::read(*config, QuickDC::Settings::Slots);
 	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= static_cast<size_t>(slots));
 
 	uint64_t servable = 0;

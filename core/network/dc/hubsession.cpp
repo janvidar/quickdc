@@ -44,6 +44,7 @@
 #include "network/downloadqueue.h"
 #include "network/filesource.h"
 #include "network/user.h"
+#include "config/settings.h"
 #include <samurai/timer.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/datagram.h>
@@ -77,23 +78,22 @@ DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Sa
 	 * hub reached two ways is still one hub. See the same line in the ADC session.
 	 */
 	address = (hub && hub->getUrl()) ? hub->getUrl() : url->toString();
-	config->setGroup("User");
 	session->setGroup(address);
 
 	/*
 	 * Load settings from session file, or defaults if no session is found.
 	 * This will incidentally create such a session.
 	 */
-	nickname = session->getString("Nickname", config->getString("Nickname", PRODUCT));
-	description = session->getString("Description", config->getString("Description", PRODUCT " user"));
-	email = session->getString("E-mail", config->getString("E-mail", ""));
-	password = session->getString("Password", config->getString("Password", ""));
+	nickname = QuickDC::Settings::readForHub(*session, address, *config, QuickDC::Settings::Nickname);
+	description = QuickDC::Settings::readForHub(*session, address, *config, QuickDC::Settings::Description);
+	email = QuickDC::Settings::readForHub(*session, address, *config, QuickDC::Settings::Email);
+	password = QuickDC::Settings::readForHub(*session, address, *config, QuickDC::Settings::Password);
 
 	/* A hub will never accept an empty nick, and older versions could store one
 	 * in the session file. Fall back to the configured nick in that case. */
 	if (nickname.empty())
 	{
-		nickname = config->getString("Nickname", PRODUCT);
+		nickname = QuickDC::Settings::read(*config, QuickDC::Settings::Nickname);
 		if (nickname.empty()) nickname = PRODUCT;
 		session->setString("Nickname", nickname);
 	}
@@ -410,15 +410,14 @@ void DC::HubSession::onPassiveConnect(const char* user)
 		{
 			const QuickDC::Core* core = &getCore();
 			QuickDC::Preferences* config = core->config;
-			config->setGroup("Network");
-
+		
 			const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-				config->getBool("Active mode"),
+				QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
 		core->server != 0 && core->server->listening(false),
-				config->getString("Address"),
+				QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 				/* NMDC has no field for a hub to report the address it sees. */
 				std::string(),
-				static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
+				static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
 				core->portforward);
 
 			if (endpoint.active)
@@ -440,18 +439,17 @@ void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 	const QuickDC::Core* core = &getCore();
 	QuickDC::Preferences* config = core->config;
 	DC::Command* cmd = 0;
-	config->setGroup("Network");
 
 	/* Either branch below ends with this peer connecting to us or us to them. */
 	expectPeer(u->getID());
 
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		config->getBool("Active mode"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
 		core->server != 0 && core->server->listening(false),
-		config->getString("Address"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		/* NMDC has no field for a hub to report the address it sees. */
 		std::string(),
-		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
+		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
 		core->portforward);
 
 	if (endpoint.active)
@@ -512,9 +510,8 @@ bool DC::HubSession::maySendPassword()
 	if (password.empty()) return true;
 
 	QuickDC::Preferences* config = getCore().config;
-	config->setGroup("Network");
 
-	if (!config->getBool("Allow plaintext passwords", true))
+	if (!QuickDC::Settings::read(*config, QuickDC::Settings::AllowPlaintextPasswords))
 	{
 		QERR("Refusing to send a password to '%s' in the clear", address.c_str());
 		if (listener)
@@ -667,8 +664,7 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	}
 
 	QuickDC::Preferences* config = core->config;
-	config->setGroup("Network");
-	int myPort = config->getBool("Active mode") ? config->peekNumber("Network", "Port", 1411) : 0;
+	int myPort = QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode) ? QuickDC::Settings::read(*config, QuickDC::Settings::Port) : 0;
 
 	/* NI is what identifies us on an NMDC hub, where we have no client ID. */
 	ADC::Command cmd(FOURCC('U','P','S','R'), getCore().identity->getCID());
@@ -917,8 +913,7 @@ void DC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 	
 	
 	QuickDC::Preferences* config = getCore().config;
-	config->setGroup("Network");
-	int numslots = config->getNumber("Slots", 3);
+	int numslots = QuickDC::Settings::read(*config, QuickDC::Settings::Slots);
 	
 	Samurai::IO::Buffer buffer;
 

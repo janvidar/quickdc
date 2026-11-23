@@ -1087,9 +1087,13 @@ EXO_TEST(hubsession_settings_are_filed_under_the_canonical_address,
 	const std::string canonical =
 		"adc://127.0.0.1:" + std::to_string(s.hub.port());
 
-	/* The session wrote its identity on construction; it is under the short form. */
+	/*
+	 * The session records when it last connected as it is built; that is under the
+	 * short form. (Its identity is read without being written back, so it is not
+	 * there to look for.)
+	 */
 	store->setGroup(canonical);
-	EXO_ASSERT(store->haveSetting("Nickname"));
+	EXO_ASSERT(store->haveSetting("Last Connect"));
 
 	/* And nothing at all is filed under the address as it was given. */
 	store->setGroup(canonical + tail);

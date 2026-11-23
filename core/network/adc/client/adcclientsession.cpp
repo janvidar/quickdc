@@ -31,6 +31,7 @@
 #include "network/adc/adccommands.h"
 #include "network/adc/parser.h"
 #include "network/adc/cid.h"
+#include "config/settings.h"
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
 #include <string>
@@ -628,8 +629,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 	QuickDC::TransferManager*  xfrmgr = getCore().transfers;
 
 	QuickDC::Preferences* config = getCore().config;
-	config->setGroup("Network");
-	int slots = config->getNumber("Slots", 3);
+	int slots = QuickDC::Settings::read(*config, QuickDC::Settings::Slots);
 	bool slots_full = (slots > 0 && xfrmgr->countUploads() >= static_cast<size_t>(slots));
 
 	if (type == FOURCC('l','i','s','t'))

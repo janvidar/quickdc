@@ -21,6 +21,7 @@
 #include "api/service.h"
 #include "chat/archive.h"
 #include "config/preferences.h"
+#include "config/settings.h"
 #include "network/connectionmanager.h"
 #include "network/downloadqueue.h"
 #include "network/hubmanager.h"
@@ -109,7 +110,7 @@ bool AutomationState::measureIfStale(bool ipv6)
 	 * the key is absent - and this is reached from a timer, so it would mark the
 	 * file dirty every few minutes over a question it only asked.
 	 */
-	if (!core->config->peekBool("Network", "Active mode", false)) return false;
+	if (!QuickDC::Settings::read(*core->config, QuickDC::Settings::ActiveMode)) return false;
 
 	if (QuickDC::dropMeasurementIsFresh(QuickDC::lastDropVerdict(*core, ipv6), time(0)))
 		return false;
@@ -410,15 +411,14 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 				return;
 			}
 
-			core->config->setGroup("Network");
-			if (!core->config->getBool("UseUPnP", false)) return;
+			if (!QuickDC::Settings::read(*core->config, QuickDC::Settings::UseUpnp)) return;
 
 			if (core->portforward->isForwarded()) return;
 			if (core->portforward->isBusy()) return;
 
 			const uint16_t port = verdict.port
 				? verdict.port
-				: static_cast<uint16_t>(core->config->getNumber("Port", 1411));
+				: static_cast<uint16_t>(QuickDC::Settings::read(*core->config, QuickDC::Settings::Port));
 
 			QDBG("Passive on port %d; asking the gateway to forward it",
 			     static_cast<int>(port));
@@ -541,13 +541,16 @@ NetworkPlan planFrom(const QuickDC::Preferences& config)
 	NetworkPlan plan;
 	plan.mode = QuickDC::storedNetworkMode(config);
 	plan.keys = QuickDC::networkModeKeys(plan.mode,
-		config.peekBool("Network", "UseUPnP", false),
-		config.peekBool("Network", "Force active mode", false),
-		config.peekString("Network", "Reachability server", ""));
-	plan.endpoint.port = static_cast<uint16_t>(config.peekNumber("Network", "Port", 1411));
-	plan.endpoint.bind = config.peekString("Network", "Bind", "0.0.0.0");
-	plan.endpoint.bind6 = config.peekString("Network", "Bind6", "::");
-	plan.address = config.peekString("Network", "Address", "");
+		QuickDC::Settings::read(config, QuickDC::Settings::UseUpnp),
+		QuickDC::Settings::read(config, QuickDC::Settings::ForceActiveMode),
+		QuickDC::Settings::read(config, QuickDC::Settings::ReachabilityServer));
+	plan.endpoint.port = static_cast<uint16_t>(QuickDC::Settings::read(config, QuickDC::Settings::Port));
+	plan.endpoint.bind = QuickDC::Settings::read(config, QuickDC::Settings::Bind);
+
+	/* An emptied field, saved: there is no address that means, so it is the default. */
+	if (plan.endpoint.bind.empty()) plan.endpoint.bind = QuickDC::Settings::Bind.fallback;
+	plan.endpoint.bind6 = QuickDC::Settings::read(config, QuickDC::Settings::Bind6);
+	plan.address = QuickDC::Settings::read(config, QuickDC::Settings::Address);
 	return plan;
 }
 
@@ -636,7 +639,7 @@ void QuickDC::Core::Automation::measure(const NetworkPlan& plan)
 {
 	/* The plan names a default server when none is stored; only a stored one was chosen. */
 	if (measurement_owed || !core->config) return;
-	if (core->config->peekString("Network", "Reachability server", "").empty()) return;
+	if (QuickDC::Settings::read(*core->config, QuickDC::Settings::ReachabilityServer).empty()) return;
 
 	if (plan.keys.activeMode) startDropCheck(*core, false);
 	else startAddressLookup(*core, false);
@@ -755,7 +758,6 @@ QuickDC::Core::Core()
 	 * choose - and a client that cannot be connected to still works, it is only
 	 * passive.
 	 */
-	config->setGroup("Network");
 
 	/*
 	 * What the mode in force asks for, not what the raw key says.
@@ -776,13 +778,13 @@ QuickDC::Core::Core()
 	 * defaults back and this read is meant to leave the file as it found it.
 	 */
 	const NetworkModeKeys wanted = networkModeKeys(storedNetworkMode(*config),
-		config->peekBool("Network", "UseUPnP", false),
-		config->peekBool("Network", "Force active mode", false),
-		config->peekString("Network", "Reachability server", ""));
+		QuickDC::Settings::read(*config, QuickDC::Settings::UseUpnp),
+		QuickDC::Settings::read(*config, QuickDC::Settings::ForceActiveMode),
+		QuickDC::Settings::read(*config, QuickDC::Settings::ReachabilityServer));
 
 	const bool forwarding = wanted.useUpnp;
 	if (forwarding)
-		portforward->start(config->getNumber("Port", 1411));
+		portforward->start(static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)));
 
 	/*
 	 * The first measurement waits for the gateway rather than going out beside it;
@@ -823,7 +825,7 @@ QuickDC::Core::Core()
 	 * be the client answering that question for itself.
 	 */
 	const bool named =
-		!config->peekString("Network", "Reachability server", "").empty();
+		!QuickDC::Settings::read(*config, QuickDC::Settings::ReachabilityServer).empty();
 
 	if (named && !automation->measurement_owed)
 	{

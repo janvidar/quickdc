@@ -35,6 +35,7 @@
 #include "network/leafhashes.h"
 #include "network/filesource.h"
 #include "network/user.h"
+#include "config/settings.h"
 #include <string>
 #include <string_view>
 #include <samurai/crypto/digest/tiger.h>
@@ -86,8 +87,7 @@ static bool canAcceptTls()
 static bool requireEncryptedTransfers(QuickDC::Core& core)
 {
 	QuickDC::Preferences* config = core.config;
-	config->setGroup("Network");
-	return config->getBool("Require encrypted transfers", false);
+	return QuickDC::Settings::read(*config, QuickDC::Settings::RequireEncryption);
 }
 
 /*
@@ -127,9 +127,8 @@ static bool peerCanTraverse(const QuickDC::User* user)
  */
 static bool reachable(QuickDC::Core& core, QuickDC::Preferences* config, bool ipv6)
 {
-	config->setGroup("Network");
 
-	if (config->getBool("Force active mode", false)) return true;
+	if (QuickDC::Settings::read(*config, QuickDC::Settings::ForceActiveMode)) return true;
 
 	const QuickDC::Reachability* known =
 		core.reachabilityFor(ipv6);
@@ -158,10 +157,9 @@ std::string ADC::HubSession::announcedAddress(const QuickDC::PeerEndpoint& endpo
 	if (!observedAddress.empty()) return observedAddress;
 
 	QuickDC::Preferences* config = getCore().config;
-	config->setGroup("Network");
-	const char* configured = config->getString("Address", "0.0.0.0");
+	const std::string configured = QuickDC::Settings::read(*config, QuickDC::Settings::Address);
 
-	return (configured && *configured) ? configured : "0.0.0.0";
+	return configured.empty() ? std::string("0.0.0.0") : configured;
 }
 
 /*
@@ -242,9 +240,8 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	 * way. Anything else is taken as given, including a value low enough to be
 	 * rude to the hub - it is the user's own configuration file.
 	 */
-	config->setGroup("Network");
 	keepAlive = static_cast<time_t>(
-		config->getNumber("Keep alive interval", QUICKDC_ADC_KEEPALIVE));
+		QuickDC::Settings::read(*config, QuickDC::Settings::KeepAliveInterval));
 
 	if (keepAlive < 0) keepAlive = QUICKDC_ADC_KEEPALIVE;
 
@@ -264,24 +261,23 @@ ADC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, S
 	 * reason; the rest of the settings were not.
 	 */
 	address = (hub && hub->getUrl()) ? hub->getUrl() : url->toString();
-	config->setGroup("User");
 	session->setGroup(address);
 
 	/*
 	 * Load settings from session file, or defaults if no session is found.
 	 * This will incidentally create such a session.
 	 */
-	nickname = session->getString("Nickname", config->getString("Nickname", PRODUCT));
-	description = session->getString("Description", config->getString("Description", PRODUCT " user"));
-	email = session->getString("E-mail", config->getString("E-mail", ""));
-	password = session->getString("Password", config->getString("Password", ""));
+	nickname = QuickDC::Settings::readForHub(*session, address, *config, QuickDC::Settings::Nickname);
+	description = QuickDC::Settings::readForHub(*session, address, *config, QuickDC::Settings::Description);
+	email = QuickDC::Settings::readForHub(*session, address, *config, QuickDC::Settings::Email);
+	password = QuickDC::Settings::readForHub(*session, address, *config, QuickDC::Settings::Password);
 
 	/* A hub will never accept an empty nick, and older versions could store one
 	 * in the session file. Fall back to the configured nick in that case. */
 	if (nickname.empty())
 	{
-		const char* fallback = config->getString("Nickname", PRODUCT);
-		nickname = *fallback ? fallback : PRODUCT;
+		const std::string fallback = QuickDC::Settings::read(*config, QuickDC::Settings::Nickname);
+		nickname = fallback.empty() ? std::string(PRODUCT) : fallback;
 		session->setString("Nickname", nickname);
 	}
 
@@ -415,7 +411,7 @@ bool ADC::HubSession::verifyKeyprint()
 		session->setGroup(keyprintGroup());
 		if (session->haveSetting("Keyprint"))
 		{
-			trusted = session->getString("Keyprint");
+			trusted = session->peekString(keyprintGroup(), "Keyprint", "");
 			if (!trusted.empty()) source = "the last session with this hub";
 		}
 	}
@@ -925,10 +921,9 @@ void ADC::HubSession::forgetAnnouncedInfo()
 void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 {
 	QuickDC::Preferences* config = getCore().config;
-	config->setGroup("Network");
 
 	fields.emplace_back("NI", nickname);
-	fields.emplace_back("SL", std::to_string(config->getNumber("Slots", 3)));
+	fields.emplace_back("SL", std::to_string(QuickDC::Settings::read(*config, QuickDC::Settings::Slots)));
 	fields.emplace_back("SS", std::to_string(getCore().shares->getSharedSize()));
 	fields.emplace_back("SF", std::to_string(getCore().shares->getFiles()));
 	fields.emplace_back("DE", description);
@@ -978,7 +973,6 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	if (!QuickDC::Keyprint::ofOwnCertificate(keyprint)) keyprint.clear();
 	fields.emplace_back("KP", keyprint);
 
-	config->setGroup("Network");
 
 	/*
 	 * Where a peer should be told to reach us, which is the forwarded port when
@@ -987,11 +981,11 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 */
 	QuickDC::Core* core = &getCore();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		config->getBool("Active mode"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
 		core->server != 0 && core->server->listening(false),
-		config->getString("Address", "0.0.0.0"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		observedAddress,
-		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
+		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
 		core->portforward);
 
 	QDBG("Active mode %d (server=%p)\n", endpoint.active ? 1 : 0, core->server);
@@ -1002,10 +996,10 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * configured to fall back on and no wildcard a hub would fill in.
 	 */
 	const QuickDC::PeerEndpoint endpoint6 = QuickDC::peerEndpoint6(
-		config->getBool("Active mode"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
 		core->server != 0 && core->server->listening(true),
 		QuickDC::lastDropVerdict(*core, true).publicAddress,
-		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)));
+		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)));
 
 	/* Evidence belongs to the endpoint it was gathered for; announcing a different
 	   one discards what was known about the old. */
@@ -1302,7 +1296,6 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	if (!token) return;
 
 	QuickDC::Preferences* config = getCore().config;
-	config->setGroup("Network");
 
 	/*
 	 * The same endpoint the INF advertised, rather than the configured port and a
@@ -1319,11 +1312,11 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	 */
 	const QuickDC::Core* core = &getCore();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		config->getBool("Active mode"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
 		core->server != 0 && core->server->listening(false),
-		config->getString("Address", "0.0.0.0"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		observedAddress,
-		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
+		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
 		core->portforward);
 
 	/*
@@ -1482,7 +1475,7 @@ bool ADC::HubSession::saltIsUsable(const std::string& salt)
 
 	session->setGroup(keyprintGroup());
 
-	if (session->getString(QUICKDC_ADC_SALT_SETTING, "") == salt)
+	if (session->peekString(keyprintGroup(), QUICKDC_ADC_SALT_SETTING, "") == salt)
 	{
 		QERR("The hub offered the salt it last asked with; refusing to answer it twice");
 		if (listener)
@@ -2534,7 +2527,6 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	QDBG("Requested to setup connection to '%s' using '%s' (token=%s)", from, proto, token);
 
 	QuickDC::Preferences* config = getCore().config;
-	config->setGroup("Network");
 
 	/*
 	 * Answering an RCM means telling the peer to connect to us, so as in
@@ -2599,11 +2591,11 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	   sendConnectionRequest(): a gateway may have granted another port. */
 	const QuickDC::Core* core = &getCore();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		config->getBool("Active mode"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
 		core->server != 0 && core->server->listening(false),
-		config->getString("Address", "0.0.0.0"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		observedAddress,
-		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
+		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
 		core->portforward);
 
 	if (endpoint.active) {
@@ -2709,8 +2701,7 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	if (indexes.empty()) return;
 
 	QuickDC::Preferences* config = core->config;
-	config->setGroup("Network");
-	int port = config->getBool("Active mode") ? config->peekNumber("Network", "Port", 1411) : 0;
+	int port = QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode) ? QuickDC::Settings::read(*config, QuickDC::Settings::Port) : 0;
 
 	/* HI names the hub without the scheme, which is how DC++ reports it. */
 	std::string hubIpPort;

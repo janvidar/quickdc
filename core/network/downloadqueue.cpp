@@ -16,6 +16,7 @@
 #include <samurai/io/xml.h>
 #include "share/dcfilelist.h"
 #include "share/searchrequest.h"
+#include "config/settings.h"
 
 #include <samurai/util/base32.h>
 #include <samurai/util/random.h>
@@ -1379,8 +1380,7 @@ uint64_t QuickDC::QueueManager::getChunkSize() const
 {
 	if (!core || !core->config) return QUICKDC_CHUNK_SIZE;
 
-	core->config->setGroup("Network");
-	int configured = core->config->getNumber("Chunk size", QUICKDC_CHUNK_SIZE);
+	int configured = QuickDC::Settings::read(*core->config, QuickDC::Settings::ChunkSize);
 	if (configured <= 0) return QUICKDC_CHUNK_SIZE;
 
 	return static_cast<uint64_t>(configured);
@@ -1390,8 +1390,7 @@ size_t QuickDC::QueueManager::getMaxDownloads() const
 {
 	if (!core || !core->config) return 3;
 
-	core->config->setGroup("Network");
-	int configured = core->config->getNumber("Max downloads", 3);
+	int configured = QuickDC::Settings::read(*core->config, QuickDC::Settings::MaxDownloads);
 	if (configured <= 0) return 3;
 
 	return static_cast<size_t>(configured);

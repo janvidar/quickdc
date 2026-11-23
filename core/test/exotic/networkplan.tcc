@@ -179,3 +179,18 @@ EXO_TEST(networkplan_the_same_port_written_again_is_left_alone,
 	EXO_ASSERT(!freeOnLoopback(f.first));
 	return 1;
 });
+
+/* A bind address emptied in a form and saved is the default, not an address. */
+EXO_TEST(networkplan_an_empty_bind_address_is_the_default,
+{
+	Fixture f;
+	if (!f.first) EXO_SKIP("no spare port");
+
+	f.core->config->setString("Network", "Bind", "");
+	f.core->config->setNumber("Network", "Port", sparePort());
+	f.core->run();
+
+	EXO_ASSERT(f.core->server->endpoint().bind == "0.0.0.0");
+	EXO_ASSERT(f.core->server->listening(false));
+	return 1;
+});

@@ -27,6 +27,10 @@
 #include "network/adc/adccommands.h"
 #include "network/adc/cid.h"
 #include "network/adc/parser.h"
+#include "config/settings.h"
+
+static_assert(QuickDC::Settings::HubLingerTimeout.fallback == ADC::LocalHub::HUB_LINGER_TIMEOUT,
+              "the setting falls back to the hub's own linger");
 #include <samurai/io/net/socketevent.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/inetaddress.h>
@@ -173,13 +177,13 @@ ADC::LocalHub::Hub::~Hub() {
 
 void ADC::LocalHub::Hub::readConfiguration() {
 	QuickDC::Preferences* config = &this->config;
-	config->setGroup("Local hub");
+	namespace S = QuickDC::Settings;
 	
 	free(hubname);
 	free(hubdesc);
 	
-	hubname    = strdup(config->getString("Name", "A QuickDC hub"));
-	hubdesc    = strdup(config->getString("Description", "My QuickDC hub"));
+	hubname    = strdup(S::read(*config, S::HubName).c_str());
+	hubdesc    = strdup(S::read(*config, S::HubDescription).c_str());
 
 	/*
 	 * Every one of these is clamped, because each is an int from a file the hub
@@ -188,18 +192,18 @@ void ADC::LocalHub::Hub::readConfiguration() {
 	 * 0xFFFFFFFF, so the ring never rotated and the chat log grew for as long as
 	 * the hub ran.
 	 */
-	maxUsers   = static_cast<uint32_t>(std::clamp(config->getNumber("Max users", 128), 1, 65536));
-	maxHistory = static_cast<uint32_t>(std::clamp(config->getNumber("Max history", 50), 0, 65536));
-	maxSendQ   = static_cast<uint32_t>(std::clamp(config->getNumber("Max send queue bytes", 48 * 1024),
+	maxUsers   = static_cast<uint32_t>(std::clamp(S::read(*config, S::HubMaxUsers), 1, 65536));
+	maxHistory = static_cast<uint32_t>(std::clamp(S::read(*config, S::HubMaxHistory), 0, 65536));
+	maxSendQ   = static_cast<uint32_t>(std::clamp(S::read(*config, S::HubMaxSendQueue),
 	                                              4 * 1024, 16 * 1024 * 1024));
-	maxPerAddress = static_cast<uint32_t>(std::clamp(config->getNumber("Max connections per address", 8), 1, 65536));
-	maxHandshake  = static_cast<uint32_t>(std::clamp(config->getNumber("Max connections in handshake", 32), 1, 65536));
-	handshakeTimeout = static_cast<uint32_t>(std::clamp(config->getNumber("Handshake timeout", 30), 0, 86400));
-	idleTimeout      = static_cast<uint32_t>(std::clamp(config->getNumber("Idle timeout", 900), 0, 86400));
+	maxPerAddress = static_cast<uint32_t>(std::clamp(S::read(*config, S::HubMaxPerAddress), 1, 65536));
+	maxHandshake  = static_cast<uint32_t>(std::clamp(S::read(*config, S::HubMaxHandshakes), 1, 65536));
+	handshakeTimeout = static_cast<uint32_t>(std::clamp(S::read(*config, S::HubHandshakeTimeout), 0, 86400));
+	idleTimeout      = static_cast<uint32_t>(std::clamp(S::read(*config, S::HubIdleTimeout), 0, 86400));
 	lingerTimeout    = static_cast<uint32_t>(std::clamp(
-		config->getNumber("Linger timeout", static_cast<int>(HUB_LINGER_TIMEOUT)), 0, 86400));
-	enabled    = config->getBool("Enabled", false);
-	checkClaims = config->getBool("Check reachability claims", true);
+		S::read(*config, S::HubLingerTimeout), 0, 86400));
+	enabled    = S::read(*config, S::HubEnabled);
+	checkClaims = S::read(*config, S::HubCheckClaims);
 
 	/* Choking a user is a hint that it is slow; this is the point at which it is
 	   not reading at all, and holding anything more for it is pointless. */
@@ -216,7 +220,7 @@ void ADC::LocalHub::Hub::readConfiguration() {
 	 */
 	if (!boards)
 		boards = new ADC::LocalHub::BoardStore(
-			config->getString("Bulletin directory", "~/.quickdc/hub/bbs"));
+			S::read(*config, S::HubBulletinDirectory));
 
 	/*
 	 * Taken before the boards are re-read, because a board that has gone owes

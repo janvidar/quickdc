@@ -30,6 +30,7 @@
 #include "network/adc/cid.h"
 #include "network/transfer.h"
 #include "network/transfermanager.h"
+#include "config/settings.h"
 
 /* An upper bound on "Total shares", which is read from the configuration file. */
 #define MAX_SHARES 1024
@@ -67,7 +68,7 @@ void QuickDC::Share::Manager::initialize() {
 	 * someone chose by hand, so anything past this is a typo or a corrupt
 	 * configuration, and a negative value walked the loop nowhere useful.
 	 */
-	const int configured = config->getNumber("Total shares", 0);
+	const int configured = QuickDC::Settings::read(*config, QuickDC::Settings::TotalShares);
 	const int num = std::clamp(configured, 0, MAX_SHARES);
 
 	if (num != configured)
@@ -84,7 +85,7 @@ void QuickDC::Share::Manager::initialize() {
 		   snprintf so that a wider one truncates rather than overflows. */
 		char key[32];
 		snprintf(key, sizeof(key), "Share %d", i);
-		char* data = strdup(config->getString(key, ""));
+		char* data = strdup(config->peekString("Shares", key, "").c_str());
 		
 		QDBG("Share %d='%s' (%s)", i, data, key);
 		
@@ -390,10 +391,9 @@ namespace XML {
 void QuickDC::Share::Manager::createFileList(Samurai::IO::Buffer* xmlout, QuickDC::Share::Dir* dir, bool incomplete) {
 	if (!dir)
 	{
-		config->setGroup("User");
 		xmlout->append("<?xml version=\"1.1\" encoding=\"utf-8\" standalone=\"yes\"?>" XML_NEWLINE);
 		xmlout->append("<FileListing Version=\"1\" CID=\"");
-		xmlout->append(config->getString("Client ID", ""));
+		xmlout->append(QuickDC::Settings::read(*config, QuickDC::Settings::ClientId).c_str());
 		xmlout->append("\" Generator=\"" PRODUCT "/" VERSION " (" SYSTEM "/" CPU ")\" Base=\"/\">" XML_NEWLINE);
 		
 		for (size_t i = 0; i < dirs.size(); i++) {
@@ -745,7 +745,7 @@ void QuickDC::Share::Manager::sweepAttachments() {
 void QuickDC::Share::Manager::saveAttachments() {
 	config->setGroup("Attachments");
 
-	const int previous = config->getNumber("Total", 0);
+	const int previous = QuickDC::Settings::read(*config, QuickDC::Settings::TotalAttachments);
 	int total = 0;
 
 	for (const std::unique_ptr<Attachment>& record : attachments) {
@@ -776,7 +776,7 @@ void QuickDC::Share::Manager::saveAttachments() {
 
 void QuickDC::Share::Manager::loadAttachments() {
 	config->setGroup("Attachments");
-	const int total = config->getNumber("Total", 0);
+	const int total = QuickDC::Settings::read(*config, QuickDC::Settings::TotalAttachments);
 	if (total <= 0) return;
 
 	QDBG("Attachments remembered: %d", total);
@@ -796,7 +796,7 @@ void QuickDC::Share::Manager::loadAttachments() {
 
 		/* Copied out: the pointer belongs to the setting, which saveAttachments()
 		   may overwrite. */
-		const std::string entry = config->getString(key, "");
+		const std::string entry = config->peekString("Attachments", key, "");
 
 		if (entry.size() < TTH_BASE32_LENGTH + 2 || entry[TTH_BASE32_LENGTH] != ' ') {
 			QERR("Attachment %d is not a hash and a path: '%s'", i, entry.c_str());

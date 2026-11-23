@@ -10,6 +10,7 @@
 #include <samurai/crypto/digest/tiger.h>
 #include "config/preferences.h"
 #include "api/core.h"
+#include "config/settings.h"
 #include <samurai/timestamp.h>
 #include <samurai/util/base32.h>
 #include <span>
@@ -139,14 +140,13 @@ void ADC::CID::generate() {
 
 bool ADC::CID::load() {
 	QDBG("Loading CID from configuration file...");
-	config.setGroup("User");
 	
 	/*
 	 * Nothing stored is the ordinary case on a first run and says nothing worth
 	 * reporting. Something stored that is not the length of a CID does: it is an
 	 * identity that is about to be replaced.
 	 */
-	const std::string_view stored(config.getString("Private ID", ""));
+	const std::string stored = QuickDC::Settings::read(config, QuickDC::Settings::PrivateId);
 	if (stored.size() != static_cast<size_t>(HASH - 1)) {
 		if (!stored.empty()) QERR("The stored private ID is not a valid CID; generating a new identity");
 		return false;
@@ -179,9 +179,8 @@ bool ADC::CID::store() {
 	QDBG("Storing the identity for CID %s", cid.c_str());
 
 	if (verifyCIDandPID(cid.c_str(), pid.c_str())) {
-		config.setGroup("User");
-		config.setString("Private ID", pid);
-		config.setString("Client ID", cid);
+		QuickDC::Settings::write(config, QuickDC::Settings::PrivateId, pid);
+		QuickDC::Settings::write(config, QuickDC::Settings::ClientId, cid);
 		config.write();
 		return true;
 	}

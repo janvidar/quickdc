@@ -10,6 +10,7 @@
 #include "network/portforward.h"
 #include "network/dc/commands.h"
 #include "network/dc/textescape.h"
+#include "config/settings.h"
 
 DC::SendValidateNick::SendValidateNick(const char* nick) : DC::Command()
 {
@@ -79,14 +80,13 @@ DC::SendMyInfo::SendMyInfo(const QuickDC::Core& core_, const char* nick, const c
 	 */
 	const QuickDC::Core* core = &core_;
 	QuickDC::Preferences* config = core->config;
-	config->setGroup("Network");
 
 	const bool active_mode = QuickDC::peerEndpoint(
-		config->getBool("Active mode"), core->server != 0,
-		config->getString("Address", "0.0.0.0"),
+		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode), core->server != 0,
+		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		/* NMDC has no field for a hub to report the address it sees. */
 		std::string(),
-		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
+		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
 		core->portforward).active;
 	
 	char* tag = static_cast<char*>(malloc(50));
