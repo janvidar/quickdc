@@ -13,6 +13,8 @@
 #include "api/hub.h"
 #include "share/dcfilelist.h"
 #include "share/searchrequest.h"
+#include "network/filesource.h"
+#include "network/transfer.h"
 #include <samurai/io/file.h>
 #include "network/hubmanager.h"
 #include "network/portforward.h"
@@ -20,6 +22,7 @@
 
 #include <samurai/io/net/url.h>
 
+#include <string_view>
 #include <utility>
 
 /** One download, kept for as long as the service so a second fetch reuses it. */
@@ -60,6 +63,9 @@ class QuickDC::Api::Service::HubListFetch final : public QuickDC::HubListListene
 		QuickDC::HubList list;
 };
 
+static_assert(std::string_view(QuickDC::Api::PART_SUFFIX) == QUICKDC_PART_SUFFIX,
+              "the protocol names the part suffix the queue writes");
+
 namespace {
 
 QuickDC::Api::RemoteDirectory converted(const Share::RemoteDir* dir)
@@ -92,6 +98,60 @@ QuickDC::Api::RemoteDirectory converted(const Share::RemoteDir* dir)
 	return out;
 }
 
+QuickDC::Api::Priority converted(QuickDC::QueueFile::Priority priority)
+{
+	switch (priority)
+	{
+		case QuickDC::QueueFile::PrioPaused: return QuickDC::Api::Priority::Paused;
+		case QuickDC::QueueFile::PrioLow:    return QuickDC::Api::Priority::Low;
+		case QuickDC::QueueFile::PrioNormal: return QuickDC::Api::Priority::Normal;
+		case QuickDC::QueueFile::PrioHigh:   return QuickDC::Api::Priority::High;
+	}
+	return QuickDC::Api::Priority::Normal;
+}
+
+QuickDC::QueueFile::Priority converted(QuickDC::Api::Priority priority)
+{
+	switch (priority)
+	{
+		case QuickDC::Api::Priority::Paused: return QuickDC::QueueFile::PrioPaused;
+		case QuickDC::Api::Priority::Low:    return QuickDC::QueueFile::PrioLow;
+		case QuickDC::Api::Priority::Normal: return QuickDC::QueueFile::PrioNormal;
+		case QuickDC::Api::Priority::High:   return QuickDC::QueueFile::PrioHigh;
+	}
+	return QuickDC::QueueFile::PrioNormal;
+}
+
+QuickDC::Api::Transfer converted(QuickDC::Transfer* transfer)
+{
+	QuickDC::Api::Transfer out;
+	if (!transfer) return out;
+
+	out.id = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(transfer));
+	if (Samurai::IO::File* file = transfer->getFile()) out.filename = file->getName();
+	out.transferred = transfer->getTransferred();
+	out.length = transfer->getLength();
+	out.bytesPerSecond = transfer->getBps();
+	out.ratio = transfer->getRatio();
+	out.upload = transfer->isUpload();
+	out.finished = transfer->isFinished();
+	return out;
+}
+
+QuickDC::Api::QueueItem converted(const QuickDC::QueueStatus& status)
+{
+	QuickDC::Api::QueueItem out;
+	out.filename = status.filename ? status.filename : "";
+	out.tth = status.tth ? status.tth : "";
+	out.size = status.size;
+	out.done = status.done;
+	out.sources = static_cast<uint32_t>(status.sources);
+	out.activeSources = static_cast<uint32_t>(status.activeSources);
+	out.priority = converted(status.priority);
+	out.complete = status.complete;
+	return out;
+}
+
 /* The list at 'path', decoded; false where there is none or it cannot be read. */
 bool decodeList(const std::string& path, QuickDC::Api::RemoteDirectory& root)
 {
@@ -111,6 +171,7 @@ QuickDC::Api::Service::Service(Core& core_)
 	: core(core_)
 	, dropObserved(observeDropCheck(core_, this))
 	, queueObserved(core_.queue ? core_.queue->subscribe(this) : Subscription())
+	, transfersObserved(core_.transfers ? core_.transfers->subscribe(this) : Subscription())
 {
 }
 
@@ -322,4 +383,133 @@ void QuickDC::Api::Service::run(const Commands::Search& command)
 
 	const int asked = static_cast<int>(core.hubs->searchAllHubs(&request));
 	publish(Events::SearchSent{command.token, asked});
+}
+
+void QuickDC::Api::Service::run(const Commands::Enqueue& command)
+{
+	if (!core.queue) return;
+
+	core.queue->add(command.filename.c_str(),
+	                command.tth.empty() ? nullptr : command.tth.c_str(), command.size);
+}
+
+void QuickDC::Api::Service::run(const Commands::EnqueueFromSearch& command)
+{
+	if (!core.queue || command.hubUrl.empty() || command.sourceId.empty()) return;
+
+	QueueFile* file = core.queue->add(command.filename.c_str(),
+		command.tth.empty() ? nullptr : command.tth.c_str(), command.size);
+	if (!file) return;
+
+	if (file->findSource(command.hubUrl.c_str(), command.sourceId.c_str())) return;
+
+	file->addSource(new FileSource(command.hubUrl.c_str(), command.sourceId.c_str(),
+		command.remoteName.empty() ? nullptr : command.remoteName.c_str()));
+}
+
+void QuickDC::Api::Service::run(const Commands::EnqueueForReading& command)
+{
+	if (!core.queue || command.tth.empty()) return;
+
+	QueueFile* file = core.queue->add(command.filename.c_str(), command.tth.c_str(), command.size);
+	if (file && !command.onlyHub.empty()) file->searchOnlyOn(command.onlyHub.c_str());
+	core.queue->requestSourceSearch(command.tth.c_str());
+}
+
+/* Only where nothing else is known: a source found by searching is a better one. */
+void QuickDC::Api::Service::run(const Commands::AddFallbackSource& command)
+{
+	if (!core.queue) return;
+
+	QueueFile* file = core.queue->getFileByTTH(command.tth.c_str());
+	if (!file || file->countSources() > 0) return;
+
+	core.queue->addKnownSource(command.tth.c_str(), command.hubUrl.c_str(),
+	                           command.sourceId.c_str());
+}
+
+void QuickDC::Api::Service::run(const Commands::SetPriority& command)
+{
+	if (!core.queue) return;
+
+	if (QueueFile* file = core.queue->getFileByName(command.filename.c_str()))
+		file->setPriority(converted(command.priority));
+
+	publish(Events::QueueChanged{});
+}
+
+void QuickDC::Api::Service::run(const Commands::RemoveFromQueue& command)
+{
+	if (!core.queue) return;
+
+	QueueFile* file = core.queue->getFileByName(command.filename.c_str());
+	if (!file) return;
+
+	/* Copied first: the entry, and its idea of where the part is, go with remove(). */
+	std::string partial;
+	if (command.deletePartial && file->getTempFilename()) partial = file->getTempFilename();
+
+	core.queue->remove(file);
+	if (!partial.empty()) Samurai::IO::File(partial).remove();
+}
+
+void QuickDC::Api::Service::run(const Commands::SnapshotTransfers& command)
+{
+	Events::TransfersSnapshot taken;
+	taken.request = command.request;
+
+	if (core.transfers)
+		for (QuickDC::Transfer* t = core.transfers->first(); t; t = core.transfers->next())
+			taken.active.push_back(converted(t));
+
+	if (core.queue)
+	{
+		std::vector<QueueStatus> status;
+		core.queue->getStatus(status);
+		taken.queued.reserve(status.size());
+		for (const QueueStatus& entry : status) taken.queued.push_back(converted(entry));
+		taken.activeDownloads = static_cast<uint32_t>(core.queue->countActiveTransfers());
+	}
+
+	publish(taken);
+}
+
+void QuickDC::Api::Service::EventQueueFileAdded(const QueueFile*)
+{
+	publish(Events::QueueChanged{});
+}
+
+void QuickDC::Api::Service::EventQueueFileRemoved(const QueueFile*)
+{
+	publish(Events::QueueChanged{});
+}
+
+void QuickDC::Api::Service::EventQueueFileVerified(const QueueFile* file)
+{
+	if (!file) return;
+
+	publish(Events::DownloadCompleted{
+		file->getLocalFilename() ? file->getLocalFilename() : "",
+		file->getSize(),
+		file->getTTH() ? file->getTTH() : ""});
+}
+
+void QuickDC::Api::Service::EventTransferStarted(QuickDC::Transfer* transfer)
+{
+	publish(Events::TransferStarted{converted(transfer)});
+}
+
+void QuickDC::Api::Service::EventTransferFinished(QuickDC::Transfer* transfer)
+{
+	publish(Events::TransferFinished{converted(transfer)});
+}
+
+void QuickDC::Api::Service::EventTransferStopped(QuickDC::Transfer* transfer)
+{
+	publish(Events::TransferStopped{converted(transfer)});
+}
+
+void QuickDC::Api::Service::EventTransferError(QuickDC::Transfer* transfer)
+{
+	publish(Events::TransferError{converted(transfer)});
 }

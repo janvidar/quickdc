@@ -9,6 +9,7 @@
 #include "api/attachments.h"
 #include "api/protocol.h"
 #include "network/downloadqueue.h"
+#include "network/transfermanager.h"
 #include "api/subscription.h"
 
 #include <map>
@@ -29,7 +30,7 @@ namespace Api {
  * copied into an Event before anybody outside sees it.
  */
 class Service : private DropCheckListener, private Share::AttachmentListener,
-                private QueueListener {
+                private QueueListener, private TransferListener {
 	public:
 		explicit Service(Core& core);
 		~Service() override;
@@ -55,6 +56,13 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::AttachFile& command);
 		void run(const Commands::RequestFilelist& command);
 		void run(const Commands::Search& command);
+		void run(const Commands::Enqueue& command);
+		void run(const Commands::EnqueueFromSearch& command);
+		void run(const Commands::EnqueueForReading& command);
+		void run(const Commands::AddFallbackSource& command);
+		void run(const Commands::SetPriority& command);
+		void run(const Commands::RemoveFromQueue& command);
+		void run(const Commands::SnapshotTransfers& command);
 
 		/** Whether there is a server to ask; publishes why not where there is not. */
 		bool haveReachabilityServer();
@@ -67,11 +75,20 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void EventAttachmentFailed(const char* path, const char* reason) override;
 
 		void EventFilelistFinished(const FilelistRequest* request) override;
+		void EventQueueFileAdded(const QueueFile* file) override;
+		void EventQueueFileRemoved(const QueueFile* file) override;
+		void EventQueueFileVerified(const QueueFile* file) override;
+
+		void EventTransferStarted(QuickDC::Transfer* transfer) override;
+		void EventTransferFinished(QuickDC::Transfer* transfer) override;
+		void EventTransferStopped(QuickDC::Transfer* transfer) override;
+		void EventTransferError(QuickDC::Transfer* transfer) override;
 
 		Core& core;
 		ListenerList<EventSink> sinks;
 		Subscription dropObserved;
 		Subscription queueObserved;
+		Subscription transfersObserved;
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
 };
 

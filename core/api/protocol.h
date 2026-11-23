@@ -46,6 +46,37 @@ struct RemoteDirectory {
 	std::vector<RemoteDirectory> dirs;
 };
 
+/** What a download is written to until it is verified: the name plus this. */
+inline constexpr char PART_SUFFIX[] = ".part";
+
+enum class Priority { Paused, Low, Normal, High };
+
+/** One transfer - a single chunk on one connection - as it stands. */
+struct Transfer {
+	/** Stable for the transfer's life, and only for that. */
+	uint64_t id = 0;
+	std::string filename;
+	uint64_t transferred = 0;
+	uint64_t length = 0;
+	uint64_t bytesPerSecond = 0;
+	/** Bytes on the wire per byte of file; below one where compressed. */
+	double ratio = 1.0;
+	bool upload = false;
+	bool finished = false;
+};
+
+/** One file in the download queue. */
+struct QueueItem {
+	std::string filename;
+	std::string tth;
+	uint64_t size = 0;
+	uint64_t done = 0;
+	uint32_t sources = 0;
+	uint32_t activeSources = 0;
+	Priority priority = Priority::Normal;
+	bool complete = false;
+};
+
 namespace Commands {
 
 /** Download and parse the hublist at 'url'; one at a time per address. */
@@ -76,6 +107,62 @@ struct Search {
 	std::vector<std::string> extensions;
 	Size sizePolicy = Size::Any;
 	uint64_t size = 0;
+};
+
+/** Queue 'filename' for download; an empty 'tth' leaves it to be found by name. */
+struct Enqueue {
+	std::string filename;
+	std::string tth;
+	uint64_t size = 0;
+};
+
+/** Queue 'filename' with the user who answered a search as its first source. */
+struct EnqueueFromSearch {
+	std::string filename;
+	std::string tth;
+	uint64_t size = 0;
+	std::string hubUrl;
+	std::string sourceId;
+	/** The name the source has it under; may be empty. */
+	std::string remoteName;
+};
+
+/**
+ * Queue a file somebody named by hash so it can be read here, and look for a
+ * source at once - only on 'onlyHub' where that is given.
+ */
+struct EnqueueForReading {
+	std::string filename;
+	std::string tth;
+	uint64_t size = 0;
+	std::string onlyHub;
+};
+
+/** Record a source for a queued 'tth' that has none, such as the one who named it. */
+struct AddFallbackSource {
+	std::string tth;
+	std::string hubUrl;
+	std::string sourceId;
+};
+
+struct SetPriority {
+	std::string filename;
+	Priority priority = Priority::Normal;
+};
+
+struct RemoveFromQueue {
+	std::string filename;
+	bool deletePartial = false;
+};
+
+/**
+ * Report every transfer and queued file as a TransfersSnapshot.
+ *
+ * Every sink is told every snapshot, so 'request' is echoed back for the one
+ * that asked to know its answer from one somebody else asked for earlier.
+ */
+struct SnapshotTransfers {
+	uint64_t request = 0;
 };
 
 /** Measure reachability against the configured server, IPv4 first. */
@@ -155,6 +242,29 @@ struct SearchSent {
 	int hubsAsked = 0;
 };
 
+struct TransferStarted { Transfer transfer; };
+struct TransferFinished { Transfer transfer; };
+struct TransferStopped { Transfer transfer; };
+struct TransferError { Transfer transfer; };
+
+/** Something was added to or left the download queue. */
+struct QueueChanged { };
+
+/** A download matched its hash and has been moved to 'filename'. */
+struct DownloadCompleted {
+	std::string filename;
+	uint64_t size = 0;
+	std::string tth;
+};
+
+struct TransfersSnapshot {
+	uint64_t request = 0;
+	std::vector<Transfer> active;
+	std::vector<QueueItem> queued;
+	/** Connections downloading for the queue right now. */
+	uint32_t activeDownloads = 0;
+};
+
 /** A file offered by AttachFile is hashed and can now be asked for. */
 struct AttachmentReady {
 	std::string path;
@@ -215,7 +325,14 @@ struct Command {
 		Commands::RepublishClientInfo,
 		Commands::AttachFile,
 		Commands::RequestFilelist,
-		Commands::Search
+		Commands::Search,
+		Commands::Enqueue,
+		Commands::EnqueueFromSearch,
+		Commands::EnqueueForReading,
+		Commands::AddFallbackSource,
+		Commands::SetPriority,
+		Commands::RemoveFromQueue,
+		Commands::SnapshotTransfers
 	>;
 
 	template<typename T>
@@ -235,7 +352,14 @@ struct Event {
 		Events::AttachmentFailed,
 		Events::FilelistReady,
 		Events::FilelistFailed,
-		Events::SearchSent
+		Events::SearchSent,
+		Events::TransferStarted,
+		Events::TransferFinished,
+		Events::TransferStopped,
+		Events::TransferError,
+		Events::QueueChanged,
+		Events::DownloadCompleted,
+		Events::TransfersSnapshot
 	>;
 
 	template<typename T>
