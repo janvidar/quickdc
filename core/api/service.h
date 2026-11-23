@@ -54,6 +54,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::RepublishClientInfo& command);
 		void run(const Commands::AttachFile& command);
 		void run(const Commands::RequestFilelist& command);
+		void run(const Commands::Search& command);
 
 		/** Whether there is a server to ask; publishes why not where there is not. */
 		bool haveReachabilityServer();

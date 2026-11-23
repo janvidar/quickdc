@@ -62,6 +62,22 @@ struct RequestFilelist {
 	std::string sourceId;
 };
 
+/**
+ * Search every hub. 'token' is the caller's, and what results quote back; the
+ * words are matched as given, 'exclude' ones must not appear, and a non-empty
+ * 'extensions' limits what is asked for to those.
+ */
+struct Search {
+	enum class Size { Any, AtLeast, AtMost };
+
+	std::string token;
+	std::vector<std::string> include;
+	std::vector<std::string> exclude;
+	std::vector<std::string> extensions;
+	Size sizePolicy = Size::Any;
+	uint64_t size = 0;
+};
+
 /** Measure reachability against the configured server, IPv4 first. */
 struct MeasureReachability { };
 
@@ -133,6 +149,12 @@ struct FilelistFailed {
 	Why why = Why::NotArrived;
 };
 
+/** A Search went out; 'hubsAsked' is how many hubs it went to. */
+struct SearchSent {
+	std::string token;
+	int hubsAsked = 0;
+};
+
 /** A file offered by AttachFile is hashed and can now be asked for. */
 struct AttachmentReady {
 	std::string path;
@@ -192,7 +214,8 @@ struct Command {
 		Commands::ApplyPortForwarding,
 		Commands::RepublishClientInfo,
 		Commands::AttachFile,
-		Commands::RequestFilelist
+		Commands::RequestFilelist,
+		Commands::Search
 	>;
 
 	template<typename T>
@@ -211,7 +234,8 @@ struct Event {
 		Events::AttachmentReady,
 		Events::AttachmentFailed,
 		Events::FilelistReady,
-		Events::FilelistFailed
+		Events::FilelistFailed,
+		Events::SearchSent
 	>;
 
 	template<typename T>

@@ -12,6 +12,7 @@
 #include "network/hublist.h"
 #include "api/hub.h"
 #include "share/dcfilelist.h"
+#include "share/searchrequest.h"
 #include <samurai/io/file.h>
 #include "network/hubmanager.h"
 #include "network/portforward.h"
@@ -303,4 +304,22 @@ void QuickDC::Api::Service::EventFilelistFinished(const FilelistRequest* request
 		publish(ready);
 	else
 		publish(Failed{ready.hubUrl, ready.sourceId, Failed::Why::NotArrived});
+}
+
+void QuickDC::Api::Service::run(const Commands::Search& command)
+{
+	if (!core.hubs) return;
+
+	using Request = Share::SearchRequest;
+	Request::SizePolicy policy = Request::SizeAny;
+	if (command.sizePolicy == Commands::Search::Size::AtLeast) policy = Request::SizeMin;
+	if (command.sizePolicy == Commands::Search::Size::AtMost) policy = Request::SizeMax;
+
+	Request request(policy, command.size, nullptr, command.token.c_str(), nullptr);
+	for (const std::string& term : command.include) request.addInclusion(term.c_str());
+	for (const std::string& term : command.exclude) request.addExclusion(term.c_str());
+	for (const std::string& ext : command.extensions) request.addExtension(ext.c_str());
+
+	const int asked = static_cast<int>(core.hubs->searchAllHubs(&request));
+	publish(Events::SearchSent{command.token, asked});
 }
