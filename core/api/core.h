@@ -8,6 +8,11 @@
 
 #include <samurai/timestamp.h>
 
+#include "api/inbox.h"
+
+#include <atomic>
+#include <functional>
+
 /*
  * Where this client keeps the certificate it presents to peers, and the name that
  * certificate asserts. Named here rather than written into core.cpp because the
@@ -80,6 +85,26 @@ class Core {
 		 * This call will never block for a considerable long time.
 		 */
 		void run();
+
+		/**
+		 * Drive the core on this thread until requestStop().
+		 *
+		 * Opens the inbox, calls 'running' once jobs are being accepted, and
+		 * runs the loop and the inbox in turn. Returns once a stop has been
+		 * asked for, having run every job queued before it was.
+		 */
+		void runUntilStopped(const std::function<void()>& running = {});
+
+		/** Have runUntilStopped() return. Any thread, any number of times. */
+		void requestStop();
+
+		/**
+		 * Run 'job' on the thread in runUntilStopped(). Any thread.
+		 *
+		 * @return false where the core is not being run that way, or has
+		 *         stopped; the job is then destroyed unrun, here.
+		 */
+		bool post(Inbox::Job job) { return inbox.post(std::move(job)); }
 		
 #if 0
 		/**
@@ -239,6 +264,9 @@ class Core {
 
 	protected:
 		int references;
+
+		Inbox inbox;
+		std::atomic<bool> stopRequested{false};
 
 	public:
 		/**

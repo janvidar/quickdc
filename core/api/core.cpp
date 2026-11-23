@@ -852,6 +852,26 @@ void QuickDC::Core::run()
 
 
 
+void QuickDC::Core::runUntilStopped(const std::function<void()>& running)
+{
+	inbox.open();
+	if (running) running();
+
+	while (!stopRequested.load(std::memory_order_acquire))
+	{
+		run();
+		inbox.drain();
+	}
+
+	inbox.close();
+}
+
+void QuickDC::Core::requestStop()
+{
+	stopRequested.store(true, std::memory_order_release);
+	inbox.wake();
+}
+
 const char* QuickDC::Core::getVersion() const 
 {
 	return PRODUCT " " VERSION " " SYSTEM "/" CPU

@@ -71,6 +71,7 @@ set(QUICKDC_EXOTIC_TESTS
     networkmode.tcc
     searchtokens.tcc
     subscription.tcc
+    inbox.tcc
     queuecomplete.tcc
     zupload.tcc)
 
