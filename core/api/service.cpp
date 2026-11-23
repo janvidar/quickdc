@@ -41,6 +41,8 @@ class QuickDC::Api::Service::HubListFetch final : public QuickDC::HubListListene
 		{
 		}
 
+		bool busy() const { return list.isBusy(); }
+
 		void start()
 		{
 			const Samurai::IO::Net::URL parsed(url);
@@ -488,6 +490,10 @@ void QuickDC::Api::Service::run(const Commands::FetchHubList& command)
 {
 	std::unique_ptr<HubListFetch>& fetch = hublists[command.url];
 	if (!fetch) fetch = std::make_unique<HubListFetch>(*this, command.url);
+
+	/* Asked again while on its way: the answer coming is the answer for this too. */
+	if (fetch->busy()) return;
+
 	fetch->start();
 }
 
