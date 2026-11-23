@@ -80,6 +80,7 @@ set(QUICKDC_SOURCES
     api/networkmode.cpp
     api/server.cpp
     api/service.cpp
+    api/service_boards.cpp
     hash/hashmanager.cpp
     hash/hashjob.cpp
     hash/hashcache.cpp

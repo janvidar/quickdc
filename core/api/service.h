@@ -47,6 +47,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 	private:
 		class HubListFetch;
 		class HubSession;
+		class BoardStore;
 
 		void run(const Commands::FetchHubList& command);
 		void run(const Commands::MeasureReachability& command);
@@ -79,6 +80,22 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::SubmitPost& command);
 		void run(const Commands::WithdrawPost& command);
 
+		void run(const Commands::OpenBoardStore& command);
+		void run(const Commands::CloseBoardStore& command);
+		void run(const Commands::StoreBoardEntries& command);
+		void run(const Commands::DescribeBoard& command);
+		void run(const Commands::QueryBoardState& command);
+		void run(const Commands::LoadBoard& command);
+		void run(const Commands::ResumeBoard& command);
+		void run(const Commands::MarkRead& command);
+		void run(const Commands::ServePosts& command);
+		void run(const Commands::QueryPost& command);
+		void run(const Commands::AdoptPost& command);
+		void run(const Commands::EvictPosts& command);
+		void run(const Commands::ReleasePosts& command);
+
+		BoardStore* boardStore(BoardStoreHandle store);
+
 		/** The open session 'hub' names, or null. */
 		HubSession* session(HubHandle hub);
 
@@ -108,6 +125,8 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		Subscription queueObserved;
 		Subscription transfersObserved;
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
+
+		std::map<BoardStoreHandle, std::unique_ptr<BoardStore>> boardStores;
 
 		/* Last, so the sessions go before the subscriptions they report through. */
 		std::map<HubHandle, std::unique_ptr<HubSession>> hubs;

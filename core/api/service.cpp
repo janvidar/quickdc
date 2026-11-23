@@ -5,6 +5,7 @@
 
 #include "api/service.h"
 #include "api/core.h"
+#include "api/service_boards.h"
 #include "api/dropverdict.h"
 #include "api/networkmode.h"
 #include "config/preferences.h"

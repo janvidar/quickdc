@@ -141,7 +141,147 @@ struct SearchHit {
 	User user;
 };
 
+/**
+ * A board store a front end keeps posts and indexes in, named the way a hub
+ * session is: by a number the front end picks when it opens one.
+ */
+using BoardStoreHandle = uint64_t;
+
+/** Whether everything before what is held of a board will still be replayed. */
+enum class BoardView { Unknown, Complete, Gap };
+
+/** A post's document, parsed, as far as the store could vouch for it. */
+struct PostDocument {
+	std::string tth;
+	std::string cid;
+	std::string parent;
+	std::string subject;
+	std::string body;
+	bool dated = false;
+	uint64_t date = 0;
+	bool richText = false;
+};
+
+struct BoardReadState {
+	std::string board;
+	int unread = 0;
+	/** Which of the posts the request concerned are marked read. */
+	std::vector<std::string> read;
+};
+
 namespace Commands {
+
+/*
+ * Every board store request names its store and carries a 'request' number
+ * the answer echoes, since every sink hears every answer.
+ */
+
+struct OpenBoardStore {
+	BoardStoreHandle store = 0;
+	std::string boardsDir;
+	std::string documentsDir;
+	/** Where fetched documents land before they are adopted; made if absent. */
+	std::string incomingDir;
+};
+
+/** Nothing is released: marks survive, and the next opening releases them. */
+struct CloseBoardStore { BoardStoreHandle store = 0; };
+
+/** Append what a hub sent to the index; answered by BoardEntriesStored. */
+struct StoreBoardEntries {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	std::string hubUrl;
+	std::vector<BoardEntry> entries;
+	/** Offer the documents of these posts to anybody who asks. */
+	bool serving = false;
+};
+
+/** Record a board's descriptor; answered by BoardStateReported. */
+struct DescribeBoard {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	std::string hubUrl;
+	Board board;
+};
+
+struct QueryBoardState {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	std::string hubUrl;
+	std::string board;
+};
+
+/** Everything held of a board; answered by BoardLoaded. */
+struct LoadBoard {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	std::string hubUrl;
+	std::string board;
+	bool serving = false;
+};
+
+/** Where to pick a subscription up from, offering what is held; BoardResumed. */
+struct ResumeBoard {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	std::string hubUrl;
+	std::string board;
+	bool serving = false;
+};
+
+/** Answered by BoardReadChanged. An empty 'tth' marks the whole board. */
+struct MarkRead {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	std::string hubUrl;
+	std::string board;
+	std::string tth;
+};
+
+struct ServePosts {
+	BoardStoreHandle store = 0;
+	std::vector<std::string> tths;
+	bool serving = false;
+};
+
+/** What the store knows of one document; answered by PostKnown. */
+struct QueryPost {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	std::string tth;
+};
+
+/**
+ * Check the document at 'path' is the post 'entry' names, and keep it;
+ * answered by PostAdopted. 'cap' bounds what is read, 0 for no bound.
+ */
+struct AdoptPost {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	std::string path;
+	BoardEntry entry;
+	bool serving = false;
+	uint64_t cap = 0;
+};
+
+/** Mark documents past either bound to go; answered by PostsEvicted. */
+struct EvictPosts {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	uint64_t age = 0;
+	uint64_t total = 0;
+	uint64_t now = 0;
+};
+
+/**
+ * Let go of every document marked to go that nobody is being sent. 'sending'
+ * names files a front end knows are going out, beside what the core sees.
+ */
+struct ReleasePosts {
+	BoardStoreHandle store = 0;
+	std::vector<std::string> sending;
+};
 
 /** Start a session for the hub at 'url', not yet connected; see ConnectHub. */
 struct OpenHub {
@@ -344,6 +484,84 @@ struct AttachFile {
 
 namespace Events {
 
+struct BoardEntriesStored {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	/** Indices into the command's entries of the ones the index took. */
+	std::vector<int> kept;
+	std::vector<BoardReadState> boards;
+	std::vector<std::string> held;
+	std::vector<std::string> failed;
+	std::vector<std::string> offered;
+};
+
+struct BoardStateReported {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	uint64_t cursor = 0;
+	BoardView view = BoardView::Unknown;
+};
+
+struct BoardLoaded {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	std::vector<BoardEntry> entries;
+	int unread = 0;
+	std::vector<std::string> read;
+	std::vector<std::string> held;
+	std::vector<std::string> failed;
+	std::vector<std::string> offered;
+};
+
+struct BoardResumed {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	uint64_t cursor = 0;
+	BoardView view = BoardView::Unknown;
+	std::vector<std::string> offered;
+};
+
+struct BoardReadChanged {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	BoardReadState state;
+};
+
+struct PostKnown {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	/** Where the document is, or empty where it is not held. */
+	std::string path;
+	/** Held, and known not to be the post it was asked for as. */
+	bool failed = false;
+};
+
+struct PostAdopted {
+	enum class Outcome {
+		Verified,
+		/** It is the post, but somebody other than the index's author wrote it. */
+		Disputed,
+		NoStore,
+		Unreadable,
+		TooLarge,
+		WrongHash,
+		NotAPost
+	};
+
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	Outcome outcome = Outcome::Unreadable;
+	PostDocument post;
+	/** Whether the store holds the document after this. */
+	bool held = false;
+};
+
+struct PostsEvicted {
+	BoardStoreHandle store = 0;
+	uint64_t request = 0;
+	int marked = 0;
+};
+
 /** OpenHub was given an address no session can be made for. */
 struct HubOpenFailed { HubHandle hub = 0; };
 
@@ -545,7 +763,20 @@ struct Command {
 		Commands::UnsubscribeBoard,
 		Commands::RequestBoardEntry,
 		Commands::SubmitPost,
-		Commands::WithdrawPost
+		Commands::WithdrawPost,
+		Commands::OpenBoardStore,
+		Commands::CloseBoardStore,
+		Commands::StoreBoardEntries,
+		Commands::DescribeBoard,
+		Commands::QueryBoardState,
+		Commands::LoadBoard,
+		Commands::ResumeBoard,
+		Commands::MarkRead,
+		Commands::ServePosts,
+		Commands::QueryPost,
+		Commands::AdoptPost,
+		Commands::EvictPosts,
+		Commands::ReleasePosts
 	>;
 
 	template<typename T>
@@ -593,7 +824,15 @@ struct Event {
 		Events::BoardsAvailable,
 		Events::BoardDescribed,
 		Events::BoardEntryArrived,
-		Events::BoardRefused
+		Events::BoardRefused,
+		Events::BoardEntriesStored,
+		Events::BoardStateReported,
+		Events::BoardLoaded,
+		Events::BoardResumed,
+		Events::BoardReadChanged,
+		Events::PostKnown,
+		Events::PostAdopted,
+		Events::PostsEvicted
 	>;
 
 	template<typename T>
