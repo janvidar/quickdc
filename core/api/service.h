@@ -58,8 +58,6 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::MeasureReachability& command);
 		void run(const Commands::LookupPublicAddress& command);
 		void run(const Commands::ReplayReachability& command);
-		void run(const Commands::ApplyPortForwarding& command);
-		void run(const Commands::RepublishClientInfo& command);
 		void run(const Commands::AttachFile& command);
 		void run(const Commands::RequestFilelist& command);
 		void run(const Commands::Search& command);
@@ -101,7 +99,6 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::SetSetting& command);
 		void run(const Commands::ReplaceGroup& command);
 		void run(const Commands::SaveSettings& command);
-		void run(const Commands::AnnounceSettingsChanged& command);
 
 		void EventSettingChanged(const Preferences& store, const std::string& group,
 		                         const std::string& key, const std::string* value) override;

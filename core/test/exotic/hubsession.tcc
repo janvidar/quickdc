@@ -1917,7 +1917,10 @@ class ActiveCore
 			bound = sparePort();
 			config->setNumber("Port", bound);
 
-			server = new QuickDC::DCServer(*core);
+			QuickDC::DCServer::Endpoint at;
+			at.port = bound;
+			at.bind = "127.0.0.1";
+			server = new QuickDC::DCServer(*core, at);
 			core->server = server;
 		}
 

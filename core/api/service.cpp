@@ -534,37 +534,6 @@ void QuickDC::Api::Service::run(const Commands::ReplayReachability&)
 	}
 }
 
-void QuickDC::Api::Service::run(const Commands::ApplyPortForwarding&)
-{
-	if (!core.portforward || !core.config) return;
-
-	Preferences& config = *core.config;
-
-	/*
-	 * Derived rather than read off the key, because in automatic mode the stored
-	 * UseUPnP is not what governs: the mode is. Every read peeks, since this runs
-	 * on every save and a plain read would write UseUPnP into a file that had
-	 * never mentioned it.
-	 */
-	const NetworkModeKeys keys = networkModeKeys(storedNetworkMode(config),
-		config.peekBool("Network", "UseUPnP", false),
-		config.peekBool("Network", "Force active mode", false),
-		config.peekString("Network", "Reachability server", ""));
-
-	const bool have = core.portforward->isForwarded() || core.portforward->isBusy();
-	if (keys.useUpnp == have) return;
-
-	if (keys.useUpnp)
-		core.portforward->start(static_cast<uint16_t>(config.peekNumber("Network", "Port", 1411)));
-	else
-		core.portforward->stop();
-}
-
-void QuickDC::Api::Service::run(const Commands::RepublishClientInfo&)
-{
-	if (core.hubs) core.hubs->requestClientInfoUpdate();
-}
-
 void QuickDC::Api::Service::EventDropCheckStarted(bool ipv6)
 {
 	publish(Events::ReachabilityCheckStarted{ipv6});
@@ -1002,8 +971,3 @@ void QuickDC::Api::Service::run(const Commands::SaveSettings& command)
 	publish(Events::SettingsSaved{command.store, command.request, store && store->write()});
 }
 
-void QuickDC::Api::Service::run(const Commands::AnnounceSettingsChanged&)
-{
-	if (Samurai::MessageHandler* handler = Samurai::MessageHandler::getInstance())
-		handler->postMessage(MsgConfigUpdated, nullptr, 0, 0);
-}

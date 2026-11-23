@@ -214,12 +214,6 @@ struct SaveSettings {
 	uint64_t request = 0;
 };
 
-/**
- * Have what reads the configuration once read it again.
- * Transitional: C2 has whatever depends on a setting follow it by itself.
- */
-struct AnnounceSettingsChanged { };
-
 /*
  * Every board store request names its store and carries a 'request' number
  * the answer echoes, since every sink hears every answer.
@@ -504,18 +498,6 @@ struct LookupPublicAddress {
 
 /** Say again every verdict already held, as ReachabilityMeasured. */
 struct ReplayReachability { };
-
-/**
- * Start or stop the gateway mapping to match the connection mode.
- * Transitional: C2 has the core do this whenever a setting it depends on changes.
- */
-struct ApplyPortForwarding { };
-
-/**
- * Tell every hub again what it was told about this client at login.
- * Transitional: C4 has the core do this whenever any of it changes.
- */
-struct RepublishClientInfo { };
 
 /**
  * Offer the file at 'path' by its hash alone, for a message or a post to name.
@@ -811,8 +793,6 @@ struct Command {
 		Commands::MeasureReachability,
 		Commands::LookupPublicAddress,
 		Commands::ReplayReachability,
-		Commands::ApplyPortForwarding,
-		Commands::RepublishClientInfo,
 		Commands::AttachFile,
 		Commands::RequestFilelist,
 		Commands::Search,
@@ -852,8 +832,7 @@ struct Command {
 		Commands::ReleasePosts,
 		Commands::SetSetting,
 		Commands::ReplaceGroup,
-		Commands::SaveSettings,
-		Commands::AnnounceSettingsChanged
+		Commands::SaveSettings
 	>;
 
 	template<typename T>

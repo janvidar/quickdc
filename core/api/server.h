@@ -6,6 +6,7 @@
 #ifndef HAVE_QUICKDC_SERVER_API_H
 #define HAVE_QUICKDC_SERVER_API_H
 
+#include <string>
 #include "quickdc.h"
 #include <memory>
 #include <samurai/io/net/socketevent.h>
@@ -27,7 +28,26 @@ class Core;
 
 class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samurai::IO::Net::DatagramEventHandler {
 	public:
-		explicit DCServer(Core& core);
+		/** Where the peer port is opened: the port, and each family's bind address. */
+		struct Endpoint {
+			uint16_t port = 1411;
+			std::string bind = "0.0.0.0";
+			/** Empty for no IPv6 peer port. */
+			std::string bind6 = "::";
+
+			bool operator==(const Endpoint&) const = default;
+		};
+
+		DCServer(Core& core, const Endpoint& at);
+
+		/**
+		 * Close the peer port and open it again at 'at'. Connections already
+		 * accepted are not the server's and carry on. Not from inside one of
+		 * the server's own socket callbacks.
+		 */
+		void listen(const Endpoint& at);
+
+		const Endpoint& endpoint() const { return at; }
 		virtual ~DCServer();
 		
 		void send(Samurai::IO::Net::DatagramPacket*);
@@ -54,6 +74,7 @@ class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samur
 
 	protected:
 		Core& core;
+		Endpoint at;
 		std::shared_ptr<Samurai::IO::Net::ServerSocket> socket;
 		std::shared_ptr<Samurai::IO::Net::DatagramSocket> dgram;
 

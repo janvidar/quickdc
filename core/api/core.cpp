@@ -510,18 +510,176 @@ void ensureCertificate(const char* key_path, const char* cert_path)
 }
 
 /** The listeners the core acts through, and the state they share. */
-class QuickDC::Core::Automation : public AutomationState {
+namespace {
+
+/**
+ * What the configuration asks of the network, worked out from it alone.
+ *
+ * The mode decides the forwarding and the claim; the rest is read as stored.
+ * Every read peeks, so working the plan out never writes to the file.
+ */
+struct NetworkPlan {
+	QuickDC::NetworkMode mode = QuickDC::NetworkMode::Advanced;
+	QuickDC::NetworkModeKeys keys;
+	QuickDC::DCServer::Endpoint endpoint;
+	std::string address;
+
+	bool operator==(const NetworkPlan& other) const
+	{
+		return mode == other.mode
+			&& keys.activeMode == other.keys.activeMode
+			&& keys.useUpnp == other.keys.useUpnp
+			&& keys.forceActive == other.keys.forceActive
+			&& keys.reachabilityServer == other.keys.reachabilityServer
+			&& endpoint == other.endpoint
+			&& address == other.address;
+	}
+};
+
+NetworkPlan planFrom(const QuickDC::Preferences& config)
+{
+	NetworkPlan plan;
+	plan.mode = QuickDC::storedNetworkMode(config);
+	plan.keys = QuickDC::networkModeKeys(plan.mode,
+		config.peekBool("Network", "UseUPnP", false),
+		config.peekBool("Network", "Force active mode", false),
+		config.peekString("Network", "Reachability server", ""));
+	plan.endpoint.port = static_cast<uint16_t>(config.peekNumber("Network", "Port", 1411));
+	plan.endpoint.bind = config.peekString("Network", "Bind", "0.0.0.0");
+	plan.endpoint.bind6 = config.peekString("Network", "Bind6", "::");
+	plan.address = config.peekString("Network", "Address", "");
+	return plan;
+}
+
+}
+
+/**
+ * The listeners the core acts through, the state they share, and what keeps the
+ * network in line with the configuration as it changes.
+ *
+ * A change is noted as it is made and acted on once per turn of the loop, so
+ * that a settings page writing twenty keys is one reconciliation and not twenty.
+ * What is acted on is the difference between the plan as it now stands and the
+ * one last applied - never a setting read once at start-up.
+ */
+class QuickDC::Core::Automation : public AutomationState, private PreferencesListener {
 	public:
 		explicit Automation(Core* owner)
 			: AutomationState{owner}
 			, portforward(*this)
 			, dropcheck(*this)
+			, watched(owner->config ? owner->config->subscribe(this) : Subscription())
 		{
 		}
 
+		/** Take the configuration as already applied, which it is once the core is built. */
+		void settle()
+		{
+			if (core->config) applied = planFrom(*core->config);
+			networkChanged = identityChanged = localHubChanged = false;
+		}
+
+		void reconcile();
+
 		CorePortForwardListener portforward;
 		CoreDropCheckListener dropcheck;
+
+	private:
+		void EventSettingChanged(const Preferences&, const std::string& group,
+		                         const std::string&, const std::string*) override
+		{
+			if (group == "Network") networkChanged = true;
+			else if (group == "User") identityChanged = true;
+			else if (group == "Local hub") localHubChanged = true;
+		}
+
+		void forward(const NetworkPlan& plan);
+		void measure(const NetworkPlan& plan);
+
+		Subscription watched;
+		NetworkPlan applied;
+		bool networkChanged = false;
+		bool identityChanged = false;
+		bool localHubChanged = false;
 };
+
+/* Ask the gateway for what the plan wants, or let go of what it no longer does. */
+void QuickDC::Core::Automation::forward(const NetworkPlan& plan)
+{
+	PortForward* gateway = core->portforward;
+	if (!gateway) return;
+
+	const bool have = gateway->isForwarded() || gateway->isBusy();
+	const bool moved = plan.endpoint.port != applied.endpoint.port;
+
+	if (have && (!plan.keys.useUpnp || moved))
+	{
+		gateway->stop();
+		mapping_asked_for = false;
+	}
+
+	if (plan.keys.useUpnp && (!have || moved))
+	{
+		gateway->start(plan.endpoint.port);
+
+		/* What is measured before the gateway answers is about the network without it. */
+		measurement_owed = gateway->isBusy();
+	}
+}
+
+/*
+ * A passive client is shown the address the world sees it at and never has a
+ * stranger dial a port it is not offering; any other is measured. Nothing is
+ * asked of anybody where no server is named.
+ */
+void QuickDC::Core::Automation::measure(const NetworkPlan& plan)
+{
+	/* The plan names a default server when none is stored; only a stored one was chosen. */
+	if (measurement_owed || !core->config) return;
+	if (core->config->peekString("Network", "Reachability server", "").empty()) return;
+
+	if (plan.keys.activeMode) startDropCheck(*core, false);
+	else startAddressLookup(*core, false);
+}
+
+void QuickDC::Core::Automation::reconcile()
+{
+	if (!networkChanged && !identityChanged && !localHubChanged) return;
+	if (!core->config) return;
+
+	const NetworkPlan plan = planFrom(*core->config);
+	bool tellHubs = identityChanged;
+
+	if (networkChanged && !(plan == applied))
+	{
+		if (core->server && !(plan.endpoint == core->server->endpoint()))
+			core->server->listen(plan.endpoint);
+
+		forward(plan);
+
+		const bool advertisedChanged = plan.mode != applied.mode
+			|| plan.keys.activeMode != applied.keys.activeMode
+			|| plan.keys.forceActive != applied.keys.forceActive
+			|| plan.endpoint != applied.endpoint
+			|| plan.address != applied.address;
+
+		if (advertisedChanged)
+		{
+			tellHubs = true;
+			measure(plan);
+		}
+
+		applied = plan;
+	}
+
+	/* Throttled there, so a burst of changes is one update to every hub. */
+	if (tellHubs && core->hubs) core->hubs->requestClientInfoUpdate();
+
+	if (localHubChanged && core->messageHandler)
+		core->messageHandler->postMessage(MsgConfigUpdated, nullptr, 0, 0);
+
+	networkChanged = identityChanged = localHubChanged = false;
+}
 
 
 QuickDC::Core::Core()
@@ -571,7 +729,7 @@ QuickDC::Core::Core()
 
 	hash = new QuickDC::Hash::Manager();
 	shares = new QuickDC::Share::Manager(config, hash);
-	server = new DCServer(*this);
+	server = new DCServer(*this, planFrom(*config).endpoint);
 	connections = new ConnectionManager();
 	hubs = new HubManager(*this);
 	transfers = new TransferManager();
@@ -676,6 +834,8 @@ QuickDC::Core::Core()
 	}
 
 	shares->initialize();
+
+	automation->settle();
 }
 
 
@@ -754,6 +914,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 
 	identity = new ADC::CID(*config);
 	automation = new Automation(this);
+	automation->settle();
 	service = new Api::Service(*this);
 }
 
@@ -856,6 +1017,9 @@ void QuickDC::Core::run()
 	// FIXME: it should be sorted so we don't have to iterate ALL timers to before exit.
 	if (timers) timers->process();
 	if (messageHandler) messageHandler->process();
+
+	/* Last, so that whatever this turn changed is acted on in the same turn. */
+	if (automation) automation->reconcile();
 }
 
 

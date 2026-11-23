@@ -73,6 +73,7 @@ set(QUICKDC_EXOTIC_TESTS
     subscription.tcc
     inbox.tcc
     service.tcc
+    networkplan.tcc
     queuecomplete.tcc
     zupload.tcc)
 

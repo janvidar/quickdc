@@ -23,15 +23,24 @@
 #include "network/connectionmanager.h"
 
 
-QuickDC::DCServer::DCServer(Core& core_)
+QuickDC::DCServer::DCServer(Core& core_, const Endpoint& endpoint)
 	: core(core_)
 {
-	Preferences* config = core.config;
-	config->setGroup("Network");
+	listen(endpoint);
+}
 
-	uint16_t port = config->getNumber("Port", 1411);
-	std::string bindaddr = config->getString("Bind", "0.0.0.0");
-	std::string bindaddr6 = config->getString("Bind6", "::");
+void QuickDC::DCServer::listen(const Endpoint& endpoint)
+{
+	dgram6.reset();
+	socket6.reset();
+	dgram.reset();
+	socket.reset();
+
+	at = endpoint;
+
+	const uint16_t port = at.port;
+	const std::string& bindaddr = at.bind;
+	const std::string& bindaddr6 = at.bind6;
 
 	QDBG("Starting up server at port %d, listening on %s", port, bindaddr.c_str());
 
