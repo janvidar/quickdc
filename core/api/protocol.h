@@ -19,6 +19,7 @@
  * Grown one front-end concern at a time; see docs/redesign.md.
  */
 
+#include "api/bulletins.h"
 #include "api/dropverdict.h"
 #include "api/hublistentry.h"
 
@@ -77,7 +78,146 @@ struct QueueItem {
 	bool complete = false;
 };
 
+/**
+ * A hub session as a front end names it: a number it picks when it opens one,
+ * so two openings of the same address are two sessions, and an address typed
+ * one way is never confused with the core's canonical spelling of it.
+ */
+using HubHandle = uint64_t;
+
+enum class NetStatus {
+	Invalid, Lookup, Connecting, Connected, Disconnected, TlsConnected,
+	TlsDisconnected, ErrorTimeout, ErrorConnectionRefused, ErrorHostNotFound,
+	ErrorHostUnreachable, ErrorIO, TlsError
+};
+
+enum class HubStatus {
+	None, Login, Password, LoggedIn, ErrorLoginRefused, ErrorFull, ErrorDisabled,
+	ErrorNickNotAccepted, ErrorNickTaken, ErrorCidTaken, ErrorWrongPassword,
+	Kicked, BannedTemporarily, BannedPermanently, Redirected
+};
+
+struct User {
+	std::string id;
+	std::string nick;
+	std::string description;
+	std::string email;
+	std::string speed;
+	std::string userAgent;
+	std::string addressIPv4;
+	std::string addressIPv6;
+	std::string keyprint;
+	/** What a download source names this user by: the CID on ADC, the nick on NMDC. */
+	std::string sourceId;
+	uint64_t sharedBytes = 0;
+	uint32_t sharedFiles = 0;
+	uint32_t slotCount = 0;
+	bool op = false;
+	bool away = false;
+};
+
+struct ChatLine {
+	std::string hubUrl;
+	/** Empty when the hub itself spoke; see 'fromHub'. */
+	User from;
+	std::string fromHub;
+	std::string text;
+	/** The private conversation this belongs to; empty in main chat. */
+	std::string context;
+	/** Seconds since the epoch; 0 where the hub did not say. */
+	uint64_t timestamp = 0;
+	bool action = false;
+	bool richText = false;
+	bool privateMessage = false;
+};
+
+struct SearchHit {
+	std::string hubUrl;
+	std::string token;
+	std::string name;
+	std::string tth;
+	uint64_t size = 0;
+	uint32_t freeSlots = 0;
+	User user;
+};
+
 namespace Commands {
+
+/** Start a session for the hub at 'url', not yet connected; see ConnectHub. */
+struct OpenHub {
+	HubHandle hub = 0;
+	std::string url;
+};
+
+/** Disconnect the session and forget it. */
+struct CloseHub { HubHandle hub = 0; };
+struct ConnectHub { HubHandle hub = 0; };
+struct DisconnectHub { HubHandle hub = 0; };
+
+/** What a session agrees to when a hub asks; both are read as the hub asks. */
+struct SetHubPolicy {
+	HubHandle hub = 0;
+	bool followRedirects = false;
+	bool allowPeerConnections = true;
+};
+
+struct SendChat {
+	HubHandle hub = 0;
+	std::string text;
+	bool richText = false;
+};
+
+struct SendPrivateChat {
+	HubHandle hub = 0;
+	std::string userId;
+	std::string text;
+	bool richText = false;
+};
+
+struct SendPassword {
+	HubHandle hub = 0;
+	std::string password;
+};
+
+/** The last 'limit' lines of a conversation from the chat archive. */
+struct RequestHistory {
+	HubHandle hub = 0;
+	std::string hubUrl;
+	std::string conversation;
+	int limit = 0;
+};
+
+struct SubscribeBoard {
+	HubHandle hub = 0;
+	std::string board;
+	uint64_t timestamp = 0;
+};
+
+struct UnsubscribeBoard {
+	HubHandle hub = 0;
+	std::string board;
+};
+
+struct RequestBoardEntry {
+	HubHandle hub = 0;
+	std::string board;
+	std::string tth;
+};
+
+struct SubmitPost {
+	HubHandle hub = 0;
+	std::string tth;
+	uint64_t size = 0;
+	std::string board;
+	std::string subject;
+	std::string parent;
+};
+
+struct WithdrawPost {
+	HubHandle hub = 0;
+	std::string tth;
+	std::string board;
+};
 
 /** Download and parse the hublist at 'url'; one at a time per address. */
 struct FetchHubList {
@@ -203,6 +343,65 @@ struct AttachFile {
 }
 
 namespace Events {
+
+/** OpenHub was given an address no session can be made for. */
+struct HubOpenFailed { HubHandle hub = 0; };
+
+struct HubNetStatus {
+	HubHandle hub = 0;
+	NetStatus status = NetStatus::Invalid;
+	/** Whether the connection is encrypted, as of this change. */
+	bool secure = false;
+};
+
+struct HubReconnectScheduled { HubHandle hub = 0; int seconds = 0; };
+struct HubStatusChanged { HubHandle hub = 0; HubStatus status = HubStatus::None; };
+
+/** The hub announced an extension; what that leaves this session able to do. */
+struct HubExtensions { HubHandle hub = 0; bool richText = false; };
+
+struct HubName { HubHandle hub = 0; std::string name; };
+struct HubDescription { HubHandle hub = 0; std::string description; };
+struct HubSystemError { HubHandle hub = 0; std::string message; };
+struct HubAuthenticate { HubHandle hub = 0; };
+
+/** 'followed' is what SetHubPolicy said, and so what the session did. */
+struct HubRedirect {
+	HubHandle hub = 0;
+	std::string address;
+	uint16_t port = 0;
+	bool followed = false;
+};
+
+struct ChatReceived { HubHandle hub = 0; ChatLine line; };
+struct HistoryRestored {
+	HubHandle hub = 0;
+	std::string conversation;
+	std::vector<ChatLine> lines;
+};
+
+struct UserJoined { HubHandle hub = 0; std::string nick; };
+struct UserLeft {
+	HubHandle hub = 0;
+	User user;
+	std::string message;
+	bool disconnected = false;
+};
+struct UserUpdated { HubHandle hub = 0; User user; };
+struct UsersCleared { HubHandle hub = 0; };
+
+struct SearchResult { HubHandle hub = 0; SearchHit hit; };
+
+struct BoardsAvailable { HubHandle hub = 0; bool available = false; };
+struct BoardDescribed { HubHandle hub = 0; Board board; };
+struct BoardEntryArrived { HubHandle hub = 0; BoardEntry entry; };
+struct BoardRefused {
+	HubHandle hub = 0;
+	int code = 0;
+	std::string message;
+	std::string board;
+	std::string tth;
+};
 
 struct HubListFetched {
 	std::string url;
@@ -332,7 +531,21 @@ struct Command {
 		Commands::AddFallbackSource,
 		Commands::SetPriority,
 		Commands::RemoveFromQueue,
-		Commands::SnapshotTransfers
+		Commands::SnapshotTransfers,
+		Commands::OpenHub,
+		Commands::CloseHub,
+		Commands::ConnectHub,
+		Commands::DisconnectHub,
+		Commands::SetHubPolicy,
+		Commands::SendChat,
+		Commands::SendPrivateChat,
+		Commands::SendPassword,
+		Commands::RequestHistory,
+		Commands::SubscribeBoard,
+		Commands::UnsubscribeBoard,
+		Commands::RequestBoardEntry,
+		Commands::SubmitPost,
+		Commands::WithdrawPost
 	>;
 
 	template<typename T>
@@ -359,7 +572,28 @@ struct Event {
 		Events::TransferError,
 		Events::QueueChanged,
 		Events::DownloadCompleted,
-		Events::TransfersSnapshot
+		Events::TransfersSnapshot,
+		Events::HubOpenFailed,
+		Events::HubNetStatus,
+		Events::HubReconnectScheduled,
+		Events::HubStatusChanged,
+		Events::HubExtensions,
+		Events::HubName,
+		Events::HubDescription,
+		Events::HubSystemError,
+		Events::HubAuthenticate,
+		Events::HubRedirect,
+		Events::ChatReceived,
+		Events::HistoryRestored,
+		Events::UserJoined,
+		Events::UserLeft,
+		Events::UserUpdated,
+		Events::UsersCleared,
+		Events::SearchResult,
+		Events::BoardsAvailable,
+		Events::BoardDescribed,
+		Events::BoardEntryArrived,
+		Events::BoardRefused
 	>;
 
 	template<typename T>

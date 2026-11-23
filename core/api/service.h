@@ -46,6 +46,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 
 	private:
 		class HubListFetch;
+		class HubSession;
 
 		void run(const Commands::FetchHubList& command);
 		void run(const Commands::MeasureReachability& command);
@@ -63,6 +64,23 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::SetPriority& command);
 		void run(const Commands::RemoveFromQueue& command);
 		void run(const Commands::SnapshotTransfers& command);
+		void run(const Commands::OpenHub& command);
+		void run(const Commands::CloseHub& command);
+		void run(const Commands::ConnectHub& command);
+		void run(const Commands::DisconnectHub& command);
+		void run(const Commands::SetHubPolicy& command);
+		void run(const Commands::SendChat& command);
+		void run(const Commands::SendPrivateChat& command);
+		void run(const Commands::SendPassword& command);
+		void run(const Commands::RequestHistory& command);
+		void run(const Commands::SubscribeBoard& command);
+		void run(const Commands::UnsubscribeBoard& command);
+		void run(const Commands::RequestBoardEntry& command);
+		void run(const Commands::SubmitPost& command);
+		void run(const Commands::WithdrawPost& command);
+
+		/** The open session 'hub' names, or null. */
+		HubSession* session(HubHandle hub);
 
 		/** Whether there is a server to ask; publishes why not where there is not. */
 		bool haveReachabilityServer();
@@ -90,6 +108,9 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		Subscription queueObserved;
 		Subscription transfersObserved;
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
+
+		/* Last, so the sessions go before the subscriptions they report through. */
+		std::map<HubHandle, std::unique_ptr<HubSession>> hubs;
 };
 
 }

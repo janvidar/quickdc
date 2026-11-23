@@ -11,6 +11,9 @@
 #include "network/dropcheck.h"
 #include "network/hublist.h"
 #include "api/hub.h"
+#include "chat/archive.h"
+#include "network/user.h"
+#include "share/searchresult.h"
 #include "share/dcfilelist.h"
 #include "share/searchrequest.h"
 #include "network/filesource.h"
@@ -166,6 +169,291 @@ bool decodeList(const std::string& path, QuickDC::Api::RemoteDirectory& root)
 }
 
 }
+
+namespace {
+
+std::string text(const char* value)
+{
+	return value ? value : "";
+}
+
+QuickDC::Api::User converted(const QuickDC::User* user)
+{
+	QuickDC::Api::User out;
+	if (!user) return out;
+
+	out.id          = text(user->getID());
+	out.nick        = text(user->getNick());
+	out.description = text(user->getDescription());
+	out.email       = text(user->getEmail());
+	out.speed       = text(user->getSpeed());
+	out.userAgent   = text(user->getUserAgent());
+	out.addressIPv4 = text(user->getAddressIPv4());
+	out.addressIPv6 = text(user->getAddressIPv6());
+	out.keyprint    = text(user->getKeyprint());
+
+	/* An NMDC user has no client ID, and a source names them by nickname. */
+	const char* cid = reinterpret_cast<const char*>(user->getClientID());
+	out.sourceId    = (cid && *cid) ? std::string(cid) : out.nick;
+
+	out.sharedBytes = user->getSharedBytes();
+	out.sharedFiles = user->getSharedFiles();
+	out.slotCount   = user->getNumSlots();
+	out.op          = user->isOp();
+	out.away        = user->isAway();
+	return out;
+}
+
+QuickDC::Api::NetStatus converted(QuickDC::HubListener::StatusNetwork status)
+{
+	using In = QuickDC::HubListener;
+	using Out = QuickDC::Api::NetStatus;
+
+	switch (status)
+	{
+		case In::NetInvalid:                return Out::Invalid;
+		case In::NetLookup:                 return Out::Lookup;
+		case In::NetConnecting:             return Out::Connecting;
+		case In::NetConnected:              return Out::Connected;
+		case In::NetDisconnected:           return Out::Disconnected;
+		case In::NetTlsConnected:           return Out::TlsConnected;
+		case In::NetTlsDisconnected:        return Out::TlsDisconnected;
+		case In::NetErrorTimeout:           return Out::ErrorTimeout;
+		case In::NetErrorConnectionRefused: return Out::ErrorConnectionRefused;
+		case In::NetErrorHostNotFound:      return Out::ErrorHostNotFound;
+		case In::NetErrorHostUnreachable:   return Out::ErrorHostUnreachable;
+		case In::NetErrorIO:                return Out::ErrorIO;
+		case In::NetTlsError:               return Out::TlsError;
+	}
+	return Out::Invalid;
+}
+
+QuickDC::Api::HubStatus converted(QuickDC::HubListener::StatusHub status)
+{
+	using In = QuickDC::HubListener;
+	using Out = QuickDC::Api::HubStatus;
+
+	switch (status)
+	{
+		case In::HubNone:                 return Out::None;
+		case In::HubLogin:                return Out::Login;
+		case In::HubPassword:             return Out::Password;
+		case In::HubLoggedIn:             return Out::LoggedIn;
+		case In::HubErrorLoginRefused:    return Out::ErrorLoginRefused;
+		case In::HubErrorFull:            return Out::ErrorFull;
+		case In::HubErrorDisabled:        return Out::ErrorDisabled;
+		case In::HubErrorNickNotAccepted: return Out::ErrorNickNotAccepted;
+		case In::HubErrorNickTaken:       return Out::ErrorNickTaken;
+		case In::HubErrorCIDTaken:        return Out::ErrorCidTaken;
+		case In::HubErrorWrongPassword:   return Out::ErrorWrongPassword;
+		case In::HubKicked:               return Out::Kicked;
+		case In::HubBannedTemporarily:    return Out::BannedTemporarily;
+		case In::HubBannedPermanently:    return Out::BannedPermanently;
+		case In::HubRedirected:           return Out::Redirected;
+	}
+	return Out::None;
+}
+
+}
+
+/**
+ * One hub session, reporting everything it hears as an event for its handle.
+ *
+ * What the core lends a listener - a User it deletes on the next line, a string
+ * in a buffer the next command reuses - is copied here, before publish().
+ */
+class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public QuickDC::HubListener {
+	public:
+		HubSession(Service& owner, HubHandle handle, Samurai::IO::Net::URL* url)
+			: QuickDC::Hub(owner.core, this, url)
+			, owner(owner)
+			, handle(handle)
+		{
+		}
+
+		void setPolicy(bool follow, bool allowPeers)
+		{
+			followRedirects = follow;
+			allowPeerConnections = allowPeers;
+		}
+
+		void sendPrivateChat(const std::string& userId, const std::string& message, bool richText)
+		{
+			const QuickDC::User* user = session ? session->getUser(userId.c_str()) : nullptr;
+			if (!user)
+			{
+				EventSystemError("sendPrivateChat(): No such user");
+				return;
+			}
+			sendPrivateChatMessage(user, message.c_str(), richText);
+		}
+
+		void EventNetStatus(enum StatusNetwork netstate) override
+		{
+			owner.publish(Events::HubNetStatus{handle, converted(netstate), isSecure()});
+		}
+
+		void EventReconnectScheduled(int seconds) override
+		{
+			owner.publish(Events::HubReconnectScheduled{handle, seconds});
+		}
+
+		void EventHubStatus(enum StatusHub hubstate) override
+		{
+			owner.publish(Events::HubStatusChanged{handle, converted(hubstate)});
+		}
+
+		void EventHubExtension(const char*) override
+		{
+			owner.publish(Events::HubExtensions{handle, supportsRichText()});
+		}
+
+		void EventBoardsAvailable(bool available) override
+		{
+			owner.publish(Events::BoardsAvailable{handle, available});
+		}
+
+		void EventBoardDescribed(const QuickDC::Board& board) override
+		{
+			owner.publish(Events::BoardDescribed{handle, board});
+		}
+
+		void EventBoardEntry(const QuickDC::BoardEntry& entry) override
+		{
+			owner.publish(Events::BoardEntryArrived{handle, entry});
+		}
+
+		void EventBoardRefused(int code, const char* message, const char* board,
+		                       const char* tth) override
+		{
+			owner.publish(Events::BoardRefused{handle, code, text(message), text(board), text(tth)});
+		}
+
+		void EventSystemError(const char* msg) override
+		{
+			owner.publish(Events::HubSystemError{handle, text(msg)});
+		}
+
+		void EventChat(const QuickDC::User* user, const char* message, bool action,
+		               bool richText, uint64_t timestamp) override
+		{
+			ChatLine line;
+			line.hubUrl = text(getUrl());
+			line.from = converted(user);
+			line.text = text(message);
+			line.timestamp = timestamp;
+			line.action = action;
+			line.richText = richText;
+			owner.publish(Events::ChatReceived{handle, std::move(line)});
+		}
+
+		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User*,
+		                      const char* message, const char* userContextID,
+		                      bool action, bool richText, uint64_t timestamp) override
+		{
+			ChatLine line;
+			line.hubUrl = text(getUrl());
+			line.from = converted(from);
+			line.text = text(message);
+			line.context = text(userContextID);
+			line.timestamp = timestamp;
+			line.action = action;
+			line.richText = richText;
+			line.privateMessage = true;
+
+			/* A conversation with nobody else in it is named after who it is with. */
+			if (line.context.empty()) line.context = line.from.id;
+
+			owner.publish(Events::ChatReceived{handle, std::move(line)});
+		}
+
+		void EventHubMessage(const char* fakeuser, const char* message, bool action,
+		                     bool richText, uint64_t timestamp) override
+		{
+			ChatLine line;
+			line.hubUrl = text(getUrl());
+			line.fromHub = text(fakeuser);
+			line.text = text(message);
+			line.timestamp = timestamp;
+			line.action = action;
+			line.richText = richText;
+			owner.publish(Events::ChatReceived{handle, std::move(line)});
+		}
+
+		void EventUserJoin(const char* user) override
+		{
+			owner.publish(Events::UserJoined{handle, text(user)});
+		}
+
+		void EventUserLeave(const QuickDC::User* user, const char* message,
+		                    bool disconnect) override
+		{
+			owner.publish(Events::UserLeft{handle, converted(user), text(message), disconnect});
+		}
+
+		void EventUsersCleanup() override
+		{
+			owner.publish(Events::UsersCleared{handle});
+		}
+
+		void EventUserUpdate(const QuickDC::User* user) override
+		{
+			owner.publish(Events::UserUpdated{handle, converted(user)});
+		}
+
+		void EventSearchResult(void* pointer) override
+		{
+			const auto* result = static_cast<const QuickDC::Share::SearchResult*>(pointer);
+			if (!result) return;
+
+			SearchHit hit;
+			hit.hubUrl = text(getUrl());
+			hit.token = text(result->getToken());
+			hit.name = text(result->getFile());
+			hit.tth = text(result->getTTH());
+			hit.size = result->getSize();
+			hit.freeSlots = static_cast<uint32_t>(result->getFreeSlots());
+			hit.user = converted(result->getUser());
+			owner.publish(Events::SearchResult{handle, std::move(hit)});
+		}
+
+		void EventHubName(const char* hubname) override
+		{
+			owner.publish(Events::HubName{handle, text(hubname)});
+		}
+
+		void EventHubDescription(const char* description) override
+		{
+			owner.publish(Events::HubDescription{handle, text(description)});
+		}
+
+		bool EventHubRedirect(const char* address, uint16_t port) override
+		{
+			owner.publish(Events::HubRedirect{handle, text(address), port, followRedirects});
+			return followRedirects;
+		}
+
+		void EventHubAutenticate() override
+		{
+			owner.publish(Events::HubAuthenticate{handle});
+		}
+
+		bool EventClientConnect(const char*, uint16_t, const QuickDC::User*) override
+		{
+			return allowPeerConnections;
+		}
+
+		bool EventClientConnect(const QuickDC::User*) override
+		{
+			return allowPeerConnections;
+		}
+
+	private:
+		Service& owner;
+		HubHandle handle;
+		bool followRedirects = false;
+		bool allowPeerConnections = true;
+};
 
 QuickDC::Api::Service::Service(Core& core_)
 	: core(core_)
@@ -512,4 +800,131 @@ void QuickDC::Api::Service::EventTransferStopped(QuickDC::Transfer* transfer)
 void QuickDC::Api::Service::EventTransferError(QuickDC::Transfer* transfer)
 {
 	publish(Events::TransferError{converted(transfer)});
+}
+
+QuickDC::Api::Service::HubSession* QuickDC::Api::Service::session(HubHandle hub)
+{
+	const auto found = hubs.find(hub);
+	return found == hubs.end() ? nullptr : found->second.get();
+}
+
+void QuickDC::Api::Service::run(const Commands::OpenHub& command)
+{
+	/* Hub copies the address it is given. */
+	Samurai::IO::Net::URL parsed(command.url);
+	if (!parsed.isValid() || hubs.count(command.hub))
+	{
+		publish(Events::HubOpenFailed{command.hub});
+		return;
+	}
+
+	hubs[command.hub] = std::make_unique<HubSession>(*this, command.hub, &parsed);
+}
+
+/* Disconnected first: ~Hub frees the session, and does not close it. */
+void QuickDC::Api::Service::run(const Commands::CloseHub& command)
+{
+	const auto found = hubs.find(command.hub);
+	if (found == hubs.end()) return;
+
+	std::unique_ptr<HubSession> closing = std::move(found->second);
+	hubs.erase(found);
+	closing->disconnect();
+}
+
+void QuickDC::Api::Service::run(const Commands::ConnectHub& command)
+{
+	if (HubSession* hub = session(command.hub)) hub->connect();
+}
+
+void QuickDC::Api::Service::run(const Commands::DisconnectHub& command)
+{
+	if (HubSession* hub = session(command.hub)) hub->disconnect();
+}
+
+void QuickDC::Api::Service::run(const Commands::SetHubPolicy& command)
+{
+	if (HubSession* hub = session(command.hub))
+		hub->setPolicy(command.followRedirects, command.allowPeerConnections);
+}
+
+void QuickDC::Api::Service::run(const Commands::SendChat& command)
+{
+	if (HubSession* hub = session(command.hub))
+		hub->sendChatMessage(command.text.c_str(), command.richText);
+}
+
+void QuickDC::Api::Service::run(const Commands::SendPrivateChat& command)
+{
+	if (HubSession* hub = session(command.hub))
+		hub->sendPrivateChat(command.userId, command.text, command.richText);
+}
+
+void QuickDC::Api::Service::run(const Commands::SendPassword& command)
+{
+	if (HubSession* hub = session(command.hub)) hub->sendPassword(command.password.c_str());
+}
+
+void QuickDC::Api::Service::run(const Commands::RequestHistory& command)
+{
+	Events::HistoryRestored restored{command.hub, command.conversation, {}};
+
+	if (core.chat && command.limit > 0)
+	{
+		const std::vector<ChatArchive::Line> found = core.chat->tail(
+			command.hubUrl.c_str(), command.conversation.c_str(),
+			static_cast<size_t>(command.limit));
+
+		restored.lines.reserve(found.size());
+		for (const ChatArchive::Line& stored : found)
+		{
+			ChatLine line;
+			line.hubUrl = command.hubUrl;
+			line.text = stored.text;
+			line.fromHub = stored.hub;
+			line.from.nick = stored.nick;
+			line.from.sourceId = stored.source;
+			line.from.op = stored.op;
+			line.action = stored.action;
+			line.richText = stored.richText;
+			line.privateMessage = stored.privateMessage;
+			line.timestamp = stored.time;
+			restored.lines.push_back(std::move(line));
+		}
+	}
+
+	publish(restored);
+}
+
+void QuickDC::Api::Service::run(const Commands::SubscribeBoard& command)
+{
+	if (HubSession* hub = session(command.hub))
+		hub->subscribeBoard(command.board.c_str(), command.timestamp);
+}
+
+void QuickDC::Api::Service::run(const Commands::UnsubscribeBoard& command)
+{
+	if (HubSession* hub = session(command.hub)) hub->unsubscribeBoard(command.board.c_str());
+}
+
+void QuickDC::Api::Service::run(const Commands::RequestBoardEntry& command)
+{
+	if (HubSession* hub = session(command.hub))
+		hub->requestEntry(command.board.c_str(), command.tth.c_str());
+}
+
+void QuickDC::Api::Service::run(const Commands::SubmitPost& command)
+{
+	HubSession* hub = session(command.hub);
+	if (!hub) return;
+
+	hub->submitPost(command.tth.c_str(), command.size, command.board.c_str(),
+	                command.subject.empty() ? nullptr : command.subject.c_str(),
+	                command.parent.empty() ? nullptr : command.parent.c_str());
+}
+
+void QuickDC::Api::Service::run(const Commands::WithdrawPost& command)
+{
+	if (HubSession* hub = session(command.hub))
+		hub->withdrawPost(command.tth.c_str(), command.board.c_str());
 }
