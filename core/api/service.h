@@ -26,10 +26,10 @@ namespace Api {
  * objects never have to be handed out: what the core lends a listener here is
  * copied into an Event before anybody outside sees it.
  */
-class Service {
+class Service : private DropCheckListener {
 	public:
 		explicit Service(Core& core);
-		~Service();
+		~Service() override;
 
 		Service(const Service&) = delete;
 		Service& operator=(const Service&) = delete;
@@ -44,9 +44,22 @@ class Service {
 		class HubListFetch;
 
 		void run(const Commands::FetchHubList& command);
+		void run(const Commands::MeasureReachability& command);
+		void run(const Commands::LookupPublicAddress& command);
+		void run(const Commands::ReplayReachability& command);
+		void run(const Commands::ApplyPortForwarding& command);
+		void run(const Commands::RepublishClientInfo& command);
+
+		/** Whether there is a server to ask; publishes why not where there is not. */
+		bool haveReachabilityServer();
+
+		void EventDropCheckStarted(bool ipv6) override;
+		void EventDropCheckFinished(const DropVerdict& verdict) override;
+		void EventDropCheckFailed(const char* reason) override;
 
 		Core& core;
 		ListenerList<EventSink> sinks;
+		Subscription dropObserved;
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
 };
 

@@ -556,7 +556,7 @@ QuickDC::Core::Core()
 	session = new Preferences("~/.quickdc/session.conf");
 	identity = new ADC::CID(*config);
 	automation = new Automation(this);
-	service = new Api::Service(*this);
+	service = 0;
 	
 	monitor = Samurai::IO::Net::SocketMonitor::getInstance();
 	bandwidthManager = new Samurai::IO::Net::BandwidthManager();
@@ -647,6 +647,9 @@ QuickDC::Core::Core()
 	 */
 	dropcheck = new DropCheck(&automation->dropcheck);
 	dropRefresh = new Samurai::Timer(&automation->dropcheck, DROP_REFRESH_TICK, false);
+
+	/* After the check, which it observes, and before anything starts one. */
+	service = new Api::Service(*this);
 
 	/*
 	 * The first run against whoever is named, and which run depends on the mode.

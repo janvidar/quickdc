@@ -19,6 +19,7 @@
  * Grown one front-end concern at a time; see docs/redesign.md.
  */
 
+#include "api/dropverdict.h"
 #include "api/hublistentry.h"
 
 #include <string>
@@ -36,6 +37,29 @@ struct FetchHubList {
 	std::string url;
 };
 
+/** Measure reachability against the configured server, IPv4 first. */
+struct MeasureReachability { };
+
+/** Ask the configured server only what public address it sees. */
+struct LookupPublicAddress {
+	bool ipv6 = false;
+};
+
+/** Say again every verdict already held, as ReachabilityMeasured. */
+struct ReplayReachability { };
+
+/**
+ * Start or stop the gateway mapping to match the connection mode.
+ * Transitional: C2 has the core do this whenever a setting it depends on changes.
+ */
+struct ApplyPortForwarding { };
+
+/**
+ * Tell every hub again what it was told about this client at login.
+ * Transitional: C4 has the core do this whenever any of it changes.
+ */
+struct RepublishClientInfo { };
+
 }
 
 namespace Events {
@@ -51,6 +75,28 @@ struct HubListFailed {
 	std::string reason;
 };
 
+struct ReachabilityCheckStarted {
+	bool ipv6 = false;
+};
+
+struct ReachabilityMeasured {
+	DropVerdict verdict;
+};
+
+struct ReachabilityCheckFailed {
+	enum class Why {
+		/** The core has no configuration to read a server from. */
+		NoConfiguration,
+		/** No reachability server is configured, so nobody can be asked. */
+		NoServer,
+		/** A run was made and did not complete; see 'reason'. */
+		CheckFailed
+	};
+
+	Why why = Why::CheckFailed;
+	std::string reason;
+};
+
 }
 
 /*
@@ -59,7 +105,12 @@ struct HubListFailed {
  */
 struct Command {
 	using Variant = std::variant<
-		Commands::FetchHubList
+		Commands::FetchHubList,
+		Commands::MeasureReachability,
+		Commands::LookupPublicAddress,
+		Commands::ReplayReachability,
+		Commands::ApplyPortForwarding,
+		Commands::RepublishClientInfo
 	>;
 
 	template<typename T>
@@ -71,7 +122,10 @@ struct Command {
 struct Event {
 	using Variant = std::variant<
 		Events::HubListFetched,
-		Events::HubListFailed
+		Events::HubListFailed,
+		Events::ReachabilityCheckStarted,
+		Events::ReachabilityMeasured,
+		Events::ReachabilityCheckFailed
 	>;
 
 	template<typename T>
