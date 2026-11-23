@@ -28,6 +28,7 @@
 #include "network/hubmanager.h"
 #include "network/dropcheck.h"
 #include "api/networkmode.h"
+#include "network/mappingpolicy.h"
 #include "network/portforward.h"
 #include "network/reachability.h"
 #include "network/searchtokens.h"
@@ -41,24 +42,28 @@
 
 namespace {
 
+/* The core's gateway, as the mapping policy sees it. */
+class GatewayOf final : public QuickDC::MappingPolicy::Gateway {
+	public:
+		explicit GatewayOf(QuickDC::PortForward& forward) : forward(forward) { }
+
+		bool forwarded() const override { return forward.isForwarded(); }
+		bool busy() const override { return forward.isBusy(); }
+		void start(uint16_t port) override { forward.start(port); }
+		void stop() override { forward.stop(); }
+
+	private:
+		QuickDC::PortForward& forward;
+};
+
 /*
  * What the check-map-recheck loop keeps between events, one per core.
  */
 struct AutomationState {
 	QuickDC::Core* core;
 
-	/*
-	 * Whether a port mapping was asked for because a measurement said passive.
-	 *
-	 * The whole of the state the check-map-recheck loop needs, and it needs some: a
-	 * gateway grants a mapping and reports success without knowing whether anything
-	 * upstream honours it, so the only evidence that the mapping helped is a second
-	 * measurement taken through it. That means the two listeners below have to agree
-	 * on which pass they are in - one asks for the mapping, the other measures again
-	 * when it appears - and on whose mapping it is, since a forward this did not
-	 * create is not this one's to take away.
-	 */
-	bool mapping_asked_for = false;
+	/** Whether to hold a gateway mapping; see network/mappingpolicy.h. */
+	QuickDC::MappingPolicy mapping;
 
 	/*
 	 * Whether a measurement is owed once the gateway has been dealt with.
@@ -70,16 +75,17 @@ struct AutomationState {
 	 * started, and whichever way the gateway answers releases it - both outcomes are
 	 * reported, exactly once, including a search that nothing answered.
 	 *
-	 * Separate from 'mapping_asked_for' because the two are about different things:
-	 * that one decides whose mapping it is and therefore who may take it away, and
-	 * this one only says that what is held is older than the mapping. A forward asked
-	 * for at start-up or by a front end is measured through for the same reason the
-	 * loop's own is, and neither is released by this.
 	 */
 	bool measurement_owed = false;
 
 	bool measureIfStale(bool ipv6);
 	void measureAgainIfOwed();
+
+	/** Ask the gateway for the mapping the plan wants, or let go of one it does not. */
+	void applyMapping();
+
+	/** A verdict of passive: either the mapping did not help, or one is worth asking for. */
+	void considerMapping(const QuickDC::DropVerdict& verdict);
 };
 /**
  * Measure 'ipv6', unless there is nothing to measure or nothing to learn.
@@ -194,18 +200,12 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			(void) address;
 			announce();
 
+			owner.mapping.granted();
 			owner.measurement_owed = true;
 			owner.measureAgainIfOwed();
 		}
 
-		/**
-		 * No mapping is coming, so the hubs are told the client stays passive and
-		 * the loop is abandoned rather than left waiting for one.
-		 *
-		 * Left marked as having asked for a mapping, the next passive verdict
-		 * would read as the pass that releases one - of which there is none, and
-		 * the measurement that produced it would be the one being answered.
-		 */
+		/** No mapping is coming, so the hubs are told the client stays passive. */
 		void EventPortForwardFailure(const char* reason) override
 		{
 			/*
@@ -216,7 +216,7 @@ class CorePortForwardListener : public QuickDC::PortForwardListener
 			(void) reason;
 			announce();
 
-			owner.mapping_asked_for = false;
+			owner.mapping.refused();
 
 			/*
 			 * A run held back so that it would not race the gateway is taken now:
@@ -300,6 +300,14 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 		 * that considers a mapping; any other ends the loop, since there is
 		 * nothing left to try and nothing to undo.
 		 */
+		/* Only the IPv4 run goes through the gateway; IPv6 has no mapping to test. */
+		void EventDropCheckStarted(bool ipv6) override
+		{
+			if (!owner.core->portforward) return;
+			GatewayOf gateway(*owner.core->portforward);
+			owner.mapping.checkStarted(gateway, ipv6);
+		}
+
 		void EventDropCheckFinished(const QuickDC::DropVerdict& verdict) override
 		{
 			/*
@@ -323,9 +331,7 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 
 			QuickDC::applyDropMeasurement(*core);
 
-			if (verdict.mode == QuickDC::DropMode::Passive) considerMapping(core, verdict);
-
-			if (verdict.mode != QuickDC::DropMode::Passive) owner.mapping_asked_for = false;
+			if (verdict.mode == QuickDC::DropMode::Passive) owner.considerMapping(verdict);
 
 			if (core->hubs) core->hubs->requestClientInfoUpdate();
 
@@ -356,8 +362,6 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 			QDBG("The reachability check did not complete: %s", reason);
 			(void) reason;
 
-			owner.mapping_asked_for = false;
-
 			/*
 			 * The other family is still owed its run: one family's server being
 			 * unreachable says nothing about the other, and they are commonly
@@ -373,60 +377,7 @@ class CoreDropCheckListener : public QuickDC::DropCheckListener,
 		}
 
 	private:
-		/**
-		 * Ask the gateway to forward the port, or conclude that doing so did not
-		 * help.
-		 *
-		 * Two passes, and which one this is depends on whether a mapping has
-		 * already been asked for. The first asks; the second is reached only
-		 * because the answer is still passive with the mapping in place, which
-		 * means something above the gateway is dropping the packets - so the
-		 * forward is released. Leaving one open to a port that could not be
-		 * reached through it has no upside, and it is a hole in somebody's
-		 * network that nothing is using.
-		 *
-		 * A forward this did not ask for is never released. It may be there
-		 * because the configuration asked for it at start-up, or because a front
-		 * end asked, and neither is this loop's to undo.
-		 *
-		 * One is only asked for where forwarding was asked for at all, which is
-		 * where [Network] UseUPnP is already on. A search tells every host on the
-		 * local segment what this machine runs, the same disclosure that setting
-		 * gates - and a measurement saying passive is not consent to start
-		 * announcing this machine there.
-		 */
-		void considerMapping(QuickDC::Core* core,
-		                            const QuickDC::DropVerdict& verdict)
-		{
-			if (!core->portforward || !core->config) return;
 
-			if (owner.mapping_asked_for)
-			{
-				if (core->portforward->isForwarded())
-				{
-					QDBG("The mapping did not help; releasing it");
-					core->portforward->stop();
-				}
-
-				owner.mapping_asked_for = false;
-				return;
-			}
-
-			if (!QuickDC::Settings::read(*core->config, QuickDC::Settings::UseUpnp)) return;
-
-			if (core->portforward->isForwarded()) return;
-			if (core->portforward->isBusy()) return;
-
-			const uint16_t port = verdict.port
-				? verdict.port
-				: static_cast<uint16_t>(QuickDC::Settings::read(*core->config, QuickDC::Settings::Port));
-
-			QDBG("Passive on port %d; asking the gateway to forward it",
-			     static_cast<int>(port));
-
-			owner.mapping_asked_for = true;
-			core->portforward->start(port);
-		}
 
 		AutomationState& owner;
 };
@@ -606,7 +557,6 @@ class QuickDC::Core::Automation : public AutomationState, private PreferencesLis
 			else if (group == "Local hub") localHubChanged = true;
 		}
 
-		void forward(const NetworkPlan& plan);
 		void measure(const NetworkPlan& plan);
 
 		Subscription watched;
@@ -617,28 +567,24 @@ class QuickDC::Core::Automation : public AutomationState, private PreferencesLis
 		bool localHubChanged = false;
 };
 
-/* Ask the gateway for what the plan wants, or let go of what it no longer does. */
-void QuickDC::Core::Automation::forward(const NetworkPlan& plan)
+void AutomationState::applyMapping()
 {
-	PortForward* gateway = core->portforward;
-	if (!gateway) return;
+	if (!core->portforward || !core->config) return;
 
-	const bool have = gateway->isForwarded() || gateway->isBusy();
-	const bool moved = plan.endpoint.port != applied.endpoint.port;
+	const NetworkPlan plan = planFrom(*core->config);
+	GatewayOf gateway(*core->portforward);
 
-	if (have && (!plan.keys.useUpnp || moved))
-	{
-		gateway->stop();
-		mapping_asked_for = false;
-	}
+	/* What is measured before the gateway answers is about the network without it. */
+	measurement_owed = mapping.apply(gateway, plan.keys.useUpnp, plan.endpoint.port);
+}
 
-	if (plan.keys.useUpnp && (!have || moved))
-	{
-		gateway->start(plan.endpoint.port);
+void AutomationState::considerMapping(const QuickDC::DropVerdict&)
+{
+	if (!core->portforward || !core->config) return;
 
-		/* What is measured before the gateway answers is about the network without it. */
-		measurement_owed = gateway->isBusy();
-	}
+	const NetworkPlan plan = planFrom(*core->config);
+	GatewayOf gateway(*core->portforward);
+	measurement_owed = mapping.passive(gateway, plan.keys.useUpnp, plan.endpoint.port);
 }
 
 /*
@@ -672,7 +618,8 @@ void QuickDC::Core::Automation::reconcile()
 		if (core->server && !(plan.endpoint == core->server->endpoint()))
 			core->server->listen(plan.endpoint);
 
-		forward(plan);
+		mapping.configurationChanged();
+		applyMapping();
 
 		const bool advertisedChanged = plan.mode != applied.mode
 			|| plan.keys.activeMode != applied.keys.activeMode
@@ -792,22 +739,12 @@ QuickDC::Core::Core()
 		QuickDC::Settings::read(*config, QuickDC::Settings::ForceActiveMode),
 		QuickDC::Settings::read(*config, QuickDC::Settings::ReachabilityServer));
 
-	const bool forwarding = wanted.useUpnp;
-	if (forwarding)
-		portforward->start(static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)));
-
 	/*
-	 * The first measurement waits for the gateway rather than going out beside it;
-	 * see 'measurement_owed'. Read from whether the ask is under way rather than
-	 * from the setting, so that a start() which failed outright - it reports
-	 * before it returns - has already released the wait. Assigned either way,
-	 * since what it holds belongs to no particular core.
-	 *
-	 * Which is also what keeps this in step with the mode above at no cost: a mode
-	 * that forwards nothing leaves nothing to wait for, so the first measurement
-	 * goes out immediately rather than waiting on a gateway nobody asked.
+	 * Which also settles whether the first measurement waits for the gateway: see
+	 * 'measurement_owed'. A mode that forwards nothing leaves nothing to wait for,
+	 * and a start() that failed outright has reported before it returns.
 	 */
-	automation->measurement_owed = forwarding && portforward->isBusy();
+	automation->applyMapping();
 
 	/*
 	 * Built whether or not there is a server to ask, because naming one is a

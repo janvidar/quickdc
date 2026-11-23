@@ -75,6 +75,7 @@ set(QUICKDC_EXOTIC_TESTS
     service.tcc
     networkplan.tcc
     migrations.tcc
+    mappingpolicy.tcc
     queuecomplete.tcc
     zupload.tcc)
 

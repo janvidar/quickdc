@@ -26,6 +26,7 @@ set(QUICKDC_SOURCES
     network/keyprint.cpp
     network/leafhashes.cpp
     network/dropcheck.cpp
+    network/mappingpolicy.cpp
     network/portforward.cpp
     network/reachability.cpp
     network/searchtokens.cpp
