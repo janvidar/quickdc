@@ -147,3 +147,43 @@ EXO_TEST(migrations_what_was_migrated_is_written_out,
 	EXO_ASSERT(!s.session->haveSetting("adc://a.example.org:1511", "Nickname"));
 	return 1;
 });
+
+/* A server stored before the page stopped offering one is put back to the default. */
+EXO_TEST(migrations_a_stored_reachability_server_is_reset_to_the_default,
+{
+	Stores s;
+	s.config->setString("Network", "Reachability server", "drop.example.org");
+	s.config->setNumber("Settings", "Version", 2);
+
+	QuickDC::migrateSettings(*s.config, *s.session, false);
+
+	EXO_ASSERT(s.config->peekString("Network", "Reachability server", "") == "drop.quickdc.org");
+	return 1;
+});
+
+/* An empty one says not to ask anybody, and that is kept. */
+EXO_TEST(migrations_an_empty_reachability_server_stays_empty,
+{
+	Stores s;
+	s.config->setString("Network", "Reachability server", "");
+	s.config->setNumber("Settings", "Version", 2);
+
+	QuickDC::migrateSettings(*s.config, *s.session, false);
+
+	EXO_ASSERT(s.config->haveSetting("Network", "Reachability server"));
+	EXO_ASSERT(s.config->peekString("Network", "Reachability server", "x").empty());
+	return 1;
+});
+
+/* Chosen after the upgrade, a server of somebody's own stays theirs. */
+EXO_TEST(migrations_a_server_chosen_after_the_upgrade_is_kept,
+{
+	Stores s;
+	QuickDC::migrateSettings(*s.config, *s.session, false);
+	s.config->setString("Network", "Reachability server", "drop.example.org");
+
+	QuickDC::migrateSettings(*s.config, *s.session, false);
+
+	EXO_ASSERT(s.config->peekString("Network", "Reachability server", "") == "drop.example.org");
+	return 1;
+});

@@ -61,12 +61,31 @@ void unpinHubIdentities(QuickDC::Preferences& config, QuickDC::Preferences& sess
 	}
 }
 
+/*
+ * Version 3: the reachability server, which the settings page stopped offering a
+ * choice of once every mode measured against the same one. A server stored before
+ * that still outranked the default, and with nothing on the page to change it a
+ * server that had gone away left every check failing for good. A stored one other
+ * than the default is put back to it; an empty one is left empty, since nothing
+ * stored is how the client is kept from asking a third party at all.
+ */
+void resetReachabilityServer(QuickDC::Preferences& config, QuickDC::Preferences&, bool)
+{
+	namespace S = QuickDC::Settings;
+
+	const std::string stored = S::read(config, S::ReachabilityServer);
+	if (stored.empty() || stored == QuickDC::defaultReachabilityServer()) return;
+
+	S::write(config, S::ReachabilityServer, QuickDC::defaultReachabilityServer());
+}
+
 using Step = void (*)(QuickDC::Preferences&, QuickDC::Preferences&, bool);
 
 /* In order; a step's version is its position plus one. Only ever appended to. */
 const Step STEPS[] = {
 	settleConnectionMode,
 	unpinHubIdentities,
+	resetReachabilityServer,
 };
 
 }
