@@ -389,6 +389,39 @@ EXO_TEST(sources_an_exhausted_source_is_passed_over_and_expired,
 	return 1;
 });
 
+/*
+ * A user on no hub we are on is left alone for the retry interval - not asked for
+ * on every pass - but that is not a failure: however often it happens, it does not
+ * bring the source any nearer to being given up on.
+ */
+EXO_TEST(sources_an_absent_user_is_waited_for_without_being_counted_against,
+{
+		QuickDC::FileSource source(HUB, "AAAA");
+		EXO_ASSERT(source.isReadyToRetry());
+
+		for (int n = 0; n < QUICKDC_SOURCE_MAX_RETRIES * 2; n++) source.onAbsent();
+
+		EXO_ASSERT(!source.isReadyToRetry());
+		EXO_ASSERT_EQ_UINT(source.getRetryCount(), 0u);
+		EXO_ASSERT(!source.isExpired());
+	return 1;
+});
+
+/* Found again - asked, or seen - ends the wait. */
+EXO_TEST(sources_an_absent_user_found_again_is_asked_at_once,
+{
+		QuickDC::FileSource seen(HUB, "AAAA");
+		seen.onAbsent();
+		seen.touch();
+		EXO_ASSERT(seen.isReadyToRetry());
+
+		QuickDC::FileSource asked(HUB, "BBBB");
+		asked.onAbsent();
+		asked.onAttempt();
+		EXO_ASSERT(asked.isReadyToRetry());
+	return 1;
+});
+
 /* A peer not seen for a very long time has gone stale. */
 EXO_TEST(sources_a_source_not_seen_for_years_has_gone_stale,
 {

@@ -477,6 +477,9 @@ class Hub
 		 */
 		bool connectUserByClientID(const char* cid, const char* token);
 
+		/** Whether the user a source names - a client ID, or a nickname on NMDC - is here. */
+		bool hasSourceUser(const char* cid) const;
+
 		/**
 		 * The hub URL in canonical "{scheme}://{host}:{port}" form.
 		 * This is what a FileSource records, so the two have to agree.

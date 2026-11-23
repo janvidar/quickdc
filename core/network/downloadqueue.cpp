@@ -1783,7 +1783,25 @@ void QuickDC::QueueManager::schedule()
 				if (!sourceIsUseful(file, source)) continue;
 
 				QuickDC::Hub* hub = core->hubs->getHubByUrl(source->getHubUrl());
-				if (!hub) continue;   /* not logged in there at the moment */
+
+				/*
+				 * Where the source was found is not where the user has to be: a
+				 * client ID is the same on every hub, so one who has left that hub
+				 * and is on another we are on is asked there. One on none of them
+				 * is not a failure of the source and is not counted as one - it is
+				 * looked for again after the retry interval, and only giving up on
+				 * a user nobody has seen for a month forgets them.
+				 */
+				if (!hub || !hub->hasSourceUser(source->getClientID()))
+				{
+					QuickDC::Hub* elsewhere = core->hubs->lookupUserByClientID(source->getClientID());
+					if (!elsewhere)
+					{
+						source->onAbsent();
+						continue;
+					}
+					hub = elsewhere;
+				}
 
 				if (hub->isLocalUser(source->getClientID())) continue;
 

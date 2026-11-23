@@ -30,6 +30,7 @@
 #include "network/adc/parser.h"
 #include "network/searchtokens.h"
 #include "network/downloadqueue.h"
+#include "network/filesource.h"
 #include "api/attachments.h"
 #include "hash/hashmanager.h"
 #include "share/sharemanager.h"
@@ -4678,5 +4679,123 @@ EXO_TEST(hubsession_a_closed_session_leaves_no_nickname_behind,
 	}
 
 	EXO_ASSERT(!core->session->haveSetting(group, "Nickname"));
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* Asking a queued source to connect                                         */
+/* ------------------------------------------------------------------------- */
+
+namespace {
+
+const char SOURCE_CID[] = "SOURCEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const char SOURCE_TTH[] = "SOURCETTHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+/* Whether 'fake' was sent a connection request - either way round - since 'before'. */
+bool askedToConnect(FakeHub& fake)
+{
+	fake.drain();
+	return fake.received.find("DCTM") != std::string::npos
+	    || fake.received.find("DRCM") != std::string::npos;
+}
+
+/* A file in the queue with one source, recorded against 'hubUrl'; taken out again on scope exit. */
+class QueuedFromSource {
+	public:
+		explicit QueuedFromSource(const std::string& hubUrl)
+		{
+			file = core->queue->add(scratch("queued.bin").c_str(), SOURCE_TTH, 64 * 1024);
+			if (file) file->addSource(new QuickDC::FileSource(hubUrl.c_str(), SOURCE_CID));
+		}
+
+		~QueuedFromSource()
+		{
+			if (file) core->queue->remove(file);
+		}
+
+		QuickDC::FileSource* source() { return file ? file->getSource(0) : nullptr; }
+
+		QuickDC::QueueFile* file = nullptr;
+};
+
+}
+
+/*
+ * A source whose user is on no hub we are on is not asked for, and that is not
+ * counted against it - it used to be a request made and dropped several times a
+ * second, for ever.
+ */
+EXO_TEST(hubsession_a_source_on_no_hub_is_left_alone_without_counting_against_it,
+{
+	FakeHub fake;
+	Listener listener;
+	if (!fake.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	const std::string address = "adc://127.0.0.1:" + std::to_string(fake.port());
+	Samurai::IO::Net::URL url(address);
+	QuickDC::Hub ui(*core, &listener, &url);
+	ui.connect();
+	EXO_ASSERT(fake.accepted());
+	EXO_ASSERT(!loginOn(fake).empty());
+	fake.drain();
+	fake.received.clear();
+
+	QueuedFromSource queued(address);
+	EXO_ASSERT(queued.source() != nullptr);
+
+	for (int n = 0; n < 5; n++) core->queue->process();
+	pump([] { return false; }, 100);
+
+	EXO_ASSERT(!askedToConnect(fake));
+	EXO_ASSERT(!queued.source()->isReadyToRetry());
+	EXO_ASSERT_EQ_UINT(queued.source()->getRetryCount(), 0u);
+	return 1;
+});
+
+/*
+ * A client ID is the same on every hub, so a source whose user has left the hub it
+ * was found on, and is on another we are on, is asked there.
+ */
+EXO_TEST(hubsession_a_source_that_moved_hubs_is_asked_where_it_is,
+{
+	FakeHub first;
+	FakeHub second;
+	Listener listener;
+	if (!first.listen() || !second.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	const std::string firstUrl = "adc://127.0.0.1:" + std::to_string(first.port());
+	const std::string secondUrl = "adc://127.0.0.1:" + std::to_string(second.port());
+	Samurai::IO::Net::URL a(firstUrl);
+	Samurai::IO::Net::URL b(secondUrl);
+	QuickDC::Hub uiA(*core, &listener, &a);
+	QuickDC::Hub uiB(*core, &listener, &b);
+
+	uiA.connect();
+	EXO_ASSERT(first.accepted());
+	EXO_ASSERT(!loginOn(first, "AAAA").empty());
+
+	uiB.connect();
+	EXO_ASSERT(second.accepted());
+	EXO_ASSERT(!loginOn(second, "AAAB").empty());
+
+	second.send(std::string("BINF CCCC ID") + SOURCE_CID + " NIelsewhere SS1024 SL3 I4192.0.2.7 U41412");
+	pump([] { return false; }, 100);
+	EXO_ASSERT(uiB.hasSourceUser(SOURCE_CID));
+	EXO_ASSERT(!uiA.hasSourceUser(SOURCE_CID));
+
+	first.drain();
+	first.received.clear();
+	second.drain();
+	second.received.clear();
+
+	QueuedFromSource queued(firstUrl);
+	EXO_ASSERT(queued.source() != nullptr);
+
+	core->queue->process();
+	pump([&] { return askedToConnect(second); }, 2000);
+
+	EXO_ASSERT(askedToConnect(second));
+	EXO_ASSERT(second.received.find("CCCC") != std::string::npos);
+	EXO_ASSERT(!askedToConnect(first));
 	return 1;
 });

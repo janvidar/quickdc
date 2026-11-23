@@ -78,6 +78,7 @@ void QuickDC::FileSource::touch()
 {
 	lastSeen.reset();
 	retryCount = 0;
+	absent = false;
 }
 
 uint64_t QuickDC::FileSource::getThroughput() const
@@ -109,6 +110,13 @@ void QuickDC::FileSource::onFailure()
 void QuickDC::FileSource::onAttempt()
 {
 	lastAttempt.reset();
+	absent = false;
+}
+
+void QuickDC::FileSource::onAbsent()
+{
+	lastAttempt.reset();
+	absent = true;
 }
 
 void QuickDC::FileSource::setAvailability(const char* indexes)
@@ -129,7 +137,7 @@ bool QuickDC::FileSource::getAvailability(uint64_t blockSize, uint64_t fileSize,
 
 bool QuickDC::FileSource::isReadyToRetry() const
 {
-	if (!retryCount) return true;
+	if (!retryCount && !absent) return true;
 
 	time_t now = Samurai::TimeStamp().getInternalData();
 	time_t last = lastAttempt.getInternalData();

@@ -140,6 +140,14 @@ class FileSource {
 		void onAttempt();
 
 		/**
+		 * The user is not on any hub we are on just now. Not a failure: the
+		 * source is left alone for the retry interval and then looked for again,
+		 * without counting towards giving up on it. Being away for long enough is
+		 * what isExpired() measures by not having been seen.
+		 */
+		void onAbsent();
+
+		/**
 		 * Which parts of the file this source has, as a PSR "PI" field. Kept
 		 * as it arrived, since decoding needs a block size we may not know yet.
 		 */
@@ -210,6 +218,7 @@ class FileSource {
 		size_t retryCount;    // expire this after ~50 tries
 		Samurai::TimeStamp lastSeen; // expire this after ~30 days.
 		Samurai::TimeStamp lastAttempt; // not persisted; a restart may retry at once.
+		bool absent = false;
 		std::string availability; // PSR "PI" notation, empty if they have it all
 		double throughput;    // bytes per second, smoothed; 0 until a chunk arrives
 };

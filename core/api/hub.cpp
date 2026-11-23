@@ -521,3 +521,14 @@ void QuickDC::Hub::refreshIdentity()
 		Settings::readForHub(*core.session, group, *core.config, Settings::Description),
 		Settings::readForHub(*core.session, group, *core.config, Settings::Email));
 }
+
+bool QuickDC::Hub::hasSourceUser(const char* cid) const
+{
+	if (!session || !session->isLoggedIn() || !cid || !*cid) return false;
+
+	QuickDC::UserManager* users = session->getUserManager();
+	if (users && users->getUserByClientID(cid)) return true;
+
+	/* NMDC, where the nickname is the session ID; see connectUserByClientID(). */
+	return session->getUser(cid) != nullptr;
+}

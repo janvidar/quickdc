@@ -800,7 +800,7 @@ void ADC::HubSession::onSearchResult(QuickDC::Share::SearchResult* result)
 		QuickDC::QueueFile* qfile = queue->getFileByTTH(result->getTTH());
 		const char* cid = reinterpret_cast<const char*>(result->getUser()->getClientID());
 
-		if (qfile && cid)
+		if (qfile && cid && *cid)
 		{
 			if (!qfile->getSize() && result->getSize())
 				qfile->setSize(result->getSize());
