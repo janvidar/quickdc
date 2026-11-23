@@ -105,11 +105,10 @@ DC::HubSession::HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener_, Sa
 
 DC::HubSession::~HubSession()
 {
-	// save session data.
-	/* The group is shared, and every other hub session moves it, so it is
-	   selected here rather than relied on from the constructor. */
-	session->setGroup(address);
-	session->setString("Password", password);
+	/*
+	 * Only to disk: nothing of the session's own identity is written here, or a
+	 * name or password it merely used would outrank the setting for this hub.
+	 */
 	session->write();
 
 	delete users;

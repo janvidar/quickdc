@@ -21,6 +21,7 @@
 #include "api/service.h"
 #include "chat/archive.h"
 #include "config/preferences.h"
+#include "config/migrations.h"
 #include "config/settings.h"
 #include "network/connectionmanager.h"
 #include "network/downloadqueue.h"
@@ -716,18 +717,14 @@ QuickDC::Core::Core()
 	
 	config = new Preferences("~/.quickdc/quickdc.conf");
 
-	/*
-	 * Settled before anything else looks at [Network], and that ordering is the
-	 * whole of why it is here rather than somewhere tidier. Every other reader of
-	 * the group writes its default back when a key is missing, so the first such
-	 * read makes the group exist - and a decision about whether this is a first run
-	 * has to be taken before that happens. It answers from the file's own absence
-	 * rather than from the group's, which is what keeps it correct whatever moves
-	 * below it.
-	 */
-	networkMode(*config, config->existed() == false);
-
 	session = new Preferences("~/.quickdc/session.conf");
+
+	/*
+	 * Before anything reads either store, so that everything below sees them as
+	 * this version expects. Whether this is a first run is answered from the
+	 * file's own absence, which nothing below can change.
+	 */
+	migrateSettings(*config, *session, config->existed() == false);
 	identity = new ADC::CID(*config);
 	automation = new Automation(this);
 	service = 0;

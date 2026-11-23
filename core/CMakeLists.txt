@@ -81,6 +81,7 @@ set(QUICKDC_SOURCES
     api/server.cpp
     api/service.cpp
     api/service_boards.cpp
+    config/migrations.cpp
     hash/hashmanager.cpp
     hash/hashjob.cpp
     hash/hashcache.cpp
