@@ -8,6 +8,8 @@
 
 #include <samurai/io/net/http/client.h>
 
+#include "api/hublistentry.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string>
@@ -50,27 +52,6 @@ constexpr unsigned QUICKDC_HUBLIST_MAX_REDIRECTS = 5;
 
 namespace QuickDC {
 
-/**
- * One hub, as a hublist describes it.
- *
- * Every field but the address is decoration: the address is what a hub is, and
- * an entry without one names nothing. The numbers are what the list claims and
- * are not checked against anything - only the hub itself can say how many users
- * it has.
- */
-struct HubListEntry
-{
-	std::string name;
-	std::string address;
-	std::string description;
-	std::string country;
-	uint64_t users = 0;
-	uint64_t shared = 0;
-	uint64_t minshare = 0;
-	uint64_t minslots = 0;
-	uint64_t maxhubs = 0;
-	uint64_t maxusers = 0;
-};
 
 /** Implement this to receive the outcome of a hublist download. */
 class HubListListener

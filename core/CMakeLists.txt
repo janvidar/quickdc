@@ -79,6 +79,7 @@ set(QUICKDC_SOURCES
     api/inbox.cpp
     api/networkmode.cpp
     api/server.cpp
+    api/service.cpp
     hash/hashmanager.cpp
     hash/hashjob.cpp
     hash/hashcache.cpp

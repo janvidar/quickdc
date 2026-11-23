@@ -18,6 +18,7 @@
 
 #include "api/core.h"
 #include "api/server.h"
+#include "api/service.h"
 #include "chat/archive.h"
 #include "config/preferences.h"
 #include "network/connectionmanager.h"
@@ -555,6 +556,7 @@ QuickDC::Core::Core()
 	session = new Preferences("~/.quickdc/session.conf");
 	identity = new ADC::CID(*config);
 	automation = new Automation(this);
+	service = new Api::Service(*this);
 	
 	monitor = Samurai::IO::Net::SocketMonitor::getInstance();
 	bandwidthManager = new Samurai::IO::Net::BandwidthManager();
@@ -749,10 +751,14 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 
 	identity = new ADC::CID(*config);
 	automation = new Automation(this);
+	service = new Api::Service(*this);
 }
 
 QuickDC::Core::~Core()
 {
+	/* First: what it holds reports into the rest. */
+	delete service; service = 0;
+
 	/*
 	 * The connections first, and this order is not a preference.
 	 *
@@ -864,6 +870,16 @@ void QuickDC::Core::runUntilStopped(const std::function<void()>& running)
 	}
 
 	inbox.close();
+}
+
+bool QuickDC::Core::submit(Api::Command command)
+{
+	return post([this, command = std::move(command)] { service->execute(command); });
+}
+
+QuickDC::Subscription QuickDC::Core::subscribe(Api::EventSink* sink)
+{
+	return service->subscribe(sink);
 }
 
 void QuickDC::Core::requestStop()

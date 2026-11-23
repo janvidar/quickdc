@@ -9,6 +9,8 @@
 #include <samurai/timestamp.h>
 
 #include "api/inbox.h"
+#include "api/protocol.h"
+#include "api/subscription.h"
 
 #include <atomic>
 #include <functional>
@@ -68,6 +70,8 @@ class ChatArchive;
 class QueueManager;
 class SecurityManager;
 
+namespace Api { class Service; }
+
 class Core {
 	public:
 		/**
@@ -105,6 +109,19 @@ class Core {
 		 *         stopped; the job is then destroyed unrun, here.
 		 */
 		bool post(Inbox::Job job) { return inbox.post(std::move(job)); }
+
+		/**
+		 * Carry out 'command' on the core's thread. Any thread.
+		 *
+		 * Through the inbox, so only while runUntilStopped() is running; what
+		 * comes of it is told to the event sinks.
+		 *
+		 * @return false where the command was refused unrun.
+		 */
+		bool submit(Api::Command command);
+
+		/** Tell 'sink' every event until the subscription ends. Core thread only. */
+		Subscription subscribe(Api::EventSink* sink);
 		
 #if 0
 		/**
@@ -149,6 +166,9 @@ class Core {
 		/** Network state the core acts on by itself; see api/core.cpp. */
 		class Automation;
 		Automation* automation;
+
+		/** Where submitted commands are carried out; see api/service.h. */
+		Api::Service* service;
 
 		QuickDC::Share::Manager* shares;
 		DCServer* server;
