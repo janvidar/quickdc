@@ -418,7 +418,7 @@ void DC::HubSession::onPassiveConnect(const char* user)
 				config->getString("Address"),
 				/* NMDC has no field for a hub to report the address it sees. */
 				std::string(),
-				static_cast<uint16_t>(config->getNumber("Port")),
+				static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
 				core->portforward);
 
 			if (endpoint.active)
@@ -451,7 +451,7 @@ void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 		config->getString("Address"),
 		/* NMDC has no field for a hub to report the address it sees. */
 		std::string(),
-		static_cast<uint16_t>(config->getNumber("Port")),
+		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
 		core->portforward);
 
 	if (endpoint.active)
@@ -668,7 +668,7 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 
 	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
-	int myPort = config->getBool("Active mode") ? config->getNumber("Port", 0) : 0;
+	int myPort = config->getBool("Active mode") ? config->peekNumber("Network", "Port", 1411) : 0;
 
 	/* NI is what identifies us on an NMDC hub, where we have no client ID. */
 	ADC::Command cmd(FOURCC('U','P','S','R'), getCore().identity->getCID());

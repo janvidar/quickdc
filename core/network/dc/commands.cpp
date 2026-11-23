@@ -86,7 +86,7 @@ DC::SendMyInfo::SendMyInfo(const QuickDC::Core& core_, const char* nick, const c
 		config->getString("Address", "0.0.0.0"),
 		/* NMDC has no field for a hub to report the address it sees. */
 		std::string(),
-		static_cast<uint16_t>(config->getNumber("Port")),
+		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
 		core->portforward).active;
 	
 	char* tag = static_cast<char*>(malloc(50));

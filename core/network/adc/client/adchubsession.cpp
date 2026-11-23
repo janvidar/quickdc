@@ -991,7 +991,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 		core->server != 0 && core->server->listening(false),
 		config->getString("Address", "0.0.0.0"),
 		observedAddress,
-		static_cast<uint16_t>(config->getNumber("Port")),
+		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
 		core->portforward);
 
 	QDBG("Active mode %d (server=%p)\n", endpoint.active ? 1 : 0, core->server);
@@ -1005,7 +1005,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 		config->getBool("Active mode"),
 		core->server != 0 && core->server->listening(true),
 		QuickDC::lastDropVerdict(*core, true).publicAddress,
-		static_cast<uint16_t>(config->getNumber("Port")));
+		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)));
 
 	/* Evidence belongs to the endpoint it was gathered for; announcing a different
 	   one discards what was known about the old. */
@@ -1323,7 +1323,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 		core->server != 0 && core->server->listening(false),
 		config->getString("Address", "0.0.0.0"),
 		observedAddress,
-		static_cast<uint16_t>(config->getNumber("Port")),
+		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
 		core->portforward);
 
 	/*
@@ -2603,7 +2603,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 		core->server != 0 && core->server->listening(false),
 		config->getString("Address", "0.0.0.0"),
 		observedAddress,
-		static_cast<uint16_t>(config->getNumber("Port")),
+		static_cast<uint16_t>(config->peekNumber("Network", "Port", 1411)),
 		core->portforward);
 
 	if (endpoint.active) {
@@ -2710,7 +2710,7 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 
 	QuickDC::Preferences* config = core->config;
 	config->setGroup("Network");
-	int port = config->getBool("Active mode") ? config->getNumber("Port", 0) : 0;
+	int port = config->getBool("Active mode") ? config->peekNumber("Network", "Port", 1411) : 0;
 
 	/* HI names the hub without the scheme, which is how DC++ reports it. */
 	std::string hubIpPort;
