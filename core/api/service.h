@@ -8,6 +8,7 @@
 
 #include "api/attachments.h"
 #include "api/protocol.h"
+#include "config/preferences.h"
 #include "network/downloadqueue.h"
 #include "network/transfermanager.h"
 #include "api/subscription.h"
@@ -30,7 +31,8 @@ namespace Api {
  * copied into an Event before anybody outside sees it.
  */
 class Service : private DropCheckListener, private Share::AttachmentListener,
-                private QueueListener, private TransferListener {
+                private QueueListener, private TransferListener,
+                private PreferencesListener {
 	public:
 		explicit Service(Core& core);
 		~Service() override;
@@ -43,6 +45,9 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		Subscription subscribe(EventSink* sink) { return sinks.subscribe(sink); }
 
 		void publish(const Event& event);
+
+		/** Both preference stores as they stand. Core thread only. */
+		SettingsSnapshot settingsSnapshot() const;
 
 	private:
 		class HubListFetch;
@@ -93,6 +98,15 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::AdoptPost& command);
 		void run(const Commands::EvictPosts& command);
 		void run(const Commands::ReleasePosts& command);
+		void run(const Commands::SetSetting& command);
+		void run(const Commands::ReplaceGroup& command);
+		void run(const Commands::SaveSettings& command);
+		void run(const Commands::AnnounceSettingsChanged& command);
+
+		void EventSettingChanged(const Preferences& store, const std::string& group,
+		                         const std::string& key, const std::string* value) override;
+
+		Preferences* preferences(SettingsStore store) const;
 
 		BoardStore* boardStore(BoardStoreHandle store);
 
@@ -124,6 +138,11 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		Subscription dropObserved;
 		Subscription queueObserved;
 		Subscription transfersObserved;
+		Subscription configObserved;
+		Subscription sessionObserved;
+
+		/** The write being carried out, which the changes it makes are attributed to. */
+		uint64_t writing = 0;
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
 
 		std::map<BoardStoreHandle, std::unique_ptr<BoardStore>> boardStores;

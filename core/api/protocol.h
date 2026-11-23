@@ -24,6 +24,7 @@
 #include "api/hublistentry.h"
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <utility>
 #include <variant>
@@ -169,7 +170,55 @@ struct BoardReadState {
 	std::vector<std::string> read;
 };
 
+/** The two preference files: the configuration, and what one session leaves the next. */
+enum class SettingsStore { Application, Session };
+
+/** Group, then key, then value; every value is text, as it is in the file. */
+using SettingsGroups = std::map<std::string, std::map<std::string, std::string>>;
+
+/** Both stores as they stood at one moment, with how many changes each had seen. */
+struct SettingsSnapshot {
+	SettingsGroups application;
+	SettingsGroups session;
+	uint64_t applicationRevision = 0;
+	uint64_t sessionRevision = 0;
+};
+
 namespace Commands {
+
+/**
+ * Write one setting, or remove it. 'origin' is the writer's own number for the
+ * write, which SettingsWritten echoes once it has been carried out.
+ */
+struct SetSetting {
+	SettingsStore store = SettingsStore::Application;
+	std::string group;
+	std::string key;
+	std::string value;
+	bool remove = false;
+	uint64_t origin = 0;
+};
+
+/** Remove 'removeKeys' from 'group' and set 'values' in it, as one write. */
+struct ReplaceGroup {
+	SettingsStore store = SettingsStore::Application;
+	std::string group;
+	std::vector<std::string> removeKeys;
+	std::vector<std::pair<std::string, std::string>> values;
+	uint64_t origin = 0;
+};
+
+/** Write the store to its file; answered by SettingsSaved. */
+struct SaveSettings {
+	SettingsStore store = SettingsStore::Application;
+	uint64_t request = 0;
+};
+
+/**
+ * Have what reads the configuration once read it again.
+ * Transitional: C2 has whatever depends on a setting follow it by itself.
+ */
+struct AnnounceSettingsChanged { };
 
 /*
  * Every board store request names its store and carries a 'request' number
@@ -484,6 +533,30 @@ struct AttachFile {
 
 namespace Events {
 
+/** One setting changed, whoever changed it; 'origin' is the write's, or 0. */
+struct SettingChanged {
+	SettingsStore store = SettingsStore::Application;
+	std::string group;
+	std::string key;
+	bool removed = false;
+	std::string value;
+	/** The store's revision once this change is in it. */
+	uint64_t revision = 0;
+	uint64_t origin = 0;
+};
+
+/** The write 'origin' has been carried out, whether or not it changed anything. */
+struct SettingsWritten {
+	SettingsStore store = SettingsStore::Application;
+	uint64_t origin = 0;
+};
+
+struct SettingsSaved {
+	SettingsStore store = SettingsStore::Application;
+	uint64_t request = 0;
+	bool ok = false;
+};
+
 struct BoardEntriesStored {
 	BoardStoreHandle store = 0;
 	uint64_t request = 0;
@@ -776,7 +849,11 @@ struct Command {
 		Commands::QueryPost,
 		Commands::AdoptPost,
 		Commands::EvictPosts,
-		Commands::ReleasePosts
+		Commands::ReleasePosts,
+		Commands::SetSetting,
+		Commands::ReplaceGroup,
+		Commands::SaveSettings,
+		Commands::AnnounceSettingsChanged
 	>;
 
 	template<typename T>
@@ -832,7 +909,10 @@ struct Event {
 		Events::BoardReadChanged,
 		Events::PostKnown,
 		Events::PostAdopted,
-		Events::PostsEvicted
+		Events::PostsEvicted,
+		Events::SettingChanged,
+		Events::SettingsWritten,
+		Events::SettingsSaved
 	>;
 
 	template<typename T>

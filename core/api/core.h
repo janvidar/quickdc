@@ -120,6 +120,9 @@ class Core {
 		 */
 		bool submit(Api::Command command);
 
+		/** Both preference stores as they stand. Core thread only. */
+		Api::SettingsSnapshot settingsSnapshot() const;
+
 		/** Tell 'sink' every event until the subscription ends. Core thread only. */
 		Subscription subscribe(Api::EventSink* sink);
 		

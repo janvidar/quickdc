@@ -880,6 +880,11 @@ bool QuickDC::Core::submit(Api::Command command)
 	return post([this, command = std::move(command)] { service->execute(command); });
 }
 
+QuickDC::Api::SettingsSnapshot QuickDC::Core::settingsSnapshot() const
+{
+	return service->settingsSnapshot();
+}
+
 QuickDC::Subscription QuickDC::Core::subscribe(Api::EventSink* sink)
 {
 	return service->subscribe(sink);

@@ -21,6 +21,8 @@
 #include "network/transfer.h"
 #include <samurai/io/file.h>
 #include "network/hubmanager.h"
+#include "quickdc.h"
+#include <samurai/messagehandler.h>
 #include "network/portforward.h"
 #include "share/sharemanager.h"
 
@@ -461,6 +463,8 @@ QuickDC::Api::Service::Service(Core& core_)
 	, dropObserved(observeDropCheck(core_, this))
 	, queueObserved(core_.queue ? core_.queue->subscribe(this) : Subscription())
 	, transfersObserved(core_.transfers ? core_.transfers->subscribe(this) : Subscription())
+	, configObserved(core_.config ? core_.config->subscribe(this) : Subscription())
+	, sessionObserved(core_.session ? core_.session->subscribe(this) : Subscription())
 {
 }
 
@@ -928,4 +932,78 @@ void QuickDC::Api::Service::run(const Commands::WithdrawPost& command)
 {
 	if (HubSession* hub = session(command.hub))
 		hub->withdrawPost(command.tth.c_str(), command.board.c_str());
+}
+
+QuickDC::Preferences* QuickDC::Api::Service::preferences(SettingsStore store) const
+{
+	return store == SettingsStore::Session ? core.session : core.config;
+}
+
+QuickDC::Api::SettingsSnapshot QuickDC::Api::Service::settingsSnapshot() const
+{
+	SettingsSnapshot taken;
+
+	const auto copy = [](const Preferences* from, SettingsGroups& into) {
+		if (!from) return;
+		for (const auto& [group, settings] : from->snapshot())
+			for (const auto& [key, value] : settings) into[group][key] = value;
+	};
+
+	copy(core.config, taken.application);
+	copy(core.session, taken.session);
+	taken.applicationRevision = core.config ? core.config->revision() : 0;
+	taken.sessionRevision = core.session ? core.session->revision() : 0;
+	return taken;
+}
+
+void QuickDC::Api::Service::EventSettingChanged(const Preferences& store, const std::string& group,
+                                                const std::string& key, const std::string* value)
+{
+	Events::SettingChanged changed;
+	changed.store = &store == core.session ? SettingsStore::Session : SettingsStore::Application;
+	changed.group = group;
+	changed.key = key;
+	changed.removed = value == nullptr;
+	if (value) changed.value = *value;
+	changed.revision = store.revision();
+	changed.origin = writing;
+	publish(changed);
+}
+
+void QuickDC::Api::Service::run(const Commands::SetSetting& command)
+{
+	if (Preferences* store = preferences(command.store))
+	{
+		writing = command.origin;
+		if (command.remove) store->remove(command.group, command.key);
+		else store->setString(command.group, command.key, command.value);
+		writing = 0;
+	}
+
+	publish(Events::SettingsWritten{command.store, command.origin});
+}
+
+void QuickDC::Api::Service::run(const Commands::ReplaceGroup& command)
+{
+	if (Preferences* store = preferences(command.store))
+	{
+		writing = command.origin;
+		for (const std::string& key : command.removeKeys) store->remove(command.group, key);
+		for (const auto& [key, value] : command.values) store->setString(command.group, key, value);
+		writing = 0;
+	}
+
+	publish(Events::SettingsWritten{command.store, command.origin});
+}
+
+void QuickDC::Api::Service::run(const Commands::SaveSettings& command)
+{
+	Preferences* store = preferences(command.store);
+	publish(Events::SettingsSaved{command.store, command.request, store && store->write()});
+}
+
+void QuickDC::Api::Service::run(const Commands::AnnounceSettingsChanged&)
+{
+	if (Samurai::MessageHandler* handler = Samurai::MessageHandler::getInstance())
+		handler->postMessage(MsgConfigUpdated, nullptr, 0, 0);
 }
