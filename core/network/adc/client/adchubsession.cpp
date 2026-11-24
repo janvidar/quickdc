@@ -625,6 +625,14 @@ void ADC::HubSession::connect()
 		return;
 	}
 
+	/*
+	 * Shareable from the start, because NAT traversal dials a peer from this
+	 * connection's own port (see dialFromHubPort()), and a port can only be bound a
+	 * second time where every socket on it agreed. Nothing to share through a
+	 * proxy, where the port is the proxy's.
+	 */
+	if (!socket->isProxied()) socket->setReuseLocalPort(0);
+
 	proxy->connect();
 }
 

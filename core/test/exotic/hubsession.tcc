@@ -4862,3 +4862,32 @@ EXO_TEST(hubsession_the_shared_password_typed_in_is_not_pinned_to_the_hub,
 	core->config->remove("User", "Password");
 	return 1;
 });
+
+/*
+ * And the dial itself goes out from that port, which only works if the hub
+ * connection was made shareable when it was opened: on Linux a second socket may
+ * bind a port in use only where every socket on it allowed that. The hub
+ * connection never did, so every traversal failed to bind before it dialled, and
+ * the tests above - which stop at the answer - could not see it.
+ */
+EXO_TEST(hubsession_a_traversal_dials_from_the_hub_connections_own_port,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+
+	FakeHub other;
+	if (!other.listen()) EXO_SKIP("could not listen on a second loopback port");
+
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	s.say("BINF BBBB NIpeer I4127.0.0.1 SS100 SL1 SUADC0,NATT");
+
+	setRequireEncryption(false);
+	s.say("DNAT BBBB AAAA ADC/1.0 " + std::to_string(other.port()) + " job7");
+
+	EXO_ASSERT(other.accepted());
+
+	EXO_ASSERT(s.hub.peer != 0 && other.peer != 0);
+	EXO_ASSERT(other.peer->getPort() == s.hub.peer->getPort());
+	return 1;
+});
