@@ -331,6 +331,9 @@ class Session
 		 * The hub speaks first. The client answers the lock with a key and its
 		 * nick, and the hub confirms with $Hello.
 		 */
+		/** The $MyINFO the client sent as it logged in. */
+		std::string myInfo;
+
 		bool login()
 		{
 			say("$Lock " HUB_LOCK " Pk=TESTHUB");
@@ -347,6 +350,7 @@ class Session
 
 			/* Its own $Hello is what makes the client send its info. */
 			if (!hub.expect("$MyINFO ", line)) return false;
+			myInfo = line;
 
 			/* The hub broadcasts it back, which is what completes the login. */
 			say("$MyINFO $ALL " + nick + " $ $DSL\x01$$0$");
@@ -1633,5 +1637,29 @@ EXO_TEST(dchubsession_the_shared_password_typed_in_is_not_pinned_to_the_hub,
 	EXO_ASSERT(!anyHubKeeps("Password"));
 
 	core->config->remove("User", "Password");
+	return 1;
+});
+
+/*
+ * The client's tag goes out whole. It was written into a fixed fifty bytes, which
+ * a longer version string or large counts would cut short - closing '>' included,
+ * leaving every other client to parse a tag that never ends.
+ */
+EXO_TEST(dchubsession_the_tag_in_myinfo_is_whole,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	const size_t open = s.myInfo.find("<" PRODUCT " V:" VERSION ",M:");
+	EXO_ASSERT(open != std::string::npos);
+
+	const size_t close = s.myInfo.find(">$ $", open);
+	EXO_ASSERT(close != std::string::npos);
+
+	const std::string tag = s.myInfo.substr(open, close + 1 - open);
+	EXO_ASSERT(tag.find(",H:") != std::string::npos);
+	EXO_ASSERT(tag.find(",S:") != std::string::npos);
 	return 1;
 });

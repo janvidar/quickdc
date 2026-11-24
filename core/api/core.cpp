@@ -64,7 +64,7 @@ struct AutomationState {
 	QuickDC::Core* core;
 
 	/** Whether to hold a gateway mapping; see network/mappingpolicy.h. */
-	QuickDC::MappingPolicy mapping;
+	QuickDC::MappingPolicy mapping {};
 
 	/*
 	 * Whether a measurement is owed once the gateway has been dealt with.

@@ -754,17 +754,13 @@ void QuickDC::Share::Manager::saveAttachments() {
 		   not one moment longer, so nothing about it is written down. */
 		if (record->persistence != Persistence::Remembered) continue;
 
-		char key[16];
-		snprintf(key, sizeof(key), "File %d", total);
-		config->setString(key, record->tth + " " + record->name);
+		config->setString("File " + std::to_string(total), record->tth + " " + record->name);
 		total++;
 	}
 
 	/* Whatever a longer list left behind, so nothing outlives the Total. */
 	for (int i = total; i < previous; i++) {
-		char key[16];
-		snprintf(key, sizeof(key), "File %d", i);
-		config->remove(key);
+		config->remove("File " + std::to_string(i));
 	}
 
 	config->setNumber("Total", total);

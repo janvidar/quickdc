@@ -50,7 +50,7 @@
 /* ------------------------------------------------------------------------- */
 
 /* An IGD version 1 device: no AddAnyPortMapping, so a conflict is walked. */
-static const char* IGD1 =
+inline constexpr const char* IGD1 =
 	"<?xml version=\"1.0\"?>\n"
 	"<root xmlns=\"urn:schemas-upnp-org:device-1-0\">\n"
 	" <device>\n"
@@ -66,7 +66,7 @@ static const char* IGD1 =
 	"</root>\n";
 
 /* Version 2, which is where AddAnyPortMapping exists. */
-static const char* IGD2 =
+inline constexpr const char* IGD2 =
 	"<?xml version=\"1.0\"?>\n"
 	"<root xmlns=\"urn:schemas-upnp-org:device-1-0\">\n"
 	" <device>\n"
@@ -82,7 +82,7 @@ static const char* IGD2 =
 	"</root>\n";
 
 /* A device that is not a router at all. */
-static const char* NOT_A_ROUTER =
+inline constexpr const char* NOT_A_ROUTER =
 	"<?xml version=\"1.0\"?>\n"
 	"<root>\n"
 	" <device>\n"

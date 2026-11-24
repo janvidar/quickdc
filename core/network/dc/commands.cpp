@@ -89,19 +89,18 @@ DC::SendMyInfo::SendMyInfo(const QuickDC::Core& core_, const char* nick, const c
 		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
 		core->portforward).active;
 	
-	char* tag = static_cast<char*>(malloc(50));
-	snprintf(tag, 50, "<" PRODUCT " V:" VERSION ",M:%c,H:%d/%d/%d,S:%d>",
-			active_mode ? 'A' : 'P',
-			static_cast<int>(core->hubs->countHubsNormal())+1,
-			static_cast<int>(core->hubs->countHubsRegistered()),
-			static_cast<int>(core->hubs->countHubsOperator())+1, numslots
-		);
+	/* Built to length: a fixed buffer cut a long version or large counts short, '>' and all. */
+	const std::string tag = std::string("<" PRODUCT " V:" VERSION ",M:") + (active_mode ? 'A' : 'P')
+		+ ",H:" + std::to_string(core->hubs->countHubsNormal() + 1)
+		+ "/" + std::to_string(core->hubs->countHubsRegistered())
+		+ "/" + std::to_string(core->hubs->countHubsOperator() + 1)
+		+ ",S:" + std::to_string(numslots) + ">";
 	
 	buffer->append("$MyINFO $ALL ");
 	buffer->append(DC::TextEscape::escape(nick));
 	buffer->append(' ');
 	buffer->append(DC::TextEscape::escape(description));
-	buffer->append(tag);
+	buffer->append(tag.c_str());
 	buffer->append("$ $");
 	buffer->append(connection);
 	buffer->append(flags);
@@ -110,8 +109,6 @@ DC::SendMyInfo::SendMyInfo(const QuickDC::Core& core_, const char* nick, const c
 	buffer->append("$");
 	buffer->append(shared_size);
 	buffer->append("$|");
-	
-	free(tag);
 }
 
 DC::SendTo::SendTo(const char* from, const char* to, const char* message) : DC::Command()
