@@ -176,7 +176,6 @@ bool ADC::LocalHub::SrvMotd::invoke(Command* cmd) {
 	static char motd_buffer[MAX_MOTD_LEN] = {0, };
 
 	ADC::LocalHub::User* user  = hub->lookupUser(cmd->getSocket());
-	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 
 	bool sendMessage = true;
 	Samurai::IO::File motd("~/.quickdc/hub/motd");
@@ -200,6 +199,7 @@ bool ADC::LocalHub::SrvMotd::invoke(Command* cmd) {
 	}
 
 	if (sendMessage) {
+		ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
 		msg->addArgument(motd_buffer);
 		// msg->addArgument("PM", hubsid);
 		hub->send(msg, user);

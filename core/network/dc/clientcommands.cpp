@@ -277,8 +277,8 @@ bool DC::ClientExtADCGET::ClientExtADCGET::invoke(const char* data_, size_t leng
 	offset = Samurai::Util::Convert::to_uint64(&split[1]);
 	split[0] = '\0';
 
-	// Extract the filename;	
-	char* filename = strdup(&data[13]);
+	/* Borrowed by the session, so it can stay where it is in 'data'. */
+	const char* filename = &data[13];
 
 
 	QDBG("ADCGET: filename='%s', offset='%llu', length='%lld', type=%d", filename,
@@ -333,8 +333,8 @@ bool DC::ClientExtADCSND::ClientExtADCSND::invoke(const char* data_, size_t leng
 	offset = Samurai::Util::Convert::to_uint64(&split[1]);
 	split[0] = '\0';
 
-	// Extract the filename;	
-	char* filename = strdup(&data[13]);
+	/* Borrowed by the session, so it can stay where it is in 'data'. */
+	const char* filename = &data[13];
 
 
 	QDBG("ADCSND: filename='%s', offset='%llu', length='%lld', type=%d", filename,

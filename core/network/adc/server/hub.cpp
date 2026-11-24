@@ -1499,7 +1499,10 @@ void ADC::LocalHub::Hub::send(ADC::Command* cmd, User* user, bool more) {
 		for (size_t n = 0; n < overflowed.size(); n++)
 			expire(overflowed[n], "211", "Send queue exceeded");
 	}
+
+	/* The caller's command is the hub's now: one that no queue took ends here. */
 	cmd->decRef();
+	if (cmd->canDelete()) delete cmd;
 }
 
 

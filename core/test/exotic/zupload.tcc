@@ -299,7 +299,7 @@ EXO_SETUP({
 
 	/* Same bring-up order as QuickDC::Core; a Socket needs all of these. */
 	Samurai::IO::Net::SocketMonitor::getInstance();
-	new Samurai::IO::Net::BandwidthManager();
+	Samurai::IO::Net::BandwidthManager::getInstance();
 	Samurai::MessageHandler::getInstance();
 	timers = new Samurai::TimerManager();
 	return 1;

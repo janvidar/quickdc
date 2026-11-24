@@ -104,7 +104,10 @@ EXO_TEST(users_a_null_id_is_refused_everywhere,
 		users.quit(0);
 		users.ip(0, "127.0.0.1");
 		users.ip("AAAA", 0);
-		users.info(0, make("x"), 0, true);
+		/* Refused, so not taken over: still the caller's to delete. */
+		QuickDC::User* refused = make("x");
+		users.info(0, refused, 0, true);
+		delete refused;
 
 		EXO_ASSERT(users.countUsers() == 0);
 		EXO_ASSERT(users.getUser(0) == 0);
