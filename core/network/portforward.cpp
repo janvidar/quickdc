@@ -198,7 +198,7 @@ void QuickDC::PortForward::EventGatewayFound(Gateway*)
 	PortMapper::Options options;
 	options.lease = std::chrono::seconds(QUICKDC_PORTFORWARD_LEASE_SECONDS);
 
-	mapper = PortMapper::create(loop, this, gateway.get(), options);
+	mapper = PortMapper::create(this, gateway.get(), options);
 	if (!mapper)
 	{
 		internal_fail("the internet gateway could not be asked to forward a port");
