@@ -200,8 +200,6 @@ void QuickDC::DropCheck::internal_fail(const std::string& reason)
 	const std::string said =
 		std::string(family == Drop::Family::IPv6 ? "IPv6" : "IPv4") + ": " + reason;
 
-	QERR("The reachability check could not be completed: %s", said.c_str());
-
 	if (listener) listener->EventDropCheckFailed(said.c_str());
 	observers.notify([&said](DropCheckListener& l) { l.EventDropCheckFailed(said.c_str()); });
 }
