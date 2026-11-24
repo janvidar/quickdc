@@ -102,7 +102,8 @@ class HubListListener
 class HubList final : private Samurai::IO::Net::HTTP::RequestEventHandler
 {
 	public:
-		explicit HubList(HubListListener* listener);
+		/** @param loop what the download runs on. */
+		HubList(Samurai::EventLoop& loop, HubListListener* listener);
 		~HubList() override;
 
 		/* Owns an HTTP client that holds a pointer back to this as its handler,

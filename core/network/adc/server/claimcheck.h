@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "network/adc/adccommon.h"
 
@@ -93,20 +94,8 @@ class ClaimCheck : public Samurai::IO::Net::SocketEventHandler
 		static ClaimCheck* start(Hub* hub, User* user, const char* protocol,
 			uint16_t port);
 
-		/** How many are running, which is what the concurrency limit applies to. */
-		static size_t running();
 
-		/**
-		 * Abandon every check belonging to a hub that is going away.
-		 *
-		 * A check holds the hub it will report to, and finishes seconds after it
-		 * started - long enough for a hub to have been shut down in between, which
-		 * would leave it reporting to freed memory. Called from ~Hub().
-		 */
-		static void forget(Hub* hub);
 
-		/** Abandon all of them, whichever hub they belong to. For tests. */
-		static void reset();
 
 		~ClaimCheck() override;
 
@@ -120,6 +109,8 @@ class ClaimCheck : public Samurai::IO::Net::SocketEventHandler
 			Samurai::IO::Net::SocketError, const char*) override;
 
 	private:
+		friend class ClaimChecks;
+
 		ClaimCheck(Hub* hub, sid_t sid, const std::string& address, uint16_t port,
 			const std::string& protocol);
 
@@ -158,6 +149,38 @@ class ClaimCheck : public Samurai::IO::Net::SocketEventHandler
 		std::optional<std::chrono::steady_clock::time_point> finished;
 
 		std::shared_ptr<Samurai::IO::Net::Socket> socket;
+};
+
+/**
+ * The checks one hub has made, running and finished both.
+ *
+ * A check has to outlive the event that ended it - it is told the connection failed
+ * by the socket it owns, so it cannot free itself while that call is on the stack -
+ * and a finished one is the record the interval is read from. The hub owns this, so
+ * two hubs keep two records and neither's checks count against the other's limit.
+ */
+class ClaimChecks
+{
+	public:
+		ClaimChecks();
+		~ClaimChecks();
+
+		ClaimChecks(const ClaimChecks&) = delete;
+		ClaimChecks& operator=(const ClaimChecks&) = delete;
+
+		/** How many are running, which is what the concurrency limit applies to. */
+		size_t running() const;
+
+		/**
+		 * Abandon every one. A check holds the hub it will report to and finishes
+		 * seconds after it started, so the hub calls this on its way out rather than
+		 * leave one to report into freed memory.
+		 */
+		void clear();
+
+	private:
+		std::vector<std::unique_ptr<ClaimCheck>> checks;
+		friend class ClaimCheck;
 };
 
 } // namespace LocalHub

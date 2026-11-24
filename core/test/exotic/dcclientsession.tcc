@@ -63,8 +63,7 @@ static std::string scratch(const char* leaf)
 template<typename Fn>
 static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
@@ -127,7 +126,7 @@ class Endpoint :
 		bool listen()
 		{
 			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(core->loop(), this, any);
 			return server && server->getFD() != -1 && server->listen();
 		}
 
@@ -137,7 +136,7 @@ class Endpoint :
 		bool dial()
 		{
 			if (!listen()) return false;
-			mine = Samurai::IO::Net::Socket::create(this,
+			mine = Samurai::IO::Net::Socket::create(core->loop(), this,
 				std::string("127.0.0.1"), port());
 			if (!mine) return false;
 			mine->connect();
@@ -636,8 +635,7 @@ EXO_TEST(dcclientsession_the_peer_hanging_up_is_survived,
 /* Connections come and go without leaving anything in the monitor. */
 EXO_TEST(dcclientsession_repeated_connections_leave_nothing_behind,
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 	const size_t baseline = monitor->size();
 
 	for (int n = 0; n < 2; n++)

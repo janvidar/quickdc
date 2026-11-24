@@ -19,9 +19,8 @@
  * case reading what the one before it left behind.
  *
  * The core is the reduced one, as in adchub.tcc: the full one scans shares and
- * opens listening sockets that none of this needs. It reads from disk and runs on
- * samurai's process-wide reactor, and so is a per-file fixture; everything else a case needs it builds and
- * lets go of again.
+ * opens listening sockets that none of this needs. It reads from disk, and so is a
+ * per-file fixture; everything else a case needs it builds and lets go of again.
  */
 
 #include "quickdc.h"
@@ -70,22 +69,22 @@ static const int TIMEOUT_MS = 5000;
 /*
  * Runs the event loop until the condition holds, or gives up.
  *
- * The timers and the message queue are turned by hand, because the core this
- * builds is the one that does not own them - and the hub needs both.
+ * The timers and the message queue of the core's loop are turned here as well
+ * as its sockets, rather than through Core::run() and its quarter-second poll -
+ * and the hub needs both.
  */
 template<typename Fn>
 static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
 
 	for (;;)
 	{
-		Samurai::TimerManager::getInstance()->process();
-		Samurai::MessageHandler::getInstance()->process();
+		core->loop().timers().process();
+		core->loop().messages().process();
 
 		if (done()) return true;
 		if (std::chrono::steady_clock::now() > deadline) return done();
@@ -185,7 +184,7 @@ static size_t countLines(const std::vector<std::string>& log,
 class TestHub : public ADC::LocalHub::Hub
 {
 	public:
-		TestHub() : ADC::LocalHub::Hub(*core->config) { }
+		TestHub() : ADC::LocalHub::Hub(core->loop(), *core->config) { }
 
 		using ADC::LocalHub::Hub::readConfiguration;
 		using ADC::LocalHub::Hub::hasBoards;
@@ -202,13 +201,12 @@ class Server : public Samurai::IO::Net::ServerSocketEventHandler
 		Server()
 		{
 			hub.enabled = true;
-			ADC::LocalHub::ClaimCheck::reset();
 		}
 
 		bool listen()
 		{
 			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(core->loop(), this, any);
 			return server && server->getFD() != -1 && server->listen();
 		}
 
@@ -246,7 +244,7 @@ class Client : public Samurai::IO::Net::SocketEventHandler
 
 		bool connect(uint16_t port)
 		{
-			socket = Samurai::IO::Net::Socket::create(this, std::string("127.0.0.1"), port);
+			socket = Samurai::IO::Net::Socket::create(core->loop(), this, std::string("127.0.0.1"), port);
 			if (!socket) return false;
 
 			socket->connect();

@@ -60,7 +60,7 @@ class TransferManager
 	: public Samurai::MessageListener
 {
 	public:
-		TransferManager();
+		explicit TransferManager(Samurai::EventLoop& loop);
 		virtual ~TransferManager();
 
 		TransferManager(const TransferManager&) = delete;

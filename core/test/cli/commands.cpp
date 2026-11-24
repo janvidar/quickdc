@@ -874,8 +874,8 @@ static void cmd_hubstats(const std::vector<std::string>&)
 	printf("    Bandwidth utilization:\n"
 	       "    - Upstream:      %d (bytes/sec)\n"
 	       "    - Downstream:    %d (bytes/sec)\n\n",
-		(int) core->bandwidthManager->getSendBps(),
-		(int) core->bandwidthManager->getRecvBps());
+		(int) core->loop().bandwidth().getSendBps(),
+		(int) core->loop().bandwidth().getRecvBps());
 }
 
 

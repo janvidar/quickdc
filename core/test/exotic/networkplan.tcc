@@ -48,18 +48,20 @@ class Ignoring : public Samurai::IO::Net::ServerSocketEventHandler
 /* Whether a socket of our own can be bound to 'port' on the loopback just now. */
 bool freeOnLoopback(uint16_t port)
 {
+	Samurai::EventLoop loop;
 	Ignoring nobody;
 	Samurai::IO::Net::InetAddress loopback("127.0.0.1");
 	Samurai::IO::Net::InetSocketAddress at(loopback, port);
-	auto probe = Samurai::IO::Net::ServerSocket::create(&nobody, at);
+	auto probe = Samurai::IO::Net::ServerSocket::create(loop, &nobody, at);
 	return probe && probe->listen();
 }
 
 uint16_t sparePort()
 {
+	Samurai::EventLoop loop;
 	Ignoring nobody;
 	Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-	auto probe = Samurai::IO::Net::ServerSocket::create(&nobody, any);
+	auto probe = Samurai::IO::Net::ServerSocket::create(loop, &nobody, any);
 	if (!probe || !probe->listen()) return 0;
 	return probe->getLocalPort();
 }

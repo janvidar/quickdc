@@ -17,6 +17,7 @@
 #include "quickdc.h"
 #include "network/securitymanager.h"
 
+#include <samurai/eventloop.h>
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/io/net/serversocket.h>
 #include <samurai/io/net/socket.h>
@@ -31,6 +32,18 @@
 #include <memory>
 #include <string>
 #include <unistd.h>
+
+static std::unique_ptr<Samurai::EventLoop> loop;
+
+EXO_SETUP({
+	loop = std::make_unique<Samurai::EventLoop>();
+	return loop->isValid() ? 1 : 0;
+});
+
+EXO_TEARDOWN({
+	loop.reset();
+	return 1;
+});
 
 namespace {
 
@@ -68,16 +81,13 @@ class AgedClearance : public QuickDC::Clearance
 template<typename Fn>
 bool pump(Fn done, int timeout_ms = 2000)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
-
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
 
 	while (!done())
 	{
 		if (std::chrono::steady_clock::now() > deadline) return done();
-		monitor->wait(10);
+		loop->monitor().wait(10);
 	}
 	return true;
 }
@@ -103,11 +113,11 @@ class LoopbackPair
 		bool connect()
 		{
 			Samurai::IO::Net::InetSocketAddress any(static_cast<uint16_t>(0));
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(*loop, this, any);
 			if (!server || server->getFD() == -1) return false;
 			if (!server->listen()) return false;
 
-			client = Samurai::IO::Net::Socket::create(this, "127.0.0.1",
+			client = Samurai::IO::Net::Socket::create(*loop, this, "127.0.0.1",
 				server->getLocalPort());
 			if (!client) return false;
 			client->connect();
@@ -341,7 +351,7 @@ EXO_TEST(security_a_socket_that_never_connected_does_not_crash_the_check,
 {
 	QuickDC::SecurityManager mgr;
 	std::shared_ptr<Samurai::IO::Net::Socket> lonely =
-		Samurai::IO::Net::Socket::create(
+		Samurai::IO::Net::Socket::create(*loop,
 			static_cast<Samurai::IO::Net::SocketEventHandler*>(0),
 			std::string("127.0.0.1"), static_cast<uint16_t>(1));
 

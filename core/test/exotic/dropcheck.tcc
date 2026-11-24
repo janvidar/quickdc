@@ -32,12 +32,27 @@
 #include <drop/stun.h>
 #include <drop/types.h>
 
+#include <samurai/eventloop.h>
+
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
+
+static std::unique_ptr<Samurai::EventLoop> loop;
+
+EXO_SETUP({
+	loop = std::make_unique<Samurai::EventLoop>();
+	return loop->isValid() ? 1 : 0;
+});
+
+EXO_TEARDOWN({
+	loop.reset();
+	return 1;
+});
 
 /* ------------------------------------------------------------------------- */
 
@@ -111,7 +126,7 @@ static std::vector<uint8_t> authenticatedProbe()
 EXO_TEST(dropcheck_a_check_that_never_ran_is_idle_and_has_no_verdict,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	EXO_ASSERT(!check.isBusy());
 	EXO_ASSERT(!check.verdict(false).ran);
@@ -126,7 +141,7 @@ EXO_TEST(dropcheck_a_check_that_never_ran_is_idle_and_has_no_verdict,
 EXO_TEST(dropcheck_cancelling_a_check_that_is_not_running_changes_nothing,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	for (int n = 0; n < 10; n++) check.cancel();
 
@@ -162,7 +177,7 @@ EXO_TEST(dropcheck_cancelling_a_check_that_is_not_running_changes_nothing,
 EXO_TEST(dropcheck_an_unarmed_check_answers_no_stun_probe,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	const std::vector<uint8_t> probe = authenticatedProbe();
 	std::vector<uint8_t> reply;
@@ -201,7 +216,7 @@ EXO_TEST(dropcheck_an_unarmed_check_answers_no_stun_probe,
 EXO_TEST(dropcheck_an_unarmed_check_answers_no_challenge,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	std::string response;
 
@@ -233,7 +248,7 @@ EXO_TEST(dropcheck_an_unarmed_check_answers_no_challenge,
 EXO_TEST(dropcheck_a_run_says_that_it_started,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	EXO_ASSERT(events.started == 0);
 	EXO_ASSERT(!check.isBusy());
@@ -262,7 +277,7 @@ EXO_TEST(dropcheck_a_run_says_that_it_started,
 EXO_TEST(dropcheck_a_refused_run_is_not_announced,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	check.start("https://ipv4.drop.invalid", Drop::Family::IPv4, 0, 0,
 	            std::optional<Samurai::IO::Net::InetAddress>());
@@ -285,7 +300,7 @@ EXO_TEST(dropcheck_a_refused_run_is_not_announced,
 EXO_TEST(dropcheck_ordinary_peer_port_bytes_are_not_a_challenge,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	std::string response;
 
@@ -322,7 +337,7 @@ EXO_TEST(dropcheck_ordinary_peer_port_bytes_are_not_a_challenge,
 EXO_TEST(dropcheck_a_start_without_a_peer_port_fails_at_once,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
 	            0, 0, std::nullopt);
@@ -339,7 +354,7 @@ EXO_TEST(dropcheck_a_start_without_a_peer_port_fails_at_once,
 EXO_TEST(dropcheck_a_start_without_a_peer_port_fails_at_once_with_a_udp_port_too,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	check.start("https://ipv4.drop.example.org", Drop::Family::IPv6,
 	            0, 1411, std::nullopt);
@@ -353,7 +368,7 @@ EXO_TEST(dropcheck_a_start_without_a_peer_port_fails_at_once_with_a_udp_port_too
 EXO_TEST(dropcheck_a_failed_start_leaves_nothing_armed,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
 	            0, 1411, std::nullopt);
@@ -489,7 +504,7 @@ EXO_TEST(dropcheck_a_front_end_watching_does_not_take_the_core_off_the_verdict,
 	OrderedRecorder core;
 	OrderedRecorder front;
 
-	QuickDC::DropCheck check(&core);
+	QuickDC::DropCheck check(*loop, &core);
 	check.setObserver(&front);
 
 	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
@@ -512,7 +527,7 @@ EXO_TEST(dropcheck_the_core_still_hears_a_verdict_after_the_front_end_goes,
 	OrderedRecorder core;
 	OrderedRecorder front;
 
-	QuickDC::DropCheck check(&core);
+	QuickDC::DropCheck check(*loop, &core);
 	check.setObserver(&front);
 
 	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
@@ -534,7 +549,7 @@ EXO_TEST(dropcheck_the_core_still_hears_a_verdict_after_the_front_end_goes,
 EXO_TEST(dropcheck_a_check_with_no_front_end_reports_to_the_core_alone,
 {
 	OrderedRecorder core;
-	QuickDC::DropCheck check(&core);
+	QuickDC::DropCheck check(*loop, &core);
 
 	EXO_ASSERT(check.getObserver() == nullptr);
 
@@ -557,7 +572,7 @@ EXO_TEST(dropcheck_a_check_with_no_front_end_reports_to_the_core_alone,
 EXO_TEST(dropcheck_neither_family_starts_out_measured,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	EXO_ASSERT(!check.verdict(false).ran);
 	EXO_ASSERT(!check.verdict(true).ran);
@@ -583,7 +598,7 @@ EXO_TEST(dropcheck_neither_family_starts_out_measured,
 EXO_TEST(dropcheck_a_refused_start_still_names_the_family_it_was_asked_about,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	/* IPv4 first, so that the IPv6 answer below cannot be the value it began with. */
 	check.start("https://ipv4.drop.example.org", Drop::Family::IPv4,
@@ -618,7 +633,7 @@ EXO_TEST(dropcheck_a_refused_start_still_names_the_family_it_was_asked_about,
 EXO_TEST(dropcheck_an_address_lookup_says_that_it_started,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	check.startAddressLookup("https://ipv6.drop.invalid", Drop::Family::IPv6,
 	                         std::optional<Samurai::IO::Net::InetAddress>());
@@ -659,7 +674,7 @@ EXO_TEST(dropcheck_an_address_lookup_says_that_it_started,
 EXO_TEST(dropcheck_an_address_lookup_does_not_need_a_peer_port,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	check.start("https://ipv4.drop.invalid", Drop::Family::IPv4, 0, 0,
 	            std::optional<Samurai::IO::Net::InetAddress>());
@@ -691,7 +706,7 @@ EXO_TEST(dropcheck_an_address_lookup_does_not_need_a_peer_port,
 EXO_TEST(dropcheck_an_address_lookup_does_not_displace_a_measurement,
 {
 	Recorder events;
-	QuickDC::DropCheck check(&events);
+	QuickDC::DropCheck check(*loop, &events);
 
 	check.start("https://ipv4.drop.invalid", Drop::Family::IPv4, 1411, 1411,
 	            std::optional<Samurai::IO::Net::InetAddress>());
@@ -770,7 +785,7 @@ EXO_TEST(dropcheck_two_observers_hear_and_leave_independently,
 	OrderedRecorder first;
 	OrderedRecorder second;
 
-	QuickDC::DropCheck check(&core);
+	QuickDC::DropCheck check(*loop, &core);
 	QuickDC::Subscription a = check.observe(&first);
 	QuickDC::Subscription b = check.observe(&second);
 

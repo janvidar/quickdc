@@ -99,9 +99,8 @@ static const int TIMEOUT_MS = 5000;
 template<typename Fn>
 static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
-	Samurai::TimerManager* timers = Samurai::TimerManager::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
+	Samurai::TimerManager* timers = &core->loop().timers();
 
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
@@ -219,7 +218,7 @@ class FakeHub :
 		bool listen()
 		{
 			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(core->loop(), this, any);
 			listening = server && server->getFD() != -1 && server->listen();
 			return listening;
 		}
@@ -378,9 +377,9 @@ class Session
 namespace {
 
 /*
- * The fixture. One core for the whole process, because it runs on samurai's
- * process-wide reactor, is expensive to build, and has to be pointed at scratch files rather than the
- * user's own configuration.
+ * The fixture. One core for the whole process, because it is expensive to build
+ * and has to be pointed at scratch files rather than the user's own
+ * configuration.
  */
 std::string config_file;
 
@@ -1648,8 +1647,7 @@ EXO_TEST(hubsession_the_session_notices_the_hub_going_away,
 /* Sessions come and go without leaving anything in the monitor. */
 EXO_TEST(hubsession_repeated_sessions_leave_nothing_behind,
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 	const size_t baseline = monitor->size();
 
 	for (int n = 0; n < 3; n++)
@@ -1902,7 +1900,7 @@ uint16_t sparePort()
 {
 	Ignoring nobody;
 	Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-	auto probe = Samurai::IO::Net::ServerSocket::create(&nobody, any);
+	auto probe = Samurai::IO::Net::ServerSocket::create(core->loop(), &nobody, any);
 	if (!probe || probe->getFD() == -1 || !probe->listen()) return 0;
 	return probe->getLocalPort();
 }
@@ -2512,7 +2510,7 @@ EXO_TEST(hubsession_an_active_client_names_the_port_the_gateway_granted,
 	EXO_ASSERT(s.ready);
 	EXO_ASSERT(s.login());
 
-	FakeGateway gateway(IGD2);
+	FakeGateway gateway(core->loop(), IGD2);
 	if (!gateway.ready()) EXO_SKIP("could not listen for the gateway");
 	agreeable(gateway, 40001);
 
@@ -2520,7 +2518,7 @@ EXO_TEST(hubsession_an_active_client_names_the_port_the_gateway_granted,
 
 	/* Forwarded, and the granted port is not the one asked for. */
 	Recorder events;
-	QuickDC::PortForward forward(&events);
+	QuickDC::PortForward forward(core->loop(), &events);
 	forward.start(1411, gateway.location());
 	EXO_ASSERT(pump([&] { return events.done(); }));
 	EXO_ASSERT(events.forwarded == 1);
@@ -2897,7 +2895,7 @@ EXO_TEST(hubsession_a_loopback_connection_is_not_evidence_of_reachability,
 	/* Straight at our own peer port, over the loopback. */
 	Ignoring nobody;
 	Samurai::IO::Net::InetAddress local("127.0.0.1");
-	auto client = Samurai::IO::Net::Socket::create(&nobody, local, active.port());
+	auto client = Samurai::IO::Net::Socket::create(core->loop(), &nobody, local, active.port());
 	EXO_ASSERT(client != 0);
 	client->connect();
 

@@ -7,15 +7,17 @@
 #include "network/connectionmanager.h"
 #include "network/connection.h"
 
+#include <samurai/eventloop.h>
+
 namespace {
 
 /*
  * Handed out once per deferred deletion ever queued, process-wide rather than
  * per manager.
  *
- * The message handler these tickets travel through is a singleton and outlives
- * any one manager, so a message posted by a manager that has since gone is still
- * delivered - to every manager there is. Numbering from one in each of them would
+ * The message handler these tickets travel through belongs to the loop and
+ * outlives any one manager, so a message posted by a manager that has since gone
+ * is still delivered - to every manager on that loop. Numbering from one in each of them would
  * have the survivor recognise the dead one's ticket as its own and free a
  * connection that is still in use. Same reasoning as the timer serial in
  * samurai's timer.cpp.
@@ -28,7 +30,9 @@ uint64_t next_ticket()
 
 }
 
-QuickDC::ConnectionManager::ConnectionManager()
+QuickDC::ConnectionManager::ConnectionManager(Samurai::EventLoop& loop)
+	: Samurai::MessageListener(loop)
+	, loop(loop)
 {
 }
 
@@ -53,8 +57,8 @@ QuickDC::ConnectionManager::~ConnectionManager()
 	 * takes it out of here.
 	 *
 	 * Emptying the map is also what makes the queued messages harmless. They
-	 * outlive this object - the handler they were posted to is a process-wide
-	 * singleton - and each one resolves to nothing when it finally arrives.
+	 * outlive this object - the handler they were posted to is the loop's - and
+	 * each one resolves to nothing when it finally arrives.
 	 */
 	while (pending.size())
 	{
@@ -152,7 +156,7 @@ void QuickDC::ConnectionManager::remove(Connection* conn) {
 	const uint64_t ticket = next_ticket();
 	pending.insert(std::pair<uint64_t, Connection*>(ticket, conn));
 
-	Samurai::postMessage(QuickDC::MsgConnectionDropped, 0, static_cast<size_t>(ticket), 0);
+	loop.messages().postMessage(QuickDC::MsgConnectionDropped, 0, static_cast<size_t>(ticket), 0);
 }
 
 void QuickDC::ConnectionManager::process() { }

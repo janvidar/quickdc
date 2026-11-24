@@ -713,7 +713,7 @@ void ADC::HubSession::resetIdleTimer()
 	 * connection nothing has crossed - and it repeats, so a hub that says
 	 * nothing back still gets one of these every interval.
 	 */
-	infoTimer = new Samurai::Timer(this, keepAlive, false);
+	infoTimer = new Samurai::Timer(getCore().loop(), this, keepAlive, false);
 }
 
 
@@ -2368,7 +2368,7 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 				user->getNick());
 	}
 
-	auto csock = Samurai::IO::Net::Socket::create(nullptr, ip, port);
+	auto csock = Samurai::IO::Net::Socket::create(getCore().loop(), nullptr, ip, port);
 	ADC::ClientSession* connection = new ADC::ClientSession(getCore(), csock, this, token, from, peerSecure, peerKeyprint);
 	csock->setEventHandler(connection);
 	csock->connect();
@@ -2438,7 +2438,7 @@ bool ADC::HubSession::dialFromHubPort(const QuickDC::User* user, const char* pro
 	QDBG("Traversing to '%s' at %s:%d from our own %d", user->getNick(), ip,
 		static_cast<int>(port), static_cast<int>(mine));
 
-	auto csock = Samurai::IO::Net::Socket::create(nullptr, ip, port);
+	auto csock = Samurai::IO::Net::Socket::create(getCore().loop(), nullptr, ip, port);
 	if (!csock) return false;
 
 	/* Before connect(), which is the only moment a local port can be chosen. */

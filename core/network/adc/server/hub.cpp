@@ -7,6 +7,8 @@
 
 #include <api/core.h>
 
+#include <samurai/eventloop.h>
+
 #include <algorithm>
 #include <map>
 #include <memory>
@@ -81,8 +83,10 @@ static_assert(QuickDC::Settings::HubLingerTimeout.fallback == ADC::LocalHub::HUB
 		return; \
 	}
 
-ADC::LocalHub::Hub::Hub(QuickDC::Preferences& config_)
-	: config(config_)
+ADC::LocalHub::Hub::Hub(Samurai::EventLoop& loop_, QuickDC::Preferences& config_)
+	: Samurai::MessageListener(loop_)
+	, eventLoop(loop_)
+	, config(config_)
 	, startup(time(0))
 {
 	welcome    = "This hub is running " PRODUCT " " VERSION " on " SYSTEM "/" CPU;
@@ -110,7 +114,7 @@ ADC::LocalHub::Hub::Hub(QuickDC::Preferences& config_)
 	processing = false;
 	nextPendingTicket = 1;
 
-	timer = new Samurai::Timer(this, ADC::LocalHub::HUB_SWEEP_INTERVAL, false);
+	timer = new Samurai::Timer(eventLoop, this, ADC::LocalHub::HUB_SWEEP_INTERVAL, false);
 }
 
 uint64_t ADC::LocalHub::Hub::deferFor(ADC::LocalHub::User* user)
@@ -150,7 +154,7 @@ ADC::LocalHub::Hub::~Hub() {
 	 * Same reasoning as the users below: a check in flight holds this hub and
 	 * reports to it seconds later, so one left behind reports into freed memory.
 	 */
-	ADC::LocalHub::ClaimCheck::forget(this);
+	claimChecks.clear();
 
 	/*
 	 * Deleted, not merely unmapped. A user holds the last reference to its socket
@@ -1387,7 +1391,7 @@ void ADC::LocalHub::Hub::onQuit(ADC::LocalHub::User* user, const char* msg) {
 		 * nothing queued to ever take it out again.
 		 */
 		user->state = State_WaitDisconnect;
-		Samurai::postMessage(QuickDC::MsgHubUserDelayedQuit, 0, static_cast<size_t>(deferFor(user)), 0);
+		eventLoop.messages().postMessage(QuickDC::MsgHubUserDelayedQuit, 0, static_cast<size_t>(deferFor(user)), 0);
 		return;
 	}
 
@@ -1537,7 +1541,7 @@ void ADC::LocalHub::Hub::drop(ADC::LocalHub::User* user) {
 	if (user->disconnecting) return;
 
 	user->disconnecting = true;
-	Samurai::postMessage(QuickDC::MsgHubUserDisconnect, 0, static_cast<size_t>(deferFor(user)), 0);
+	eventLoop.messages().postMessage(QuickDC::MsgHubUserDisconnect, 0, static_cast<size_t>(deferFor(user)), 0);
 }
 
 void ADC::LocalHub::Hub::kick(ADC::LocalHub::User* user) {
@@ -1752,7 +1756,7 @@ ADC::LocalHub::User* ADC::LocalHub::Hub::lookupUserCID(const char* cid) {
 
 void ADC::LocalHub::Hub::userAdd(User* user) {
 	if (processing) {
-		Samurai::postMessage(QuickDC::MsgHubUserAppendUser, 0, static_cast<size_t>(deferFor(user)), 0);
+		eventLoop.messages().postMessage(QuickDC::MsgHubUserAppendUser, 0, static_cast<size_t>(deferFor(user)), 0);
 		return;
 	}
 
@@ -1776,7 +1780,7 @@ void ADC::LocalHub::Hub::userAdd(User* user) {
 
 void ADC::LocalHub::Hub::userRemove(User* user) {
 	if (processing) {
-		Samurai::postMessage(QuickDC::MsgHubUserRemoveUser, 0, static_cast<size_t>(deferFor(user)), 0);
+		eventLoop.messages().postMessage(QuickDC::MsgHubUserRemoveUser, 0, static_cast<size_t>(deferFor(user)), 0);
 		return;
 	}
 
@@ -1902,7 +1906,7 @@ bool ADC::LocalHub::Hub::EventMessage(const Samurai::Message* msg) {
 	 */
 	if (processing) {
 		QHUB("A hub message arrived during a broadcast; deferring it to the next pass");
-		Samurai::postMessage(id, msg->getData(), msg->getArg1(), msg->getArg2());
+		eventLoop.messages().postMessage(id, msg->getData(), msg->getArg1(), msg->getArg2());
 		return true;
 	}
 

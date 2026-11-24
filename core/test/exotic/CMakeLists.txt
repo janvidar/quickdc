@@ -2,12 +2,12 @@
 ## The QuickDC test suite (exotic/*.tcc)
 ##
 ## One exotic_add_tests() target per file, rather than one target for all of
-## them, because every QuickDC::Core runs on samurai's process-wide socket
-## monitor, timer manager and message handler. exotic's per-file EXO_SETUP hooks
-## are documented as being able to have two fixtures alive at once when --sort
-## interleaves files, which would have two cores sharing one reactor and each
-## file's teardown deleting sockets and timers the other is still walking. A
-## target per file makes interleaving impossible by construction.
+## them. exotic's per-file EXO_SETUP hooks are documented as being able to have
+## two fixtures alive at once when --sort interleaves files, and while each core
+## runs on an event loop of its own, the fixtures still share what belongs to
+## the process: the TLS keys, the local hub's record of which endpoints were
+## checked, and the scratch files a case points a core at. A target per file
+## makes interleaving impossible by construction.
 ##
 ## DISCOVER registers one CTest entry per EXO_TEST, so a failure names the case,
 ## `ctest -R` selects it, and a crash takes down that test rather than the run.
@@ -78,6 +78,7 @@ set(QUICKDC_EXOTIC_TESTS
     mappingpolicy.tcc
     localaddresses.tcc
     queuecomplete.tcc
+    twocores.tcc
     zupload.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)

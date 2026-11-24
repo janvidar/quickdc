@@ -5,10 +5,10 @@
 
 #include "quickdc.h"
 
-#include <samurai/io/net/bandwidth.h>
 #include <samurai/io/net/tlsfactory.h>
 #include <samurai/io/net/socketmonitor.h>
 #include <samurai/io/file.h>
+#include <samurai/messagehandler.h>
 #include <samurai/timer.h>
 #include <samurai/timestamp.h>
 
@@ -648,8 +648,7 @@ void QuickDC::Core::Automation::reconcile()
 	/* Throttled there, so a burst of changes is one update to every hub. */
 	if (tellHubs && core->hubs) core->hubs->requestClientInfoUpdate();
 
-	if (localHubChanged && core->messageHandler)
-		core->messageHandler->postMessage(MsgConfigUpdated, nullptr, 0, 0);
+	if (localHubChanged) core->loop().messages().postMessage(MsgConfigUpdated, nullptr, 0, 0);
 
 	networkChanged = identityChanged = localHubChanged = false;
 }
@@ -685,9 +684,6 @@ QuickDC::Core::Core()
 	automation = new Automation(this);
 	service = 0;
 	
-	monitor = Samurai::IO::Net::SocketMonitor::getInstance();
-	bandwidthManager = new Samurai::IO::Net::BandwidthManager();
-	messageHandler = Samurai::MessageHandler::getInstance();
 	securityManager = new QuickDC::SecurityManager();
 	reachability = new QuickDC::Reachability();
 	reachability6 = new QuickDC::Reachability();
@@ -699,24 +695,16 @@ QuickDC::Core::Core()
 	hash = new QuickDC::Hash::Manager();
 	shares = new QuickDC::Share::Manager(config, hash);
 	server = new DCServer(*this, planFrom(*config).endpoint);
-	connections = new ConnectionManager();
+	connections = new ConnectionManager(eventLoop);
 	hubs = new HubManager(*this);
-	transfers = new TransferManager();
-	/*
-	 * Borrowed, not made. Samurai::Timer registers itself with
-	 * TimerManager::getInstance(), which is a function-local static, so a manager
-	 * constructed here would be a second one that nothing ever registers with -
-	 * and every timer, the hub reconnect among them, would sit in the singleton
-	 * unprocessed while run() polled an empty list.
-	 */
-	timers = Samurai::TimerManager::getInstance();
-	localHub = new ADC::LocalHub::Hub(*config);
+	transfers = new TransferManager(eventLoop);
+	localHub = new ADC::LocalHub::Hub(eventLoop, *config);
 	queue = new QuickDC::QueueManager(this);
 	chat = new QuickDC::ChatArchive(QUICKDC_CHAT_DIR);
 
 	dropcheck = 0;
 	dropRefresh = 0;
-	portforward = new PortForward(&automation->portforward);
+	portforward = new PortForward(eventLoop, &automation->portforward);
 
 	/*
 	 * Off unless asked for. A search tells every host on the local segment that
@@ -761,8 +749,8 @@ QuickDC::Core::Core()
 	 * started, and it is what a front end attaches to and what the probes hand a
 	 * challenge to. Only the measuring is conditional.
 	 */
-	dropcheck = new DropCheck(&automation->dropcheck);
-	dropRefresh = new Samurai::Timer(&automation->dropcheck, DROP_REFRESH_TICK, false);
+	dropcheck = new DropCheck(eventLoop, &automation->dropcheck);
+	dropRefresh = new Samurai::Timer(eventLoop, &automation->dropcheck, DROP_REFRESH_TICK, false);
 
 	/* After the check, which it observes, and before anything starts one. */
 	service = new Api::Service(*this);
@@ -806,7 +794,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	config = new Preferences(config_file);
 	session = new Preferences(session_file);
 
-	connections = new ConnectionManager();
+	connections = new ConnectionManager(eventLoop);
 	hubs = new HubManager(*this);
 
 	/*
@@ -843,7 +831,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	chat = chat_dir.empty() ? 0 : new QuickDC::ChatArchive(chat_dir);
 
 	/* Consulted before an upload starts, to count the ones in flight. */
-	transfers = new TransferManager();
+	transfers = new TransferManager(eventLoop);
 
 	server = 0;
 	/* Nothing to forward to without a listening socket. */
@@ -851,24 +839,6 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	dropRefresh = 0;
 	portforward = 0;
 	localHub = 0;
-	bandwidthManager = 0;
-
-	/*
-	 * Borrowed singletons, not ours; the destructor must not release them.
-	 *
-	 * The message handler is not optional, whatever this constructor leaves out.
-	 * Deletion of a dropped connection is deferred through it - a session is
-	 * retired from inside its own socket's callback, and cannot be freed there -
-	 * so a core that never drains it never frees a peer session or the socket it
-	 * holds. Every connection made through such a core leaked itself and a
-	 * descriptor, and nothing said so.
-	 *
-	 * Timers are drained by SocketMonitor::wait() rather than from here, so a
-	 * core with none of its own still has working ones.
-	 */
-	monitor = Samurai::IO::Net::SocketMonitor::getInstance();
-	messageHandler = Samurai::MessageHandler::getInstance();
-	timers = Samurai::TimerManager::getInstance();
 
 	identity = new ADC::CID(*config);
 	automation = new Automation(this);
@@ -926,15 +896,6 @@ QuickDC::Core::~Core()
 	delete config; config = 0;
 	delete hash; hash = 0;
 	delete localHub; localHub = 0;
-	delete bandwidthManager;
-
-	/*
-	 * timers and messageHandler are not deleted: both are function-local statics
-	 * behind getInstance(), like the socket monitor, so freeing them is freeing
-	 * something that was never allocated - which aborts the process on exit.
-	 */
-	timers = 0;
-	messageHandler = 0;
 	QDBG_FINI;
 }
 
@@ -949,7 +910,7 @@ void QuickDC::Core::run()
 	// anyway. Hashing runs on its own thread and console input arrives through a
 	// socket the monitor watches, so neither needs a short timeout.
 	static const int POLL_INTERVAL_MS = 250;
-	monitor->wait(POLL_INTERVAL_MS);
+	eventLoop.monitor().wait(POLL_INTERVAL_MS);
 
 	// Guarded from here on, because the second constructor builds a core that
 	// only runs a hub session and leaves everything a session does not need
@@ -971,10 +932,12 @@ void QuickDC::Core::run()
 	// and then. Cheap enough to run on every iteration.
 	if (queue) queue->process();
 
-	// Process timers.
-	// FIXME: it should be sorted so we don't have to iterate ALL timers to before exit.
-	if (timers) timers->process();
-	if (messageHandler) messageHandler->process();
+	// Timers the work above made due, and then what was posted - which is also how
+	// a dropped connection is freed, since it cannot be deleted from inside its own
+	// socket's callback. Not eventLoop.wait(), which would deliver the messages
+	// before the work above rather than after it.
+	eventLoop.timers().process();
+	eventLoop.messages().process();
 
 	/* Last, so that whatever this turn changed is acted on in the same turn. */
 	if (automation) automation->reconcile();
@@ -985,7 +948,7 @@ void QuickDC::Core::run()
 
 void QuickDC::Core::runUntilStopped(const std::function<void()>& running)
 {
-	inbox.open();
+	inbox.open(eventLoop);
 	if (running) running();
 
 	while (!stopRequested.load(std::memory_order_acquire))

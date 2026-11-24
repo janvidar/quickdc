@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include <samurai/samurai.h>
+#include <samurai/eventloop.h>
 
 #define UNIX
 
@@ -42,8 +43,8 @@ class Telnet : public SocketEventHandler {
 			std::shared_ptr<Socket> socket;
 			
 	public:
-		Telnet(const char* host, int port) {
-			socket = Socket::create(this, host, port);
+		Telnet(Samurai::EventLoop& loop, const char* host, int port) {
+			socket = Socket::create(loop, this, host, port);
 			
 		}
 		
@@ -130,7 +131,8 @@ int main(int argc, char** argv) {
 		exit(-1);
 	}
 
-	Telnet telnet(host, port);
+	Samurai::EventLoop loop;
+	Telnet telnet(loop, host, port);
 	telnet.connect();
 
 #ifdef UNIX
@@ -152,7 +154,7 @@ int main(int argc, char** argv) {
 #endif
 
 	while (running) {
-		SocketMonitor::getInstance()->wait(50);
+		loop.wait(50);
 	
 #ifdef UNIX
 		int pollret = poll(&pfd, 1, 50);

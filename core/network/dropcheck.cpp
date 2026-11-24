@@ -64,7 +64,8 @@ QuickDC::Reachability::State stateOf(QuickDC::DropReach reach)
 
 }
 
-QuickDC::DropCheck::DropCheck(DropCheckListener* listener_) : listener(listener_)
+QuickDC::DropCheck::DropCheck(Samurai::EventLoop& loop_, DropCheckListener* listener_)
+	: loop(loop_), listener(listener_)
 {
 }
 
@@ -151,7 +152,7 @@ void QuickDC::DropCheck::internal_begin(const std::string& baseUrl,
 
 	options.userAgent = PRODUCT "/" VERSION;
 
-	client = std::make_unique<Drop::Client>(this, baseUrl, family, options);
+	client = std::make_unique<Drop::Client>(loop, this, baseUrl, family, options);
 
 	state = State::ServerInfo;
 

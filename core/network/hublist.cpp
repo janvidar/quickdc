@@ -244,9 +244,9 @@ void HubListHandler::startElement(std::string_view, std::string_view name,
 }
 
 
-QuickDC::HubList::HubList(HubListListener* listener_)
+QuickDC::HubList::HubList(Samurai::EventLoop& loop, HubListListener* listener_)
 	: listener(listener_)
-	, client(this, hublistOptions())
+	, client(loop, this, hublistOptions())
 {
 }
 

@@ -19,6 +19,7 @@
 #include "network/transfer.h"
 #include "network/transfermanager.h"
 
+#include <samurai/eventloop.h>
 #include <samurai/io/file.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/socketaddress.h>
@@ -103,6 +104,18 @@ static std::string pattern(size_t size)
 	return out;
 }
 
+static std::unique_ptr<Samurai::EventLoop> loop;
+
+EXO_SETUP({
+	loop = std::make_unique<Samurai::EventLoop>();
+	return loop->isValid() ? 1 : 0;
+});
+
+EXO_TEARDOWN({
+	loop.reset();
+	return 1;
+});
+
 /*
  * A connected pair with one end owned by a Samurai socket and the other left as
  * a raw descriptor for the test to play the peer with.
@@ -123,7 +136,7 @@ class Pair
 
 			Samurai::IO::Net::InetSocketAddress addr("127.0.0.1", 0,
 				Samurai::IO::Net::InetAddress::Version::IPv4);
-			sock = Samurai::IO::Net::Socket::create(fds[0], addr);
+			sock = Samurai::IO::Net::Socket::create(*loop, fds[0], addr);
 			peer = fds[1];
 		}
 
@@ -225,7 +238,7 @@ EXO_TEST(transfer_a_whole_file_upload_sends_the_file,
 		writeFile(path, data);
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -255,7 +268,7 @@ EXO_TEST(transfer_an_upload_resumed_at_sends_only_the_tail,
 		const off_t offset = 7777;
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -289,7 +302,7 @@ EXO_TEST(transfer_an_upload_of_a_middle_chunk_sends_that_chunk_and_stops,
 		const off_t length = 3000;
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -314,7 +327,7 @@ EXO_TEST(transfer_an_upload_with_nothing_left_to_send_finishes_immediately,
 		writeFile(path, data);
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -347,7 +360,7 @@ EXO_TEST(transfer_an_upload_whose_peer_vanishes_stops_instead_of_spinning,
 		writeFile(path, data);
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -390,7 +403,7 @@ EXO_TEST(transfer_an_upload_of_a_file_that_shrinks_stops_instead_of_spinning,
 		writeFile(path, data);
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -431,7 +444,7 @@ EXO_TEST(transfer_an_upload_of_a_file_that_will_not_open_gives_up,
 		const std::string path = scratch("nosuchdir") + "/file";
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -453,7 +466,7 @@ EXO_TEST(transfer_a_download_writes_the_file_it_was_asked_for,
 		const std::string path = scratch("dl-new");
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -486,7 +499,7 @@ EXO_TEST(transfer_a_resumed_download_keeps_what_was_already_on_disk,
 		writeFile(path, data.substr(0, offset));
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -523,7 +536,7 @@ EXO_TEST(transfer_a_download_filling_a_hole_leaves_the_rest_of_the_file,
 		writeFile(path, onDisk);
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -552,7 +565,7 @@ EXO_TEST(transfer_bytes_read_ahead_by_the_parser_are_written_before_the_rest,
 		const std::string path = scratch("dl-pending");
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -580,7 +593,7 @@ EXO_TEST(transfer_a_chunk_shorter_than_the_bytes_read_ahead_stops_at_its,
 		const size_t length = 1000;
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -608,7 +621,7 @@ EXO_TEST(transfer_a_download_cut_short_stops_and_keeps_what_arrived,
 		const std::string path = scratch("dl-short");
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -642,7 +655,7 @@ EXO_TEST(transfer_a_download_that_cannot_open_its_file_gives_up,
 		const std::string path = scratch("nosuchdir") + "/file";
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -675,7 +688,7 @@ EXO_TEST(transfer_a_transfer_released_before_the_drain_is_not_announced,
 		writeFile(path, data);
 
 		Pair pair;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 
@@ -717,7 +730,7 @@ EXO_TEST(transfer_the_listener_is_told_which_of_its_transfers_stopped,
 		writeFile(path, data);
 
 		Pair one, two;
-		QuickDC::TransferManager manager;
+		QuickDC::TransferManager manager(*loop);
 		Listener listener;
 		Samurai::IO::File file(path);
 

@@ -79,7 +79,8 @@ std::string describeError(Error error)
 }
 
 
-QuickDC::PortForward::PortForward(PortForwardListener* listener_) : listener(listener_)
+QuickDC::PortForward::PortForward(Samurai::EventLoop& loop_, PortForwardListener* listener_)
+	: loop(loop_), listener(listener_)
 {
 }
 
@@ -126,7 +127,7 @@ void QuickDC::PortForward::start(uint16_t port)
 	busy = true;
 
 	QDBG("Searching for an internet gateway to forward port %d", static_cast<int>(port));
-	gateway = Gateway::discover(this);
+	gateway = Gateway::discover(loop, this);
 }
 
 
@@ -140,7 +141,7 @@ void QuickDC::PortForward::start(uint16_t port, const Samurai::IO::Net::URL& loc
 
 	QDBG("Asking the gateway at %s to forward port %d",
 		location.toString().c_str(), static_cast<int>(port));
-	gateway = Gateway::describe(this, location);
+	gateway = Gateway::describe(loop, this, location);
 }
 
 
@@ -197,7 +198,7 @@ void QuickDC::PortForward::EventGatewayFound(Gateway*)
 	PortMapper::Options options;
 	options.lease = std::chrono::seconds(QUICKDC_PORTFORWARD_LEASE_SECONDS);
 
-	mapper = PortMapper::create(this, gateway.get(), options);
+	mapper = PortMapper::create(loop, this, gateway.get(), options);
 	if (!mapper)
 	{
 		internal_fail("the internet gateway could not be asked to forward a port");

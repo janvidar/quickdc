@@ -22,7 +22,7 @@ QuickDC::Connection::Connection(Core& core_, std::shared_ptr<Samurai::IO::Net::S
 QuickDC::Connection::Connection(Core& core_, Samurai::IO::Net::URL* url, const char* proto)
 	: core(core_), manager(core_.connections), protocol(proto)
 {
-	socket = Samurai::IO::Net::Socket::create(this, url->getHost(), url->getPort());
+	socket = Samurai::IO::Net::Socket::create(core.loop(), this, url->getHost(), url->getPort());
 }
 
 QuickDC::Connection::~Connection()

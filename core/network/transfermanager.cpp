@@ -9,7 +9,9 @@
 #include "network/transfermanager.h"
 #include <vector>
 
-QuickDC::TransferManager::TransferManager() {
+QuickDC::TransferManager::TransferManager(Samurai::EventLoop& loop)
+	: Samurai::MessageListener(loop)
+{
 }
 
 QuickDC::TransferManager::~TransferManager() {

@@ -11,6 +11,7 @@
  */
 
 #include <samurai/samurai.h>
+#include <samurai/eventloop.h>
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/socketaddress.h>
@@ -32,6 +33,18 @@
  * not made here shows up as monitor_pauses_a_handler_that_never_reads failing.
  */
 #define MONITOR_TEST_SPIN_LIMIT 64
+
+static std::unique_ptr<Samurai::EventLoop> loop;
+
+EXO_SETUP({
+	loop = std::make_unique<Samurai::EventLoop>();
+	return loop->isValid() ? 1 : 0;
+});
+
+EXO_TEARDOWN({
+	loop.reset();
+	return 1;
+});
 
 /** Told the socket is readable, and does not read it. */
 class MonitorTestDeaf : public Samurai::IO::Net::SocketEventHandler
@@ -82,7 +95,7 @@ struct MonitorTestPair
 		const Samurai::IO::Net::InetAddress loopback("127.0.0.1");
 		const Samurai::IO::Net::InetSocketAddress addr(loopback, 0);
 
-		sock = Samurai::IO::Net::Socket::create(pair[0], addr);
+		sock = Samurai::IO::Net::Socket::create(*loop, pair[0], addr);
 		if (!sock) { ::close(pair[0]); return; }
 
 		sock->setNonBlocking(true);
@@ -121,8 +134,7 @@ EXO_TEST(monitor_pauses_a_handler_that_never_reads, {
 	if (!pair.ok) return false;
 	if (!pair.send(1)) return false;
 
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &loop->monitor();
 
 	/*
 	 * One pass past the limit. Every one of them is answered immediately, since
@@ -162,8 +174,7 @@ EXO_TEST(monitor_leaves_a_slow_handler_alone, {
 	const size_t total = MONITOR_TEST_SPIN_LIMIT * 8;
 	if (!pair.send(total)) return false;
 
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &loop->monitor();
 
 	for (size_t pass = 0; pass < total; pass++)
 		monitor->wait(200);
@@ -191,7 +202,7 @@ EXO_TEST(a_socket_the_peer_closed_releases_its_descriptor, {
 	::close(pair.writer);
 	pair.writer = INVALID_SOCKET;
 
-	Samurai::IO::Net::SocketMonitor::getInstance()->wait(0);
+	loop->monitor().wait(0);
 
 	/* Still held here, and still out of the poll and out of descriptors. */
 	if (pair.sock->getFD() != INVALID_SOCKET) return false;
@@ -206,7 +217,7 @@ EXO_TEST(monitor_forgets_a_descriptor_that_was_closed, {
 		if (!pair.ok) return false;
 		if (!pair.send(1)) return false;
 
-		Samurai::IO::Net::SocketMonitor::getInstance()->wait(0);
+		loop->monitor().wait(0);
 		if (deaf.reports != 1) return false;
 	}
 
@@ -217,7 +228,7 @@ EXO_TEST(monitor_forgets_a_descriptor_that_was_closed, {
 	 * rather than putting it back.
 	 */
 	for (int pass = 0; pass < 4; pass++)
-		Samurai::IO::Net::SocketMonitor::getInstance()->wait(0);
+		loop->monitor().wait(0);
 
 	return deaf.reports == 1;
 });

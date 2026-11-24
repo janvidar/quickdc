@@ -51,7 +51,8 @@ namespace QuickDC {
 class DropCheck final : public Drop::ClientEventHandler
 {
 	public:
-		explicit DropCheck(DropCheckListener* listener);
+		/** @param loop what each run's requests are made on. */
+		DropCheck(Samurai::EventLoop& loop, DropCheckListener* listener);
 
 		/**
 		 * Ends a run in flight, and takes the client with it.
@@ -298,6 +299,8 @@ class DropCheck final : public Drop::ClientEventHandler
 
 		/** Forget the session and with it the credentials that answer a probe. */
 		void internal_disarm();
+
+		Samurai::EventLoop& loop;
 
 		/**
 		 * The core's own, given at construction and never replaced: what the core

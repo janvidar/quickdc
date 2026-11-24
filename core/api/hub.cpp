@@ -490,7 +490,7 @@ void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 		canonicalUrl, wait, static_cast<int>(attempts));
 
 	delete timer;
-	timer = new Samurai::Timer(this, static_cast<time_t>(wait), true);
+	timer = new Samurai::Timer(core.loop(), this, static_cast<time_t>(wait), true);
 
 	/*
 	 * After the timer, so that a listener told the wait can rely on the attempt

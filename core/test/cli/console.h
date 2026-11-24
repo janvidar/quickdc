@@ -16,6 +16,7 @@
 #include <thread>
 
 namespace Samurai {
+	class EventLoop;
 	namespace IO {
 		namespace Net {
 			class Socket;
@@ -103,6 +104,13 @@ class Console
 		 * the byte itself carries no information, it only breaks the wait.
 		 */
 		void drainWakeup();
+
+		/**
+		 * Have a line that is ready wake 'loop' out of its wait. Lines are
+		 * queued whether or not this is called; without it they are only
+		 * noticed on the next poll tick.
+		 */
+		void watch(Samurai::EventLoop& loop);
 
 	private:
 		Console();

@@ -27,15 +27,12 @@
 #include "network/transfer.h"
 #include "network/transfermanager.h"
 
+#include <samurai/eventloop.h>
 #include <samurai/io/file.h>
 #include <samurai/io/compression.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/socketaddress.h>
 #include <samurai/io/net/inetaddress.h>
-#include <samurai/io/net/socketmonitor.h>
-#include <samurai/io/net/bandwidth.h>
-#include <samurai/messagehandler.h>
-#include <samurai/timer.h>
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -43,6 +40,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -61,6 +59,8 @@ class Listener : public QuickDC::PrivateTransferListener
 };
 
 static std::string testfile_path;
+
+static std::unique_ptr<Samurai::EventLoop> loop;
 
 static bool write_test_file(const std::string& data)
 {
@@ -107,9 +107,9 @@ static bool run_transfer(bool compress, const std::string& data, std::vector<cha
 	setsockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
 	Samurai::IO::Net::InetSocketAddress addr("127.0.0.1", 0, Samurai::IO::Net::InetAddress::Version::IPv4);
-	auto sock = Samurai::IO::Net::Socket::create(fds[0], addr);
+	auto sock = Samurai::IO::Net::Socket::create(*loop, fds[0], addr);
 
-	QuickDC::TransferManager manager;
+	QuickDC::TransferManager manager(*loop);
 	Listener listener;
 	Samurai::IO::File file(testfile_path);
 
@@ -286,8 +286,6 @@ static std::string pseudorandom(size_t size)
 	return out;
 }
 
-static Samurai::TimerManager* timers = 0;
-
 EXO_SETUP({
 	/*
 	 * The path main() took from argv[1] so the payload could be put on another
@@ -297,17 +295,12 @@ EXO_SETUP({
 	 */
 	testfile_path = "/tmp/quickdc_zupload_" + std::to_string((int) getpid()) + ".dat";
 
-	/* Same bring-up order as QuickDC::Core; a Socket needs all of these. */
-	Samurai::IO::Net::SocketMonitor::getInstance();
-	Samurai::IO::Net::BandwidthManager::getInstance();
-	Samurai::MessageHandler::getInstance();
-	timers = new Samurai::TimerManager();
-	return 1;
+	loop = std::make_unique<Samurai::EventLoop>();
+	return loop->isValid() ? 1 : 0;
 });
 
 EXO_TEARDOWN({
-	delete timers;
-	timers = 0;
+	loop.reset();
 
 	Samurai::IO::File(testfile_path).remove();
 	return 1;

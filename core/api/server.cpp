@@ -47,8 +47,8 @@ void QuickDC::DCServer::listen(const Endpoint& endpoint)
 	Samurai::IO::Net::InetAddress localAddr(bindaddr.c_str());
 	Samurai::IO::Net::InetSocketAddress bindAddr(localAddr, port);
 
-	socket = Samurai::IO::Net::ServerSocket::create(this, bindAddr);
-	dgram  = Samurai::IO::Net::DatagramSocket::create(this, bindAddr);
+	socket = Samurai::IO::Net::ServerSocket::create(core.loop(), this, bindAddr);
+	dgram  = Samurai::IO::Net::DatagramSocket::create(core.loop(), this, bindAddr);
 
 	if (!socket->listen())
 	{
@@ -78,8 +78,8 @@ void QuickDC::DCServer::listen(const Endpoint& endpoint)
 	                                         Samurai::IO::Net::InetAddress::Version::IPv6);
 	Samurai::IO::Net::InetSocketAddress bindAddr6(localAddr6, port);
 
-	socket6 = Samurai::IO::Net::ServerSocket::create(this, bindAddr6);
-	dgram6  = Samurai::IO::Net::DatagramSocket::create(this, bindAddr6);
+	socket6 = Samurai::IO::Net::ServerSocket::create(core.loop(), this, bindAddr6);
+	dgram6  = Samurai::IO::Net::DatagramSocket::create(core.loop(), this, bindAddr6);
 
 	if (!socket6 || !socket6->listen())
 	{

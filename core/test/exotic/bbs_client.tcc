@@ -72,9 +72,8 @@ static const char* CID_A = "IPJJWEPPPLCA3PF2ZCRRYO4F2ZX2EV2JMW2KC3I";
 template<typename Fn>
 static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
-	Samurai::TimerManager* timers = Samurai::TimerManager::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
+	Samurai::TimerManager* timers = &core->loop().timers();
 
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
@@ -189,7 +188,7 @@ class FakeHub :
 		bool listen()
 		{
 			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(core->loop(), this, any);
 			listening = server && server->getFD() != -1 && server->listen();
 			return listening;
 		}
@@ -417,9 +416,9 @@ class Certificate
 namespace {
 
 /*
- * The fixture. One core for the whole process, because it runs on samurai's
- * process-wide reactor, is expensive to build, and has to be pointed at scratch files rather than the
- * user's own configuration.
+ * The fixture. One core for the whole process, because it is expensive to build
+ * and has to be pointed at scratch files rather than the user's own
+ * configuration.
  */
 std::string config_file;
 std::string session_file;

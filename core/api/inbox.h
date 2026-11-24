@@ -11,7 +11,10 @@
 #include <memory>
 #include <mutex>
 
-namespace Samurai { namespace IO { namespace Net { class Notifier; } } }
+namespace Samurai {
+	class EventLoop;
+	namespace IO { namespace Net { class Notifier; } }
+}
 
 namespace QuickDC {
 
@@ -33,8 +36,9 @@ class Inbox {
 		Inbox& operator=(const Inbox&) = delete;
 
 		/**
-		 * Start accepting jobs, and make post() interrupt the socket monitor's
-		 * wait so that one is not left waiting for the next poll interval.
+		 * Start accepting jobs, and make post() interrupt the wait of 'loop',
+		 * the owning thread's, so that one is not left waiting for the next
+		 * poll interval.
 		 *
 		 * The wake-up does nothing but wake. Jobs run in drain(), between
 		 * turns, never from inside the monitor's dispatch - where one that
@@ -43,7 +47,7 @@ class Inbox {
 		 * @return false where no wake-up could be made; jobs are then still
 		 *         accepted and run, only later.
 		 */
-		bool open();
+		bool open(Samurai::EventLoop& loop);
 
 		/**
 		 * Queue 'job' and wake the owning thread.

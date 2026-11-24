@@ -12,10 +12,10 @@
  * and the client has to answer with a key derived from it before anything else
  * happens. So the login exchange runs the other way round from the ADC one.
  *
- * QuickDC::Core reads its configuration from disk and runs on samurai's
- * process-wide reactor, so it is a per-file fixture. Each case builds its own hub and its own session: every one
- * of them is a separate process under CTest, so nothing a case leaves behind is
- * there for the next one to read.
+ * QuickDC::Core reads its configuration from disk, so it is a per-file fixture.
+ * Each case builds its own hub and its own session: every one of them is a
+ * separate process under CTest, so nothing a case leaves behind is there for the
+ * next one to read.
  */
 
 #include "quickdc.h"
@@ -82,8 +82,7 @@ static const int TIMEOUT_MS = 5000;
 template<typename Fn>
 static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
@@ -193,7 +192,7 @@ class FakeHub :
 		bool listen()
 		{
 			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(core->loop(), this, any);
 			return server && server->getFD() != -1 && server->listen();
 		}
 
@@ -1436,8 +1435,7 @@ EXO_TEST(dchubsession_no_handler_reads_past_the_length_it_was_given,
 /* Sessions come and go without leaving anything in the monitor. */
 EXO_TEST(dchubsession_repeated_sessions_leave_nothing_behind,
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 	const size_t baseline = monitor->size();
 
 	for (int n = 0; n < 3; n++)

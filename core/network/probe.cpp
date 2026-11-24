@@ -207,7 +207,7 @@ QuickDC::Protocol QuickDC::identifyDatagram(const char* buffer, size_t length)
 
 
 QuickDC::ProtocolProbe::ProtocolProbe(QuickDC::Core& core_, std::shared_ptr<Samurai::IO::Net::Socket> sock) : QuickDC::Connection(core_, std::move(sock), "Probing"), secure(false) {
-	timer = new Samurai::Timer(this, 30, true); /* if nothing happens in 30 seconds, close the connection */
+	timer = new Samurai::Timer(core_.loop(), this, 30, true); /* if nothing happens in 30 seconds, close the connection */
 	manager->add(this);
 }
 

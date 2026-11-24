@@ -9,6 +9,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include <samurai/eventloop.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/socketevent.h>
 #include <samurai/io/net/socketmonitor.h>
@@ -215,7 +216,8 @@ Console::~Console()
 
 	if (wakeSocket)
 	{
-		Samurai::IO::Net::SocketMonitor::getInstance()->remove(wakeSocket.get());
+		if (Samurai::EventLoop* loop = wakeSocket->getLoop())
+			loop->monitor().remove(wakeSocket.get());
 		wakeSocket.reset();             /* closes wake_read */
 		wake_read = -1;
 	}
@@ -266,18 +268,24 @@ void Console::startReader()
 	/* Non-blocking so drainWakeup() can read until it runs dry. */
 	fcntl(wake_read, F_SETFL, O_NONBLOCK);
 
+	reader_running = true;
+	reader = std::thread(&Console::readerLoop, this);
+}
+
+void Console::watch(Samurai::EventLoop& loop)
+{
+	if (wake_read == -1 || wakeSocket)
+		return;
+
 	Samurai::IO::Net::InetAddress addr("127.0.0.1");
 	Samurai::IO::Net::InetSocketAddress sockaddr(addr, 0);
 
 	/* This constructor adopts an existing descriptor and marks it Connected,
 	   which is exactly the state the monitor expects to deliver reads for. */
-	wakeSocket  = Samurai::IO::Net::Socket::create(wake_read, sockaddr);
+	wakeSocket  = Samurai::IO::Net::Socket::create(loop, wake_read, sockaddr);
 	wakeHandler = new ConsoleWakeHandler(this);
 	wakeSocket->setEventHandler(wakeHandler);
-	Samurai::IO::Net::SocketMonitor::getInstance()->add(wakeSocket.get());
-
-	reader_running = true;
-	reader = std::thread(&Console::readerLoop, this);
+	loop.monitor().add(wakeSocket.get());
 }
 
 void Console::stopReader()
@@ -392,6 +400,7 @@ void Console::startReader() { }
 void Console::stopReader()  { }
 void Console::readerLoop()  { }
 void Console::drainWakeup() { }
+void Console::watch(Samurai::EventLoop&) { }
 
 #endif // SAMURAI_UNIX
 

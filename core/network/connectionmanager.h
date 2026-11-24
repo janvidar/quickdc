@@ -23,7 +23,8 @@ class ConnectionManager
 	: public Samurai::MessageListener
 {
 	public:
-		ConnectionManager();
+		/** @param loop where a dropped connection's deletion is posted to. */
+		explicit ConnectionManager(Samurai::EventLoop& loop);
 		virtual ~ConnectionManager();
 	
 		virtual void add(Connection* conn);
@@ -70,16 +71,18 @@ class ConnectionManager
 		 * Connections waiting to be deleted, named by a ticket rather than carried
 		 * as a pointer in the message itself.
 		 *
-		 * The message handler is a process-wide singleton and outlives any one
-		 * manager, so a message posted from here can be delivered after the
-		 * connection it named has gone another way: its owner deleted it first, or
-		 * this manager was destroyed with it still queued. A ticket that no longer
+		 * The loop's message handler outlives any one manager, so a message posted
+		 * from here can be delivered after the connection it named has gone
+		 * another way: its owner deleted it first, or this manager was destroyed
+		 * with it still queued. A ticket that no longer
 		 * resolves is an instruction to do nothing, and this map is what makes it
 		 * stop resolving; a pointer in the message would have been a delete of
 		 * freed memory either way. Same reasoning, and the same shape, as the
 		 * pending map in ADC::LocalHub::Hub.
 		 */
 		std::map<uint64_t, Connection*> pending;
+
+		Samurai::EventLoop& loop;
 };
 
 }

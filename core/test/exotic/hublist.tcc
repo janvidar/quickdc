@@ -22,6 +22,7 @@
 #include "quickdc.h"
 #include "network/hublist.h"
 
+#include <samurai/eventloop.h>
 #include <samurai/io/compression.h>
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/io/net/serversocket.h>
@@ -39,6 +40,18 @@
 #include <utility>
 #include <vector>
 
+static std::unique_ptr<Samurai::EventLoop> loop;
+
+EXO_SETUP({
+	loop = std::make_unique<Samurai::EventLoop>();
+	return loop->isValid() ? 1 : 0;
+});
+
+EXO_TEARDOWN({
+	loop.reset();
+	return 1;
+});
+
 /* Generous: one case compresses seventeen megabytes, and a sanitized build is
    slower at everything around it. */
 static const int TIMEOUT_MS = 30000;
@@ -46,16 +59,13 @@ static const int TIMEOUT_MS = 30000;
 template<typename Fn>
 static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
-
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
 
 	while (!done())
 	{
 		if (std::chrono::steady_clock::now() > deadline) return done();
-		monitor->wait(10);
+		loop->monitor().wait(10);
 	}
 	return true;
 }
@@ -87,7 +97,7 @@ class FakeServer :
 		bool listen()
 		{
 			Samurai::IO::Net::InetSocketAddress any(static_cast<uint16_t>(0));
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(*loop, this, any);
 			return server && server->getFD() != -1 && server->listen();
 		}
 
@@ -224,7 +234,7 @@ class Fetch
 
 		explicit Fetch(std::vector<std::string> answers, const char* scheme = "http",
 		               bool talkFirst = false)
-			: hublist(&listener)
+			: hublist(*loop, &listener)
 		{
 			if (!server.listen()) return;
 			server.answers = std::move(answers);
@@ -761,8 +771,7 @@ EXO_TEST(hublist_numbers_that_are_not_numbers_do_not_refuse_the_list,
 /* ---- the socket does not outlive the download ---- */
 EXO_TEST(hublist_repeated_downloads_leave_nothing_behind,
 {
-		Samurai::IO::Net::SocketMonitor* monitor =
-			Samurai::IO::Net::SocketMonitor::getInstance();
+		Samurai::IO::Net::SocketMonitor* monitor = &loop->monitor();
 		const size_t baseline = monitor->size();
 
 		for (int n = 0; n < 3; n++)
@@ -784,7 +793,7 @@ EXO_TEST(hublist_a_cancelled_download_reports_nothing,
 		EXO_ASSERT(server.listen());
 
 		Listener listener;
-		QuickDC::HubList hublist(&listener);
+		QuickDC::HubList hublist(*loop, &listener);
 
 		const std::string address =
 			"http://127.0.0.1:" + std::to_string(server.port()) + "/hublist.xml";

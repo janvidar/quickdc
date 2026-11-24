@@ -26,6 +26,7 @@
 #include "quickdc.h"
 #include "network/portforward.h"
 
+#include <samurai/eventloop.h>
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/io/net/serversocket.h>
 #include <samurai/io/net/socket.h>
@@ -162,10 +163,10 @@ class FakeGateway
 		std::vector<std::string> bodies;
 		bool serve_description = true;
 
-		explicit FakeGateway(const char* canned) : description(canned)
+		FakeGateway(Samurai::EventLoop& loop, const char* canned) : description(canned)
 		{
 			Samurai::IO::Net::InetSocketAddress any(static_cast<uint16_t>(0));
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(loop, this, any);
 			if (!server || server->getFD() == -1) return;
 			if (!server->listen()) return;
 			port = server->getLocalPort();

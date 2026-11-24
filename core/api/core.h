@@ -6,6 +6,7 @@
 #ifndef HAVE_QUICKDC_CORE_API_H
 #define HAVE_QUICKDC_CORE_API_H
 
+#include <samurai/eventloop.h>
 #include <samurai/timestamp.h>
 
 #include "api/inbox.h"
@@ -32,15 +33,11 @@
 namespace Samurai {
 	namespace IO {
 		namespace Net {
-			class BandwidthManager;
-			class SocketMonitor;
 			class Socket;
 		}
 	}
 	
 	class Timer;
-	class TimerManager;
-	class MessageHandler;
 }
 
 
@@ -140,6 +137,14 @@ class Core {
 		 * Returns the version string of the compiled QuickDC core.
 		 */
 		const char* getVersion() const;
+
+		/**
+		 * What every socket, timer, message and lookup of this core is made on.
+		 *
+		 * Made before anything else the core holds and gone after all of it, so
+		 * nothing a core makes outlives the loop it runs on. Core thread only.
+		 */
+		Samurai::EventLoop& loop() { return eventLoop; }
 		
 	public:
 		Preferences* config;
@@ -179,7 +184,6 @@ class Core {
 		HubManager* hubs;
 		QuickDC::Hash::Manager* hash;
 		TransferManager* transfers;
-		Samurai::TimerManager* timers;
 		ADC::LocalHub::Hub* localHub;
 		QuickDC::QueueManager* queue;
 
@@ -205,8 +209,6 @@ class Core {
 		 */
 		PortForward* portforward;
 		Samurai::TimeStamp startup;
-		Samurai::MessageHandler* messageHandler;
-		Samurai::IO::Net::SocketMonitor* monitor;
 		QuickDC::SecurityManager* securityManager;
 
 		/**
@@ -283,9 +285,11 @@ class Core {
 		 * stranger's. Feeds the reachability record above.
 		 */
 		QuickDC::SearchTokens* searchTokens;
-		Samurai::IO::Net::BandwidthManager* bandwidthManager;
 
 	protected:
+		/* First, so it is the last thing destroyed: the inbox below holds a socket on it. */
+		Samurai::EventLoop eventLoop;
+
 		int references;
 
 		Inbox inbox;
@@ -295,9 +299,10 @@ class Core {
 		/**
 		 * The client proper, over ~/.quickdc.
 		 *
-		 * More than one can be built, but every core runs on samurai's
-		 * process-wide socket monitor, timers and message handler, so two in
-		 * one process share a reactor and must be driven from the same thread.
+		 * More than one can be built. Each runs on an event loop of its own, so
+		 * two in one process share no socket, timer or message, and each can be
+		 * driven from a thread of its own. What they do share is ~/.quickdc and
+		 * the TLS keys, which are set for the whole process.
 		 */
 		Core();
 

@@ -90,7 +90,8 @@ class PortForward final
 	, private Samurai::IO::Net::UPnP::PortMapperEventHandler
 {
 	public:
-		explicit PortForward(PortForwardListener* listener);
+		/** @param loop what the search, the gateway and the mapper run on. */
+		PortForward(Samurai::EventLoop& loop, PortForwardListener* listener);
 		~PortForward() override;
 
 		/* Owns a gateway and a mapper that both hold a pointer back to this as
@@ -164,6 +165,7 @@ class PortForward final
 		void internal_fail(const std::string& reason);
 		void internal_ready();
 
+		Samurai::EventLoop& loop;
 		PortForwardListener* listener;
 
 		std::unique_ptr<Samurai::IO::Net::UPnP::Gateway> gateway;

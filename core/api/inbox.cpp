@@ -14,10 +14,10 @@ QuickDC::Inbox::~Inbox()
 	close();
 }
 
-bool QuickDC::Inbox::open()
+bool QuickDC::Inbox::open(Samurai::EventLoop& loop)
 {
 	std::shared_ptr<Samurai::IO::Net::Notifier> made =
-		Samurai::IO::Net::Notifier::create([] { });
+		Samurai::IO::Net::Notifier::create(loop, [] { });
 
 	std::lock_guard<std::mutex> guard(mutex);
 	notifier = std::move(made);

@@ -37,7 +37,7 @@ class QuickDC::Api::Service::HubListFetch final : public QuickDC::HubListListene
 		HubListFetch(Service& owner, std::string url)
 			: owner(owner)
 			, url(std::move(url))
-			, list(this)
+			, list(owner.core.loop(), this)
 		{
 		}
 

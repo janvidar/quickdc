@@ -184,7 +184,7 @@ void QuickDC::HubManager::requestClientInfoUpdate() {
 	   would otherwise push the update back for as long as the loop ran. */
 	if (info_timer) return;
 
-	info_timer = new Samurai::Timer(this, info_delay, true);
+	info_timer = new Samurai::Timer(core.loop(), this, info_delay, true);
 }
 
 

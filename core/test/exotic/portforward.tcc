@@ -23,6 +23,7 @@
 #include "quickdc.h"
 #include "network/portforward.h"
 
+#include <samurai/eventloop.h>
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/io/net/serversocket.h>
 #include <samurai/io/net/socket.h>
@@ -38,21 +39,30 @@
 #include <utility>
 #include <vector>
 
+static std::unique_ptr<Samurai::EventLoop> loop;
+
+EXO_SETUP({
+	loop = std::make_unique<Samurai::EventLoop>();
+	return loop->isValid() ? 1 : 0;
+});
+
+EXO_TEARDOWN({
+	loop.reset();
+	return 1;
+});
+
 static const int TIMEOUT_MS = 4000;
 
 template<typename Fn>
 static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
-
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
 
 	while (!done())
 	{
 		if (std::chrono::steady_clock::now() > deadline) return done();
-		monitor->wait(10);
+		loop->monitor().wait(10);
 	}
 	return true;
 }
@@ -75,7 +85,7 @@ static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 EXO_TEST(portforward_a_port_forward_that_was_never_started_claims_nothing,
 {
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 
 		EXO_ASSERT(!forward.isBusy());
 		EXO_ASSERT(!forward.isForwarded());
@@ -92,12 +102,12 @@ EXO_TEST(portforward_a_port_forward_that_was_never_started_claims_nothing,
 	 */
 EXO_TEST(portforward_both_protocols_are_forwarded_and_the_address_reported,
 {
-		FakeGateway gateway(IGD1);
+		FakeGateway gateway(*loop, IGD1);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway);
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 
 		pump([&] { return events.done(); });
@@ -130,12 +140,12 @@ EXO_TEST(portforward_both_protocols_are_forwarded_and_the_address_reported,
 	 */
 EXO_TEST(portforward_a_moved_external_port_is_carried_to_the_udp_mapping_too,
 {
-		FakeGateway gateway(IGD2);
+		FakeGateway gateway(*loop, IGD2);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway, 40001);
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 
 		pump([&] { return events.done(); });
@@ -163,13 +173,13 @@ EXO_TEST(portforward_a_moved_external_port_is_carried_to_the_udp_mapping_too,
 	 */
 EXO_TEST(portforward_a_router_that_refuses_a_lease_is_asked_again_without_one,
 {
-		FakeGateway gateway(IGD1);
+		FakeGateway gateway(*loop, IGD1);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway);
 		gateway.script("AddPortMapping", fault(725));
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 
 		pump([&] { return events.done(); });
@@ -189,14 +199,14 @@ EXO_TEST(portforward_a_router_that_refuses_a_lease_is_asked_again_without_one,
 /* ---- a port somebody else already holds ---- */
 EXO_TEST(portforward_a_taken_port_is_walked_past_and_udp_follows,
 {
-		FakeGateway gateway(IGD1);
+		FakeGateway gateway(*loop, IGD1);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway);
 		/* Refused once; the walk to the next port is what addAnyMapping promises. */
 		gateway.script("AddPortMapping", fault(718));
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 
 		pump([&] { return events.done(); });
@@ -220,14 +230,14 @@ EXO_TEST(portforward_a_taken_port_is_walked_past_and_udp_follows,
 	 */
 EXO_TEST(portforward_tcp_alone_is_not_reported_as_forwarded,
 {
-		FakeGateway gateway(IGD1);
+		FakeGateway gateway(*loop, IGD1);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway);
 		gateway.script("AddPortMapping", ok(soapBody("AddPortMapping", "")));
 		gateway.script("AddPortMapping", fault(718));
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 
 		pump([&] { return events.done(); });
@@ -243,11 +253,11 @@ EXO_TEST(portforward_tcp_alone_is_not_reported_as_forwarded,
 /* ---- a device that cannot forward anything ---- */
 EXO_TEST(portforward_a_device_with_no_connection_service_is_refused,
 {
-		FakeGateway gateway(NOT_A_ROUTER);
+		FakeGateway gateway(*loop, NOT_A_ROUTER);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 
 		pump([&] { return events.done(); });
@@ -262,12 +272,12 @@ EXO_TEST(portforward_a_device_with_no_connection_service_is_refused,
 /* ---- a description that cannot be read ---- */
 EXO_TEST(portforward_a_description_that_cannot_be_fetched_is_refused,
 {
-		FakeGateway gateway(IGD1);
+		FakeGateway gateway(*loop, IGD1);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		gateway.serve_description = false;
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 
 		pump([&] { return events.done(); });
@@ -281,12 +291,12 @@ EXO_TEST(portforward_a_description_that_cannot_be_fetched_is_refused,
 /* ---- releasing ---- */
 EXO_TEST(portforward_stop_releases_both_mappings_and_reports_nothing,
 {
-		FakeGateway gateway(IGD1);
+		FakeGateway gateway(*loop, IGD1);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway);
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 		pump([&] { return events.done(); });
 		EXO_ASSERT(events.forwarded == 1);
@@ -307,12 +317,12 @@ EXO_TEST(portforward_stop_releases_both_mappings_and_reports_nothing,
 /* ---- asked twice ---- */
 EXO_TEST(portforward_a_second_start_while_one_is_in_flight_is_refused,
 {
-		FakeGateway gateway(IGD1);
+		FakeGateway gateway(*loop, IGD1);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway);
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 		EXO_ASSERT(forward.isBusy());
 
@@ -332,13 +342,13 @@ EXO_TEST(portforward_a_second_start_while_one_is_in_flight_is_refused,
 	 */
 EXO_TEST(portforward_a_port_forward_destroyed_in_flight_reports_nothing,
 {
-		FakeGateway gateway(IGD1);
+		FakeGateway gateway(*loop, IGD1);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway);
 
 		Recorder events;
 		{
-			QuickDC::PortForward forward(&events);
+			QuickDC::PortForward forward(*loop, &events);
 			forward.start(1411, gateway.location());
 			pump([&] { return gateway.count("AddPortMapping") >= 1; });
 		}
@@ -377,11 +387,11 @@ EXO_TEST(portforward_without_forwarding_the_configured_address_is_advertised,
 	   user who set up a mapping by hand is entitled to be believed. */
 EXO_TEST(portforward_a_failed_forward_leaves_the_configured_address_alone,
 {
-		FakeGateway gateway(NOT_A_ROUTER);
+		FakeGateway gateway(*loop, NOT_A_ROUTER);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 		pump([&] { return events.done(); });
 		EXO_ASSERT(events.failed == 1);
@@ -401,12 +411,12 @@ EXO_TEST(portforward_a_failed_forward_leaves_the_configured_address_alone,
 	 */
 EXO_TEST(portforward_a_forwarded_mapping_advertises_the_granted_port_and_outside_address,
 {
-		FakeGateway gateway(IGD2);
+		FakeGateway gateway(*loop, IGD2);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway, 40001);
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 		pump([&] { return events.done(); });
 		EXO_ASSERT(events.forwarded == 1);
@@ -424,12 +434,12 @@ EXO_TEST(portforward_a_forwarded_mapping_advertises_the_granted_port_and_outside
 /* Released again: back to what was configured. */
 EXO_TEST(portforward_a_released_mapping_falls_back_to_the_configured_port,
 {
-		FakeGateway gateway(IGD1);
+		FakeGateway gateway(*loop, IGD1);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway);
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 		pump([&] { return events.done(); });
 		forward.stop();
@@ -455,12 +465,12 @@ EXO_TEST(portforward_a_released_mapping_falls_back_to_the_configured_port,
  */
 EXO_TEST(portforward_an_observed_address_outranks_the_gateways_own,
 {
-		FakeGateway gateway(IGD2);
+		FakeGateway gateway(*loop, IGD2);
 		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
 		agreeable(gateway, 40001);
 
 		Recorder events;
-		QuickDC::PortForward forward(&events);
+		QuickDC::PortForward forward(*loop, &events);
 		forward.start(1411, gateway.location());
 		pump([&] { return events.done(); });
 		EXO_ASSERT(events.forwarded == 1);

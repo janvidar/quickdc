@@ -386,7 +386,7 @@ void DC::HubSession::onActiveConnect(const char* address, uint16_t port, const c
 		 */
 		if (user) expectPeer(user);
 
-		auto socket = Samurai::IO::Net::Socket::create(nullptr, address, port);
+		auto socket = Samurai::IO::Net::Socket::create(getCore().loop(), nullptr, address, port);
 		DC::ClientSession* connection = new DC::ClientSession(getCore(), socket, this);
 		socket->setEventHandler(connection);
 		socket->connect();
@@ -749,7 +749,7 @@ void DC::HubSession::EventUserInfo(const QuickDC::User* data)
 void DC::HubSession::resetIdleTimer()
 {
 	delete infoTimer;
-	infoTimer = new Samurai::Timer(this, 300, false);
+	infoTimer = new Samurai::Timer(getCore().loop(), this, 300, false);
 }
 
 void DC::HubSession::EventTimeout(Samurai::Timer*)

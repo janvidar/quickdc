@@ -227,6 +227,7 @@ int main(int argc, char** argv) {
 	}
 
 	core = new QuickDC::Core();
+	Console::getInstance()->watch(core->loop());
 	core->transfers->addListener(&transferReporter);
 	hub = new HubConnection(*core, url);
 

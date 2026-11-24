@@ -16,6 +16,7 @@
 #include <string>
 #include "api/bulletins.h"
 #include "network/adc/adccommon.h"
+#include "network/adc/server/claimcheck.h"
 
 namespace QuickDC { class Preferences; }
 #include "network/clientsession.h"
@@ -78,8 +79,14 @@ namespace LocalHub {
 		public Samurai::MessageListener
 	{
 		public:
-			explicit Hub(QuickDC::Preferences& config);
+			/** @param loop what its users, its timers and its claim checks run on. */
+			Hub(Samurai::EventLoop& loop, QuickDC::Preferences& config);
 			virtual ~Hub();
+
+			Samurai::EventLoop& loop() { return eventLoop; }
+
+			/** The reachability checks this hub has made; see ClaimCheck. */
+			ClaimChecks& claims() { return claimChecks; }
 
 			/** When this hub started, which is what its uptime counts from. */
 			Samurai::TimeStamp startedAt() const { return startup; }
@@ -186,6 +193,8 @@ namespace LocalHub {
 			void onQuit(User* user, const char* msg = 0);
 			
 		protected:
+			Samurai::EventLoop& eventLoop;
+			ClaimChecks claimChecks;
 			QuickDC::Preferences& config;
 			Samurai::TimeStamp startup;
 

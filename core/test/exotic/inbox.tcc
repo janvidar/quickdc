@@ -67,8 +67,9 @@ EXO_TEST(inbox_a_closed_inbox_refuses_work,
 
 EXO_TEST(inbox_jobs_run_in_order_when_drained,
 {
+	Samurai::EventLoop loop;
 	QuickDC::Inbox inbox;
-	inbox.open();
+	inbox.open(loop);
 
 	std::vector<int> order;
 	EXO_ASSERT(inbox.post([&] { order.push_back(1); }));
@@ -84,8 +85,9 @@ EXO_TEST(inbox_jobs_run_in_order_when_drained,
 /* Posted from inside a job: next drain, so a job that re-posts cannot starve the loop. */
 EXO_TEST(inbox_a_job_posted_by_a_job_waits_for_the_next_drain,
 {
+	Samurai::EventLoop loop;
 	QuickDC::Inbox inbox;
-	inbox.open();
+	inbox.open(loop);
 
 	int runs = 0;
 	EXO_ASSERT(inbox.post([&] { runs++; inbox.post([&] { runs++; }); }));
@@ -101,8 +103,9 @@ EXO_TEST(inbox_a_job_posted_by_a_job_waits_for_the_next_drain,
 /* What was queued before closing still runs; nothing posted after does. */
 EXO_TEST(inbox_closing_runs_what_was_queued_and_refuses_what_comes_after,
 {
+	Samurai::EventLoop loop;
 	QuickDC::Inbox inbox;
-	inbox.open();
+	inbox.open(loop);
 
 	int runs = 0;
 	bool refused = false;
@@ -119,8 +122,9 @@ EXO_TEST(inbox_closing_runs_what_was_queued_and_refuses_what_comes_after,
 /* A post from another thread ends the monitor's wait rather than waiting it out. */
 EXO_TEST(inbox_a_post_from_another_thread_interrupts_the_wait,
 {
+	Samurai::EventLoop loop;
 	QuickDC::Inbox inbox;
-	if (!inbox.open()) EXO_SKIP("no wake-up could be made");
+	if (!inbox.open(loop)) EXO_SKIP("no wake-up could be made");
 
 	std::atomic<bool> ran{false};
 	std::thread poster([&] {
@@ -131,7 +135,7 @@ EXO_TEST(inbox_a_post_from_another_thread_interrupts_the_wait,
 	const auto began = std::chrono::steady_clock::now();
 	while (!ran && std::chrono::steady_clock::now() - began < std::chrono::seconds(5))
 	{
-		Samurai::IO::Net::SocketMonitor::getInstance()->wait(5000);
+		loop.monitor().wait(5000);
 		inbox.drain();
 	}
 	const auto took = std::chrono::steady_clock::now() - began;

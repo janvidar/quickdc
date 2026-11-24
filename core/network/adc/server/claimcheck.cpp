@@ -16,24 +16,12 @@
 #include <memory>
 #include <vector>
 
-namespace {
+ADC::LocalHub::ClaimChecks::ClaimChecks() = default;
 
-/*
- * The checks this hub has made, running and finished both.
- *
- * Held here rather than by the hub for two reasons. A check has to outlive the event
- * that ended it - it is told the connection failed by the socket it owns, so it cannot
- * free itself while that call is still on the stack - and a finished one is the record
- * the interval is read from, so it has something to say after it has stopped.
- *
- * Swept when the next check starts, which is the only thing that adds to the list.
- */
-std::vector<std::unique_ptr<ADC::LocalHub::ClaimCheck>> checks;
-
-}
+ADC::LocalHub::ClaimChecks::~ClaimChecks() = default;
 
 
-size_t ADC::LocalHub::ClaimCheck::running()
+size_t ADC::LocalHub::ClaimChecks::running() const
 {
 	size_t live = 0;
 	for (const auto& check : checks)
@@ -42,17 +30,7 @@ size_t ADC::LocalHub::ClaimCheck::running()
 }
 
 
-void ADC::LocalHub::ClaimCheck::forget(Hub* hub)
-{
-	for (size_t n = checks.size(); n > 0; n--)
-	{
-		if (checks[n - 1] && checks[n - 1]->hub == hub)
-			checks.erase(checks.begin() + static_cast<long>(n - 1));
-	}
-}
-
-
-void ADC::LocalHub::ClaimCheck::reset()
+void ADC::LocalHub::ClaimChecks::clear()
 {
 	checks.clear();
 }
@@ -62,6 +40,8 @@ ADC::LocalHub::ClaimCheck* ADC::LocalHub::ClaimCheck::start(Hub* hub, User* user
                                         const char* protocol, uint16_t port)
 {
 	if (!hub || !user) return 0;
+
+	std::vector<std::unique_ptr<ClaimCheck>>& checks = hub->claims().checks;
 
 	/*
 	 * A privileged port is not where a peer transfer listens, and it is where
@@ -118,7 +98,7 @@ ADC::LocalHub::ClaimCheck* ADC::LocalHub::ClaimCheck::start(Hub* hub, User* user
 		}
 	}
 
-	if (running() >= QUICKDC_CLAIMCHECK_CONCURRENT)
+	if (hub->claims().running() >= QUICKDC_CLAIMCHECK_CONCURRENT)
 	{
 		QDBG("Not checking %s:%d: %d checks are already running", address.c_str(),
 			static_cast<int>(port), QUICKDC_CLAIMCHECK_CONCURRENT);
@@ -158,7 +138,7 @@ ADC::LocalHub::ClaimCheck::ClaimCheck(Hub* hub_, sid_t sid_, const std::string& 
 	QDBG("Checking whether %s:%d can be reached", address.c_str(),
 		static_cast<int>(port));
 
-	socket = Samurai::IO::Net::Socket::create(this, address, port);
+	socket = Samurai::IO::Net::Socket::create(hub->loop(), this, address, port);
 	if (!socket)
 	{
 		finished = std::chrono::steady_clock::now();

@@ -16,10 +16,10 @@
  * scans the shares and opens listening sockets of its own, none of which the hub
  * needs, so this uses the constructor that builds only what it does.
  *
- * That core reads its configuration from disk and runs on samurai's process-wide
- * reactor, so it is a per-file fixture. Everything else a case needs - the hub, the listening socket
- * and the clients - it builds itself and lets go of again, so no case depends on
- * what the one before it left behind.
+ * That core reads its configuration from disk, so it is a per-file fixture.
+ * Everything else a case needs - the hub, the listening socket and the clients -
+ * it builds itself and lets go of again, so no case depends on what the one
+ * before it left behind.
  */
 
 #include "quickdc.h"
@@ -67,24 +67,24 @@ static const int TIMEOUT_MS = 5000;
 /*
  * Runs the event loop until the condition holds, or gives up.
  *
- * The timers and the message queue are turned by hand, because the core this
- * builds is the one that does not own them - and the hub needs both: the sweep
- * for connections that have gone quiet is a timer, and every disconnect it
- * decides on is posted rather than done on the spot.
+ * The timers and the message queue of the core's loop are turned here as well
+ * as its sockets, rather than through Core::run() and its quarter-second poll -
+ * and the hub needs both: the sweep for connections that have gone quiet is a
+ * timer, and every disconnect it decides on is posted rather than done on the
+ * spot.
  */
 template<typename Fn>
 static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
 
 	for (;;)
 	{
-		Samurai::TimerManager::getInstance()->process();
-		Samurai::MessageHandler::getInstance()->process();
+		core->loop().timers().process();
+		core->loop().messages().process();
 
 		if (done()) return true;
 		if (std::chrono::steady_clock::now() > deadline) return done();
@@ -152,7 +152,7 @@ static std::string escapedArgument(const std::string& text)
 class TestHub : public ADC::LocalHub::Hub
 {
 	public:
-		TestHub() : ADC::LocalHub::Hub(*core->config) { }
+		TestHub() : ADC::LocalHub::Hub(core->loop(), *core->config) { }
 
 		using ADC::LocalHub::Hub::EventError;
 
@@ -172,12 +172,6 @@ class Server : public Samurai::IO::Net::ServerSocketEventHandler
 		{
 			hub.enabled = true;
 
-			/*
-			 * The record of which endpoints have been checked belongs to the
-			 * process, not to a hub, so one case's checks would otherwise be
-			 * the reason the next case's are declined.
-			 */
-			ADC::LocalHub::ClaimCheck::reset();
 		}
 
 		/*
@@ -188,7 +182,7 @@ class Server : public Samurai::IO::Net::ServerSocketEventHandler
 		bool listen()
 		{
 			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(core->loop(), this, any);
 			return server && server->getFD() != -1 && server->listen();
 		}
 
@@ -198,7 +192,7 @@ class Server : public Samurai::IO::Net::ServerSocketEventHandler
 		void sweepEvery(std::chrono::milliseconds interval)
 		{
 			delete hub.timer;
-			hub.timer = new Samurai::Timer(&hub, interval, false);
+			hub.timer = new Samurai::Timer(core->loop(), &hub, interval, false);
 		}
 
 		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char*) override { }
@@ -234,7 +228,7 @@ class Client : public Samurai::IO::Net::SocketEventHandler
 
 		bool connect(uint16_t port)
 		{
-			socket = Samurai::IO::Net::Socket::create(this, std::string("127.0.0.1"), port);
+			socket = Samurai::IO::Net::Socket::create(core->loop(), this, std::string("127.0.0.1"), port);
 			if (!socket) return false;
 
 			socket->connect();
@@ -960,7 +954,7 @@ EXO_TEST(adchub_a_connection_with_no_peer_is_refused_rather_than_crashed_on,
 
 	/* Made, not connected: there is no peer, so there is no address. */
 	std::shared_ptr<Samurai::IO::Net::Socket> lonely =
-		Samurai::IO::Net::Socket::create(
+		Samurai::IO::Net::Socket::create(core->loop(),
 			static_cast<Samurai::IO::Net::SocketEventHandler*>(0),
 			std::string("127.0.0.1"), s.port());
 
@@ -1224,7 +1218,7 @@ EXO_TEST(adchub_the_address_service_answers_a_connection_with_no_peer,
 
 	/* The same question asked over a connection that has no peer. */
 	std::shared_ptr<Samurai::IO::Net::Socket> lonely =
-		Samurai::IO::Net::Socket::create(
+		Samurai::IO::Net::Socket::create(core->loop(),
 			static_cast<Samurai::IO::Net::SocketEventHandler*>(0),
 			std::string("127.0.0.1"), s.port());
 
@@ -1299,7 +1293,7 @@ EXO_TEST(adchub_a_configured_limit_that_makes_no_sense_is_clamped,
 	config->setNumber("Idle timeout", -1);
 
 	{
-		ADC::LocalHub::Hub hub(*config);
+		ADC::LocalHub::Hub hub(core->loop(), *config);
 		EXO_ASSERT(hub.maxUsers >= 1);
 		EXO_ASSERT(hub.maxHistory == 0);
 		EXO_ASSERT(hub.maxSendQ >= 4096);
@@ -1324,8 +1318,7 @@ EXO_TEST(adchub_a_configured_limit_that_makes_no_sense_is_clamped,
 /* Users come and go without leaving anything in the socket monitor. */
 EXO_TEST(adchub_hubs_come_and_go_leaving_nothing_behind,
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 	const size_t baseline = monitor->size();
 
 	for (int n = 0; n < 3; n++)
@@ -1599,7 +1592,7 @@ class Listener : public Samurai::IO::Net::ServerSocketEventHandler
 		bool listen()
 		{
 			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(core->loop(), this, any);
 			return server && server->getFD() != -1 && server->listen();
 		}
 
@@ -1750,7 +1743,7 @@ EXO_TEST(adchub_a_client_claiming_nothing_is_not_checked,
 
 	pump([] { return false; }, 700);
 	EXO_ASSERT_EQ_UINT(open.accepted, 0u);
-	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
+	EXO_ASSERT_EQ_UINT(s.hub.claims().running(), 0u);
 	return 1;
 });
 
@@ -1778,7 +1771,7 @@ EXO_TEST(adchub_a_claim_on_a_privileged_port_is_not_checked,
 	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 22 tok1");
 
 	pump([] { return false; }, 700);
-	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
+	EXO_ASSERT_EQ_UINT(s.hub.claims().running(), 0u);
 
 	/* And no report either: nothing was checked, so nothing is known. */
 	alice.drain();
@@ -1804,7 +1797,7 @@ EXO_TEST(adchub_a_claim_on_an_impossible_port_is_not_checked,
 	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 -1 tok3");
 
 	pump([] { return false; }, 700);
-	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
+	EXO_ASSERT_EQ_UINT(s.hub.claims().running(), 0u);
 	return 1;
 });
 
@@ -1940,13 +1933,13 @@ EXO_TEST(adchub_a_client_that_leaves_during_a_check_is_not_reported_to,
 		alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
 			+ std::to_string(closed) + " tok1");
 
-		pump([] { return ADC::LocalHub::ClaimCheck::running() > 0; }, 1000);
-		EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 1u);
+		pump([&] { return s.hub.claims().running() > 0; }, 1000);
+		EXO_ASSERT_EQ_UINT(s.hub.claims().running(), 1u);
 	}
 
 	/* Alice's socket is gone; the check finishes and finds nobody. */
-	pump([] { return ADC::LocalHub::ClaimCheck::running() == 0; }, 3000);
-	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
+	pump([&] { return s.hub.claims().running() == 0; }, 3000);
+	EXO_ASSERT_EQ_UINT(s.hub.claims().running(), 0u);
 	return 1;
 });
 
@@ -1976,11 +1969,9 @@ EXO_TEST(adchub_a_hub_that_goes_away_takes_its_checks_with_it,
 		alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
 			+ std::to_string(closed) + " tok1");
 
-		pump([] { return ADC::LocalHub::ClaimCheck::running() > 0; }, 1000);
-		EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 1u);
+		pump([&] { return s.hub.claims().running() > 0; }, 1000);
+		EXO_ASSERT_EQ_UINT(s.hub.claims().running(), 1u);
 	}
-
-	EXO_ASSERT_EQ_UINT(ADC::LocalHub::ClaimCheck::running(), 0u);
 
 	pump([] { return false; }, 1500);
 	return 1;

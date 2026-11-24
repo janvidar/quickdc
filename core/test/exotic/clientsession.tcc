@@ -58,8 +58,7 @@ static std::string scratch(const char* leaf)
 template<typename Fn>
 static bool pump(Fn done, int timeout_ms = TIMEOUT_MS)
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 
 	const auto deadline = std::chrono::steady_clock::now()
 		+ std::chrono::milliseconds(timeout_ms);
@@ -90,10 +89,10 @@ class Peer :
 		bool connect()
 		{
 			Samurai::IO::Net::InetSocketAddress any((uint16_t) 0);
-			server = Samurai::IO::Net::ServerSocket::create(this, any);
+			server = Samurai::IO::Net::ServerSocket::create(core->loop(), this, any);
 			if (!server || server->getFD() == -1 || !server->listen()) return false;
 
-			mine = Samurai::IO::Net::Socket::create(this,
+			mine = Samurai::IO::Net::Socket::create(core->loop(), this,
 				std::string("127.0.0.1"), server->getLocalPort());
 			if (!mine) return false;
 			mine->connect();
@@ -313,6 +312,9 @@ static std::string cfgPath;
 static std::string sesPath;
 static std::string queuePath;
 
+/* The peer end the torn-down-with-the-core case leaves running; see that case. */
+static Peer* survivingPeer = 0;
+
 /* Nothing to run against without one, so every case starts here. */
 static const char* CANNOT_CONNECT = "this host cannot make a loopback connection";
 
@@ -338,6 +340,10 @@ EXO_TEARDOWN({
 	 */
 	delete core;
 	core = 0;
+
+	/* After the core, and so after its loop: the peer's sockets are detached by then. */
+	delete survivingPeer;
+	survivingPeer = 0;
 
 	Samurai::IO::File(cfgPath).remove();
 	Samurai::IO::File(sesPath).remove();
@@ -776,9 +782,10 @@ EXO_TEST(clientsession_a_session_left_running_is_torn_down_with_the_core,
 
 	/*
 	 * The peer's end has to outlive the case for the session to still be alive
-	 * at shutdown, so this one is leaked on purpose too.
+	 * at shutdown, so the teardown deletes it, once the core has gone.
 	 */
 	Peer* peer = new Peer();
+	survivingPeer = peer;
 	if (!peer->connect()) EXO_SKIP(CANNOT_CONNECT);
 
 	ADC::ClientSession* session =
@@ -808,8 +815,7 @@ EXO_TEST(clientsession_a_session_left_running_is_torn_down_with_the_core,
 /* Connections come and go without leaving anything in the monitor. */
 EXO_TEST(clientsession_repeated_connections_leave_nothing_behind,
 {
-	Samurai::IO::Net::SocketMonitor* monitor =
-		Samurai::IO::Net::SocketMonitor::getInstance();
+	Samurai::IO::Net::SocketMonitor* monitor = &core->loop().monitor();
 	const size_t baseline = monitor->size();
 
 	for (int n = 0; n < 3; n++)
