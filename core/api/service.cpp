@@ -19,12 +19,15 @@
 #include "share/searchrequest.h"
 #include "network/filesource.h"
 #include "network/transfer.h"
+#include "network/keyprint.h"
+#include <samurai/io/net/socket.h>
 #include <samurai/io/file.h>
 #include "network/hubmanager.h"
 #include "quickdc.h"
 #include <samurai/messagehandler.h>
 #include "network/portforward.h"
 #include "share/sharemanager.h"
+#include "hash/hashmanager.h"
 
 #include <samurai/io/net/url.h>
 
@@ -143,6 +146,12 @@ QuickDC::Api::Transfer converted(QuickDC::Transfer* transfer)
 	out.ratio = transfer->getRatio();
 	out.upload = transfer->isUpload();
 	out.finished = transfer->isFinished();
+
+	if (Samurai::IO::Net::Socket* socket = transfer->getSocket())
+	{
+		out.secure = socket->isSecure();
+		if (out.secure && !QuickDC::Keyprint::ofPeer(socket, out.peerKeyprint)) out.peerKeyprint.clear();
+	}
 	return out;
 }
 
@@ -468,12 +477,17 @@ QuickDC::Api::Service::Service(Core& core_)
 	, configObserved(core_.config ? core_.config->subscribe(this) : Subscription())
 	, sessionObserved(core_.session ? core_.session->subscribe(this) : Subscription())
 {
+	if (core.shares) core.shares->setHashedCallback([this] { publish(shareStatus(0)); });
 }
 
 QuickDC::Api::Service::~Service()
 {
 	/* An attachment still being hashed would otherwise report to this. */
-	if (core.shares) core.shares->forgetListener(this);
+	if (core.shares)
+	{
+		core.shares->forgetListener(this);
+		core.shares->setHashedCallback(nullptr);
+	}
 }
 
 void QuickDC::Api::Service::execute(const Command& command)
@@ -740,6 +754,26 @@ void QuickDC::Api::Service::run(const Commands::SnapshotTransfers& command)
 	}
 
 	publish(taken);
+}
+
+QuickDC::Api::Events::ShareStatus QuickDC::Api::Service::shareStatus(uint64_t request) const
+{
+	Events::ShareStatus status;
+	status.request = request;
+
+	if (core.shares)
+	{
+		status.files = core.shares->getFiles();
+		status.size = core.shares->getSharedSize();
+	}
+
+	status.hashing = core.hash && core.hash->isBusy();
+	return status;
+}
+
+void QuickDC::Api::Service::run(const Commands::ReportShare& command)
+{
+	publish(shareStatus(command.request));
 }
 
 void QuickDC::Api::Service::EventQueueFileAdded(const QueueFile*)

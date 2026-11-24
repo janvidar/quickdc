@@ -45,7 +45,7 @@
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/io/net/socket.h>
 #include <samurai/io/net/socketaddress.h>
-#include <samurai/io/net/tlsfactory.h>
+#include <samurai/io/net/tlscontext.h>
 #include <samurai/io/net/url.h>
 #include <samurai/util/base32.h>
 #include <span>
@@ -61,10 +61,11 @@
  * only read as a reset - so naming ADCS then would be worse than not offering
  * it at all.
  */
-static bool canAcceptTls()
+static bool canAcceptTls(QuickDC::Core& core)
 {
-	Samurai::IO::File* cert = Samurai::IO::Net::TlsFactory::getCertificate();
-	Samurai::IO::File* pkey = Samurai::IO::Net::TlsFactory::getPrivateKey();
+	const Samurai::IO::Net::TlsContext& keys = core.loop().tls();
+	Samurai::IO::File* cert = keys.getCertificate();
+	Samurai::IO::File* pkey = keys.getPrivateKey();
 
 	return cert && cert->exists() && pkey && pkey->exists();
 }
@@ -975,7 +976,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * certificate, nothing to say.
 	 */
 	std::string keyprint;
-	if (!QuickDC::Keyprint::ofOwnCertificate(keyprint)) keyprint.clear();
+	if (!QuickDC::Keyprint::ofOwnCertificate(getCore().loop().tls(), keyprint)) keyprint.clear();
 	fields.emplace_back("KP", keyprint);
 
 
@@ -1044,7 +1045,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * ADCS first because it is the one ADC-EXT specifies; ADC0 because the DC++
 	 * family looks for that one and for nothing else.
 	 */
-	if (canAcceptTls())
+	if (canAcceptTls(getCore()))
 	{
 		claim(ADC_EXT_ADCS);
 		claim(ADC_EXT_ADCS_DRAFT);
@@ -1288,7 +1289,7 @@ const char* ADC::HubSession::peerConnectProtocol(const QuickDC::User* user, bool
 	 * Where the requirement stands that is the end of it; where it does not, plain
 	 * ADC is still a transfer.
 	 */
-	if (listening && !canAcceptTls())
+	if (listening && !canAcceptTls(getCore()))
 		return mustEncryptPeers() ? 0 : ADC_COMPLIANCE;
 
 	return tls;
@@ -2554,7 +2555,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 		return;
 	}
 
-	if (peerSecure && !canAcceptTls())
+	if (peerSecure && !canAcceptTls(getCore()))
 	{
 		QERR("Peer asked us to accept an ADCS connection, but we have no certificate to present");
 		sendPeerError(from, adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_UNSUPPORTED).c_str(),
@@ -2570,7 +2571,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	 */
 	if (!peerSecure && mustEncryptPeers())
 	{
-		if (!canAcceptTls())
+		if (!canAcceptTls(getCore()))
 		{
 			refuseUnencrypted(from, token, proto,
 				"encryption is required and there is no certificate to accept it with");

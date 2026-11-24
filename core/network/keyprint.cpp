@@ -9,7 +9,7 @@
 #include <ctype.h>
 
 #include <samurai/io/net/socket.h>
-#include <samurai/io/net/tlsfactory.h>
+#include <samurai/io/net/tlscontext.h>
 #include <samurai/util/base32.h>
 #include <span>
 #include <string_view>
@@ -87,9 +87,9 @@ bool QuickDC::Keyprint::ofPeer(Samurai::IO::Net::Socket* socket, std::string& ke
 	return true;
 }
 
-bool QuickDC::Keyprint::ofOwnCertificate(std::string& keyprint)
+bool QuickDC::Keyprint::ofOwnCertificate(const Samurai::IO::Net::TlsContext& keys, std::string& keyprint)
 {
-	const auto digest = Samurai::IO::Net::TlsFactory::getOwnCertificateSHA256();
+	const auto digest = keys.getOwnCertificateSHA256();
 	if (!digest) return false;
 
 	format(digest->data(), keyprint);

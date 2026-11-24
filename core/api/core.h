@@ -323,9 +323,8 @@ class Core {
 		 *
 		 * More than one can be built. Each runs on an event loop of its own, so
 		 * two in one process share no socket, timer or message, and each can be
-		 * driven from a thread of its own. What they do share is the TLS keys,
-		 * which are set for the whole process: the last core built presents its
-		 * certificate for all of them, and building two at once races on it.
+		 * driven from a thread of its own, and each presents its own certificate:
+		 * the keys are its loop's, not the process's.
 		 */
 		explicit Core(const Home& home);
 

@@ -13,6 +13,7 @@ namespace Samurai {
 namespace IO {
 namespace Net {
 class Socket;
+class TlsContext;
 }
 }
 }
@@ -62,7 +63,7 @@ class Keyprint
 		 * then nothing should be published, because a keyprint for a
 		 * certificate we do not have would fail every peer that checked it.
 		 */
-		static bool ofOwnCertificate(std::string& keyprint);
+		static bool ofOwnCertificate(const Samurai::IO::Net::TlsContext& keys, std::string& keyprint);
 
 	private:
 		static void format(const uint8_t* digest, std::string& keyprint);

@@ -50,7 +50,10 @@ QuickDC::Share::Manager::Manager(QuickDC::Preferences* config_, QuickDC::Hash::M
 	  listdir(dir ? dir : "~/.quickdc"), filelists(false), attaching(false) {
 	/* Every TTH root is known once hashing falls idle, so that is when the lists
 	   are worth building and when an attachment that never got one is given up. */
-	if (hash) hash->setIdleCallback([this] { createFileLists(false); });
+	if (hash) hash->setIdleCallback([this] {
+		createFileLists(false);
+		if (onHashed) onHashed();
+	});
 }
 
 QuickDC::Share::Manager::Attachment::~Attachment() {
@@ -155,10 +158,7 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 
 	const std::string_view name(pubname);
 
-	if (name == "MyList.DcLst"  ||
-		name == "MyList.bz2"    ||
-		name == "files.xml"     ||
-		name == "files.xml.bz2") {
+	if (isFileList(name)) {
 
 		if (!filelists)
 		{
@@ -247,6 +247,10 @@ Samurai::IO::File* QuickDC::Share::Manager::getFile(const char* pubname) const {
 #endif
 	return 0;
 	
+}
+
+bool QuickDC::Share::Manager::isFileList(std::string_view name) {
+	return name == "MyList.DcLst" || name == "MyList.bz2" || name == "files.xml" || name == "files.xml.bz2";
 }
 
 QuickDC::Share::File* QuickDC::Share::Manager::findByTTH(const char* tth) const {

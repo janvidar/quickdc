@@ -6,10 +6,12 @@
 #ifndef HAVE_QUICKDC_SHAREMANAGER_H
 #define HAVE_QUICKDC_SHAREMANAGER_H
 
+#include <functional>
 #include <vector>
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "quickdc.h"
 #include "hash/hashjob.h"
@@ -83,6 +85,13 @@ class Manager : public QuickDC::Hash::JobListener {
 		void createFileLists(bool incomplete);
 
 		/**
+		 * Called on the thread that runs the hash manager each time hashing falls
+		 * idle, once the complete file lists are written: every shared file has a
+		 * hash then, and can be searched for and fetched by it.
+		 */
+		void setHashedCallback(std::function<void()> callback) { onHashed = std::move(callback); }
+
+		/**
 		 * The directory createFileLists() writes files.xml and files.xml.bz2 to.
 		 *
 		 * As it was configured, tilde and all: Samurai::IO::File is what expands
@@ -100,6 +109,9 @@ class Manager : public QuickDC::Hash::JobListener {
 		 * name it has on DC (as perceived by other clients).
 		 */
 		Samurai::IO::File* getFile(const char* dcname) const;
+
+		/** Whether 'name' is one of the file lists, which getFile() opens for its caller to own. */
+		static bool isFileList(std::string_view name);
 		
 		/**
 		 * Get a file from the share database based on the TTH
@@ -289,6 +301,8 @@ class Manager : public QuickDC::Hash::JobListener {
 		bool detach(const std::string& tth);
 
 	protected:
+		std::function<void()> onHashed;
+
 		/**
 		 * Hash::JobListener, for the files handed to attach(). A shared file
 		 * hashes itself; these have no Share::File to do it for them until the

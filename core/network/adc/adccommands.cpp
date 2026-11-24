@@ -257,6 +257,9 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 			
 		uint32_t numslots = 0;
 		EXTRACT_INT(numslots, "SL");
+
+		uint32_t sharedFiles = 0;
+		EXTRACT_INT(sharedFiles, "SF");
 		
 		int hub_cnt_op = 0;
 		EXTRACT_INT(hub_cnt_op, "HO");
@@ -313,6 +316,7 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 		INF_APPLY_STRING("DE", setDescription);
 		INF_APPLY_STRING("EM", setEmail);
 		INF_APPLY_INT("SS", setSharedBytes, shared);
+		INF_APPLY_INT("SF", setSharedFiles, sharedFiles);
 		INF_APPLY_STRING("VE", setUserAgent);
 		INF_APPLY_INT("SL", setNumSlots, numslots);
 		INF_APPLY_INT("HO", setHubsOperator, hub_cnt_op);

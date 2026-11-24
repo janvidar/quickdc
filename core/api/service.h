@@ -68,6 +68,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::SetPriority& command);
 		void run(const Commands::RemoveFromQueue& command);
 		void run(const Commands::SnapshotTransfers& command);
+		void run(const Commands::ReportShare& command);
 		void run(const Commands::OpenHub& command);
 		void run(const Commands::CloseHub& command);
 		void run(const Commands::ConnectHub& command);
@@ -129,6 +130,8 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void EventTransferFinished(QuickDC::Transfer* transfer) override;
 		void EventTransferStopped(QuickDC::Transfer* transfer) override;
 		void EventTransferError(QuickDC::Transfer* transfer) override;
+
+		Events::ShareStatus shareStatus(uint64_t request) const;
 
 		Core& core;
 		ListenerList<EventSink> sinks;

@@ -644,6 +644,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 		 */
 		file = sharemgr->getFile(ADC_INDEX_FILE);
 		if (file) internal_length = file->size();
+		ownsFile = file != nullptr;
 		slots_full = false;
 	}
 	else if (type == FOURCC('t','t','h','l'))
@@ -708,6 +709,7 @@ void ADC::ClientSession::onGET(const char* fn, uint32_t type, uint64_t offset, i
 			if (name == ADC_INDEX_FILE || name == ADC_INDEX_FILE_BZ2)
 			{
 				file = sharemgr->getFile(fn);
+				ownsFile = file != nullptr;
 				slots_full = false;
 			}
 		}

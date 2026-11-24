@@ -6,6 +6,7 @@
 #include "quickdc.h"
 
 #include <samurai/io/net/tlsfactory.h>
+#include <samurai/io/net/tlscontext.h>
 #include <samurai/io/net/socketmonitor.h>
 #include <samurai/io/file.h>
 #include <samurai/messagehandler.h>
@@ -702,7 +703,7 @@ QuickDC::Core::Core(const Home& home)
 	const std::string key = dir + "/ssl/quickdc.key";
 	const std::string certificate = dir + "/ssl/quickdc.crt";
 	ensureCertificate(key.c_str(), certificate.c_str());
-	Samurai::IO::Net::TlsFactory::setKeys(key.c_str(), certificate.c_str());
+	eventLoop.tls().setKeys(key.c_str(), certificate.c_str());
 
 	hash = new QuickDC::Hash::Manager((dir + "/hashdb.cache").c_str());
 	shares = new QuickDC::Share::Manager(config, hash, dir.c_str());

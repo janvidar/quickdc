@@ -65,6 +65,10 @@ struct Transfer {
 	double ratio = 1.0;
 	bool upload = false;
 	bool finished = false;
+	/** Whether the connection is encrypted. */
+	bool secure = false;
+	/** What the peer's certificate hashes to; empty where it presented none. */
+	std::string peerKeyprint;
 };
 
 /** One file in the download queue. */
@@ -488,6 +492,11 @@ struct SnapshotTransfers {
 	uint64_t request = 0;
 };
 
+/** Report what is shared as a ShareStatus, echoing 'request'. */
+struct ReportShare {
+	uint64_t request = 0;
+};
+
 /** Measure reachability against the configured server, IPv4 first. */
 struct MeasureReachability { };
 
@@ -759,6 +768,18 @@ struct AttachmentFailed {
 	std::string reason;
 };
 
+/**
+ * What is shared, told when ReportShare asks and each time hashing falls idle,
+ * with 'request' 0; once 'hashing' is false every shared file can be searched
+ * for and fetched by its hash.
+ */
+struct ShareStatus {
+	uint64_t request = 0;
+	uint64_t files = 0;
+	uint64_t size = 0;
+	bool hashing = false;
+};
+
 struct ReachabilityCheckStarted {
 	bool ipv6 = false;
 };
@@ -803,6 +824,7 @@ struct Command {
 		Commands::SetPriority,
 		Commands::RemoveFromQueue,
 		Commands::SnapshotTransfers,
+		Commands::ReportShare,
 		Commands::OpenHub,
 		Commands::CloseHub,
 		Commands::ConnectHub,
@@ -860,6 +882,7 @@ struct Event {
 		Events::QueueChanged,
 		Events::DownloadCompleted,
 		Events::TransfersSnapshot,
+		Events::ShareStatus,
 		Events::HubOpenFailed,
 		Events::HubNetStatus,
 		Events::HubReconnectScheduled,

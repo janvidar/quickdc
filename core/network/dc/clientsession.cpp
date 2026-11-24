@@ -890,6 +890,7 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 		 * nothing about this.
 		 */
 		file = sharemgr->getFile("files.xml");
+		ownsFile = file != nullptr;
 		slots_full = false;
 	}
 	else if (type == FOURCC('t','t','h','l') || type == FOURCC('t','t','h','1'))
@@ -943,6 +944,7 @@ void DC::ClientSession::onADCGet(const char* fn, uint32_t type, uint64_t offset,
 	else
 	{
 		file = sharemgr->getFile(fn);
+		ownsFile = file && QuickDC::Share::Manager::isFileList(fn ? fn : "");
 	}
 
 	if (slots_full)
