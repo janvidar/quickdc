@@ -108,6 +108,8 @@ inline constexpr Flag   ActiveMode              {"Network", "Active mode", false
 inline constexpr Flag   ForceActiveMode         {"Network", "Force active mode", false};
 inline constexpr Flag   UseUpnp                 {"Network", "UseUPnP", false};
 inline constexpr Text   ReachabilityServer      {"Network", "Reachability server", ""};
+/** How much of getting connected is worked out; see api/networkmode.h. Absent until settled. */
+inline constexpr Text   ConnectionMode          {"Network", "Mode", ""};
 inline constexpr Number Slots                   {"Network", "Slots", 3};
 inline constexpr Number MaxDownloads            {"Network", "Max downloads", 3};
 inline constexpr Number ChunkSize               {"Network", "Chunk size", 1024 * 1024};
@@ -122,6 +124,9 @@ inline constexpr Text   Email                   {"User", "E-mail", ""};
 inline constexpr Text   Password                {"User", "Password", ""};
 inline constexpr Text   PrivateId               {"User", "Private ID", ""};
 inline constexpr Text   ClientId                {"User", "Client ID", ""};
+
+/* [Downloads]; read by a user interface to name what it queues, created by the core. */
+inline constexpr Text   DownloadDirectory       {"Downloads", "Directory", "~/.quickdc/downloads"};
 
 /* [Local hub] */
 inline constexpr Flag   HubEnabled              {"Local hub", "Enabled", false};

@@ -669,7 +669,7 @@ QuickDC::Core::Core()
 	Samurai::IO::File::mkdir("~/.quickdc/lists",   0700);
 	Samurai::IO::File::mkdir("~/.quickdc/ssl",     0700);
 	/* The default download destination; [Downloads]/Directory overrides it. */
-	Samurai::IO::File::mkdir(QUICKDC_DOWNLOAD_DIR, 0700);
+	Samurai::IO::File::mkdir(QuickDC::Settings::DownloadDirectory.fallback, 0700);
 	
 	config = new Preferences("~/.quickdc/quickdc.conf");
 

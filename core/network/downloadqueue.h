@@ -26,7 +26,6 @@
 #define QUICKDC_LIST_DIR       "~/.quickdc/lists"
 
 /** Default destination for downloads, overridable in [Downloads]/Directory. */
-#define QUICKDC_DOWNLOAD_DIR   "~/.quickdc/downloads"
 
 /** What a source we know nothing about yet is asked for. */
 #define QUICKDC_CHUNK_SIZE (1024*1024)

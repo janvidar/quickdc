@@ -4,13 +4,14 @@
  */
 
 #include "api/networkmode.h"
+#include "config/settings.h"
 #include "config/preferences.h"
 
 namespace {
 
 const char GROUP[] = "Network";
 
-const char MODE[] = "Mode";
+const char* const MODE = QuickDC::Settings::ConnectionMode.key;
 const char ACTIVE[] = "Active mode";
 const char USE_UPNP[] = "UseUPnP";
 const char FORCE_ACTIVE[] = "Force active mode";

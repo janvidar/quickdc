@@ -10,6 +10,7 @@
 #include "quickdc.h"
 #include "debug/dbg.h"
 #include "api/core.h"
+#include "config/settings.h"
 #include "test/cli/hubconnection.h"
 #include "test/cli/commands.h"
 #include "test/cli/util.h"
@@ -301,9 +302,7 @@ static std::string baseName(const std::string& path)
  */
 static std::string downloadDirectory()
 {
-	QuickDC::Preferences* config = core->config;
-	config->setGroup("Downloads");
-	return std::string(config->getString("Directory", QUICKDC_DOWNLOAD_DIR));
+	return QuickDC::Settings::read(*core->config, QuickDC::Settings::DownloadDirectory);
 }
 
 
