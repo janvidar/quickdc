@@ -1,0 +1,32 @@
+# a, which nothing can connect to, fetches a file from b: a asks b through the
+# hub to connect to it, and b dials in the other direction.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+@a preset application Network Mode passive
+@b preset application Network "Active mode" 1
+@a preset application "Local hub" Enabled 1
+@a preset application User Nickname alice
+@b preset application User Nickname bob
+
+@b file share/big.bin 5M 13
+@b share share as files
+@b wait ShareStatus hashing=false files=1 timeout=30s
+
+@a open adc://127.0.0.1:${PORT} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b open adc://127.0.0.1:${PORT} as hub
+@b connect hub
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait UserUpdated hub=hub user.nick=bob
+
+@a search big.bin as s1
+@a wait SearchResult hub=hub hit.token=s1 hit.user.nick=bob
+
+@a download hub big.bin from bob
+@a wait DownloadCompleted size=5242880 timeout=20s
+@a expect-file downloads/big.bin same-as ../b/share/big.bin

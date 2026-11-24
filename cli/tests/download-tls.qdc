@@ -1,0 +1,50 @@
+# Encrypted transfers both ways between two cores in one process, each core
+# presenting a certificate of its own. The local hub speaks plain ADC only, so
+# the hub connection is not encrypted; the peer connections are.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+preset application Network "Active mode" 1
+preset application Network "Require encrypted transfers" 1
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+@a preset application "Local hub" Enabled 1
+@a preset application User Nickname alice
+@b preset application User Nickname bob
+
+@a file share/two.bin 3M 21
+@a share share as alice
+@b file share/one.bin 3M 22
+@b share share as bob
+@a wait ShareStatus hashing=false files=1 timeout=30s
+@b wait ShareStatus hashing=false files=1 timeout=30s
+
+@a open adc://127.0.0.1:${PORT} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b open adc://127.0.0.1:${PORT} as hub
+@b connect hub
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+
+# What each announces as its keyprint, and that the two are not the same.
+@a wait UserUpdated hub=hub user.nick=alice user.keyprint!= remember KP_A=user.keyprint
+@a wait UserUpdated hub=hub user.nick=bob user.keyprint!=$KP_A remember KP_B=user.keyprint
+@b wait UserUpdated hub=hub user.nick=alice user.keyprint=$KP_A
+@b wait UserUpdated hub=hub user.nick=bob user.keyprint=$KP_B
+
+# a asks b to connect, so b dials and sees the certificate a presents.
+@a search one.bin as s1
+@a wait SearchResult hub=hub hit.token=s1 hit.user.nick=bob
+@a download hub one.bin from bob
+@b wait TransferStarted transfer.upload=true transfer.secure=true transfer.peerKeyprint=$KP_A timeout=20s
+@a wait DownloadCompleted size=3145728 timeout=20s
+@a expect-file downloads/one.bin same-as ../b/share/one.bin
+
+# And the other way about: a dials, and sees b's.
+@b search two.bin as s2
+@b wait SearchResult hub=hub hit.token=s2 hit.user.nick=alice
+@b download hub two.bin from alice
+@a wait TransferStarted transfer.upload=true transfer.secure=true transfer.peerKeyprint=$KP_B timeout=20s
+@b wait DownloadCompleted size=3145728 timeout=20s
+@b expect-file downloads/two.bin same-as ../a/share/two.bin

@@ -6,7 +6,9 @@
 #include "session.h"
 #include "eventjson.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <filesystem>
 
 namespace Api = QuickDC::Api;
 
@@ -14,6 +16,13 @@ namespace {
 
 /* A run that waits on nothing must not grow without bound. */
 const size_t BACKLOG_LIMIT = 100000;
+const size_t HITS_LIMIT = 10000;
+
+std::string lastPart(const std::string& name)
+{
+	const size_t slash = name.find_last_of("/\\");
+	return slash == std::string::npos ? name : name.substr(slash + 1);
+}
 
 }
 
@@ -21,7 +30,7 @@ std::string QuickDC::Cli::Expectation::describe() const
 {
 	std::string out = core.empty() ? std::string() : "@" + core + " ";
 	out += event;
-	for (const auto& [path, value] : fields) out += " " + path + "=" + value;
+	for (const FieldTest& test : fields) out += " " + test.path + (test.differs ? "!=" : "=") + test.value;
 	return out;
 }
 
@@ -88,7 +97,7 @@ void QuickDC::Cli::Session::observe(Hubs& hubs, const Api::Event& event)
 	if (const auto* updated = event.as<Api::Events::UserUpdated>())
 	{
 		if (!updated->user.nick.empty())
-			hubs.users[updated->hub][updated->user.nick] = updated->user.id;
+			hubs.users[updated->hub][updated->user.nick] = updated->user;
 	}
 	else if (const auto* left = event.as<Api::Events::UserLeft>())
 	{
@@ -97,6 +106,16 @@ void QuickDC::Cli::Session::observe(Hubs& hubs, const Api::Event& event)
 	else if (const auto* cleared = event.as<Api::Events::UsersCleared>())
 	{
 		hubs.users.erase(cleared->hub);
+	}
+	else if (const auto* result = event.as<Api::Events::SearchResult>())
+	{
+		if (!result->hit.hubUrl.empty()) hubs.urls[result->hub] = result->hit.hubUrl;
+		hubs.hits.emplace_back(result->hub, result->hit);
+		while (hubs.hits.size() > HITS_LIMIT) hubs.hits.pop_front();
+	}
+	else if (const auto* chat = event.as<Api::Events::ChatReceived>())
+	{
+		if (!chat->line.hubUrl.empty()) hubs.urls[chat->hub] = chat->line.hubUrl;
 	}
 }
 
@@ -113,10 +132,15 @@ bool QuickDC::Cli::Session::matches(const Heard& heard, const Expectation& expec
 		if (!core || core->text() != expected.core) return false;
 	}
 
-	for (const auto& [path, value] : expected.fields)
+	std::vector<const Json::Value*> found;
+	for (const FieldTest& test : expected.fields)
 	{
-		const Json::Value* field = heard.event.find(path);
-		if (!field || field->text() != value) return false;
+		const std::string value = valueOf(test);
+		found.clear();
+		heard.event.findAll(test.path, found);
+		const bool equal = std::any_of(found.begin(), found.end(),
+		                               [&value](const Json::Value* field) { return field->text() == value; });
+		if (test.differs ? (found.empty() || equal) : !equal) return false;
 	}
 
 	return true;
@@ -137,7 +161,7 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::wait(const Line& line, const Expect
 
 			heard.claimed = true;
 			if (settings.quiet) print(heard.line);
-			return Outcome::Next;
+			return remember(line, heard, expected) ? Outcome::Next : Outcome::Failed;
 		}
 
 		std::optional<Delivery> delivery = runner.next(deadline);
@@ -156,13 +180,85 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::wait(const Line& line, const Expect
 	                  + expected.describe());
 }
 
-Api::HubHandle QuickDC::Cli::Session::openHub(const std::string& core, const std::string& name)
+std::string QuickDC::Cli::Session::valueOf(const FieldTest& test) const
+{
+	if (test.value.size() < 2 || test.value[0] != '$') return test.value;
+
+	const auto found = remembered.find(test.value.substr(1));
+	return found == remembered.end() ? test.value : found->second;
+}
+
+bool QuickDC::Cli::Session::remember(const Line& line, const Heard& heard, const Expectation& expected)
+{
+	for (const auto& [name, path] : expected.remember)
+	{
+		const Json::Value* field = heard.event.find(path);
+		if (!field)
+		{
+			fail(line, "the event has no '" + path + "' to remember as " + name);
+			return false;
+		}
+		remembered[name] = field->text();
+	}
+	return true;
+}
+
+Api::HubHandle QuickDC::Cli::Session::openHub(const std::string& core, const std::string& name,
+                                               const std::string& url)
 {
 	Hubs& hubs = cores[core];
 	const Api::HubHandle handle = ++hubs.last;
 	hubs.byName[name] = handle;
 	hubs.names[handle] = name;
+	hubs.urls[handle] = url;
 	return handle;
+}
+
+std::string QuickDC::Cli::Session::hubUrl(const std::string& core, Api::HubHandle hub) const
+{
+	const auto found = cores.find(core);
+	if (found == cores.end()) return std::string();
+
+	const auto url = found->second.urls.find(hub);
+	return url == found->second.urls.end() ? std::string() : url->second;
+}
+
+std::optional<Api::SearchHit> QuickDC::Cli::Session::searchHit(const std::string& core, Api::HubHandle hub,
+                                                               const std::string& what,
+                                                               const std::string& nick) const
+{
+	const auto found = cores.find(core);
+	if (found == cores.end()) return std::nullopt;
+
+	const auto& hits = found->second.hits;
+	for (auto at = hits.rbegin(); at != hits.rend(); ++at)
+	{
+		const auto& [from, hit] = *at;
+		if (from != hub) continue;
+		if (!nick.empty() && hit.user.nick != nick) continue;
+		if (hit.tth == what || hit.name == what || lastPart(hit.name) == what) return hit;
+	}
+
+	return std::nullopt;
+}
+
+std::string QuickDC::Cli::Session::resolve(const Line& line, const std::string& path) const
+{
+	const std::filesystem::path given(path);
+	if (given.is_absolute()) return given.lexically_normal().string();
+
+	std::filesystem::path under(base);
+	if (!line.core.empty()) under /= line.core;
+	return (under / given).lexically_normal().string();
+}
+
+void QuickDC::Cli::Session::presetShare(const std::string& core, const std::string& name,
+                                        const std::string& directory)
+{
+	const int index = cores[core].shares++;
+	preset(core, Api::SettingsStore::Application, "Shares", "Share " + std::to_string(index),
+	       name + ":" + directory);
+	preset(core, Api::SettingsStore::Application, "Shares", "Total shares", std::to_string(index + 1));
 }
 
 std::optional<Api::HubHandle> QuickDC::Cli::Session::hub(const std::string& core, const std::string& name) const
@@ -181,8 +277,8 @@ void QuickDC::Cli::Session::forgetHub(const std::string& core, const std::string
 	cores[core].byName.erase(name);
 }
 
-std::optional<std::string> QuickDC::Cli::Session::userId(const std::string& core, Api::HubHandle hub,
-                                               const std::string& nick) const
+std::optional<Api::User> QuickDC::Cli::Session::user(const std::string& core, Api::HubHandle hub,
+                                                     const std::string& nick) const
 {
 	const auto found = cores.find(core);
 	if (found == cores.end()) return std::nullopt;

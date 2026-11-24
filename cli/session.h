@@ -31,12 +31,21 @@ struct Options {
 	std::chrono::milliseconds waitTimeout = std::chrono::seconds(10);
 };
 
+/** One field=value (or field!=value) test; a value '$NAME' is what was remembered as NAME. */
+struct FieldTest {
+	std::string path;
+	std::string value;
+	bool differs = false;
+};
+
 /** What a wait is waiting for. */
 struct Expectation {
 	/** Empty for any core. */
 	std::string core;
 	std::string event;
-	std::vector<std::pair<std::string, std::string>> fields;
+	std::vector<FieldTest> fields;
+	/** Names to remember the matched event's fields by, and the paths of those fields. */
+	std::vector<std::pair<std::string, std::string>> remember;
 	std::chrono::milliseconds timeout{0};
 
 	std::string describe() const;
@@ -68,15 +77,39 @@ class Session {
 		void note(const std::string& text) const;
 
 		/* The handles a script's hub names stand for, one numbering per core. */
-		QuickDC::Api::HubHandle openHub(const std::string& core, const std::string& name);
+		QuickDC::Api::HubHandle openHub(const std::string& core, const std::string& name,
+		                                const std::string& url);
 		std::optional<QuickDC::Api::HubHandle> hub(const std::string& core, const std::string& name) const;
 		void forgetHub(const std::string& core, const std::string& name);
 
 		/** Whoever on 'hub' was last seen with the nickname 'nick'. */
-		std::optional<std::string> userId(const std::string& core, QuickDC::Api::HubHandle hub,
-		                                  const std::string& nick) const;
+		std::optional<QuickDC::Api::User> user(const std::string& core, QuickDC::Api::HubHandle hub,
+		                                       const std::string& nick) const;
+
+		/** The address the core knows 'hub' by: what it said, or else what was opened. */
+		std::string hubUrl(const std::string& core, QuickDC::Api::HubHandle hub) const;
+
+		/**
+		 * The latest search result 'core' heard on 'hub' for a file named 'what'
+		 * (its whole name or the last part of it) or with that hash, and from the
+		 * user 'nick' where that is not empty.
+		 */
+		std::optional<QuickDC::Api::SearchHit> searchHit(const std::string& core, QuickDC::Api::HubHandle hub,
+		                                                 const std::string& what, const std::string& nick) const;
 
 		uint64_t nextRequest() { return ++requests; }
+
+		/** The directory the cores' homes are made in, one per core, named after it. */
+		void setBase(std::string directory) { base = std::move(directory); }
+
+		/**
+		 * 'path' as the line means it: as given where it is absolute, otherwise
+		 * under the home of the core the line names, or of the run where it names none.
+		 */
+		std::string resolve(const Line& line, const std::string& path) const;
+
+		/** Have 'core' share 'directory' as 'name' from the start. */
+		void presetShare(const std::string& core, const std::string& name, const std::string& directory);
 
 		/** Take a setting as though 'core''s files held it when it starts; every core for "". */
 		void preset(const std::string& core, QuickDC::Api::SettingsStore store,
@@ -95,12 +128,17 @@ class Session {
 			QuickDC::Api::HubHandle last = 0;
 			std::map<std::string, QuickDC::Api::HubHandle> byName;
 			std::map<QuickDC::Api::HubHandle, std::string> names;
-			std::map<QuickDC::Api::HubHandle, std::map<std::string, std::string>> users;
+			std::map<QuickDC::Api::HubHandle, std::map<std::string, QuickDC::Api::User>> users;
+			std::map<QuickDC::Api::HubHandle, std::string> urls;
+			std::deque<std::pair<QuickDC::Api::HubHandle, QuickDC::Api::SearchHit>> hits;
+			int shares = 0;
 		};
 
 		void take(const Delivery& delivery);
 		void observe(Hubs& hubs, const QuickDC::Api::Event& event);
 		bool matches(const Heard& heard, const Expectation& expected) const;
+		bool remember(const Line& line, const Heard& heard, const Expectation& expected);
+		std::string valueOf(const FieldTest& test) const;
 		void print(const std::string& line) const;
 
 		Runner& runner;
@@ -109,6 +147,8 @@ class Session {
 		std::deque<Heard> backlog;
 		std::map<std::string, QuickDC::Api::SettingsSnapshot> presetsByCore;
 		uint64_t requests = 0;
+		std::string base;
+		std::map<std::string, std::string> remembered;
 };
 
 }

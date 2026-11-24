@@ -256,6 +256,8 @@ Value transfer(const Api::Transfer& t)
 		{"ratio", t.ratio},
 		{"upload", t.upload},
 		{"finished", t.finished},
+		{"secure", t.secure},
+		{"peerKeyprint", t.peerKeyprint},
 	};
 }
 
@@ -471,6 +473,12 @@ struct Fields {
 			{"active", each(e.active, transfer)},
 			{"queued", each(e.queued, queueItem)},
 			{"activeDownloads", e.activeDownloads}}};
+	}
+
+	Out operator()(const Ev::ShareStatus& e) const
+	{
+		return {"ShareStatus", {
+			{"request", e.request}, {"files", e.files}, {"size", e.size}, {"hashing", e.hashing}}};
 	}
 
 	Out operator()(const Ev::HubOpenFailed& e) const

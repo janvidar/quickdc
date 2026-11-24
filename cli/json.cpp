@@ -104,6 +104,28 @@ const QuickDC::Cli::Json::Value* QuickDC::Cli::Json::Value::find(std::string_vie
 	return at;
 }
 
+void QuickDC::Cli::Json::Value::findAll(std::string_view path, std::vector<const Value*>& out) const
+{
+	const size_t dot = path.find('.');
+	const std::string_view step = path.substr(0, dot);
+	const std::string_view rest = dot == std::string_view::npos ? std::string_view() : path.substr(dot + 1);
+
+	if (step != "*" || kind != Kind::Array)
+	{
+		const Value* next = find(step);
+		if (!next) return;
+		if (dot == std::string_view::npos) out.push_back(next);
+		else next->findAll(rest, out);
+		return;
+	}
+
+	for (const Value& item : items)
+	{
+		if (dot == std::string_view::npos) out.push_back(&item);
+		else item.findAll(rest, out);
+	}
+}
+
 std::string QuickDC::Cli::Json::Value::text() const
 {
 	if (kind == Kind::String) return scalar;

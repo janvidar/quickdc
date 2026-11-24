@@ -17,12 +17,6 @@
 
 namespace {
 
-/*
- * Held while a core is built and while it is destroyed. A core sets the TLS keys
- * for the whole process as it is built, so two built at once race on them.
- */
-std::mutex lifecycle;
-
 class Mailbox {
 	public:
 		void push(QuickDC::Cli::Delivery delivery)
@@ -96,7 +90,6 @@ struct Host {
 
 		try
 		{
-			std::lock_guard<std::mutex> guard(lifecycle);
 			built = std::make_unique<QuickDC::Core>(
 				QuickDC::Core::Home{home, presets.application, presets.session});
 		}
@@ -134,11 +127,7 @@ struct Host {
 		}
 
 		events.reset();
-
-		{
-			std::lock_guard<std::mutex> guard(lifecycle);
-			built.reset();
-		}
+		built.reset();
 
 		enter(State::Stopped);
 	}

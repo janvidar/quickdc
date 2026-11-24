@@ -36,6 +36,15 @@ if(QUICKDC_BUILD_TESTS)
                 --core a --core b --free-port PORT --free-port PORT_B --quiet
                 ${scripts}/two-cores-chat.qdc)
 
+    foreach(name search filelist download-active download-passive download-tls)
+        string(REPLACE "-" "_" test ${name})
+        add_test(NAME cli_${test}
+            COMMAND ${scenario} 0 - $<TARGET_FILE:qdc>
+                    --core a --core b --free-port PORT --free-port PORT_B --quiet
+                    ${scripts}/${name}.qdc)
+        set_tests_properties(cli_${test} PROPERTIES TIMEOUT 120)
+    endforeach()
+
     add_test(NAME cli_wait_times_out
         COMMAND ${scenario} 1 "timed out after 300ms waiting for UserJoined nick=nobody"
                 $<TARGET_FILE:qdc> --quiet ${scripts}/wait-times-out.qdc)

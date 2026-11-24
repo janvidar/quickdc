@@ -1,0 +1,29 @@
+# a browses what b shares, and finds every file b put there.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+preset application Network "Active mode" 1
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+@a preset application "Local hub" Enabled 1
+@a preset application User Nickname alice
+@b preset application User Nickname bob
+
+@b file share/readme.txt 1200 1
+@b file share/music/song.ogg 300k 2
+@b share share as files
+
+# The complete list is written once hashing falls idle.
+@b wait ShareStatus hashing=false files=2 timeout=30s
+
+@a open adc://127.0.0.1:${PORT} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b open adc://127.0.0.1:${PORT} as hub
+@b connect hub
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait UserUpdated hub=hub user.nick=bob
+
+@a browse hub bob
+@a wait FilelistReady root.dirs.0.name=files root.dirs.0.files.*.name=readme.txt root.dirs.0.files.*.size=1200 root.dirs.0.dirs.*.name=music root.dirs.0.dirs.*.files.*.name=song.ogg root.dirs.0.dirs.*.files.*.size=307200 timeout=20s

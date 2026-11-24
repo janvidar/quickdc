@@ -58,6 +58,9 @@ class Value {
 		/** The member at 'path', dot separated, an array indexed by number; or null. */
 		const Value* find(std::string_view path) const;
 
+		/** Every member 'path' reaches, where a '*' step stands for each item of an array. */
+		void findAll(std::string_view path, std::vector<const Value*>& out) const;
+
 		/** What a field=value test compares with: text unquoted, anything else as written. */
 		std::string text() const;
 

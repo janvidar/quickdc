@@ -6,9 +6,13 @@
 #include "freeport.h"
 
 #include <cerrno>
+#include <cstddef>
+
+#include <cstdio>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 namespace {
@@ -35,6 +39,34 @@ int bound(int type, in_port_t port)
 	return fd;
 }
 
+/*
+ * Held until the process exits, by a name in Linux's abstract socket namespace,
+ * which needs no file and goes with the process however it ends. Elsewhere every
+ * claim succeeds, and two runs at once can still be handed the same port.
+ */
+bool claim(in_port_t port)
+{
+#ifdef __linux__
+	const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd == -1) return false;
+
+	sockaddr_un address {};
+	address.sun_family = AF_UNIX;
+	const int length = std::snprintf(address.sun_path + 1, sizeof(address.sun_path) - 1,
+	                                 "quickdc-qdc-port-%u", static_cast<unsigned>(port));
+	const socklen_t size = static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + 1 + length);
+
+	if (bind(fd, reinterpret_cast<const sockaddr*>(&address), size) != 0)
+	{
+		close(fd);
+		return false;
+	}
+#else
+	(void) port;
+#endif
+	return true;
+}
+
 }
 
 int QuickDC::Cli::freePort()
@@ -55,12 +87,16 @@ int QuickDC::Cli::freePort()
 			return -1;
 		}
 
-		const int udp = bound(SOCK_DGRAM, ntohs(address.sin_port));
+		const in_port_t port = ntohs(address.sin_port);
+		const int udp = bound(SOCK_DGRAM, port);
 		close(tcp);
 		if (udp == -1) continue;
 		close(udp);
 
-		return ntohs(address.sin_port);
+		/* Another run may have been offered it a moment ago, and not bound it yet. */
+		if (!claim(port)) continue;
+
+		return port;
 	}
 
 	errno = EADDRINUSE;

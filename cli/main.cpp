@@ -263,6 +263,7 @@ int run(const Arguments& arguments, std::vector<QuickDC::Cli::Statement>& statem
 
 	QuickDC::Cli::Runner runner;
 	QuickDC::Cli::Session session(runner, arguments.options);
+	session.setBase(base);
 
 	int status = EXIT_PASSED;
 	size_t next = 0;
