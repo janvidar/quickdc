@@ -67,6 +67,22 @@ inline std::string readForHub(const Preferences& session, const std::string& gro
 	return session.peekString(group, setting.key, read(config, setting));
 }
 
+/**
+ * Keep 'value' as this hub's own, for what readForHub() reads next time - and
+ * nothing at all where it is what every hub gets anyway, or empty. A copy of the
+ * shared value kept per hub would outrank it for good: a later change to the
+ * shared one would never reach this hub, which is what pinned nicknames and
+ * passwords before (see config/migrations.cpp).
+ */
+inline void writeForHub(Preferences& session, const std::string& group,
+                        const Preferences& config, const Text& setting, const std::string& value)
+{
+	if (value.empty() || value == read(config, setting))
+		session.remove(group, setting.key);
+	else
+		session.setString(group, setting.key, value);
+}
+
 inline void write(Preferences& to, const Text& setting, const std::string& value)
 {
 	to.setString(setting.group, setting.key, value);

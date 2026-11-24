@@ -1578,3 +1578,60 @@ EXO_TEST(dchubsession_an_empty_password_is_not_reported_as_plaintext,
 	EXO_ASSERT(!warnedAboutPlaintext(s.listener));
 	return 1;
 });
+
+namespace {
+
+bool anyHubKeeps(const char* key)
+{
+	for (const std::string& group : core->session->groupNames())
+		if (group.find("://") != std::string::npos && core->session->haveSetting(group, key)) return true;
+	return false;
+}
+
+}
+
+/*
+ * A refused password leaves this hub nothing of its own, not an empty one: an
+ * empty value kept per hub outranks the shared password, so a password set
+ * later for every hub would never have reached this one.
+ */
+EXO_TEST(dchubsession_a_refused_password_leaves_no_empty_one_behind,
+{
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	std::string line;
+	s.say("$GetPass");
+	EXO_ASSERT(s.hub.expect("$MyPass", line));
+
+	s.session->sendPassword("wrong-one");
+	EXO_ASSERT(anyHubKeeps("Password"));
+
+	s.say("$BadPass");
+	EXO_ASSERT(s.listener.authRequested);
+	EXO_ASSERT(!anyHubKeeps("Password"));
+	return 1;
+});
+
+/* The password every hub is given, typed in again for one, is not kept as that hub's own. */
+EXO_TEST(dchubsession_the_shared_password_typed_in_is_not_pinned_to_the_hub,
+{
+	core->config->setString("User", "Password", "shared-secret");
+
+	Session s;
+	if (!s.listened) EXO_SKIP("could not bind a loopback port for the hub");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	std::string line;
+	s.say("$GetPass");
+	EXO_ASSERT(s.hub.expect("$MyPass", line));
+
+	s.session->sendPassword("shared-secret");
+	EXO_ASSERT(!anyHubKeeps("Password"));
+
+	core->config->remove("User", "Password");
+	return 1;
+});

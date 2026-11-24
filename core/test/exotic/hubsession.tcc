@@ -4799,3 +4799,66 @@ EXO_TEST(hubsession_a_source_that_moved_hubs_is_asked_where_it_is,
 	EXO_ASSERT(!askedToConnect(first));
 	return 1;
 });
+
+namespace {
+
+bool anyHubKeepsPassword()
+{
+	for (const std::string& group : core->session->groupNames())
+		if (group.find("://") != std::string::npos && core->session->haveSetting(group, "Password")) return true;
+	return false;
+}
+
+}
+
+/*
+ * A password the hub refused is forgotten rather than offered again on the next
+ * run, only to be refused the same way.
+ */
+EXO_TEST(hubsession_a_refused_password_is_forgotten,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	s.say("ISUP ADBASE");
+	s.say("ISID AAAA");
+	EXO_ASSERT(s.hub.nextLine(line));
+
+	s.say("IGPA ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+	EXO_ASSERT(s.hub.nextLine(line));
+
+	s.session->sendPassword("wrong-adc");
+	EXO_ASSERT(anyHubKeepsPassword());
+
+	s.say("ISTA 223 Invalid\\spassword");
+	EXO_ASSERT(pump([] { return !anyHubKeepsPassword(); }));
+	return 1;
+});
+
+/* The password every hub is given, typed in again for one, is not kept as that hub's own. */
+EXO_TEST(hubsession_the_shared_password_typed_in_is_not_pinned_to_the_hub,
+{
+	core->config->setString("User", "Password", "shared-adc");
+
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+
+	std::string line;
+	EXO_ASSERT(s.hub.nextLine(line));
+	s.say("ISUP ADBASE");
+	s.say("ISID AAAA");
+	EXO_ASSERT(s.hub.nextLine(line));
+
+	s.say("IGPA ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+	EXO_ASSERT(s.hub.nextLine(line));
+
+	s.session->sendPassword("shared-adc");
+	EXO_ASSERT(!anyHubKeepsPassword());
+
+	core->config->remove("User", "Password");
+	return 1;
+});

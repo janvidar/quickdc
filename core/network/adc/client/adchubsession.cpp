@@ -1544,11 +1544,9 @@ void ADC::HubSession::sendPassword(const char* password_)
 
 	/*
 	 * Written out now rather than left to the destructor, so a password the
-	 * user just supplied survives a crash or a kill. The group is shared and
-	 * every other session moves it, so it is selected here.
+	 * user just supplied survives a crash or a kill.
 	 */
-	session->setGroup(address);
-	session->setString("Password", password);
+	QuickDC::Settings::writeForHub(*session, address, *getCore().config, QuickDC::Settings::Password, password);
 	session->write();
 
 	sendPasswordResponse();
@@ -1994,6 +1992,10 @@ void ADC::HubSession::onStatus(ADC::Command* cmd)
 				QERR("Password is invalid");
 				listener->EventHubStatus(QuickDC::HubListener::HubErrorWrongPassword);
 				reconnect_time = -1;
+
+				/* Not offered again on the next run only to be refused the same way. */
+				session->remove(address, QuickDC::Settings::Password.key);
+				session->write();
 				break;
 
 			case ADC_CODE_ACCESS_CID_USED:
