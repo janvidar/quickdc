@@ -4,6 +4,7 @@
  */
 
 #include "quickdc.h"
+#include <atomic>
 #include "network/connectionmanager.h"
 #include "network/connection.h"
 
@@ -24,7 +25,7 @@ namespace {
  */
 uint64_t next_ticket()
 {
-	static uint64_t counter = 0;
+	static std::atomic<uint64_t> counter{0};
 	return ++counter;
 }
 

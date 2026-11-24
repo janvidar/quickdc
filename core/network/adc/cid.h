@@ -60,8 +60,8 @@ class CID {
 class SID {
 	public:
 		/**
-		 * NOTE: the answer lives in one buffer shared by every caller, so it is
-		 * only good until the next call.
+		 * NOTE: the answer lives in one buffer per thread, so it is only good
+		 * until the next call on that thread.
 		 */
 		static const char* toString(sid_t);
 		static sid_t       fromString(const char*);

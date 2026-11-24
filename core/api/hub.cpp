@@ -4,6 +4,7 @@
  */
 
 #include "quickdc.h"
+#include <atomic>
 #include <stdio.h>
 #include <string.h>
 
@@ -242,7 +243,7 @@ bool QuickDC::Hub::connectUser(const char* user, const char* token)
 	 * Nothing in the download queue is behind this one - it is a manual
 	 * connect - so there is no job to correlate and any unique token will do.
 	 */
-	static size_t counter = 0;
+	static std::atomic<size_t> counter{0};
 	char generated[32];
 	snprintf(generated, sizeof(generated), "MAN%lu%lu",
 		static_cast<unsigned long>(Samurai::TimeStamp().getInternalData()),

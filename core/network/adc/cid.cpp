@@ -27,7 +27,7 @@
 static const char* ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 const char* ADC::SID::toString(sid_t sid_) {
-	static char t_sid[5];
+	thread_local char t_sid[5];
 	sid_t sid = (sid_ & 0xFFFFF); // 20 bits;
 	sid_t A, B, C, D = 0;
 	D     = (sid % 32);

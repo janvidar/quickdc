@@ -137,7 +137,7 @@ bool QuickDC::Hash::Job::runToCompletion(std::atomic<uint64_t>& done, std::atomi
 
 const char* QuickDC::Hash::Job::getHashSum() const
 {
-	static char buf[100];
+	thread_local char buf[100];
 	if (!hashValue) return "";
 
 	if (hashValue->getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, buf, 100))

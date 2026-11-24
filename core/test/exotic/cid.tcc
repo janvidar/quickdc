@@ -342,9 +342,8 @@ EXO_TEST(cid_input_that_is_not_a_pair_is_refused,
 });
 
 /*
- * Documented rather than endorsed: toString() answers out of one buffer it keeps
- * for the purpose, so the second call in an expression overwrites what the first
- * returned. Every caller today uses the answer before calling again; this is here
+ * Documented rather than endorsed: toString() answers out of one buffer per
+ * thread, so the second call on a thread overwrites what the first returned. Every caller today uses the answer before calling again; this is here
  * so that stops being an accident.
  */
 EXO_TEST(cid_a_sid_is_rendered_into_one_shared_buffer,

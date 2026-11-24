@@ -176,7 +176,8 @@ bool DC::CommandProxy::write()
 
 bool DC::CommandProxy::read()
 {
-	static char buf[READ_BUF_SIZE+1] = {0,};
+	/* Per thread: two cores on two threads read at once, and shared scratch hands one the other's bytes. */
+	thread_local char buf[READ_BUF_SIZE+1] = {0,};
 	size_t n = 0;
 	std::error_code ec;
 	switch (socket->read(buf, READ_BUF_SIZE, n, ec))

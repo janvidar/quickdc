@@ -462,7 +462,7 @@ class QueueVerifier : public QuickDC::Hash::JobListener
 			 * file is already cached, so this must not touch the queue;
 			 * onFileVerified() only records the result for process() to apply.
 			 *
-			 * getHashSum() also hands back a pointer to a static buffer, which
+			 * getHashSum() also hands back a pointer to a buffer it reuses, which
 			 * is another reason not to hold on to it.
 			 */
 			queue->onFileVerified(job->getFile().getName().c_str(), job->getHashSum());
@@ -751,7 +751,7 @@ bool isOurselves(const QuickDC::Core* core, const char* hubUrl, const char* cid)
 
 }
 
-QuickDC::QueueManager::QueueManager(Core* core_, const char* path_)
+QuickDC::QueueManager::QueueManager(Core* core_, const char* path_, const char* lists)
 	: core(core_)
 	, verifier(0)
 	, dirty(false)
@@ -762,6 +762,7 @@ QuickDC::QueueManager::QueueManager(Core* core_, const char* path_)
 	, burstAllowance(QUICKDC_SOURCE_SEARCH_BURST)
 	, path(path_ ? path_ : "")
 	, pathNew(path + ".new")
+	, listDir(lists ? lists : QUICKDC_LIST_DIR)
 {
 	QDBG("QueueManager::QueueManager()");
 
@@ -1411,7 +1412,7 @@ QuickDC::FilelistRequest* QuickDC::QueueManager::requestFilelist(const char* hub
 		return 0;
 	}
 
-	FilelistRequest* request = new FilelistRequest(hub, cid);
+	FilelistRequest* request = new FilelistRequest(hub, cid, listDir.c_str());
 	if (!request->isValid())
 	{
 		/* The identifier could not name a file; the request has said why. */
