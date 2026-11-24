@@ -1,0 +1,4 @@
+# A preset is applied before the cores are built, so one after a command cannot be honoured.
+
+set application User Nickname somebody
+preset application Network Port 1

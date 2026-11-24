@@ -1,0 +1,4 @@
+# A wait nothing answers fails the run, and says which wait it was.
+
+wait UserJoined nick=nobody timeout=300ms
+echo not reached

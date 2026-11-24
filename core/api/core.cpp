@@ -654,25 +654,35 @@ void QuickDC::Core::Automation::reconcile()
 }
 
 
-QuickDC::Core::Core()
+QuickDC::Core::Core() : Core(Home{QUICKDC_HOME, {}, {}})
+{
+}
+
+QuickDC::Core::Core(const Home& home)
 {
 	QDBG_INIT;
 
 	startup = time(0);
 
 	references = 0;
-	
-	Samurai::IO::File::mkdir("~/.quickdc",         0700);
-	Samurai::IO::File::mkdir("~/.quickdc/hub",     0700);
-	Samurai::IO::File::mkdir("~/.quickdc/hub/bbs", 0700);
-	Samurai::IO::File::mkdir("~/.quickdc/lists",   0700);
-	Samurai::IO::File::mkdir("~/.quickdc/ssl",     0700);
-	/* The default download destination; [Downloads]/Directory overrides it. */
-	Samurai::IO::File::mkdir(QuickDC::Settings::DownloadDirectory.fallback, 0700);
-	
-	config = new Preferences("~/.quickdc/quickdc.conf");
 
-	session = new Preferences("~/.quickdc/session.conf");
+	const std::string& dir = home.directory;
+	Samurai::IO::File::mkdir(dir.c_str(),                     0700);
+	Samurai::IO::File::mkdir((dir + "/hub").c_str(),          0700);
+	Samurai::IO::File::mkdir((dir + "/hub/bbs").c_str(),      0700);
+	Samurai::IO::File::mkdir((dir + "/lists").c_str(),        0700);
+	Samurai::IO::File::mkdir((dir + "/ssl").c_str(),          0700);
+	/* The default download destination; [Downloads]/Directory overrides it. */
+	Samurai::IO::File::mkdir((dir + "/downloads").c_str(),    0700);
+
+	config = new Preferences(dir + "/quickdc.conf");
+
+	session = new Preferences(dir + "/session.conf");
+
+	for (const auto& [group, values] : home.settings)
+		for (const auto& [key, value] : values) config->setString(group, key, value);
+	for (const auto& [group, values] : home.session)
+		for (const auto& [key, value] : values) session->setString(group, key, value);
 
 	/*
 	 * Before anything reads either store, so that everything below sees them as
@@ -689,18 +699,21 @@ QuickDC::Core::Core()
 	reachability6 = new QuickDC::Reachability();
 	searchTokens = new QuickDC::SearchTokens();
 
-	ensureCertificate(QUICKDC_PRIVATE_KEY_FILE, QUICKDC_CERTIFICATE_FILE);
-	Samurai::IO::Net::TlsFactory::setKeys(QUICKDC_PRIVATE_KEY_FILE, QUICKDC_CERTIFICATE_FILE);
+	const std::string key = dir + "/ssl/quickdc.key";
+	const std::string certificate = dir + "/ssl/quickdc.crt";
+	ensureCertificate(key.c_str(), certificate.c_str());
+	Samurai::IO::Net::TlsFactory::setKeys(key.c_str(), certificate.c_str());
 
-	hash = new QuickDC::Hash::Manager();
-	shares = new QuickDC::Share::Manager(config, hash);
+	hash = new QuickDC::Hash::Manager((dir + "/hashdb.cache").c_str());
+	shares = new QuickDC::Share::Manager(config, hash, dir.c_str());
 	server = new DCServer(*this, planFrom(*config).endpoint);
 	connections = new ConnectionManager(eventLoop);
 	hubs = new HubManager(*this);
 	transfers = new TransferManager(eventLoop);
-	localHub = new ADC::LocalHub::Hub(eventLoop, *config);
-	queue = new QuickDC::QueueManager(this);
-	chat = new QuickDC::ChatArchive(QUICKDC_CHAT_DIR);
+	localHub = new ADC::LocalHub::Hub(eventLoop, *config, dir + "/hub");
+	queue = new QuickDC::QueueManager(this, (dir + "/queue.xml").c_str(),
+	                                  (dir + "/lists").c_str());
+	chat = new QuickDC::ChatArchive(dir + "/chat");
 
 	dropcheck = 0;
 	dropRefresh = 0;

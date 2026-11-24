@@ -1,0 +1,35 @@
+# Two cores meet on a's local hub over loopback: main chat, then a private message.
+
+# Taken as the files' contents before either core starts, so neither binds the
+# default port, maps one through the gateway or asks a server outside about it.
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+# The hub up from the start: turned on live, it takes a turn to follow with no
+# event to say so, and a login in that gap is turned away.
+@a preset application "Local hub" Enabled 1
+
+# Applied live, as a settings page would.
+@a set application User Nickname alice
+@b set application User Nickname bob
+
+# a's own login is what says its hub is up.
+@a open adc://127.0.0.1:${PORT} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+
+@b open adc://127.0.0.1:${PORT} as hub
+@b connect hub
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait UserJoined hub=hub nick=bob
+
+# A private message is addressed by the id b has seen alice under.
+@b wait UserUpdated hub=hub user.nick=alice
+
+@b chat hub hello from bob
+@a wait ChatReceived hub=hub line.text="hello from bob" line.from.nick=bob line.privateMessage=false
+
+@b pm hub alice "a word in private"
+@a wait ChatReceived hub=hub line.text="a word in private" line.from.nick=bob line.privateMessage=true

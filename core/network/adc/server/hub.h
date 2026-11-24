@@ -79,14 +79,21 @@ namespace LocalHub {
 		public Samurai::MessageListener
 	{
 		public:
-			/** @param loop what its users, its timers and its claim checks run on. */
-			Hub(Samurai::EventLoop& loop, QuickDC::Preferences& config);
+			/**
+			 * @param loop what its users, its timers and its claim checks run on.
+			 * @param directory where its access list and message of the day are,
+			 *        and its boards unless the configuration names a place.
+			 */
+			Hub(Samurai::EventLoop& loop, QuickDC::Preferences& config,
+			    const std::string& directory = "~/.quickdc/hub");
 			virtual ~Hub();
 
 			Samurai::EventLoop& loop() { return eventLoop; }
 
 			/** The reachability checks this hub has made; see ClaimCheck. */
 			ClaimChecks& claims() { return claimChecks; }
+
+			const std::string& directory() const { return home; }
 
 			/** When this hub started, which is what its uptime counts from. */
 			Samurai::TimeStamp startedAt() const { return startup; }
@@ -196,6 +203,7 @@ namespace LocalHub {
 			Samurai::EventLoop& eventLoop;
 			ClaimChecks claimChecks;
 			QuickDC::Preferences& config;
+			std::string home;
 			Samurai::TimeStamp startup;
 
 			void EventHostLookup(const Samurai::IO::Net::Socket*) override;

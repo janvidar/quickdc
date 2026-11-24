@@ -15,20 +15,24 @@
 
 #include <atomic>
 #include <functional>
+#include <string>
+
+/* The account's own home: where Core() keeps everything it reads and writes. */
+#define QUICKDC_HOME              "~/.quickdc"
 
 /*
  * Where this client keeps the certificate it presents to peers, and the name that
  * certificate asserts. Named here rather than written into core.cpp because the
  * generator refuses a name it cannot encode - so a label that stops being usable
  * has to fail somewhere a test can see it, not by quietly leaving the client
- * without a certificate.
+ * without a certificate. A core over another home keeps the same names under it.
  */
-#define QUICKDC_PRIVATE_KEY_FILE  "~/.quickdc/ssl/quickdc.key"
-#define QUICKDC_CERTIFICATE_FILE  "~/.quickdc/ssl/quickdc.crt"
+#define QUICKDC_PRIVATE_KEY_FILE  QUICKDC_HOME "/ssl/quickdc.key"
+#define QUICKDC_CERTIFICATE_FILE  QUICKDC_HOME "/ssl/quickdc.crt"
 #define QUICKDC_CERTIFICATE_NAME  "quickdc"
 
 /* Where the chat transcripts live; one file per conversation. */
-#define QUICKDC_CHAT_DIR          "~/.quickdc/chat"
+#define QUICKDC_CHAT_DIR          QUICKDC_HOME "/chat"
 
 namespace Samurai {
 	namespace IO {
@@ -296,15 +300,34 @@ class Core {
 		std::atomic<bool> stopRequested{false};
 
 	public:
+		/** The directory a full core keeps everything it reads and writes under. */
+		struct Home {
+			std::string directory;
+
+			/**
+			 * Settings to take as though the two files held them, before anything
+			 * reads either - so what the core does as it starts, such as which port
+			 * it binds and whom it asks about reachability, can be decided for it.
+			 */
+			Api::SettingsGroups settings;
+			Api::SettingsGroups session;
+		};
+
+		/** The client proper, over QUICKDC_HOME. */
+		Core();
+
 		/**
-		 * The client proper, over ~/.quickdc.
+		 * The client proper, over 'home': its configuration, session, queue,
+		 * transcripts, file lists, certificate and local hub's files are all
+		 * under that directory, which is made if it is absent.
 		 *
 		 * More than one can be built. Each runs on an event loop of its own, so
 		 * two in one process share no socket, timer or message, and each can be
-		 * driven from a thread of its own. What they do share is ~/.quickdc and
-		 * the TLS keys, which are set for the whole process.
+		 * driven from a thread of its own. What they do share is the TLS keys,
+		 * which are set for the whole process: the last core built presents its
+		 * certificate for all of them, and building two at once races on it.
 		 */
-		Core();
+		explicit Core(const Home& home);
 
 		/**
 		 * A core that runs a hub session and nothing else.

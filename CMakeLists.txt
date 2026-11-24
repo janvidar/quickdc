@@ -30,6 +30,7 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
     Debug Release RelWithDebInfo MinSizeRel)
 
 option(QUICKDC_BUILD_TESTS "Build the test programs and the autotest suite" ON)
+option(QUICKDC_BUILD_CLI "Build qdc, the command line front end" ON)
 
 # core/debug/dbg.h compiles the QDBG/QNET/QSEARCH/QHUB macros only when DEBUG is
 # defined, and what they write is not fit to leave on a user's disk: hub
@@ -263,6 +264,10 @@ endif()
 
 add_subdirectory(core)
 
+if(QUICKDC_BUILD_CLI)
+    add_subdirectory(cli)
+endif()
+
 # ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
@@ -342,6 +347,7 @@ else()
     message(STATUS "  Sanitizers      : OFF")
 endif()
 message(STATUS "  Build tests     : ${QUICKDC_BUILD_TESTS}")
+message(STATUS "  Build qdc       : ${QUICKDC_BUILD_CLI}")
 message(STATUS "  Tracing         : ${QUICKDC_TRACE}")
 list(LENGTH QUICKDC_HARDEN_COMPILE _qdc_harden_count)
 message(STATUS "  Hardening       : ${_qdc_harden_count} compile flag(s), "

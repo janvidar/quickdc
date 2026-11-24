@@ -153,7 +153,7 @@ bool ADC::LocalHub::SrvUptime::invoke(Command* cmd) {
 	uint32_t temp  = (seconds - (days * 86400));
 	uint32_t hours = static_cast<int>(temp) / 3600;
 	uint32_t minutes = static_cast<int>(temp % 3600) / 60;
-	static char buf[100] = { 0, };
+	char buf[100] = { 0, };
 	if (startup.elapsed() < (86400 * 2)) {
 		if (hours > 2) {
 			snprintf(buf, 100, "*** Uptime: %u hours.", hours);
@@ -171,42 +171,33 @@ bool ADC::LocalHub::SrvUptime::invoke(Command* cmd) {
 }
 
 #define MAX_MOTD_LEN 64 * 1024
+
+/* Read on every request rather than cached: two hubs in one process have two files. */
 bool ADC::LocalHub::SrvMotd::invoke(Command* cmd) {
-	static Samurai::TimeStamp last_mod_time(0);
-	static char motd_buffer[MAX_MOTD_LEN] = {0, };
-
 	ADC::LocalHub::User* user  = hub->lookupUser(cmd->getSocket());
+	if (!user) return false;
 
-	bool sendMessage = true;
-	Samurai::IO::File motd("~/.quickdc/hub/motd");
-	if (motd.getTimeModified() > last_mod_time) {
-	
-		if (user && motd.exists() && motd.isReadable() && motd.open(Samurai::IO::File::Mode::Read)) {
-			size_t size = motd.size();
-			if (size >  MAX_MOTD_LEN) {
-				QDBG("Motd message is too large to be cached (!)");
-				sendMessage = false;
-			} else {
-				memset(motd_buffer, 0, MAX_MOTD_LEN);
-				ssize_t ret = motd.read(motd_buffer, size);
-				if (ret > 0)
-					last_mod_time = motd.getTimeModified();
-			}
-		} else {
-			QDBG("Unable to open motd message file: %s", motd.getName().c_str());
-			sendMessage = false;
-		}
+	Samurai::IO::File motd(hub->directory() + "/motd");
+	if (!motd.exists() || !motd.isReadable() || !motd.open(Samurai::IO::File::Mode::Read)) {
+		QDBG("Unable to open motd message file: %s", motd.getName().c_str());
+		return false;
 	}
 
-	if (sendMessage) {
-		ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
-		msg->addArgument(motd_buffer);
-		// msg->addArgument("PM", hubsid);
-		hub->send(msg, user);
-		return true;
+	const size_t size = motd.size();
+	if (size > MAX_MOTD_LEN) {
+		QDBG("Motd message is too large to send (!)");
+		return false;
 	}
 
-	return false;
+	std::string text(size, '\0');
+	const ssize_t ret = motd.read(text.data(), size);
+	if (ret <= 0) return false;
+	text.resize(static_cast<size_t>(ret));
+
+	ADC::Command* msg = new ADC::Command(FOURCC('I','M','S','G'));
+	msg->addArgument(text.c_str());
+	hub->send(msg, user);
+	return true;
 }
 
 

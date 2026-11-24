@@ -83,10 +83,12 @@ static_assert(QuickDC::Settings::HubLingerTimeout.fallback == ADC::LocalHub::HUB
 		return; \
 	}
 
-ADC::LocalHub::Hub::Hub(Samurai::EventLoop& loop_, QuickDC::Preferences& config_)
+ADC::LocalHub::Hub::Hub(Samurai::EventLoop& loop_, QuickDC::Preferences& config_,
+                        const std::string& directory_)
 	: Samurai::MessageListener(loop_)
 	, eventLoop(loop_)
 	, config(config_)
+	, home(directory_)
 	, startup(time(0))
 {
 	welcome    = "This hub is running " PRODUCT " " VERSION " on " SYSTEM "/" CPU;
@@ -100,7 +102,7 @@ ADC::LocalHub::Hub::Hub(Samurai::EventLoop& loop_, QuickDC::Preferences& config_
 
 	availSid = 0;
 
-	acl = new ADC::LocalHub::ACL::Table();
+	acl = new ADC::LocalHub::ACL::Table((home + "/acl.xml").c_str());
 	
 	/* Start services */
 	services = new ADC::LocalHub::ServiceMap(this);
@@ -223,8 +225,8 @@ void ADC::LocalHub::Hub::readConfiguration() {
 	 * rather than left to be discovered.
 	 */
 	if (!boards)
-		boards = new ADC::LocalHub::BoardStore(
-			S::read(*config, S::HubBulletinDirectory));
+		boards = new ADC::LocalHub::BoardStore(config->peekString(
+			S::HubBulletinDirectory.group, S::HubBulletinDirectory.key, home + "/bbs"));
 
 	/*
 	 * Taken before the boards are re-read, because a board that has gone owes

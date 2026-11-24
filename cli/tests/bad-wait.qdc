@@ -1,0 +1,3 @@
+# Waiting for an event the protocol does not have is a script error, not a timeout.
+
+wait UserJoind nick=bob

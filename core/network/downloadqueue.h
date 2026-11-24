@@ -580,8 +580,10 @@ class QueueManager {
 		/**
 		 * @param path_ where the queue is read from and written back to, so it
 		 *        can be pointed somewhere other than the real one.
+		 * @param lists where requested file lists are downloaded to.
 		 */
-		explicit QueueManager(Core* core, const char* path_ = QUICKDC_QUEUE_FILE);
+		explicit QueueManager(Core* core, const char* path_ = QUICKDC_QUEUE_FILE,
+		                      const char* lists = QUICKDC_LIST_DIR);
 
 		/** A queue run on its own, with nothing to schedule transfers through. */
 		explicit QueueManager(const char* path_ = QUICKDC_QUEUE_FILE) : QueueManager(static_cast<Core*>(nullptr), path_) { }
@@ -981,6 +983,7 @@ class QueueManager {
 
 		std::string path;      // the queue on disk
 		std::string pathNew;   // written first, then moved into place
+		std::string listDir;
 };
 
 

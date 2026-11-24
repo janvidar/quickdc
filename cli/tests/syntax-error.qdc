@@ -1,0 +1,6 @@
+# A misspelt command is refused before any core runs, naming its line.
+
+set application User Nickname somebody
+open adc://127.0.0.1:1 as nowhere
+
+conect nowhere
