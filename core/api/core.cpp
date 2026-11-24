@@ -28,6 +28,7 @@
 #include "network/hubmanager.h"
 #include "network/dropcheck.h"
 #include "api/networkmode.h"
+#include "network/localaddresses.h"
 #include "network/mappingpolicy.h"
 #include "network/portforward.h"
 #include "network/reachability.h"
@@ -121,6 +122,14 @@ bool AutomationState::measureIfStale(bool ipv6)
 
 	if (QuickDC::dropMeasurementIsFresh(QuickDC::lastDropVerdict(*core, ipv6), time(0)))
 		return false;
+
+	/*
+	 * Nothing to learn either from a family this host has no route out on: the
+	 * check could only fail, and it would be asked again on every refresh, since a
+	 * check that never completes is never fresh. Asked here rather than once at
+	 * start-up, so an address that appears later is measured at the next refresh.
+	 */
+	if (ipv6 && !QuickDC::hostHasGlobalIPv6()) return false;
 
 	return QuickDC::startDropCheck(*core, ipv6);
 }
