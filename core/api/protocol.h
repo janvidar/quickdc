@@ -130,6 +130,53 @@ struct QueueItem {
 	bool complete = false;
 };
 
+/** A connection the core holds: to a hub, to a peer, or one not yet told apart. */
+struct PeerConnection {
+	/** The kind, as the core names it: "ADC client", "ADCS hub", "NMDC client", "Probing", ... */
+	std::string protocol;
+	std::string address;
+	uint16_t port = 0;
+	/** A peer's CID on ADC or nickname on NMDC, or a hub's address; empty while not known. */
+	std::string peer;
+	bool secure = false;
+	bool outbound = false;
+};
+
+/** What somebody on the core's own hub may do there. */
+enum class LocalHubCredential { User, Operator, Admin };
+
+struct LocalHubUser {
+	enum class State { LoggingIn, Verifying, Normal, Leaving };
+
+	std::string sid;
+	/** Empty until the user has said who it is. */
+	std::string nick;
+	std::string cid;
+	std::string address;
+	LocalHubCredential credential = LocalHubCredential::User;
+	State state = State::LoggingIn;
+	/** Bytes waiting to be sent to this user. */
+	uint64_t sendQueue = 0;
+};
+
+/** Somebody who logs in to the local hub with a password, and has these rights once they have. */
+struct LocalHubAccount {
+	std::string nick;
+	LocalHubCredential credential = LocalHubCredential::User;
+};
+
+/** Who is kept off the local hub: by CID, nickname or address, whichever are not empty. */
+struct LocalHubBan {
+	/** What the ban was made for, which UnbanFromLocalHub takes too. */
+	std::string name;
+	std::string reason;
+	/** Seconds since the epoch; 0 for good. */
+	uint64_t until = 0;
+	std::string cid;
+	std::string nick;
+	std::string address;
+};
+
 /**
  * A hub session as a front end names it: a number it picks when it opens one,
  * so two openings of the same address are two sessions, and an address typed
@@ -532,6 +579,84 @@ struct ReportShare {
 	uint64_t request = 0;
 };
 
+/** Report the core itself as a CoreStatus, echoing 'request'. */
+struct ReportStatus {
+	uint64_t request = 0;
+};
+
+/** Report every connection the core holds as a ConnectionsSnapshot, echoing 'request'. */
+struct SnapshotConnections {
+	uint64_t request = 0;
+};
+
+/** Say whether a file with the hash 'tth' is offered from here, as a SharedFile echoing 'request'. */
+struct FindShared {
+	uint64_t request = 0;
+	std::string tth;
+};
+
+/**
+ * Have the hub disconnect the user 'userId', as one of its operators: told
+ * 'message', sent to 'redirect' where that is not empty, and otherwise kept out
+ * for 'banSeconds' (-1 for good) where that is not 0. What the hub then does is
+ * told as for anybody leaving; KickRefused says where it was not asked.
+ */
+struct KickUser {
+	HubHandle hub = 0;
+	std::string userId;
+	std::string message;
+	std::string redirect;
+	int64_t banSeconds = 0;
+};
+
+/*
+ * The core's own hub. Each command is answered by a LocalHubState, or by a
+ * LocalHubRefused, echoing 'request'.
+ */
+
+struct ReportLocalHub {
+	uint64_t request = 0;
+};
+
+/** Disconnect whoever 'who' names on the local hub: a nickname, a CID or a SID. */
+struct KickFromLocalHub {
+	uint64_t request = 0;
+	std::string who;
+	std::string message;
+};
+
+/**
+ * Keep 'who' off the local hub for 'seconds', for good where that is 0, and
+ * disconnect whoever it names. Somebody on the hub is banned by CID and nickname;
+ * otherwise an address is taken as an address, a CID as a CID and anything else
+ * as a nickname.
+ */
+struct BanFromLocalHub {
+	uint64_t request = 0;
+	std::string who;
+	std::string reason;
+	int64_t seconds = 0;
+};
+
+/** Lift every ban 'who' names, by what it was made for or by any CID, nickname or address in it. */
+struct UnbanFromLocalHub {
+	uint64_t request = 0;
+	std::string who;
+};
+
+/** An account for 'nick', replacing any it had; the hub asks whoever logs in as 'nick' for the password. */
+struct SetLocalHubAccount {
+	uint64_t request = 0;
+	std::string nick;
+	std::string password;
+	LocalHubCredential credential = LocalHubCredential::User;
+};
+
+struct RemoveLocalHubAccount {
+	uint64_t request = 0;
+	std::string nick;
+};
+
 /*
  * Change the shared folders. Each is answered by ShareFolders and a ShareStatus,
  * or by ShareFolderRefused, echoing 'request'; a folder added is hashed in the
@@ -788,7 +913,10 @@ struct HubDescription { HubHandle hub = 0; std::string description; };
 struct HubSystemError { HubHandle hub = 0; std::string message; };
 struct HubAuthenticate { HubHandle hub = 0; };
 
-/** 'followed' is what SetHubPolicy said, and so what the session did. */
+/**
+ * 'followed' is what SetHubPolicy said, and so what the session did. 'address'
+ * is a host on NMDC, and on ADC the address the hub gave, whole.
+ */
 struct HubRedirect {
 	HubHandle hub = 0;
 	std::string address;
@@ -1017,6 +1145,92 @@ struct ShareFolderRefused {
 	Why why = Why::NotShared;
 };
 
+/** Why a KickUser was not sent to the hub. */
+struct KickRefused {
+	enum class Why {
+		/** The session is not logged in. */
+		NoSession,
+		NoSuchUser,
+		/** The hub has not made this session one of its operators. */
+		NotOperator,
+		/** The protocol cannot ask for a ban: NMDC. */
+		Unsupported
+	};
+
+	HubHandle hub = 0;
+	std::string userId;
+	Why why = Why::NoSession;
+};
+
+/**
+ * The core itself: what it is, since when, and what it listens on. Told on
+ * ReportStatus and ReportState, and whenever what it listens on, or whether its
+ * own hub takes logins, changes - so a front end can wait for the hub to be up.
+ */
+struct CoreStatus {
+	uint64_t request = 0;
+	std::string version;
+	/** Seconds since the epoch. */
+	uint64_t started = 0;
+	/** The port peers and the local hub are reached on, as bound; 0 where nothing is. */
+	uint16_t port = 0;
+	bool tcp = false;
+	bool tcp6 = false;
+	bool udp = false;
+	bool udp6 = false;
+	/** The core's own hub is on and takes logins on 'port'. */
+	bool localHub = false;
+};
+
+struct ConnectionsSnapshot {
+	uint64_t request = 0;
+	std::vector<PeerConnection> connections;
+};
+
+/** The answer to FindShared; 'found' false and the rest empty where nothing is offered by that hash. */
+struct SharedFile {
+	uint64_t request = 0;
+	std::string tth;
+	bool found = false;
+	/** Where it is on this disk. */
+	std::string path;
+	/** What peers see it as. */
+	std::string name;
+	uint64_t size = 0;
+	/** Offered as an attachment rather than as part of a shared folder. */
+	bool attached = false;
+};
+
+/** The core's own hub as it stands. */
+struct LocalHubState {
+	uint64_t request = 0;
+	bool enabled = false;
+	std::string name;
+	uint32_t maxUsers = 0;
+	/** Seconds since the epoch. */
+	uint64_t started = 0;
+	std::vector<LocalHubUser> users;
+	std::vector<LocalHubAccount> accounts;
+	std::vector<LocalHubBan> bans;
+};
+
+struct LocalHubRefused {
+	enum class Why {
+		/** This core runs no hub. */
+		NoHub,
+		NoSuchUser,
+		/** No ban, or no account, answers to what was named. */
+		NoSuchEntry,
+		/** Something the command needs is empty. */
+		Invalid,
+		/** The access list could not be written. */
+		NotSaved
+	};
+
+	uint64_t request = 0;
+	Why why = Why::Invalid;
+};
+
 struct ReachabilityCheckStarted {
 	bool ipv6 = false;
 };
@@ -1068,6 +1282,16 @@ struct Command {
 		Commands::RemoveFromQueue,
 		Commands::SnapshotTransfers,
 		Commands::ReportShare,
+		Commands::ReportStatus,
+		Commands::SnapshotConnections,
+		Commands::FindShared,
+		Commands::KickUser,
+		Commands::ReportLocalHub,
+		Commands::KickFromLocalHub,
+		Commands::BanFromLocalHub,
+		Commands::UnbanFromLocalHub,
+		Commands::SetLocalHubAccount,
+		Commands::RemoveLocalHubAccount,
 		Commands::AddShareFolder,
 		Commands::RemoveShareFolder,
 		Commands::RenameShareFolder,
@@ -1165,7 +1389,13 @@ struct Event {
 		Events::ConnectionMode,
 		Events::FavouriteHubs,
 		Events::RecentHubs,
-		Events::CompletedDownloads
+		Events::CompletedDownloads,
+		Events::KickRefused,
+		Events::CoreStatus,
+		Events::ConnectionsSnapshot,
+		Events::SharedFile,
+		Events::LocalHubState,
+		Events::LocalHubRefused
 	>;
 
 	template<typename T>

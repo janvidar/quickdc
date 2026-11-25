@@ -30,6 +30,14 @@
 #include "network/portforward.h"
 #include "share/sharemanager.h"
 #include "hash/hashmanager.h"
+#include "network/connection.h"
+#include "network/connectionmanager.h"
+#include "network/adc/cid.h"
+#include "network/adc/server/acl.h"
+#include "network/adc/server/hub.h"
+#include "network/adc/server/user.h"
+#include "api/server.h"
+#include <samurai/io/net/inetaddress.h>
 
 #include <samurai/io/net/url.h>
 
@@ -569,7 +577,7 @@ void QuickDC::Api::Service::announceState()
 
 std::vector<QuickDC::Api::Event> QuickDC::Api::Service::state(uint64_t request) const
 {
-	return {connectionMode(request), shareFolders(request), favouriteHubs(request),
+	return {coreStatus(request), connectionMode(request), shareFolders(request), favouriteHubs(request),
 	        recentHubs(request), completedDownloads(request), hubListSources(request),
 	        hubDirectory(request)};
 }
@@ -1088,6 +1096,281 @@ QuickDC::Api::Events::ShareStatus QuickDC::Api::Service::shareStatus(uint64_t re
 void QuickDC::Api::Service::run(const Commands::ReportShare& command)
 {
 	publish(shareStatus(command.request));
+}
+
+QuickDC::Api::Events::CoreStatus QuickDC::Api::Service::coreStatus(uint64_t request) const
+{
+	Events::CoreStatus status = listening();
+	status.request = request;
+	status.version = core.getVersion();
+	status.started = static_cast<uint64_t>(core.startup.getInternalData());
+	return status;
+}
+
+QuickDC::Api::Events::CoreStatus QuickDC::Api::Service::listening() const
+{
+	Events::CoreStatus status;
+	if (core.server)
+	{
+		status.port = core.server->boundPort();
+		status.tcp = core.server->listening(false);
+		status.tcp6 = core.server->listening(true);
+		status.udp = core.server->listeningUdp(false);
+		status.udp6 = core.server->listeningUdp(true);
+	}
+
+	status.localHub = core.localHub && core.localHub->enabled && (status.tcp || status.tcp6);
+	return status;
+}
+
+void QuickDC::Api::Service::checkStatus()
+{
+	const Events::CoreStatus now = listening();
+	const auto same = [](const Events::CoreStatus& a, const Events::CoreStatus& b) {
+		return a.port == b.port && a.tcp == b.tcp && a.tcp6 == b.tcp6 && a.udp == b.udp
+			&& a.udp6 == b.udp6 && a.localHub == b.localHub;
+	};
+
+	if (statusTold && same(*statusTold, now)) return;
+	statusTold = now;
+	publish(coreStatus(0));
+}
+
+void QuickDC::Api::Service::run(const Commands::ReportStatus& command)
+{
+	publish(coreStatus(command.request));
+}
+
+void QuickDC::Api::Service::run(const Commands::SnapshotConnections& command)
+{
+	Events::ConnectionsSnapshot told;
+	told.request = command.request;
+
+	if (core.connections)
+	{
+		for (QuickDC::Connection* connection = core.connections->first(); connection;
+		     connection = core.connections->next())
+		{
+			PeerConnection out;
+			out.protocol = text(connection->getProtocol());
+			out.peer = connection->peerName();
+
+			if (const Samurai::IO::Net::Socket* socket = connection->getSocket())
+			{
+				const Samurai::IO::Net::InetAddress* address = socket->getAddress();
+				if (address) out.address = address->toString();
+				out.port = socket->getPort();
+				out.secure = socket->isSecure();
+				out.outbound = socket->isOutbound();
+			}
+
+			told.connections.push_back(std::move(out));
+		}
+	}
+
+	publish(std::move(told));
+}
+
+void QuickDC::Api::Service::run(const Commands::FindShared& command)
+{
+	Events::SharedFile told;
+	told.request = command.request;
+	told.tth = command.tth;
+
+	if (core.shares)
+	{
+		if (const std::optional<Share::Manager::Offer> offer = core.shares->offered(command.tth))
+		{
+			told.found = true;
+			told.path = offer->path;
+			told.name = offer->name;
+			told.size = offer->size;
+			told.attached = offer->attached;
+		}
+	}
+
+	publish(std::move(told));
+}
+
+void QuickDC::Api::Service::run(const Commands::KickUser& command)
+{
+	using Why = Events::KickRefused::Why;
+
+	HubSession* hub = session(command.hub);
+	const auto refused = [&](Why why) { publish(Events::KickRefused{command.hub, command.userId, why}); };
+	if (!hub) return refused(Why::NoSession);
+
+	switch (hub->disconnectUser(command.userId.c_str(), command.message, command.redirect, command.banSeconds))
+	{
+		case QuickDC::Hub::DisconnectRefusal::None:        return;
+		case QuickDC::Hub::DisconnectRefusal::NoSession:   return refused(Why::NoSession);
+		case QuickDC::Hub::DisconnectRefusal::NoSuchUser:  return refused(Why::NoSuchUser);
+		case QuickDC::Hub::DisconnectRefusal::NotOperator: return refused(Why::NotOperator);
+		case QuickDC::Hub::DisconnectRefusal::Unsupported: return refused(Why::Unsupported);
+	}
+}
+
+namespace {
+
+QuickDC::Api::LocalHubCredential converted(ADC::LocalHub::Credentials credentials)
+{
+	switch (credentials)
+	{
+		case ADC::LocalHub::Cred_User:     return QuickDC::Api::LocalHubCredential::User;
+		case ADC::LocalHub::Cred_Operator: return QuickDC::Api::LocalHubCredential::Operator;
+		case ADC::LocalHub::Cred_Admin:    return QuickDC::Api::LocalHubCredential::Admin;
+	}
+	return QuickDC::Api::LocalHubCredential::User;
+}
+
+QuickDC::Api::LocalHubUser::State converted(ADC::LocalHub::State state)
+{
+	using Out = QuickDC::Api::LocalHubUser::State;
+	switch (state)
+	{
+		case ADC::LocalHub::State_None:
+		case ADC::LocalHub::State_Protocol:
+		case ADC::LocalHub::State_Identify:       return Out::LoggingIn;
+		case ADC::LocalHub::State_Verify:         return Out::Verifying;
+		case ADC::LocalHub::State_Normal:         return Out::Normal;
+		case ADC::LocalHub::State_WaitDisconnect: return Out::Leaving;
+	}
+	return Out::LoggingIn;
+}
+
+/* The first identity of 'type' the entry has, or empty. */
+std::string identity(const ADC::LocalHub::ACL::Authorization& entry, ADC::LocalHub::ACL::Identity::IdentityType type)
+{
+	for (const ADC::LocalHub::ACL::Identity* id : entry.getIdentities())
+		if (id->getType() == type) return id->getData();
+	return std::string();
+}
+
+}
+
+QuickDC::Api::Events::LocalHubState QuickDC::Api::Service::localHubState(uint64_t request) const
+{
+	using ADC::LocalHub::ACL::Authorization;
+	using ADC::LocalHub::ACL::Identity;
+
+	Events::LocalHubState told;
+	told.request = request;
+
+	ADC::LocalHub::Hub* hub = core.localHub;
+	if (!hub) return told;
+
+	told.enabled = hub->enabled;
+	told.name = text(hub->hubname);
+	told.maxUsers = hub->maxUsers;
+	told.started = static_cast<uint64_t>(hub->startedAt().getInternalData());
+
+	for (ADC::LocalHub::User* user : hub->users)
+	{
+		LocalHubUser out;
+		out.sid = ADC::SID::toString(user->getSID());
+		out.nick = text(user->getNick());
+		out.cid = text(user->getCID());
+		out.address = user->getObservedAddress();
+		out.credential = converted(user->getCredentials());
+		out.state = converted(user->getState());
+		out.sendQueue = user->getSendQueueSize();
+		told.users.push_back(std::move(out));
+	}
+
+	const ADC::LocalHub::ACL::Table& acl = hub->accessList();
+	for (size_t n = 0; n < acl.countUsers(); ++n)
+	{
+		const Authorization* entry = acl.getUser(n);
+		if (!entry || entry->isExpired()) continue;
+
+		if (entry->getCredential() == Authorization::Banned)
+		{
+			LocalHubBan ban;
+			ban.name = text(entry->getName());
+			ban.reason = text(entry->getDescription());
+			ban.until = static_cast<uint64_t>(entry->getExpireTime().getInternalData());
+			ban.cid = identity(*entry, Identity::IdCID);
+			ban.nick = identity(*entry, Identity::IdName);
+			ban.address = identity(*entry, Identity::IdIPv4);
+			if (ban.address.empty()) ban.address = identity(*entry, Identity::IdIPv6);
+			told.bans.push_back(std::move(ban));
+			continue;
+		}
+
+		if (!entry->password()) continue;
+
+		LocalHubAccount account;
+		account.nick = identity(*entry, Identity::IdName);
+		if (account.nick.empty()) account.nick = text(entry->getName());
+		switch (entry->getCredential())
+		{
+			case Authorization::Admin:    account.credential = LocalHubCredential::Admin; break;
+			case Authorization::Operator: account.credential = LocalHubCredential::Operator; break;
+			case Authorization::User:     account.credential = LocalHubCredential::User; break;
+			default: continue;
+		}
+		told.accounts.push_back(std::move(account));
+	}
+
+	return told;
+}
+
+void QuickDC::Api::Service::localHubAnswered(bool done, Events::LocalHubRefused::Why why, uint64_t request)
+{
+	if (done) publish(localHubState(request));
+	else publish(Events::LocalHubRefused{request, why});
+}
+
+void QuickDC::Api::Service::run(const Commands::ReportLocalHub& command)
+{
+	localHubAnswered(core.localHub != nullptr, Events::LocalHubRefused::Why::NoHub, command.request);
+}
+
+void QuickDC::Api::Service::run(const Commands::KickFromLocalHub& command)
+{
+	using Why = Events::LocalHubRefused::Why;
+	if (!core.localHub) return localHubAnswered(false, Why::NoHub, command.request);
+
+	ADC::LocalHub::User* user = core.localHub->findUser(command.who);
+	if (user) core.localHub->disconnect(user, command.message.empty() ? "Kicked" : command.message, std::string(), 0);
+	localHubAnswered(user != nullptr, Why::NoSuchUser, command.request);
+}
+
+void QuickDC::Api::Service::run(const Commands::BanFromLocalHub& command)
+{
+	using Why = Events::LocalHubRefused::Why;
+	if (!core.localHub) return localHubAnswered(false, Why::NoHub, command.request);
+	localHubAnswered(core.localHub->ban(command.who, command.reason, command.seconds), Why::Invalid,
+	                 command.request);
+}
+
+void QuickDC::Api::Service::run(const Commands::UnbanFromLocalHub& command)
+{
+	using Why = Events::LocalHubRefused::Why;
+	if (!core.localHub) return localHubAnswered(false, Why::NoHub, command.request);
+	localHubAnswered(core.localHub->unban(command.who), Why::NoSuchEntry, command.request);
+}
+
+void QuickDC::Api::Service::run(const Commands::SetLocalHubAccount& command)
+{
+	using Why = Events::LocalHubRefused::Why;
+	using ADC::LocalHub::ACL::Authorization;
+	if (!core.localHub) return localHubAnswered(false, Why::NoHub, command.request);
+	if (command.nick.empty() || command.password.empty()) return localHubAnswered(false, Why::Invalid, command.request);
+
+	Authorization::Credential rights = Authorization::User;
+	if (command.credential == LocalHubCredential::Operator) rights = Authorization::Operator;
+	else if (command.credential == LocalHubCredential::Admin) rights = Authorization::Admin;
+
+	localHubAnswered(core.localHub->setAccount(command.nick, command.password, rights), Why::NotSaved,
+	                 command.request);
+}
+
+void QuickDC::Api::Service::run(const Commands::RemoveLocalHubAccount& command)
+{
+	using Why = Events::LocalHubRefused::Why;
+	if (!core.localHub) return localHubAnswered(false, Why::NoHub, command.request);
+	localHubAnswered(core.localHub->removeAccount(command.nick), Why::NoSuchEntry, command.request);
 }
 
 QuickDC::Api::Events::ShareFolders QuickDC::Api::Service::shareFolders(uint64_t request) const

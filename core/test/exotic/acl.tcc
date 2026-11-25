@@ -368,10 +368,8 @@ EXO_TEST(acl_empty_file,
 EXO_TEST(acl_a_missing_file_leaves_an_empty_table,
 {
 	/*
-	 * A path nothing has written, and the table has to be out of scope before
-	 * it is removed: a Table writes itself out on the way down, so a removal
-	 * taken while one is still alive leaves the file there - and the next run
-	 * would not be testing a missing file at all.
+	 * A path nothing has written, and nothing writes it: a table that was not
+	 * changed is not written out on the way down.
 	 */
 	const std::string path = aclPath();
 
@@ -381,14 +379,11 @@ EXO_TEST(acl_a_missing_file_leaves_an_empty_table,
 		EXO_ASSERT(table.getUser(0) == 0);
 	}
 
-	Samurai::IO::File(path).remove();
+	EXO_ASSERT(!Samurai::IO::File(path).exists());
 	return 1;
 });
 
-/*
- * What save() writes, load() has to read back as the same table. This is the
- * path the hub actually takes: read at start-up, write at shutdown.
- */
+/* What save() writes, load() has to read back as the same table. */
 EXO_TEST(acl_save_and_load_round_trip,
 {
 	const std::string path = aclPath();
@@ -403,9 +398,9 @@ EXO_TEST(acl_save_and_load_round_trip,
 	{
 		ADC::LocalHub::ACL::Table table(path.c_str());
 		first = render(table);
+		EXO_ASSERT(table.save());
 	}
 
-	/* The destructor above wrote the table back over the same path. */
 	std::string second;
 	{
 		ADC::LocalHub::ACL::Table table(path.c_str());
@@ -421,5 +416,48 @@ EXO_TEST(acl_save_and_load_round_trip,
 			"      first:  " + first + "\n      second: " + second;
 		EXO_FAIL(why.c_str());
 	}
+	return 1;
+});
+
+/* A ban is found by any identity in it, an account only with a password, and neither once expired. */
+EXO_TEST(acl_bans_and_accounts_are_found_by_what_identifies_them,
+{
+	const std::string path = aclPath();
+	writeFile(path,
+		ACL("<User credential=\"banned\" name=\"b\" description=\"d\" expire=\"0\">"
+		    "<id type=\"cid\" data=\"CIDONE\"/><id type=\"ipv4\" data=\"10.0.0.1\"/></User>"
+		    "<User credential=\"banned\" name=\"old\" description=\"d\" expire=\"1\">"
+		    "<id type=\"name\" data=\"gone\"/></User>"
+		    "<User credential=\"operator\" name=\"op\" description=\"d\" expire=\"0\">"
+		    "<id type=\"name\" data=\"Oper\"/><verify type=\"password\" data=\"pw\"/></User>"
+		    "<User credential=\"operator\" name=\"nopw\" description=\"d\" expire=\"0\">"
+		    "<id type=\"name\" data=\"bare\"/></User>"));
+
+	ADC::LocalHub::ACL::Table table(path.c_str());
+	Samurai::IO::File(path).remove();
+
+	EXO_ASSERT(table.countUsers() == 4);
+	EXO_ASSERT(table.banFor("CIDONE", "x", "") != 0);
+	EXO_ASSERT(table.banFor("CIDTWO", "x", "10.0.0.1") != 0);
+	EXO_ASSERT(table.banFor("CIDTWO", "x", "10.0.0.2") == 0);
+	EXO_ASSERT(table.banFor(0, "gone", "") == 0);
+	EXO_ASSERT(table.banFor(0, 0, "") == 0);
+
+	const ADC::LocalHub::ACL::Authorization* op = table.accountFor(0, "oper");
+	EXO_ASSERT(op && op->getCredential() == ADC::LocalHub::ACL::Authorization::Operator);
+	EXO_ASSERT(op && op->password() && op->password()->getData() == "pw");
+	EXO_ASSERT(table.accountFor(0, "bare") == 0);
+	EXO_ASSERT(table.accountFor("CIDONE", "b") == 0);
+
+	/* Removing an entry is a change, and is written out with the table. */
+	table.remove(op);
+	EXO_ASSERT(table.countUsers() == 3);
+	EXO_ASSERT(table.save());
+	{
+		ADC::LocalHub::ACL::Table reread(path.c_str());
+		EXO_ASSERT(reread.countUsers() == 3);
+		EXO_ASSERT(reread.accountFor(0, "oper") == 0);
+	}
+	Samurai::IO::File(path).remove();
 	return 1;
 });

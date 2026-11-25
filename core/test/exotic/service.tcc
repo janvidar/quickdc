@@ -18,10 +18,12 @@
 
 #include <samurai/io/file.h>
 
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <chrono>
 #include <condition_variable>
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -481,5 +483,136 @@ EXO_TEST(service_each_search_is_numbered_by_the_core,
 	}
 
 	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
+
+/* What the core is and listens on, told at its first turn without anybody asking. */
+EXO_TEST(service_the_core_tells_its_status,
+{
+	namespace Ev = QuickDC::Api::Events;
+
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::ReportStatus{3}));
+	const auto status = recorder.waitForEvent<Ev::CoreStatus>([](const Ev::CoreStatus& e) { return e.request == 3; });
+	EXO_ASSERT(status.has_value());
+	if (status)
+	{
+		EXO_ASSERT(!status->version.empty());
+		EXO_ASSERT(status->started > 0);
+		/* This core is built without a peer port or a hub. */
+		EXO_ASSERT(status->port == 0 && !status->tcp && !status->localHub);
+	}
+
+	bool told = false;
+	running.onCore([&] {
+		for (const QuickDC::Api::Event& event : running.core->state())
+			if (event.as<Ev::CoreStatus>()) told = true;
+	});
+	EXO_ASSERT(told);
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
+
+/* What a core without a hub, or without the session asked about, cannot do is said rather than dropped. */
+EXO_TEST(service_operator_commands_with_nothing_to_act_on_are_refused,
+{
+	namespace Ev = QuickDC::Api::Events;
+	namespace Cmd = QuickDC::Api::Commands;
+
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	EXO_ASSERT(running.core->submit(Cmd::KickUser{9, "AAAA", "bye", "", 0}));
+	const auto kick = recorder.waitForEvent<Ev::KickRefused>([](const Ev::KickRefused& e) { return e.hub == 9; });
+	EXO_ASSERT(kick && kick->why == Ev::KickRefused::Why::NoSession && kick->userId == "AAAA");
+
+	EXO_ASSERT(running.core->submit(Cmd::BanFromLocalHub{4, "carol", "", 0}));
+	const auto ban = recorder.waitForEvent<Ev::LocalHubRefused>([](const Ev::LocalHubRefused& e) { return e.request == 4; });
+	EXO_ASSERT(ban && ban->why == Ev::LocalHubRefused::Why::NoHub);
+
+	EXO_ASSERT(running.core->submit(Cmd::FindShared{5, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}));
+	const auto shared = recorder.waitForEvent<Ev::SharedFile>([](const Ev::SharedFile& e) { return e.request == 5; });
+	EXO_ASSERT(shared && !shared->found);
+
+	EXO_ASSERT(running.core->submit(Cmd::SnapshotConnections{6}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::ConnectionsSnapshot>(
+		[](const Ev::ConnectionsSnapshot& e) { return e.request == 6; }));
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
+
+/* A core of its own home, on a port the system picks, administering the hub it runs. */
+EXO_TEST(service_the_local_hub_is_administered_through_commands,
+{
+	namespace Ev = QuickDC::Api::Events;
+	namespace Cmd = QuickDC::Api::Commands;
+	using Credential = QuickDC::Api::LocalHubCredential;
+
+	std::string home = "/tmp/quickdc_service_home_XXXXXX";
+	EXO_ASSERT(mkdtemp(home.data()) != nullptr);
+
+	QuickDC::Core::Home where;
+	where.directory = home;
+	where.settings["Network"] = {{"Mode", "advanced"}, {"Bind", "127.0.0.1"}, {"Bind6", ""}, {"Port", "0"}};
+	where.settings["Local hub"] = {{"Enabled", "1"}};
+
+	{
+		QuickDC::Core core(where);
+		Recorder recorder;
+		QuickDC::Subscription subscription = core.subscribe(&recorder);
+
+		std::thread loop([&] { core.runUntilStopped(); });
+
+		const auto up = recorder.waitForEvent<Ev::CoreStatus>([](const Ev::CoreStatus&) { return true; });
+		EXO_ASSERT(up && up->port != 0 && up->tcp && up->localHub);
+
+		EXO_ASSERT(core.submit(Cmd::SetLocalHubAccount{1, "oper", "secret", Credential::Operator}));
+		const auto account = recorder.waitForEvent<Ev::LocalHubState>([](const Ev::LocalHubState& e) { return e.request == 1; });
+		EXO_ASSERT(account && account->enabled && account->accounts.size() == 1);
+		if (account && !account->accounts.empty())
+		{
+			EXO_ASSERT(account->accounts[0].nick == "oper");
+			EXO_ASSERT(account->accounts[0].credential == Credential::Operator);
+		}
+
+		EXO_ASSERT(core.submit(Cmd::BanFromLocalHub{2, "10.0.0.1", "spam", 60}));
+		const auto banned = recorder.waitForEvent<Ev::LocalHubState>([](const Ev::LocalHubState& e) { return e.request == 2; });
+		EXO_ASSERT(banned && banned->bans.size() == 1);
+		if (banned && !banned->bans.empty())
+		{
+			EXO_ASSERT(banned->bans[0].address == "10.0.0.1" && banned->bans[0].reason == "spam");
+			EXO_ASSERT(banned->bans[0].until > 0);
+		}
+
+		EXO_ASSERT(core.submit(Cmd::UnbanFromLocalHub{3, "10.0.0.1"}));
+		EXO_ASSERT(recorder.waitForEvent<Ev::LocalHubState>(
+			[](const Ev::LocalHubState& e) { return e.request == 3 && e.bans.empty(); }));
+		EXO_ASSERT(core.submit(Cmd::UnbanFromLocalHub{4, "10.0.0.1"}));
+		const auto none = recorder.waitForEvent<Ev::LocalHubRefused>([](const Ev::LocalHubRefused& e) { return e.request == 4; });
+		EXO_ASSERT(none && none->why == Ev::LocalHubRefused::Why::NoSuchEntry);
+
+		EXO_ASSERT(core.submit(Cmd::KickFromLocalHub{5, "nobody", ""}));
+		const auto nobody = recorder.waitForEvent<Ev::LocalHubRefused>([](const Ev::LocalHubRefused& e) { return e.request == 5; });
+		EXO_ASSERT(nobody && nobody->why == Ev::LocalHubRefused::Why::NoSuchUser);
+
+		/* Turned off, the hub stops taking logins and the status says so. */
+		EXO_ASSERT(core.submit(Cmd::SetSetting{QuickDC::Api::SettingsStore::Application, "Local hub", "Enabled", "0", false, 6}));
+		EXO_ASSERT(recorder.waitForEvent<Ev::CoreStatus>([](const Ev::CoreStatus& e) { return e.tcp && !e.localHub; }));
+
+		core.requestStop();
+		loop.join();
+		subscription.reset();
+	}
+
+	std::error_code ignored;
+	std::filesystem::remove_all(home, ignored);
 	return 1;
 });

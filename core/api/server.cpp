@@ -94,6 +94,13 @@ void QuickDC::DCServer::listen(const Endpoint& endpoint)
 	}
 }
 
+uint16_t QuickDC::DCServer::boundPort() const
+{
+	if (socket) return socket->getLocalPort();
+	if (socket6) return socket6->getLocalPort();
+	return 0;
+}
+
 QuickDC::DCServer::~DCServer()
 {
 	dgram6.reset();

@@ -206,7 +206,7 @@ class RecordingHubSession : public QuickDC::HubSession
 		void disconnect() override { }
 		void sendPrivateChatMessage(const QuickDC::User*, const char*, bool) override { }
 		void sendChatMessage(const char*, bool) override { }
-		void sendAdminUserKick(const QuickDC::User*) override { }
+		void sendAdminUserKick(const QuickDC::User*, const char*, int64_t) override { }
 		void sendAdminUserRedirect(const QuickDC::User*, const char*, const char*) override { }
 		void sendConnectionRequest(const QuickDC::User*, const char*) override { }
 		void sendSearchRequest(QuickDC::Share::SearchRequest*) override { }

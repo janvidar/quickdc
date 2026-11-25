@@ -53,6 +53,7 @@
 #include <samurai/io/net/socketaddress.h>
 #include <samurai/io/net/inetaddress.h>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <stdio.h>
@@ -139,8 +140,20 @@ class Listener : public QuickDC::HubListener
 		void EventNetStatus(enum StatusNetwork state) override
 		{ if (state == NetConnected) netConnected++; }
 
+		std::vector<StatusHub> statuses;
+		std::string redirectedTo;
+		uint16_t redirectedPort = 0;
+
 		void EventHubStatus(enum StatusHub state) override
-		{ if (state == HubLoggedIn) loggedIn++; }
+		{
+			statuses.push_back(state);
+			if (state == HubLoggedIn) loggedIn++;
+		}
+
+		bool saw(StatusHub state) const
+		{
+			return std::find(statuses.begin(), statuses.end(), state) != statuses.end();
+		}
 
 		void EventSystemError(const char* msg) override
 		{ errors.push_back(msg ? msg : ""); }
@@ -188,7 +201,12 @@ class Listener : public QuickDC::HubListener
 		void EventHubDescription(const char* description) override
 		{ hubDescription = description ? description : ""; }
 
-		bool EventHubRedirect(const char*, uint16_t) override { return false; }
+		bool EventHubRedirect(const char* address, uint16_t port) override
+		{
+			redirectedTo = address ? address : "";
+			redirectedPort = port;
+			return false;
+		}
 		void EventHubAutenticate() override { authRequested = true; }
 
 		bool EventClientConnect(const char*, uint16_t, const QuickDC::User*) override
@@ -1271,6 +1289,88 @@ EXO_TEST(hubsession_a_qui_takes_the_user_and_their_share_away,
 	EXO_ASSERT(users && users->getUser("BBBB") == 0);
 	EXO_ASSERT(users && users->getUser("CCCC") != 0);
 	EXO_ASSERT(users && users->countShared() == 200);
+	return 1;
+});
+
+/* A QUI naming this session is the hub's word on why it was let go. */
+EXO_TEST(hubsession_a_qui_naming_this_session_is_a_kick,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.say("BINF BBBB NIalice");
+	s.say("IQUI BBBB MSbye");
+	EXO_ASSERT(!s.listener.saw(QuickDC::HubListener::HubKicked));
+
+	s.say("IQUI AAAA IDBBBB MSgo\\saway");
+	EXO_ASSERT(s.listener.saw(QuickDC::HubListener::HubKicked));
+	EXO_ASSERT(s.listener.redirectedTo.empty());
+	EXO_ASSERT(s.session->getReconnectTime() == -1);
+	return 1;
+});
+
+EXO_TEST(hubsession_a_qui_naming_this_session_with_an_address_is_a_redirect,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	s.say("IQUI AAAA MSelsewhere RDadc://127.0.0.2:4111");
+	EXO_ASSERT(s.listener.saw(QuickDC::HubListener::HubRedirected));
+	EXO_ASSERT(!s.listener.saw(QuickDC::HubListener::HubKicked));
+	EXO_ASSERT(s.listener.redirectedTo == "adc://127.0.0.2:4111");
+	EXO_ASSERT(s.listener.redirectedPort == 4111);
+	return 1;
+});
+
+EXO_TEST(hubsession_a_qui_naming_this_session_with_time_left_is_a_ban,
+{
+	{
+		Session s;
+		if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+		EXO_ASSERT(s.ready);
+		EXO_ASSERT(s.login());
+
+		s.say("IQUI AAAA TL600");
+		EXO_ASSERT(s.listener.saw(QuickDC::HubListener::HubBannedTemporarily));
+	}
+
+	Session s;
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	s.say("IQUI AAAA TL-1");
+	EXO_ASSERT(s.listener.saw(QuickDC::HubListener::HubBannedPermanently));
+	return 1;
+});
+
+/* An operator's kick says why, and how long for; a redirect where to. */
+EXO_TEST(hubsession_a_kick_carries_its_message_ban_and_address,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	EXO_ASSERT(s.session->supportsBans());
+
+	s.say("BINF BBBB NIalice");
+	const QuickDC::User* alice = s.session->getUserManager()->getUser("BBBB");
+	EXO_ASSERT(alice != 0);
+
+	std::string line;
+	s.session->sendAdminUserKick(alice, "go away", 600);
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line == "HDSC BBBB MSgo\\saway TL600");
+
+	s.session->sendAdminUserKick(alice, 0, -5);
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line == "HDSC BBBB TL-1");
+
+	s.session->sendAdminUserRedirect(alice, "adc://127.0.0.2:4111", "elsewhere");
+	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(line == "HDSC BBBB MSelsewhere RDadc://127.0.0.2:4111");
 	return 1;
 });
 

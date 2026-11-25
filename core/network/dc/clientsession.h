@@ -117,6 +117,8 @@ class ClientSession :
 		 */
 		const char* getNick() const
 		{ return remote_nickname.empty() ? 0 : remote_nickname.c_str(); }
+
+		std::string peerName() const override { return remote_nickname; }
 		
 	protected:
 		void EventConnected(const Samurai::IO::Net::Socket*) override;

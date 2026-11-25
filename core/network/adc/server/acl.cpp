@@ -9,8 +9,10 @@
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
 
+#include <algorithm>
 #include <string_view>
 #include <vector>
+#include <time.h>
 
 namespace XML
 {
@@ -86,9 +88,25 @@ ADC::LocalHub::ACL::Authorization::~Authorization()
 	}
 }
 
-bool ADC::LocalHub::ACL::Authorization::isExpired()
+bool ADC::LocalHub::ACL::Authorization::isExpired() const
 {
-	return expire > Samurai::TimeStamp();
+	const time_t at = expire.getInternalData();
+	return at != 0 && at <= time(0);
+}
+
+bool ADC::LocalHub::ACL::Authorization::identifies(const char* cid, const char* nick, const std::string& address) const
+{
+	for (const Identity* id : identities)
+		if (id->matchCID(cid) || id->matchName(nick) || id->matchAddress(address)) return true;
+	return false;
+}
+
+const ADC::LocalHub::ACL::Verification* ADC::LocalHub::ACL::Authorization::password() const
+{
+	for (const Verification* verification : verifications)
+		if (verification->getType() == Verification::VerifyPassword && !verification->getData().empty())
+			return verification;
+	return 0;
 }
 
 
@@ -148,16 +166,19 @@ ADC::LocalHub::ACL::Identity::~Identity()
 {
 }
 
-bool ADC::LocalHub::ACL::Identity::matchCID(const char*)
+bool ADC::LocalHub::ACL::Identity::matchCID(const char* cid) const
 {
-	QDBG("Implement me!");
-	return false;
+	return type == IdCID && cid && *cid && data == cid;
 }
 
-bool ADC::LocalHub::ACL::Identity::matchName(const char*)
+bool ADC::LocalHub::ACL::Identity::matchName(const char* name) const
 {
-	QDBG("Implement me!");
-	return false;
+	return type == IdName && name && *name && Samurai::Util::iequals(data, name);
+}
+
+bool ADC::LocalHub::ACL::Identity::matchAddress(const std::string& address) const
+{
+	return (type == IdIPv4 || type == IdIPv6) && !address.empty() && data == address;
 }
 
 
@@ -212,7 +233,7 @@ ADC::LocalHub::ACL::Table::Table(const char* path_)
 
 ADC::LocalHub::ACL::Table::~Table()
 {
-	save();
+	if (changed) save();
 
 	while (acl.size())
 	{
@@ -225,6 +246,39 @@ ADC::LocalHub::ACL::Table::~Table()
 void ADC::LocalHub::ACL::Table::add(ADC::LocalHub::ACL::Authorization* auth)
 {
 	acl.push_back(auth);
+	changed = true;
+}
+
+void ADC::LocalHub::ACL::Table::remove(const ADC::LocalHub::ACL::Authorization* auth)
+{
+	const auto found = std::find(acl.begin(), acl.end(), auth);
+	if (found == acl.end()) return;
+
+	delete *found;
+	acl.erase(found);
+	changed = true;
+}
+
+const ADC::LocalHub::ACL::Authorization* ADC::LocalHub::ACL::Table::banFor(const char* cid, const char* nick,
+	const std::string& address) const
+{
+	for (const Authorization* auth : acl)
+		if (auth->credential == Authorization::Banned && !auth->isExpired()
+		    && auth->identifies(cid, nick, address))
+			return auth;
+	return 0;
+}
+
+const ADC::LocalHub::ACL::Authorization* ADC::LocalHub::ACL::Table::accountFor(const char* cid, const char* nick) const
+{
+	for (const Authorization* auth : acl)
+	{
+		if (auth->credential != Authorization::User && auth->credential != Authorization::Operator
+		    && auth->credential != Authorization::Admin) continue;
+		if (auth->isExpired() || !auth->password()) continue;
+		if (auth->identifies(cid, nick, std::string())) return auth;
+	}
+	return 0;
 }
 
 /*
@@ -359,6 +413,7 @@ bool ADC::LocalHub::ACL::Table::save() {
 		xmlout->pop(out, xmlout->size());
 		int written = xmlacl.write(out, xmlout->size());
 		if (written == -1) QDBG("Error writing acl.xml");
+		else changed = false;
 		xmlacl.close();
 		delete[] out;
 	}
@@ -460,8 +515,8 @@ void ADC::LocalHub::ACL::XMLReader::startElement(std::string_view, std::string_v
 			error("Invalid credentials for user");
 		}
 		
-		Samurai::TimeStamp expire = Samurai::TimeStamp(Samurai::Util::Convert::to_int32(s_expire));
-		if (expire < Samurai::TimeStamp())
+		Samurai::TimeStamp expire = Samurai::TimeStamp(Samurai::Util::Convert::to_int64(s_expire));
+		if (expire.getInternalData() != 0 && expire < Samurai::TimeStamp())
 		{
 			warning("Authorization has expired");
 		}

@@ -30,6 +30,7 @@
 #include "network/adc/adccommon.h"
 #include "network/adc/cid.h"
 #include "network/adc/parser.h"
+#include "network/adc/server/acl.h"
 #include "network/adc/server/hub.h"
 #include "network/adc/server/service.h"
 #include "network/adc/server/user.h"
@@ -48,12 +49,14 @@
 
 #include <chrono>
 #include <errno.h>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <span>
 #include <stdio.h>
 #include <string.h>
 #include <string>
+#include <system_error>
 #include <unistd.h>
 #include <vector>
 
@@ -142,6 +145,14 @@ static std::string escapedArgument(const std::string& text)
 	return out;
 }
 
+/* Where a hub reads its access list and message of the day: never the user's own. */
+static std::string hubHome()
+{
+	const std::string dir = "/tmp/quickdc_adchubtest_" + std::to_string((int) getpid()) + "_hub";
+	Samurai::IO::File::mkdir(dir.c_str(), 0700);
+	return dir;
+}
+
 /*
  * The hub, with the socket error handler reachable.
  *
@@ -152,7 +163,7 @@ static std::string escapedArgument(const std::string& text)
 class TestHub : public ADC::LocalHub::Hub
 {
 	public:
-		TestHub() : ADC::LocalHub::Hub(core->loop(), *core->config) { }
+		TestHub() : ADC::LocalHub::Hub(core->loop(), *core->config, hubHome()) { }
 
 		using ADC::LocalHub::Hub::EventError;
 
@@ -371,6 +382,9 @@ EXO_SETUP({
 	Samurai::IO::File(cfg).remove();
 	Samurai::IO::File(ses).remove();
 
+	std::error_code ignored;
+	std::filesystem::remove_all(hubHome(), ignored);
+
 	core = new QuickDC::Core(cfg, ses);
 
 	/* Every case reads the hub's limits through this, so a core without one is
@@ -386,6 +400,9 @@ EXO_TEARDOWN({
 
 	Samurai::IO::File(cfg).remove();
 	Samurai::IO::File(ses).remove();
+
+	std::error_code ignored;
+	std::filesystem::remove_all(hubHome(), ignored);
 	return 1;
 });
 
@@ -2010,5 +2027,218 @@ EXO_TEST(adchub_an_address_of_the_family_the_connection_is_not_on_is_dropped,
 	EXO_ASSERT(line.find("DEwatching") != std::string::npos);
 	EXO_ASSERT(line.find("2001:db8::5") == std::string::npos);
 	EXO_ASSERT(line.find("U61411") == std::string::npos);
+	return 1;
+});
+
+/* ------------------------------------------------------------------------- */
+/* The access list: accounts, bans, and what an operator may do              */
+/* ------------------------------------------------------------------------- */
+
+/* What a client answers a password request with, as the ADC client works it out. */
+static std::string answerFor(const std::string& password, const std::string& salt)
+{
+	std::vector<unsigned char> data(password.begin(), password.end());
+	std::vector<unsigned char> decoded((salt.size() * 5) >> 3);
+	Samurai::Util::base32_decode(salt, std::span<unsigned char>(decoded));
+	data.insert(data.end(), decoded.begin(), decoded.end());
+
+	Samurai::Crypto::Digest::Tiger tiger;
+	tiger.update(data.data(), data.size());
+	char answer[40] = { 0, };
+	tiger.digest().getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, answer, sizeof(answer));
+	return answer;
+}
+
+/* A login that is asked for a password and gives 'password'; the line that settled it is in 'out'. */
+static bool loginWithPassword(Client& client, const Identity& id, const char* nick, const std::string& password,
+                              std::string& out)
+{
+	client.send("HSUP ADBASE ADTIGR");
+	if (!client.waitFor("ISID", out) || out.size() < 9) return false;
+	client.sid = out.substr(5, 4);
+
+	client.send("BINF " + client.sid + " ID" + id.cid + " PD" + id.pid + " NI" + nick);
+	if (!client.waitFor("IGPA", out) || out.size() < 6) return false;
+	client.send("HPAS " + answerFor(password, out.substr(5)));
+
+	for (;;)
+	{
+		if (!client.nextLine(out)) return false;
+		if (out.compare(0, 4, "BINF") == 0 && out.find(client.sid) != std::string::npos) return true;
+		if (out.compare(0, 4, "ISTA") == 0 && out.find(" 2") != std::string::npos) return false;
+	}
+}
+
+EXO_TEST(adchub_an_account_is_asked_for_its_password_and_let_in_with_its_rights,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.hub.setAccount("oper", "secret", ADC::LocalHub::ACL::Authorization::Operator));
+
+	Client oper;
+	std::string line;
+	EXO_ASSERT(oper.connect(s.port()));
+	EXO_ASSERT(loginWithPassword(oper, makeIdentity(60), "oper", "secret", line));
+	EXO_ASSERT(line.find(" CT4") != std::string::npos);
+
+	const Samurai::IO::Net::Socket* peer = 0;
+	ADC::LocalHub::User* user = userFor(s.hub, oper.sid, peer);
+	EXO_ASSERT(user && user->getCredentials() == ADC::LocalHub::Cred_Operator);
+
+	/* Somebody else is not asked, and gets no rights. */
+	Client other;
+	EXO_ASSERT(other.connect(s.port()));
+	EXO_ASSERT(other.login(makeIdentity(61), "other"));
+	EXO_ASSERT(!other.sawLine({"IGPA"}));
+	return 1;
+});
+
+EXO_TEST(adchub_a_wrong_password_is_refused,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.hub.setAccount("oper", "secret", ADC::LocalHub::ACL::Authorization::Operator));
+
+	Client oper;
+	std::string line;
+	EXO_ASSERT(oper.connect(s.port()));
+	EXO_ASSERT(!loginWithPassword(oper, makeIdentity(62), "oper", "guess", line));
+	EXO_ASSERT(line.compare(0, 8, "ISTA 223") == 0);
+	EXO_ASSERT(s.hub.countLoggedIn() == 0);
+	return 1;
+});
+
+/* An account taken back asks nobody for anything, and is gone from the file. */
+EXO_TEST(adchub_an_account_removed_is_gone_from_the_access_list,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.hub.setAccount("oper", "secret", ADC::LocalHub::ACL::Authorization::Admin));
+	EXO_ASSERT(s.hub.accessList().accountFor(0, "OPER") != 0);
+	EXO_ASSERT(s.hub.removeAccount("oper"));
+	EXO_ASSERT(!s.hub.removeAccount("oper"));
+
+	{
+		ADC::LocalHub::ACL::Table reread((s.hub.directory() + "/acl.xml").c_str());
+		EXO_ASSERT(reread.countUsers() == 0);
+	}
+
+	Client oper;
+	EXO_ASSERT(oper.connect(s.port()));
+	EXO_ASSERT(oper.login(makeIdentity(63), "oper"));
+	return 1;
+});
+
+EXO_TEST(adchub_a_banned_cid_is_refused_with_the_time_left,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	const Identity id = makeIdentity(64);
+	EXO_ASSERT(s.hub.ban(id.cid, "go away", 600));
+
+	Client banned;
+	EXO_ASSERT(banned.connect(s.port()));
+	EXO_ASSERT(!banned.login(id, "whoever"));
+	EXO_ASSERT(banned.sawLine({"ISTA 232 go\\saway", "TL"}));
+
+	/* For good, by nickname, is permanent; and lifted, it lets them in. */
+	EXO_ASSERT(s.hub.ban("carol", "", 0));
+	Client carol;
+	EXO_ASSERT(carol.connect(s.port()));
+	EXO_ASSERT(!carol.login(makeIdentity(65), "Carol"));
+	EXO_ASSERT(carol.sawLine({"ISTA 231"}));
+
+	EXO_ASSERT(s.hub.unban("carol"));
+	EXO_ASSERT(!s.hub.unban("carol"));
+	Client again;
+	EXO_ASSERT(again.connect(s.port()));
+	EXO_ASSERT(again.login(makeIdentity(66), "carol"));
+	return 1;
+});
+
+/* The owner's ban of somebody on the hub takes them off it, and keeps their CID out. */
+EXO_TEST(adchub_banning_somebody_on_the_hub_disconnects_them,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	const Identity id = makeIdentity(67);
+	Client alice;
+	Client bob;
+	EXO_ASSERT(alice.connect(s.port()));
+	EXO_ASSERT(alice.login(id, "alice"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(68), "bob"));
+
+	EXO_ASSERT(s.hub.ban("alice", "enough", 0));
+
+	std::string line;
+	EXO_ASSERT(alice.waitFor("IQUI", line));
+	EXO_ASSERT(line.find("IQUI " + alice.sid) == 0);
+	EXO_ASSERT(bob.waitFor("IQUI", line));
+	EXO_ASSERT(line.find("IQUI " + alice.sid) == 0);
+	EXO_ASSERT(line.find("MSenough") != std::string::npos);
+
+	Client renamed;
+	EXO_ASSERT(pump([&] { return s.hub.countLoggedIn() == 1; }));
+	EXO_ASSERT(renamed.connect(s.port()));
+	EXO_ASSERT(!renamed.login(id, "alice2"));
+	EXO_ASSERT(renamed.sawLine({"ISTA 231 enough"}));
+	return 1;
+});
+
+EXO_TEST(adchub_an_operator_redirects_and_bans_through_the_hub,
+{
+	Server s;
+	if (!s.listen()) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.hub.setAccount("oper", "secret", ADC::LocalHub::ACL::Authorization::Operator));
+
+	Client oper;
+	Client carol;
+	Client bob;
+	std::string line;
+	const Identity carolId = makeIdentity(70);
+	EXO_ASSERT(oper.connect(s.port()));
+	EXO_ASSERT(loginWithPassword(oper, makeIdentity(69), "oper", "secret", line));
+	EXO_ASSERT(carol.connect(s.port()));
+	EXO_ASSERT(carol.login(carolId, "carol"));
+	EXO_ASSERT(bob.connect(s.port()));
+	EXO_ASSERT(bob.login(makeIdentity(71), "bob"));
+
+	/* Not an operator: refused, and nobody goes. */
+	bob.send("HDSC " + carol.sid);
+	EXO_ASSERT(bob.waitFor("ISTA", line));
+	EXO_ASSERT(line.compare(0, 8, "ISTA 126") == 0);
+
+	oper.send("HDSC " + carol.sid + " MSelsewhere RDadc://127.0.0.2:4111");
+	EXO_ASSERT(carol.waitFor("IQUI", line));
+	EXO_ASSERT(line.find("IQUI " + carol.sid + " ID" + oper.sid) == 0);
+	EXO_ASSERT(line.find("RDadc://127.0.0.2:4111") != std::string::npos);
+	EXO_ASSERT(line.find("MSelsewhere") != std::string::npos);
+
+	/* The others are told it left, and not where it went. */
+	EXO_ASSERT(bob.waitFor("IQUI", line));
+	EXO_ASSERT(line.find("IQUI " + carol.sid) == 0);
+	EXO_ASSERT(line.find("RD") == std::string::npos);
+
+	Client back;
+	EXO_ASSERT(pump([&] { return s.hub.countLoggedIn() == 2; }));
+	EXO_ASSERT(back.connect(s.port()));
+	EXO_ASSERT(back.login(carolId, "carol"));
+
+	oper.send("HDSC " + back.sid + " MSnot\\swelcome TL600");
+	EXO_ASSERT(back.waitFor("IQUI", line));
+	EXO_ASSERT(line.find("TL600") != std::string::npos);
+
+	const ADC::LocalHub::ACL::Authorization* ban = s.hub.accessList().banFor(carolId.cid.c_str(), 0, "");
+	EXO_ASSERT(ban != 0);
+	EXO_ASSERT(ban && std::string(ban->getDescription()) == "not welcome");
+
+	Client again;
+	EXO_ASSERT(pump([&] { return s.hub.countLoggedIn() == 2; }));
+	EXO_ASSERT(again.connect(s.port()));
+	EXO_ASSERT(!again.login(carolId, "carol"));
+	EXO_ASSERT(again.sawLine({"ISTA 232"}));
 	return 1;
 });

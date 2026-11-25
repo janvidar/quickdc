@@ -13,6 +13,7 @@
 #include <string_view>
 #include <time.h>
 
+#include "network/adc/server/acl.h"
 #include "network/adc/server/boards.h"
 #include "network/adc/server/hub.h"
 #include "network/adc/server/user.h"
@@ -290,6 +291,18 @@ bool ADC::LocalHub::User::setINF(ADC::Command* cmd, ADC::LocalHub::Hub* hub) {
 
 		if (claimed.empty() || Samurai::Util::iequals(claimed, hub->hubname ? hub->hubname : "")) { /* FIXME: NICK NOT VALID */
 			INF_SEND_ERROR(this, hub, "221", "Invalid nick", 0, 0);
+			return false;
+		}
+
+		if (const ACL::Authorization* banned = hub->acl->banFor(cid, nick, peerAddress(socket.get()))) {
+			const char* reason = banned->getDescription() ? banned->getDescription() : "Banned";
+			const time_t until = banned->getExpireTime().getInternalData();
+			if (until == 0) {
+				INF_SEND_ERROR(this, hub, "231", reason, 0, 0);
+			} else {
+				const std::string left = std::to_string(std::max<time_t>(until - time(0), 1));
+				INF_SEND_ERROR(this, hub, "232", reason, "TL", left.c_str());
+			}
 			return false;
 		}
 	

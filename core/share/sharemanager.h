@@ -10,6 +10,7 @@
 #include <vector>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -294,6 +295,17 @@ class Manager : public QuickDC::Hash::JobListener {
 
 		/** The path a file attached with this hash was given as, or empty. */
 		std::string attachedPath(const std::string& tth) const;
+
+		/** A file offered by its hash: where it is on disk, what peers see it as, and its size. */
+		struct Offer {
+			std::string path;
+			std::string name;
+			uint64_t size = 0;
+			bool attached = false;
+		};
+
+		/** The file this client offers with this hash, shared before attached; nothing where none. */
+		std::optional<Offer> offered(const std::string& tth) const;
 
 		/**
 		 * Stop offering an attachment: take back everything attach() made

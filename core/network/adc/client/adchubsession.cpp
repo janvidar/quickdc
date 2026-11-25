@@ -893,18 +893,55 @@ void ADC::HubSession::sendChatMessage(const char* msg, bool richText)
 }
 
 
-void ADC::HubSession::sendAdminUserKick(const QuickDC::User* user)
+void ADC::HubSession::onQuit(const char* id, const char* message, const char* redirect, const char* timeLeft)
+{
+	const bool self = id && !sid.empty() && sid == id;
+	if (!self)
+	{
+		users->quit(id, message);
+		return;
+	}
+
+	/* Somebody decided this; coming straight back would be arguing with them. */
+	reconnect_time = -1;
+
+	if (redirect && *redirect)
+	{
+		const Samurai::IO::Net::URL to(redirect);
+		listener->EventHubStatus(QuickDC::HubListener::HubRedirected);
+		listener->EventHubRedirect(redirect, to.isValid() ? to.getPort() : 0);
+	}
+	else if (timeLeft && *timeLeft)
+	{
+		const bool forGood = Samurai::Util::Convert::to_int64(timeLeft) < 0;
+		listener->EventHubStatus(forGood ? QuickDC::HubListener::HubBannedPermanently
+		                                 : QuickDC::HubListener::HubBannedTemporarily);
+	}
+	else
+	{
+		listener->EventHubStatus(QuickDC::HubListener::HubKicked);
+	}
+
+	users->quit(id, message);
+}
+
+
+void ADC::HubSession::sendAdminUserKick(const QuickDC::User* user, const char* message, int64_t banSeconds)
 {
 	ADC::Command* cmd = new ADC::Command(FOURCC('H','D','S','C'));
 	cmd->addArgument(user->getID());
+	if (message && *message) cmd->addArgument("MS", message);
+	if (banSeconds != 0) cmd->addArgument("TL", std::to_string(banSeconds < 0 ? -1 : banSeconds));
 	send(cmd);
 }
 
 
-void ADC::HubSession::sendAdminUserRedirect(const QuickDC::User* user, const char*, const char*)
+void ADC::HubSession::sendAdminUserRedirect(const QuickDC::User* user, const char* address, const char* reason)
 {
 	ADC::Command* cmd = new ADC::Command(FOURCC('H','D','S','C'));
 	cmd->addArgument(user->getID());
+	if (reason && *reason) cmd->addArgument("MS", reason);
+	if (address && *address) cmd->addArgument("RD", address);
 	send(cmd);
 }
 

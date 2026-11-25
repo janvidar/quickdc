@@ -147,6 +147,10 @@ class User : public Connection {
 
 		sid_t getSID() const { return sid; }
 
+		/** Null until the user's INF has been taken in. */
+		const char* getNick() const { return nick; }
+		const char* getCID() const { return cid; }
+
 		/**
 		 * Where this user's connection to the hub comes from, or nothing.
 		 *
@@ -172,6 +176,9 @@ class User : public Connection {
 		ADC::Command* command_inf;
 		char* nick;
 		char* cid;
+
+		/** What this user's password was asked with, while it is being verified. */
+		std::string salt;
 
 		/*
 		 * A set rather than a list of pointers: hasFeature() is asked once per

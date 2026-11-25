@@ -58,9 +58,12 @@ class Identity {
 		~Identity();
 		
 		enum IdentityType getType() const { return type; }
-		
-		bool matchCID(const char* cid);
-		bool matchName(const char* name);
+		const std::string& getData() const { return data; }
+
+		bool matchCID(const char* cid) const;
+		/** Nicknames compare without regard to case, as the hub compares them. */
+		bool matchName(const char* name) const;
+		bool matchAddress(const std::string& address) const;
 		
 	
 	protected:
@@ -89,6 +92,9 @@ class Verification {
 	public:
 		Verification(enum VerificationType type, const char* data);
 		~Verification();
+
+		enum VerificationType getType() const { return type; }
+		const std::string& getData() const { return data; }
 		
 	protected:
 		enum VerificationType type;
@@ -131,11 +137,21 @@ class Authorization {
 		 */
 		const char* getName() const { return name.empty() ? 0 : name.c_str(); }
 		const char* getDescription() const { return description.empty() ? 0 : description.c_str(); }
-		bool isExpired();
+
+		/** An entry that expires at 0 never does. */
+		bool isExpired() const;
 		Samurai::TimeStamp getExpireTime() const { return expire; }
 		
 		void addIdentity(Identity* id);
 		void addVerification(Verification* verification);
+
+		const std::vector<Identity*>& getIdentities() const { return identities; }
+
+		/** Whether any identity names this CID, nickname or address; empty ones match nothing. */
+		bool identifies(const char* cid, const char* nick, const std::string& address) const;
+
+		/** The password this entry is verified by, or null. */
+		const Verification* password() const;
 	
 	protected:
 		std::string name;
@@ -163,15 +179,31 @@ class Table {
 
 		void add(Authorization*);
 
+		/** Forget and delete 'auth', which must be one of this table's entries. */
+		void remove(const Authorization* auth);
+
 		bool load();
+
+		/** Write the table out; also done on destruction where it changed since. */
 		bool save();
 
 		size_t countUsers() const { return acl.size(); }
 		const Authorization* getUser(size_t n) const { return (n < acl.size()) ? acl[n] : 0; }
 
+		/** The ban in force that one of these identifies, or null. */
+		const Authorization* banFor(const char* cid, const char* nick, const std::string& address) const;
+
+		/**
+		 * The account in force for this CID or nickname: an entry that is not a ban
+		 * and is verified by a password. One without a password grants nothing, since
+		 * a nickname is anybody's to claim and a CID is told to every hub visited.
+		 */
+		const Authorization* accountFor(const char* cid, const char* nick) const;
+
 	protected:
 		std::vector<Authorization*> acl;
 		std::string path;
+		bool changed = false;
 };
 
 class XMLReader : public Samurai::IO::XmlContentHandler {

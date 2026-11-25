@@ -957,6 +957,9 @@ void QuickDC::Core::run()
 
 	/* Last, so that whatever this turn changed is acted on in the same turn. */
 	if (automation) automation->reconcile();
+
+	/* After it, so what is told is what the reconciling left. */
+	if (service) service->checkStatus();
 }
 
 

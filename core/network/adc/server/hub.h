@@ -70,6 +70,7 @@ namespace LocalHub {
 	inline constexpr sid_t SID_MASK = 0xFFFFF;
 
 	namespace ACL {
+		class Authorization;
 		class Table;
 	}
 
@@ -152,6 +153,40 @@ namespace LocalHub {
 			*/
 			void kick(ADC::LocalHub::User* user);
 			
+			/**
+			* Disconnect 'target' as an operator or the hub's owner would: everybody
+			* is told it quit, 'target' itself with the address to go to where
+			* 'redirect' names one. A ban of 'banSeconds' (-1 for good) is kept
+			* against its CID where that is not 0. 'by' is the operator, or null
+			* for the hub's owner.
+			*/
+			void disconnect(User* target, const std::string& message, const std::string& redirect,
+			                int64_t banSeconds, User* by = 0);
+
+			/** A user that is on the hub or logging in, by nickname, CID or SID; or null. */
+			User* findUser(const std::string& who);
+
+			/**
+			* Keep 'who' out for 'seconds', for good where that is 0, and disconnect
+			* whoever on the hub it names. Somebody on the hub is banned by CID and
+			* nickname; otherwise an IPv4 or IPv6 address by address, a CID by CID,
+			* and anything else by nickname. False where 'who' is empty.
+			*/
+			bool ban(const std::string& who, const std::string& reason, int64_t seconds);
+
+			/** Lift every ban naming 'who', by its name or any identity. False where none does. */
+			bool unban(const std::string& who);
+
+			/**
+			* An account for 'nick' that logs in with 'password' and the rights of
+			* 'credential' - User, Operator or Admin - replacing any it had.
+			*/
+			bool setAccount(const std::string& nick, const std::string& password, int credential);
+
+			bool removeAccount(const std::string& nick);
+
+			const ACL::Table& accessList() const { return *acl; }
+
 			/**
 			* This method is called when a user has connected to the
 			* hub but not yet logged in properly.
@@ -302,6 +337,12 @@ namespace LocalHub {
 			*/
 			void readConfiguration();
 			
+			/** Ask for the password of the account 'user' logs in as. */
+			void askPassword(User* user);
+
+			/** Let a user whose INF has been taken in, and who is who it says, onto the hub. */
+			void admit(User* user);
+
 			/**
 			* Tell a user it is being dropped, and drop it.
 			*/

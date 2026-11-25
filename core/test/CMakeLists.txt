@@ -6,22 +6,14 @@
 # These are interactive tools rather than automated tests, so they are built but
 # not registered with CTest - the real automated suite is in autotests/.
 
-add_executable(quickdc_cli
- cli/main.cpp
- cli/util.cpp
- cli/hubconnection.cpp
- cli/commands.cpp
- cli/console.cpp)
-
 add_executable(testfile file.cpp)
 add_executable(testshare share.cpp)
 add_executable(testlock lock.cpp)
 
-# testdebug needs console.cpp for its output helpers.
-add_executable(testdebug debug.cpp cli/console.cpp)
+add_executable(testdebug debug.cpp)
 
 set(QUICKDC_TEST_APPS
-    quickdc_cli testfile testshare testlock testdebug)
+    testfile testshare testlock testdebug)
 
 # A name left here after its source was retired makes the configure fail with a
 # confusing message about a target that does not exist, so it is checked first.

@@ -100,11 +100,14 @@ class HubSession :
 		HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener, Samurai::IO::Net::URL* url, bool secure);
 		virtual ~HubSession();
 
+		std::string peerName() const override { return address; }
+
 		/* External API */
 		void sendPrivateChatMessage(const QuickDC::User*, const char*,
 		                            bool richText = false) override;
 		void sendChatMessage(const char*, bool richText = false) override;
-		void sendAdminUserKick(const QuickDC::User*) override;
+		void sendAdminUserKick(const QuickDC::User*, const char* message, int64_t banSeconds) override;
+		bool supportsBans() const override { return true; }
 		void sendAdminUserRedirect(const QuickDC::User*, const char*, const char*) override;
 		void sendClientInfo() override;
 
@@ -164,6 +167,12 @@ class HubSession :
 		
 		// Events triggered by the server (hub)
 		void onSID(char* sid);
+
+		/**
+		 * The hub said 'id' quit. Where that is this session, it was kicked, sent to
+		 * 'redirect', or kept out for 'timeLeft' seconds; each of those may be null.
+		 */
+		void onQuit(const char* id, const char* message, const char* redirect, const char* timeLeft);
 		void addSupport(const char* txt);
 
 		/**

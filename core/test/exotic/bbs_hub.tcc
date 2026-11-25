@@ -50,13 +50,15 @@
 #include <samurai/util/base32.h>
 
 #include <chrono>
+#include <filesystem>
 #include <memory>
+#include <new>
 #include <span>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <new>
 #include <string>
+#include <system_error>
 #include <unistd.h>
 #include <vector>
 
@@ -181,11 +183,19 @@ static size_t countLines(const std::vector<std::string>& log,
 	return found;
 }
 
+/* Where a hub reads its access list and message of the day: never the user's own. */
+static std::string hubHome()
+{
+	const std::string dir = "/tmp/quickdc_bbshubtest_" + std::to_string((int) getpid()) + "_hub";
+	Samurai::IO::File::mkdir(dir.c_str(), 0700);
+	return dir;
+}
+
 /* The hub, with what a case needs to reach made reachable. */
 class TestHub : public ADC::LocalHub::Hub
 {
 	public:
-		TestHub() : ADC::LocalHub::Hub(core->loop(), *core->config) { }
+		TestHub() : ADC::LocalHub::Hub(core->loop(), *core->config, hubHome()) { }
 
 		using ADC::LocalHub::Hub::readConfiguration;
 		using ADC::LocalHub::Hub::hasBoards;
@@ -438,6 +448,9 @@ EXO_SETUP({
 	Samurai::IO::File(cfg).remove();
 	Samurai::IO::File(ses).remove();
 
+	std::error_code ignored;
+	std::filesystem::remove_all(hubHome(), ignored);
+
 	core = new QuickDC::Core(cfg, ses);
 	if (core != core || !core->config) return 0;
 
@@ -454,6 +467,9 @@ EXO_TEARDOWN({
 
 	Samurai::IO::File(cfg).remove();
 	Samurai::IO::File(ses).remove();
+
+	std::error_code ignored;
+	std::filesystem::remove_all(hubHome(), ignored);
 
 	/* Every index these cases wrote, and then the directory itself. */
 	Samurai::IO::Directory dir(bbs);

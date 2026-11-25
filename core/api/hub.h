@@ -452,8 +452,16 @@ class Hub
 		void sendPassword(const char* password);
 		void sendPrivateChatMessage(const QuickDC::User* user, const char* message,
 		                            bool richText = false);
-		void sendKickUser(const char* user);
-		void sendRedirect(const char* user, const char* address, const char* reason);
+
+		enum class DisconnectRefusal { None, NoSession, NoSuchUser, NotOperator, Unsupported };
+
+		/**
+		 * Have the hub disconnect 'user', as an operator: sent to 'redirect' where
+		 * that is not empty, and otherwise kept out for 'banSeconds' (-1 for good)
+		 * where that is not 0. Why it was not asked, where it was not.
+		 */
+		DisconnectRefusal disconnectUser(const char* user, const std::string& message,
+		                                 const std::string& redirect, int64_t banSeconds);
 
 		/**
 		 * Ask a user to set up a peer connection.

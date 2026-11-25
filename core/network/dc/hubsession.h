@@ -62,10 +62,12 @@ class HubSession
 		HubSession(QuickDC::Hub* ui, QuickDC::HubListener* listener, Samurai::IO::Net::URL* url);
 		virtual ~HubSession();
 
+		std::string peerName() const override { return address; }
+
 		void sendPrivateChatMessage(const QuickDC::User* user, const char* msg,
 		                            bool richText = false) override;
 		void sendChatMessage(const char* msg, bool richText = false) override;
-		void sendAdminUserKick(const QuickDC::User* user) override;
+		void sendAdminUserKick(const QuickDC::User* user, const char* message, int64_t banSeconds) override;
 		void sendAdminUserRedirect(const QuickDC::User* user, const char* address, const char* reason) override;
 		/* $MyINFO is NMDC's status update, and re-sending it is how a hub is
 		   told that something in it changed. */

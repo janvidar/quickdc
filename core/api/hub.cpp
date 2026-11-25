@@ -188,34 +188,25 @@ void QuickDC::Hub::sendPrivateChatMessage(const QuickDC::User* user, const char*
 	session->sendPrivateChatMessage(user, message, richText);
 }
 
-void QuickDC::Hub::sendKickUser(const char* user)
+QuickDC::Hub::DisconnectRefusal QuickDC::Hub::disconnectUser(const char* user, const std::string& message,
+                                                             const std::string& redirect, int64_t banSeconds)
 {
-	if (!session || !session->isLoggedIn())
-	{
-		listener->EventSystemError("sendKickUser(): No session");
-		return;
-	}
-	
-	const QuickDC::User* u = session->getUser(user);
-	if (u)
-		session->sendAdminUserKick(u);
-	else
-		listener->EventSystemError("sendKickUser(): No such user");
-}
+	if (!session || !session->isLoggedIn()) return DisconnectRefusal::NoSession;
 
-void QuickDC::Hub::sendRedirect(const char* user, const char* address, const char* reason)
-{
-	if (!session || !session->isLoggedIn())
-	{
-		listener->EventSystemError("sendRedirect(): No session");
-		return;
-	}
-	
-	const QuickDC::User* u = session->getUser(user);
-	if (u)
-		session->sendAdminUserRedirect(u, address, reason);
+	const QuickDC::User* u = user ? session->getUser(user) : 0;
+	if (!u) return DisconnectRefusal::NoSuchUser;
+
+	const QuickDC::User* me = session->getLocalUser();
+	if (!me || !me->isOp()) return DisconnectRefusal::NotOperator;
+
+	if (!redirect.empty())
+		session->sendAdminUserRedirect(u, redirect.c_str(), message.empty() ? "Redirected" : message.c_str());
+	else if (banSeconds != 0 && !session->supportsBans())
+		return DisconnectRefusal::Unsupported;
 	else
-		listener->EventSystemError("sendRedirect(): No such user");
+		session->sendAdminUserKick(u, message.c_str(), banSeconds);
+
+	return DisconnectRefusal::None;
 }
 
 bool QuickDC::Hub::connectUser(const char* user, const char* token)

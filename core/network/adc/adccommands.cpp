@@ -360,9 +360,10 @@ bool ADC::CmdInfo::invoke(ADC::Command* cmd) {
 bool ADC::CmdQuit::invoke(ADC::Command* cmd) {
 	cmd->setPriority(ADC::Command::High);
 	char* id  = cmd->getArgument(0);
-	char* msg = cmd->getArgument("MS", 2);
+	/* From the second argument on, since a SID may happen to start with a field's name. */
+	char* msg = cmd->getArgument("MS", 2, 1);
 	// bool disconnect = cmd->hasArgument("DI", 2); -- FIXME
-	session->users->quit(id, msg);
+	session->onQuit(id, msg, cmd->getArgument("RD", 2, 1), cmd->getArgument("TL", 2, 1));
 	return true;
 }
 

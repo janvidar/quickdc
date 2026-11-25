@@ -21,6 +21,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -58,6 +59,9 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 
 		/** What ReportState tells, with 'request' in each. Core thread only. */
 		std::vector<Event> state(uint64_t request) const;
+
+		/** Tell CoreStatus where it has changed since it was last told. Once a turn of the loop. */
+		void checkStatus();
 
 	private:
 		class HubListFetch;
@@ -103,6 +107,25 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::RemoveFromQueue& command);
 		void run(const Commands::SnapshotTransfers& command);
 		void run(const Commands::ReportShare& command);
+		void run(const Commands::ReportStatus& command);
+		void run(const Commands::SnapshotConnections& command);
+		void run(const Commands::FindShared& command);
+		void run(const Commands::KickUser& command);
+		void run(const Commands::ReportLocalHub& command);
+		void run(const Commands::KickFromLocalHub& command);
+		void run(const Commands::BanFromLocalHub& command);
+		void run(const Commands::UnbanFromLocalHub& command);
+		void run(const Commands::SetLocalHubAccount& command);
+		void run(const Commands::RemoveLocalHubAccount& command);
+
+		Events::CoreStatus coreStatus(uint64_t request) const;
+
+		/** What CoreStatus says of the ports and the hub, which is what changes; the rest left empty. */
+		Events::CoreStatus listening() const;
+		Events::LocalHubState localHubState(uint64_t request) const;
+
+		/** A LocalHubState where 'done', otherwise a LocalHubRefused saying 'why'. */
+		void localHubAnswered(bool done, Events::LocalHubRefused::Why why, uint64_t request);
 		void run(const Commands::AddShareFolder& command);
 		void run(const Commands::RemoveShareFolder& command);
 		void run(const Commands::RenameShareFolder& command);
@@ -197,6 +220,9 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 
 		/** A setting the connection mode is made of has changed since it was last told. */
 		bool connectionModeChanged = false;
+
+		/** The CoreStatus last told, which checkStatus() compares with. */
+		std::optional<Events::CoreStatus> statusTold;
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
 
 		/* Null without a configuration; before the sessions, which tell it when they go. */

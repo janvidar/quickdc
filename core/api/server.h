@@ -65,6 +65,14 @@ class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samur
 		{
 			return ipv6 ? socket6 != nullptr : socket != nullptr;
 		}
+
+		bool listeningUdp(bool ipv6) const
+		{
+			return ipv6 ? dgram6 != nullptr : dgram != nullptr;
+		}
+
+		/** The port peers are taken on, as bound - so the one picked where 0 was asked for - or 0. */
+		uint16_t boundPort() const;
 		
 	protected:
 		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char* msg) override;

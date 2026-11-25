@@ -70,10 +70,14 @@ class HubSession {
 		virtual void sendChatMessage(const char* message, bool richText = false) = 0;
 
 		/**
-		 * Kick a user.
+		 * Kick a user, saying 'message' where it is not null, and keep them out for
+		 * 'banSeconds' (-1 for good) where that is not 0 and supportsBans() holds.
 		 * NOTE: This requires special privileges on the hub.
 		 */
-		virtual void sendAdminUserKick(const User* user) = 0;
+		virtual void sendAdminUserKick(const User* user, const char* message, int64_t banSeconds) = 0;
+
+		/** Whether a kick can ask the hub to keep the user out. */
+		virtual bool supportsBans() const { return false; }
 
 		/**
 		 * Redirect a user to another hub.

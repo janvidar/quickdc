@@ -31,6 +31,11 @@
 #include "network/adc/parser.h"
 #include "config/settings.h"
 
+#include <samurai/crypto/digest/tiger.h>
+#include <samurai/stdc.h>
+#include <samurai/util/base32.h>
+#include <samurai/util/random.h>
+
 static_assert(QuickDC::Settings::HubLingerTimeout.fallback == ADC::LocalHub::HUB_LINGER_TIMEOUT,
               "the setting falls back to the hub's own linger");
 #include <samurai/io/net/socketevent.h>
@@ -361,57 +366,8 @@ void ADC::LocalHub::Hub::onINF(ADC::Command* cmd) {
 	
 	if (user->setINF(cmd, this)) {
 		if (user->state == State_Identify) {
-			ADC::Command* c_inf = new ADC::Command(FOURCC('I','I','N','F'));
-			c_inf->addArgument("NI", hubname);
-			c_inf->addArgument("DE", hubdesc);
-			c_inf->addArgument("HU", "1");
-			c_inf->addArgument("HI", "1");
-			c_inf->addArgument("BO", "1");
-			c_inf->addArgument("VE", PRODUCT " " VERSION);
-			send(c_inf, user, true);
-			
-			/*
-			 * A slot is held by a user that has logged in; this one has not yet,
-			 * so it is not among the ones being counted. The exemption is an
-			 * 'and': written as an 'or' it held for every user, operators
-			 * included, so a full hub turned them away too.
-			 */
-			if (countLoggedIn() >= maxUsers
-				&& user->getCredentials() != Cred_Operator
-				&& user->getCredentials() != Cred_Admin) {
-				ADC::Command* c_sta = new ADC::Command(FOURCC('I','S','T','A'));
-				c_sta->addArgument("211");
-				c_sta->addArgument("This hub is full, please try again later...");
-				send(c_sta, user);
-				kick(user);
-
-			} else {
-				onWelcome(user);
-				
-				for (size_t n = 0; n < users.size(); n++) {
-					ADC::Command* u_inf = users[n]->command_inf;
-					if (users[n]->state == State_Normal && u_inf) {
-						send(u_inf, user, true);
-					}
-				}
-				
-				user->state = State_Normal;
-				send(user->command_inf);
-
-				/*
-				 * After the session's own INF has gone back to it, and not with the
-				 * rest of the welcome: that echo is what tells a client its login
-				 * finished, and a client is entitled to refuse a board descriptor
-				 * that arrives before it - a hub putting a board's title in front of
-				 * a session it has not yet accepted is exactly what such a client is
-				 * guarding against. The extension asks for these after the INF
-				 * exchange, and the exchange is not over until this has been sent.
-				 */
-				sendBoardDescriptors(user);
-
-				// FIXME: If hub is full and an operator/admin was accepted here. Kick some unsuspecting user!
-			}
-			
+			if (acl->accountFor(user->cid, user->nick)) askPassword(user);
+			else admit(user);
 		} else {
 			/*
 			 * Relayed whatever it changed. This asked for more than one field, so
@@ -431,6 +387,59 @@ void ADC::LocalHub::Hub::onINF(ADC::Command* cmd) {
 		if (user->state == State_Identify) {
 			kick(user);
 		}
+	}
+}
+
+void ADC::LocalHub::Hub::admit(ADC::LocalHub::User* user) {
+	ADC::Command* c_inf = new ADC::Command(FOURCC('I','I','N','F'));
+	c_inf->addArgument("NI", hubname);
+	c_inf->addArgument("DE", hubdesc);
+	c_inf->addArgument("HU", "1");
+	c_inf->addArgument("HI", "1");
+	c_inf->addArgument("BO", "1");
+	c_inf->addArgument("VE", PRODUCT " " VERSION);
+	send(c_inf, user, true);
+	
+	/*
+	 * A slot is held by a user that has logged in; this one has not yet,
+	 * so it is not among the ones being counted. The exemption is an
+	 * 'and': written as an 'or' it held for every user, operators
+	 * included, so a full hub turned them away too.
+	 */
+	if (countLoggedIn() >= maxUsers
+		&& user->getCredentials() != Cred_Operator
+		&& user->getCredentials() != Cred_Admin) {
+		ADC::Command* c_sta = new ADC::Command(FOURCC('I','S','T','A'));
+		c_sta->addArgument("211");
+		c_sta->addArgument("This hub is full, please try again later...");
+		send(c_sta, user);
+		kick(user);
+
+	} else {
+		onWelcome(user);
+		
+		for (size_t n = 0; n < users.size(); n++) {
+			ADC::Command* u_inf = users[n]->command_inf;
+			if (users[n]->state == State_Normal && u_inf) {
+				send(u_inf, user, true);
+			}
+		}
+		
+		user->state = State_Normal;
+		send(user->command_inf);
+
+		/*
+		 * After the session's own INF has gone back to it, and not with the
+		 * rest of the welcome: that echo is what tells a client its login
+		 * finished, and a client is entitled to refuse a board descriptor
+		 * that arrives before it - a hub putting a board's title in front of
+		 * a session it has not yet accepted is exactly what such a client is
+		 * guarding against. The extension asks for these after the INF
+		 * exchange, and the exchange is not over until this has been sent.
+		 */
+		sendBoardDescriptors(user);
+
+		// FIXME: If hub is full and an operator/admin was accepted here. Kick some unsuspecting user!
 	}
 }
 
@@ -554,25 +563,16 @@ void ADC::LocalHub::Hub::onDSC(ADC::Command* cmd) {
 	CHECK_SID_OK();
 	if (user->credentials == Cred_Operator || user->credentials == Cred_Admin) {
 		ADC::LocalHub::User* target = lookupUser(ADC::SID::fromString(cmd->getArgument(0)));
-		
-		// TODO: Parse different flags from the original kick mesage and pass them along to the kick statement.
-		if (target) {
-			bool must_send_quit = (target->state == State_Normal);
-			ADC::Command* sta = new ADC::Command(FOURCC('I','S','T','A'));
-			sta->addArgument("230");
-			sta->addArgument("Kicked");
-			// sta->addArgument("ID", ADC::SID::toString(user->sid));
-			send(sta, target);
-			kick(target);
-			if (must_send_quit) {
-				ADC::Command* quit = new ADC::Command(FOURCC('I','Q','U','I'));
-				quit->addArgument(ADC::SID::toString(target->sid));
-				quit->addArgument("ID", ADC::SID::toString(user->sid));
-				quit->addArgument("MS", "Kicked");
-				quit->addArgument("DI");
-				send(quit);
-			}
-		}
+		if (!target || target->state == State_WaitDisconnect) return;
+
+		/* From the second argument on, since a SID may happen to start with a field's name. */
+		const char* message = cmd->getArgument("MS", 2, 1);
+		const char* redirect = cmd->getArgument("RD", 2, 1);
+		const char* left = cmd->getArgument("TL", 2, 1);
+		const int64_t seconds = (left && *left) ? Samurai::Util::Convert::to_int64(left) : 0;
+
+		disconnect(target, (message && *message) ? message : "Kicked", redirect ? redirect : "",
+		           seconds, user);
 
 	} else {
 		QHUB("%s: '%s' tried to disconnect another user. Access denied.", ADC::SID::toString(user->sid), user->nick);
@@ -583,8 +583,215 @@ void ADC::LocalHub::Hub::onDSC(ADC::Command* cmd) {
 	}
 }
 
-void ADC::LocalHub::Hub::onPAS(ADC::Command*) {
-	// FIXME: Handle password authentication
+namespace {
+
+/* What a client answers a password request with: the tiger hash of the password and the salt's bytes. */
+std::string passwordAnswer(const std::string& password, const std::string& salt)
+{
+	std::vector<unsigned char> data(password.begin(), password.end());
+	std::vector<unsigned char> decoded((salt.size() * 5) >> 3);
+	Samurai::Util::base32_decode(salt, std::span<unsigned char>(decoded));
+	data.insert(data.end(), decoded.begin(), decoded.end());
+
+	Samurai::Crypto::Digest::Tiger tiger;
+	tiger.update(data.data(), data.size());
+
+	char answer[40] = { 0, };
+	tiger.digest().getFormattedString(Samurai::Crypto::Digest::HashValue::Format::Base32, answer, sizeof(answer));
+	return answer;
+}
+
+bool isCID(const std::string& text)
+{
+	return text.size() == 39 && text.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567") == std::string::npos;
+}
+
+ADC::LocalHub::Credentials credentialsOf(const ADC::LocalHub::ACL::Authorization& account)
+{
+	switch (account.getCredential())
+	{
+		case ADC::LocalHub::ACL::Authorization::Admin:    return ADC::LocalHub::Cred_Admin;
+		case ADC::LocalHub::ACL::Authorization::Operator: return ADC::LocalHub::Cred_Operator;
+		default:                                          return ADC::LocalHub::Cred_User;
+	}
+}
+
+/* The client type ADC has a hub announce: registered, operator, or owner with the two below it. */
+const char* clientType(ADC::LocalHub::Credentials credentials)
+{
+	switch (credentials)
+	{
+		case ADC::LocalHub::Cred_Admin:    return "28";
+		case ADC::LocalHub::Cred_Operator: return "4";
+		case ADC::LocalHub::Cred_User:     return "2";
+	}
+	return "2";
+}
+
+}
+
+void ADC::LocalHub::Hub::askPassword(ADC::LocalHub::User* user) {
+	unsigned char random[24];
+	if (!Samurai::Util::secureRandom(random, sizeof(random))) {
+		expire(user, "220", "The hub cannot ask for a password right now");
+		return;
+	}
+
+	char salt[Samurai::Util::base32_encode_size(sizeof(random))] = { 0, };
+	Samurai::Util::base32_encode(std::span<const unsigned char>(random, sizeof(random)), std::span<char>(salt, sizeof(salt)));
+	user->salt = salt;
+	user->state = State_Verify;
+
+	ADC::Command* gpa = new ADC::Command(FOURCC('I','G','P','A'));
+	gpa->addArgument(salt);
+	send(gpa, user);
+}
+
+void ADC::LocalHub::Hub::onPAS(ADC::Command* cmd) {
+	CHECK_SID_OK();
+	if (user->state != State_Verify) return;
+
+	const ACL::Authorization* account = acl->accountFor(user->cid, user->nick);
+	const char* given = cmd->getArgument(0);
+	const std::string expected = account ? passwordAnswer(account->password()->getData(), user->salt) : std::string();
+	user->salt.clear();
+
+	if (!account || !given || !Samurai::Util::constantTimeEquals(expected.c_str(), given)) {
+		QHUB("%s: wrong password for '%s'", ADC::SID::toString(user->sid), user->nick);
+		expire(user, "223", "Invalid password");
+		return;
+	}
+
+	user->credentials = credentialsOf(*account);
+	user->command_inf->addArgument("CT", clientType(user->credentials));
+	admit(user);
+}
+
+void ADC::LocalHub::Hub::disconnect(ADC::LocalHub::User* target, const std::string& message,
+                                    const std::string& redirect, int64_t banSeconds, ADC::LocalHub::User* by) {
+	if (!target || target->state == State_WaitDisconnect) return;
+
+	if (banSeconds != 0 && target->cid) {
+		const time_t until = banSeconds > 0 ? time(0) + static_cast<time_t>(banSeconds) : 0;
+		ACL::Authorization* entry = new ACL::Authorization(ACL::Authorization::Banned, Samurai::TimeStamp(until),
+			target->nick ? target->nick : target->cid, message.empty() ? "Banned" : message.c_str());
+		entry->addIdentity(new ACL::Identity(ACL::Identity::IdCID, target->cid));
+		acl->add(entry);
+		acl->save();
+	}
+
+	const bool visible = (target->state == State_Normal);
+	const std::string sid = ADC::SID::toString(target->sid);
+
+	/* Its own copy first, since a user being disconnected is told nothing broadcast. */
+	const auto quit = [&](bool own) {
+		ADC::Command* cmd = new ADC::Command(FOURCC('I','Q','U','I'));
+		cmd->addArgument(sid.c_str());
+		if (by) cmd->addArgument("ID", ADC::SID::toString(by->sid));
+		if (!message.empty()) cmd->addArgument("MS", message);
+		if (own && !redirect.empty()) cmd->addArgument("RD", redirect);
+		if (own && banSeconds != 0) cmd->addArgument("TL", std::to_string(banSeconds < 0 ? -1 : banSeconds));
+		if (!own) cmd->addArgument("DI", "1");
+		return cmd;
+	};
+
+	send(quit(true), target);
+	kick(target);
+	if (visible) send(quit(false));
+}
+
+ADC::LocalHub::User* ADC::LocalHub::Hub::findUser(const std::string& who) {
+	if (who.empty()) return 0;
+
+	for (User* user : users) {
+		if (user->state == State_WaitDisconnect) continue;
+		if (user->nick && Samurai::Util::iequals(std::string_view(user->nick), who)) return user;
+		if (user->cid && who == user->cid) return user;
+		if (who == ADC::SID::toString(user->sid)) return user;
+	}
+	return 0;
+}
+
+bool ADC::LocalHub::Hub::ban(const std::string& who, const std::string& reason, int64_t seconds) {
+	if (who.empty()) return false;
+
+	const time_t until = seconds > 0 ? time(0) + static_cast<time_t>(seconds) : 0;
+	ACL::Authorization* entry = new ACL::Authorization(ACL::Authorization::Banned, Samurai::TimeStamp(until),
+		who.c_str(), reason.empty() ? "Banned" : reason.c_str());
+
+	User* online = findUser(who);
+	if (online && online->cid) {
+		entry->addIdentity(new ACL::Identity(ACL::Identity::IdCID, online->cid));
+		if (online->nick) entry->addIdentity(new ACL::Identity(ACL::Identity::IdName, online->nick));
+	} else if (const Samurai::IO::Net::InetAddress address(who); address.isValid()) {
+		const bool six = address.getType() == Samurai::IO::Net::InetAddress::Version::IPv6;
+		entry->addIdentity(new ACL::Identity(six ? ACL::Identity::IdIPv6 : ACL::Identity::IdIPv4,
+		                                     address.toString().c_str()));
+	} else if (isCID(who)) {
+		entry->addIdentity(new ACL::Identity(ACL::Identity::IdCID, who.c_str()));
+	} else {
+		entry->addIdentity(new ACL::Identity(ACL::Identity::IdName, who.c_str()));
+	}
+
+	acl->add(entry);
+	acl->save();
+
+	const std::vector<User*> snapshot(users);
+	for (User* user : snapshot) {
+		if (user->state == State_WaitDisconnect) continue;
+		if (entry->identifies(user->cid, user->nick, peerAddress(user->socket.get())))
+			disconnect(user, reason.empty() ? "Banned" : reason, std::string(), 0);
+	}
+	return true;
+}
+
+bool ADC::LocalHub::Hub::unban(const std::string& who) {
+	bool lifted = false;
+
+	for (size_t n = acl->countUsers(); n-- > 0;) {
+		const ACL::Authorization* entry = acl->getUser(n);
+		if (entry->getCredential() != ACL::Authorization::Banned) continue;
+
+		const bool named = entry->getName() && Samurai::Util::iequals(std::string_view(entry->getName()), who);
+		if (!named && !entry->identifies(who.c_str(), who.c_str(), who)) continue;
+
+		acl->remove(entry);
+		lifted = true;
+	}
+
+	if (lifted) acl->save();
+	return lifted;
+}
+
+bool ADC::LocalHub::Hub::setAccount(const std::string& nick, const std::string& password, int credential) {
+	using ACL::Authorization;
+	const auto rights = static_cast<Authorization::Credential>(credential);
+	if (nick.empty() || password.empty()) return false;
+	if (rights != Authorization::User && rights != Authorization::Operator && rights != Authorization::Admin) return false;
+
+	removeAccount(nick);
+
+	Authorization* entry = new Authorization(rights, Samurai::TimeStamp(0), nick.c_str(), "Account");
+	entry->addIdentity(new ACL::Identity(ACL::Identity::IdName, nick.c_str()));
+	entry->addVerification(new ACL::Verification(ACL::Verification::VerifyPassword, password.c_str()));
+	acl->add(entry);
+	return acl->save();
+}
+
+bool ADC::LocalHub::Hub::removeAccount(const std::string& nick) {
+	bool removed = false;
+
+	for (size_t n = acl->countUsers(); n-- > 0;) {
+		const ACL::Authorization* entry = acl->getUser(n);
+		if (entry->getCredential() == ACL::Authorization::Banned || !entry->password()) continue;
+		if (!entry->identifies(0, nick.c_str(), std::string())) continue;
+
+		acl->remove(entry);
+		removed = true;
+	}
+
+	if (removed) acl->save();
+	return removed;
 }
 
 

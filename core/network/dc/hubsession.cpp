@@ -160,7 +160,8 @@ void DC::HubSession::sendChatMessage(const char* msg, bool richText)
 	send(cmd);
 }
 
-void DC::HubSession::sendAdminUserKick(const QuickDC::User* user)
+/* NMDC's $Kick says nothing and keeps nobody out, so the message and the ban have nowhere to go. */
+void DC::HubSession::sendAdminUserKick(const QuickDC::User* user, const char*, int64_t)
 {
 	if (!user) return;
 	const QuickDC::User* me = users->getUser(nickname.c_str());

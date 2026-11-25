@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_CONNECTION_H
 
 #include <memory>
+#include <string>
 #include <samurai/io/net/socketevent.h>
 
 namespace Samurai {
@@ -47,6 +48,9 @@ class Connection : public Samurai::IO::Net::SocketEventHandler
 		 * @return the name of the current protocol.
 		 */
 		const char* getProtocol() const { return protocol; }
+
+		/** Who is at the other end, as far as is known: a peer's CID or nickname, a hub's address. */
+		virtual std::string peerName() const { return std::string(); }
 		
 	protected:
 		virtual void EventHostLookup(const Samurai::IO::Net::Socket*) override { };

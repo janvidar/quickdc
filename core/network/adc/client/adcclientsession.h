@@ -124,6 +124,8 @@ class ClientSession :
 		/** Whether the handshake is done and the peer has named itself. */
 		bool isEstablished() const;
 
+		std::string peerName() const override { return remote_cid; }
+
 	protected:
 		void EventHostLookup(const Samurai::IO::Net::Socket*) override;
 		void EventHostFound(const Samurai::IO::Net::Socket*) override;

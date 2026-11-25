@@ -708,6 +708,17 @@ std::string QuickDC::Share::Manager::attachedPath(const std::string& tth) const 
 	return std::string();
 }
 
+std::optional<QuickDC::Share::Manager::Offer> QuickDC::Share::Manager::offered(const std::string& tth) const {
+	if (QuickDC::Share::File* file = findSharedByTTH(tth))
+		return Offer{file->getFileName(), file->getPublicName(), file->getSize(), false};
+
+	for (const std::unique_ptr<Attachment>& record : attachments)
+		if (record->file && !tth.empty() && record->tth == tth)
+			return Offer{record->path, record->file->getBaseFileName(), record->file->getSize(), true};
+
+	return std::nullopt;
+}
+
 bool QuickDC::Share::Manager::isAttachment(const QuickDC::Share::File* ptr) const {
 	for (const std::unique_ptr<Attachment>& record : attachments)
 		if (record->file == ptr)
