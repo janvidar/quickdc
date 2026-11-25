@@ -13,6 +13,8 @@
 #include "network/clientsession.h"
 #include "network/connection.h"
 #include <samurai/io/net/socketevent.h>
+#include <samurai/timer.h>
+#include <memory>
 #include "network/transfer.h"
 
 namespace Samurai {
@@ -23,6 +25,9 @@ namespace Samurai {
 		}
 	}
 }
+
+/* From connecting to both sides having settled a direction. */
+#define QUICKDC_NMDC_HANDSHAKE_SECONDS 30
 
 namespace QuickDC {
 class HubSession;
@@ -41,7 +46,8 @@ class HubSession;
 class ClientSession :
 		public QuickDC::ClientSession,
 		public QuickDC::Connection,
-		public QuickDC::PrivateTransferListener
+		public QuickDC::PrivateTransferListener,
+		public Samurai::TimerListener
 {
 	public:
 		enum Direction {
@@ -71,6 +77,9 @@ class ClientSession :
 		
 		void setHubSession(QuickDC::HubSession* hubsession) { this->hubsession = hubsession; }
 		void initialize();
+
+		/** Replaces the deadline initialize() set; for tests. */
+		void setHandshakeDeadline(std::chrono::milliseconds within);
 		
 		/**
 		 * Add support for a feature a server supports
@@ -127,6 +136,9 @@ class ClientSession :
 		void EventDataAvailable(const Samurai::IO::Net::Socket*) override;
 		void EventCanWrite(const Samurai::IO::Net::Socket*) override;
 		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg) override;
+
+		/** The handshake deadline, cancelled once onKey() settles the direction. */
+		void EventTimeout(Samurai::Timer* timer) override;
 
 	protected:
 		void send(DC::Command* cmd, bool more = false);
@@ -198,6 +210,8 @@ class ClientSession :
 		 * Empty until there is a job.
 		 */
 		std::string token;
+
+		std::unique_ptr<Samurai::Timer> handshakeDeadline;
 
 	private:
 		bool challenged;

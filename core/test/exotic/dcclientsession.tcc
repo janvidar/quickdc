@@ -218,7 +218,8 @@ class Endpoint :
 		void EventConnecting(const Samurai::IO::Net::Socket*) override { }
 		void EventConnected(const Samurai::IO::Net::Socket*) override { connected = true; }
 		void EventTimeout(const Samurai::IO::Net::Socket*) override { }
-		void EventDisconnected(const Samurai::IO::Net::Socket*) override { }
+		void EventDisconnected(const Samurai::IO::Net::Socket*) override { gone = true; }
+		bool gone = false;
 		/* Read as soon as it is offered rather than only when a case asks for it:
 		   the monitor is level triggered, so a socket left unread is reported on
 		   every pass and the loop spins until something takes the bytes off it. */
@@ -680,6 +681,33 @@ EXO_TEST(dcclientsession_the_peer_hanging_up_is_survived,
 	pump([] { return false; }, 300);
 
 	EXO_ASSERT(f.session != 0);
+	return 1;
+});
+
+/* A peer that connects and says nothing does not hold the connection for ever. */
+EXO_TEST(dcclientsession_a_silent_peer_is_dropped_at_the_handshake_deadline,
+{
+	Fixture f;
+	if (!f.ready) EXO_SKIP(NO_LOOPBACK);
+
+	f.session->setHandshakeDeadline(std::chrono::milliseconds(200));
+	EXO_ASSERT(pump([&] { f.peer.drain(); return f.peer.gone; }, 3000));
+	return 1;
+});
+
+/* And one that finishes the handshake in time is left alone after it. */
+EXO_TEST(dcclientsession_a_handshake_completed_in_time_cancels_the_deadline,
+{
+	Fixture f;
+	if (!f.ready) EXO_SKIP(NO_LOOPBACK);
+
+	f.session->setHandshakeDeadline(std::chrono::milliseconds(300));
+	EXO_ASSERT(f.handshake());
+	f.say("$Supports ADCGet TTHF");
+	f.say("$Direction Download 12345");
+	f.sayKey();
+	pump([] { return false; }, 600);
+	EXO_ASSERT(!f.peer.gone);
 	return 1;
 });
 

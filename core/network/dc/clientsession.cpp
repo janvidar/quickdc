@@ -91,6 +91,13 @@ void DC::ClientSession::initialize()
 	state            = StateNone;
 	remote_direction = DirNone;
 	my_direction     = DirNone;
+
+	setHandshakeDeadline(std::chrono::seconds(QUICKDC_NMDC_HANDSHAKE_SECONDS));
+}
+
+void DC::ClientSession::setHandshakeDeadline(std::chrono::milliseconds within)
+{
+	handshakeDeadline = std::make_unique<Samurai::Timer>(getCore().loop(), this, within, true);
 }
 
 void DC::ClientSession::releaseTransfer()
@@ -400,6 +407,8 @@ void DC::ClientSession::onKey(const char* key_)
 		 */
 		security->revoke(QuickDC::Clearance::NMDC, hubsession, getNick(), 0);
 	}
+
+	handshakeDeadline.reset();
 
 	if (weDownload)
 	{
@@ -1146,6 +1155,17 @@ void DC::ClientSession::EventTimeout(const Samurai::IO::Net::Socket*)
 	QDBG("Peer timeout");
 	abandonDownload();
 	manager->remove(this);
+}
+
+
+void DC::ClientSession::EventTimeout(Samurai::Timer*)
+{
+	QDBG("The peer did not complete the handshake in time; closing");
+	abandonDownload();
+
+	/* A socket that was up reports its own closing, which removes us. */
+	if (socket) socket->disconnect();
+	if (socket) manager->remove(this);
 }
 
 
