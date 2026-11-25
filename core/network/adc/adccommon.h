@@ -216,5 +216,40 @@ inline std::string adc_status_code(int severity, int code)
 /* How long a peer connection has from coming up to both sides having named themselves. */
 #define QUICKDC_PEER_HANDSHAKE_SECONDS  30
 
+/*
+ * How long a NAT traversal dial has to become a connection. Both ends dial at
+ * once, so a SYN either gets through within the first few retransmissions or the
+ * NATs in between will never let it: waiting out the kernel's two minutes only
+ * delays the failure.
+ */
+#define QUICKDC_TRAVERSAL_SECONDS       10
+
+namespace ADC {
+
+/*
+ * How a peer connection came to be, which decides who is the TLS client and who
+ * opens the C-C handshake with CSUP - the same end for both.
+ *
+ * A NATT connection is dialled by both ends at once and meets as a TCP
+ * simultaneous open, so each end's connect() succeeds and neither tells it which
+ * end it is. The rule is the one DC++ follows: the end that sent DNAT plays the
+ * dialled end, the end that answered with DRNT the dialling one. Both ends know
+ * which command they sent, so they agree without saying anything more.
+ */
+enum class PeerDial { Out, In, SentNat, SentRnt };
+
+struct PeerRole {
+	bool tlsServer;
+	bool speaksFirst;
+};
+
+constexpr PeerRole peerRole(PeerDial dial)
+{
+	const bool dialler = dial == PeerDial::Out || dial == PeerDial::SentRnt;
+	return PeerRole{!dialler, dialler};
+}
+
+}
+
 
 #endif // HAVE_QUICKDC_ADC_COMMON_H

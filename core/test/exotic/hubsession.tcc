@@ -232,6 +232,11 @@ class FakeHub :
 		std::string received;
 		bool disconnected = false;
 
+		/* The TLS end to play on an accepted connection, for a peer rather than a
+		   hub: a NATT dial is answered by whichever end the dialler is not. */
+		enum class Tls { None, Client, Server } tls = Tls::None;
+		bool tlsUp = false;
+
 		/* Whether the port could be bound at all, which is what tells a machine
 		   that cannot apart from a client that will not connect: the first is a
 		   case that is skipped, the second one that fails. */
@@ -294,6 +299,10 @@ class FakeHub :
 		{
 			peer = socket;
 			peer->setEventHandler(this);
+
+			if (tls == Tls::None) return;
+			peer->TLSsetAllowUntrusted(true);
+			if (peer->TLSInitialize(tls == Tls::Server)) peer->TLSsendHandshake();
 		}
 
 		void EventHostLookup(const Samurai::IO::Net::Socket*) override { }
@@ -307,7 +316,7 @@ class FakeHub :
 		   every pass and the loop spins until something takes the bytes off it. */
 		void EventDataAvailable(const Samurai::IO::Net::Socket*) override { drain(); }
 		void EventCanWrite(const Samurai::IO::Net::Socket*) override { }
-		void EventTLSConnected(const Samurai::IO::Net::Socket*) override { }
+		void EventTLSConnected(const Samurai::IO::Net::Socket*) override { tlsUp = true; }
 		void EventTLSDisconnected(const Samurai::IO::Net::Socket*) override { }
 		void EventError(const Samurai::IO::Net::Socket*,
 			Samurai::IO::Net::SocketError, const char*) override { }
@@ -5114,5 +5123,166 @@ EXO_TEST(hubsession_a_traversal_dials_from_the_hub_connections_own_port,
 
 	EXO_ASSERT(s.hub.peer != 0 && other.peer != 0);
 	EXO_ASSERT(other.peer->getPort() == s.hub.peer->getPort());
+	return 1;
+});
+
+
+/*
+ * A NATT connection is dialled by both ends at once and meets as a simultaneous
+ * open, so neither end's connect() says which end it is. The end that answered
+ * a DNAT with DRNT plays the dialler: TLS client, and the first to send CSUP. The
+ * end that sent the DNAT plays the dialled end. Here the peer's side of the
+ * crossing is a listener taking the role the session's end does not.
+ */
+namespace {
+
+struct Traversal
+{
+	Session s;
+	FakeHub other;
+	bool ok = false;
+
+	explicit Traversal(FakeHub::Tls peerTls)
+	{
+		other.tls = peerTls;
+		if (!s.hub.listening || !other.listen()) return;
+		if (!s.ready || !s.login()) return;
+		s.say("BINF BBBB NIpeer I4127.0.0.1 SS100 SL1 SUADC0,ADCS,NATT");
+		setRequireEncryption(false);
+		ok = true;
+	}
+
+	std::string port() const { return std::to_string(other.port()); }
+};
+
+}
+
+EXO_TEST(hubsession_traversal_answering_a_dnat_speaks_first,
+{
+	Traversal t(FakeHub::Tls::None);
+	if (!t.ok) EXO_SKIP("could not set up the loopback session");
+
+	t.s.say("DNAT BBBB AAAA ADC/1.0 " + t.port() + " job8");
+	EXO_ASSERT(t.other.accepted());
+
+	std::string line;
+	EXO_ASSERT(t.other.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "CSUP ") == 0);
+	return 1;
+});
+
+EXO_TEST(hubsession_traversal_after_our_dnat_waits_for_the_peer,
+{
+	Traversal t(FakeHub::Tls::None);
+	if (!t.ok) EXO_SKIP("could not set up the loopback session");
+
+	t.s.say("DRNT BBBB AAAA ADC/1.0 " + t.port() + " job9");
+	EXO_ASSERT(t.other.accepted());
+
+	pump([] { return false; }, 300);
+	t.other.drain();
+	EXO_ASSERT(t.other.received.empty());
+
+	t.other.send("CSUP ADBASE ADTIGR");
+	std::string line;
+	EXO_ASSERT(t.other.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "CSUP ") == 0);
+	EXO_ASSERT(t.other.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "CINF ") == 0);
+	return 1;
+});
+
+EXO_TEST(hubsession_traversal_answering_a_dnat_is_the_tls_client,
+{
+	Certificate certificate;
+	if (!certificate.usable) EXO_SKIP("could not generate a certificate");
+
+	Traversal t(FakeHub::Tls::Server);
+	if (!t.ok) EXO_SKIP("could not set up the loopback session");
+
+	t.s.say("DNAT BBBB AAAA ADCS/0.10 " + t.port() + " job10");
+	EXO_ASSERT(t.other.accepted());
+	EXO_ASSERT(pump([&] { return t.other.tlsUp; }));
+
+	std::string line;
+	EXO_ASSERT(t.other.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "CSUP ") == 0);
+	return 1;
+});
+
+EXO_TEST(hubsession_traversal_after_our_dnat_is_the_tls_server,
+{
+	Certificate certificate;
+	if (!certificate.usable) EXO_SKIP("could not generate a certificate");
+
+	Traversal t(FakeHub::Tls::Client);
+	if (!t.ok) EXO_SKIP("could not set up the loopback session");
+
+	t.s.say("DRNT BBBB AAAA ADCS/0.10 " + t.port() + " job11");
+	EXO_ASSERT(t.other.accepted());
+	EXO_ASSERT(pump([&] { return t.other.tlsUp; }));
+
+	t.other.send("CSUP ADBASE ADTIGR");
+	std::string line;
+	EXO_ASSERT(t.other.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "CSUP ") == 0);
+	return 1;
+});
+
+/*
+ * A refusal is the peer's host answering before its own dial exists - a NAT that
+ * still holds an earlier connection between the same two ports lets our SYN
+ * through - so the dial is repeated, and a crossing that never happens is said
+ * so on the hub within QUICKDC_TRAVERSAL_SECONDS rather than left to the queue.
+ */
+EXO_TEST(hubsession_a_refused_traversal_dials_again_then_gives_up,
+{
+	Traversal t(FakeHub::Tls::None);
+	if (!t.ok) EXO_SKIP("could not set up the loopback session");
+
+	const uint16_t nobody = sparePort();
+	if (!nobody) EXO_SKIP("no spare loopback port");
+
+	t.s.say("DNAT BBBB AAAA ADC/1.0 " + std::to_string(nobody) + " job12");
+
+	const auto reported = [&] {
+		for (const std::string& e : t.s.listener.errors)
+			if (e.find("NAT traversal with 'peer' failed") != std::string::npos) return true;
+		return false;
+	};
+
+	pump([] { return false; }, 1000);
+	EXO_ASSERT(!reported());
+
+	EXO_ASSERT(pump(reported, (QUICKDC_TRAVERSAL_SECONDS + 2) * 1000));
+	return 1;
+});
+
+EXO_TEST(hubsession_a_refused_traversal_meets_a_late_peer,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+	s.say("BINF BBBB NIpeer I4127.0.0.1 SS100 SL1 SUADC0,NATT");
+	setRequireEncryption(false);
+
+	const uint16_t later = sparePort();
+	if (!later) EXO_SKIP("no spare loopback port");
+
+	s.say("DNAT BBBB AAAA ADC/1.0 " + std::to_string(later) + " job13");
+	pump([] { return false; }, 500);
+
+	FakeHub other;
+	Samurai::IO::Net::InetSocketAddress at(later);
+	other.server = Samurai::IO::Net::ServerSocket::create(core->loop(), &other, at);
+	if (!other.server || other.server->getFD() == -1 || !other.server->listen())
+		EXO_SKIP("the spare port was taken");
+
+	EXO_ASSERT(other.accepted());
+	std::string line;
+	EXO_ASSERT(other.nextLine(line));
+	EXO_ASSERT(line.compare(0, 5, "CSUP ") == 0);
+	EXO_ASSERT(s.listener.errors.empty());
 	return 1;
 });

@@ -245,6 +245,9 @@ class HubSession :
 		/** The answer to our own DNAT: dial, and say nothing further. */
 		void onNatReply(const char* from, const char* protocol, uint16_t port,
 			const char* token);
+
+		/** A traversal dial to the user with this SID came to nothing. */
+		void onTraversalFailed(const char* sid, const char* why);
 		void onSearch(QuickDC::Share::SearchRequest* request);
 		void onSearchResult(QuickDC::Share::SearchResult* result) override;
 
@@ -302,15 +305,15 @@ class HubSession :
 		 */
 		const char* peerConnectProtocol(const QuickDC::User* user, bool listening) const;
 
+		/** Whether NAT traversal is possible on this connection at all. */
+		bool canTraverse() const;
+
 		/**
 		 * The local port of this hub connection, which is what a NATT exchange
 		 * names: the mapping our NAT made for it is the one a peer's connection
 		 * can arrive on. Zero when there is no connection to read it from, or when
 		 * it would mean nothing - a proxied socket's local port reaches the proxy.
 		 */
-		/** Whether NAT traversal is possible on this connection at all. */
-		bool canTraverse() const;
-
 		uint16_t privateEndpointPort() const;
 
 		/**
@@ -320,7 +323,7 @@ class HubSession :
 		 *         started and the caller has nothing to wait for.
 		 */
 		bool dialFromHubPort(const QuickDC::User* user, const char* proto,
-			uint16_t port, const char* token);
+			uint16_t port, const char* token, ADC::PeerDial dial);
 
 		/**
 		 * Everything an INF would say about this client, in the order it goes

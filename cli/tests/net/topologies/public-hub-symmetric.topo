@@ -1,0 +1,10 @@
+# A hub on the internet and two clients, each behind a router that maps every
+# connection to a random port (symmetric NAT).
+net wan
+net home1
+net home2
+node r1  router wan.11 home1.254 nat=symmetric
+node r2  router wan.12 home2.254 nat=symmetric
+node hub public wan.20
+node a   client home1.10
+node b   client home2.10

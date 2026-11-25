@@ -13,6 +13,7 @@
 #include <string>
 #include "network/clientsession.h"
 #include "network/connection.h"
+#include "network/adc/adccommon.h"
 #include <samurai/io/net/socketevent.h>
 #include <samurai/timer.h>
 #include "network/transfer.h"
@@ -143,6 +144,20 @@ class ClientSession :
 		 */
 		void setHandshakeDeadline(std::chrono::milliseconds within);
 
+		/**
+		 * Make this a NAT traversal dial to @p host:@p port from local port
+		 * @p from, which the peer is making at the same moment, playing the end
+		 * @p dial says (SentNat or SentRnt). Before the socket connects.
+		 *
+		 * A refusal is dialled again: it means our SYN reached the peer's host
+		 * before its own dial existed, through a NAT that still remembered an
+		 * earlier connection between the same two ports. A dial that has not
+		 * connected within QUICKDC_TRAVERSAL_SECONDS, or fails otherwise before
+		 * both sides have named themselves, is reported on the hub and fails the
+		 * request it was for.
+		 */
+		void traverse(ADC::PeerDial dial, const std::string& host, uint16_t port, uint16_t from);
+
 		std::string peerName() const override { return remote_cid; }
 
 	protected:
@@ -231,6 +246,18 @@ class ClientSession :
 
 	private:
 		bool isClient;
+
+		ADC::PeerDial dial;
+		bool connected;
+
+		std::string traversalHost;
+		uint16_t traversalPort;
+		uint16_t traversalFrom;
+		std::unique_ptr<Samurai::Timer> redial;
+		void redialTraversal();
+
+		/** The traversal failed before the handshake was through: say so once. */
+		void traversalFailed(const char* why);
 
 		/** The peer wants ADCS, so TLS has to come up before any ADC. */
 		bool secure;

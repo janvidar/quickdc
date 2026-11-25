@@ -2456,7 +2456,7 @@ uint16_t ADC::HubSession::privateEndpointPort() const
  * has never been told about.
  */
 bool ADC::HubSession::dialFromHubPort(const QuickDC::User* user, const char* proto,
-                                     uint16_t port, const char* token)
+                                     uint16_t port, const char* token, ADC::PeerDial dial)
 {
 	const uint16_t mine = privateEndpointPort();
 	if (!mine)
@@ -2476,8 +2476,10 @@ bool ADC::HubSession::dialFromHubPort(const QuickDC::User* user, const char* pro
 	const std::string_view protocol(proto ? proto : "");
 	const bool peerSecure = adc_is_tls_protocol(protocol);
 
+	/* KEYP is the TLS client's check of the server's certificate; as the
+	   server we are shown none to check. */
 	const char* peerKeyprint = 0;
-	if (peerSecure && user->hasKeyprint() && keyprintVerified)
+	if (peerSecure && user->hasKeyprint() && keyprintVerified && !ADC::peerRole(dial).tlsServer)
 		peerKeyprint = user->getKeyprint();
 
 	QDBG("Traversing to '%s' at %s:%d from our own %d", user->getNick(), ip,
@@ -2491,6 +2493,7 @@ bool ADC::HubSession::dialFromHubPort(const QuickDC::User* user, const char* pro
 
 	ADC::ClientSession* connection = new ADC::ClientSession(getCore(), csock, this, token,
 		user->getID(), peerSecure, peerKeyprint);
+	connection->traverse(dial, ip, port, mine);
 	csock->setEventHandler(connection);
 	csock->connect();
 	return true;
@@ -2541,7 +2544,7 @@ void ADC::HubSession::onNatConnect(const char* from, const char* proto,
 	if (token) cmd->addArgument(token);
 	send(cmd);
 
-	dialFromHubPort(user, proto, port, token);
+	dialFromHubPort(user, proto, port, token, ADC::PeerDial::SentRnt);
 }
 
 
@@ -2564,7 +2567,18 @@ void ADC::HubSession::onNatReply(const char* from, const char* proto,
 		return;
 	}
 
-	dialFromHubPort(user, proto, port, token);
+	dialFromHubPort(user, proto, port, token, ADC::PeerDial::SentNat);
+}
+
+
+void ADC::HubSession::onTraversalFailed(const char* sid, const char* why)
+{
+	const QuickDC::User* user = (users && sid && *sid) ? users->getUser(sid) : 0;
+	const std::string who = (user && user->getNick()) ? user->getNick() : "a peer";
+	const std::string msg = "NAT traversal with '" + who + "' failed: " + why;
+
+	QERR("%s", msg.c_str());
+	if (listener) listener->EventSystemError(msg.c_str());
 }
 
 

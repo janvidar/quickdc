@@ -132,11 +132,28 @@ if(QUICKDC_BUILD_TESTS)
     # Scenarios across rootless podman networks (tests/net/run.sh): a topology and
     # its script, skipped where podman or its networking is not there. ctest -L net.
     set(net ${scripts}/net)
-    foreach(name public-hub-two-lans)
-        string(REPLACE "-" "_" test ${name})
+    # test|topology|script|definitions (comma separated)
+    foreach(spec
+            "public_hub_two_lans|public-hub-two-lans|public-hub-two-lans|"
+            "passive_traversal|public-hub-two-lans|passive-traversal|ENCRYPT=0,SECURE=false,KEY=ssl/quickdc.key"
+            "passive_traversal_tls|public-hub-two-lans|passive-traversal|ENCRYPT=1,SECURE=true,KEY=spare"
+            "traversal_symmetric|public-hub-symmetric|traversal-fails|"
+            "traversal_one_symmetric|public-hub-one-symmetric|traversal-fails|")
+        string(REPLACE "|" ";" parts "${spec}")
+        list(GET parts 0 test)
+        list(GET parts 1 topology)
+        list(GET parts 2 script)
+        list(GET parts 3 definitions)
+        set(defines)
+        if(definitions)
+            string(REPLACE "," ";" definitions "${definitions}")
+            foreach(definition ${definitions})
+                list(APPEND defines -D ${definition})
+            endforeach()
+        endif()
         add_test(NAME cli_net_${test}
-            COMMAND ${net}/run.sh $<TARGET_FILE:qdc> ${net}/topologies/${name}.topo
-                    ${net}/${name}.qdc --quiet)
+            COMMAND ${net}/run.sh $<TARGET_FILE:qdc> ${net}/topologies/${topology}.topo
+                    ${net}/${script}.qdc --quiet ${defines})
         set_tests_properties(cli_net_${test} PROPERTIES
             LABELS net SKIP_RETURN_CODE 77 TIMEOUT 300)
     endforeach()

@@ -1,0 +1,42 @@
+# Two passive clients behind NATs that traversal cannot get through: a symmetric
+# NAT gives the dial a port of its own, so the port each side named in DNAT and
+# DRNT is not where its SYN comes from and the other side's NAT drops it. Both
+# sides say so on the hub within the traversal window instead of waiting out
+# the kernel's connect timeout, and nothing is downloaded.
+
+preset application Network Mode advanced
+preset application Network Bind6 ""
+preset application Network Port 4111
+@hub preset application Network Bind ${IP_hub}
+@hub preset application Network "Active mode" 1
+@hub preset application "Local hub" Enabled 1
+@hub preset application User Nickname hubby
+@a preset application Network Bind 0.0.0.0
+@a preset application Network Mode passive
+@a preset application User Nickname alice
+@b preset application Network Bind 0.0.0.0
+@b preset application Network Mode passive
+@b preset application User Nickname bob
+
+@b file share/b.bin 3M 23
+@b share share as files
+@b wait ShareStatus hashing=false files=1 timeout=30s
+
+@hub open adc://${IP_hub}:4111 as hub
+@hub connect hub
+@hub wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a open adc://${IP_hub}:4111 as hub
+@a connect hub
+@b open adc://${IP_hub}:4111 as hub
+@b connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+
+@a wait UserUpdated hub=hub user.nick=bob user.addressIPv4=${IP_r2}
+@a search b.bin as s1
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob
+@a download hub b.bin from bob
+@a wait HubSystemError hub=hub message="NAT traversal with 'bob' failed: no connection got through the NATs" timeout=20s
+@b wait HubSystemError hub=hub message="NAT traversal with 'alice' failed: no connection got through the NATs" timeout=20s
+@a expect-no DownloadCompleted
+@b expect-no TransferStarted

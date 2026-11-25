@@ -1,0 +1,60 @@
+# Two passive clients, each behind a home router that drops what it was not
+# asked for, transfer both ways through NAT traversal (DNAT/DRNT): a downloads
+# from b, then b from a.
+#
+# -D ENCRYPT=1 SECURE=true KEY=spare: ADCS, required. -D ENCRYPT=0 SECURE=false
+# KEY=ssl/quickdc.key: plain ADC - a key with no certificate beside it is left
+# alone rather than replaced, so neither core can present one or claim ADCS.
+
+preset application Network Mode advanced
+preset application Network Bind6 ""
+preset application Network Port 4111
+@hub preset application Network Bind ${IP_hub}
+@hub preset application Network "Active mode" 1
+@hub preset application "Local hub" Enabled 1
+@hub preset application User Nickname hubby
+@a preset application Network Bind 0.0.0.0
+@a preset application Network Mode passive
+@a preset application Network "Require encrypted transfers" ${ENCRYPT}
+@a preset application User Nickname alice
+@b preset application Network Bind 0.0.0.0
+@b preset application Network Mode passive
+@b preset application Network "Require encrypted transfers" ${ENCRYPT}
+@b preset application User Nickname bob
+
+@a file ${KEY} 1k
+@b file ${KEY} 1k
+@a file share/a.bin 3M 22
+@a share share as files
+@b file share/b.bin 3M 23
+@b share share as files
+@a wait ShareStatus hashing=false files=1 timeout=30s
+@b wait ShareStatus hashing=false files=1 timeout=30s
+
+@hub open adc://${IP_hub}:4111 as hub
+@hub connect hub
+@hub wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a open adc://${IP_hub}:4111 as hub
+@a connect hub
+@b open adc://${IP_hub}:4111 as hub
+@b connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+
+@a wait UserUpdated hub=hub user.nick=bob user.addressIPv4=${IP_r2}
+@a search b.bin as s1
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob
+@a download hub b.bin from bob
+@b wait TransferStarted transfer.upload=true transfer.secure=${SECURE} timeout=30s
+@a wait DownloadCompleted size=3145728 timeout=60s
+@a expect-file downloads/b.bin same-as ../b/share/b.bin
+
+@b wait UserUpdated hub=hub user.nick=alice user.addressIPv4=${IP_r1}
+@b search a.bin as s2
+@b wait SearchResult hub=hub search=$s2 hit.user.nick=alice
+@b download hub a.bin from alice
+@a wait TransferStarted transfer.upload=true transfer.secure=${SECURE} timeout=30s
+@b wait DownloadCompleted size=3145728 timeout=60s
+@b expect-file downloads/a.bin same-as ../a/share/a.bin
+@a expect-no HubSystemError hub=hub
+@b expect-no HubSystemError hub=hub

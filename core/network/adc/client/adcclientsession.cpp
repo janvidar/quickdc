@@ -34,6 +34,8 @@
 #include "config/settings.h"
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
+#include <samurai/io/net/socket.h>
+#include <samurai/util/random.h>
 #include <string>
 #include <string_view>
 
@@ -41,6 +43,10 @@ ADC::ClientSession::ClientSession(QuickDC::Core& core_, Samurai::IO::Net::URL* u
 	QuickDC::Connection(core_, url, "ADC client"),
 	hubsession(hubsession_),
 	isClient(true),
+	dial(ADC::PeerDial::Out),
+	connected(false),
+	traversalPort(0),
+	traversalFrom(0),
 	secure(false)
 {
 	initialize();
@@ -52,6 +58,10 @@ ADC::ClientSession::ClientSession(QuickDC::Core& core_, std::shared_ptr<Samurai:
 	QuickDC::Connection(core_, std::move(sock), secure_ ? "ADCS client" : "ADC client"),
 	hubsession(hubsession_),
 	isClient(false),
+	dial(ADC::PeerDial::Out),
+	connected(false),
+	traversalPort(0),
+	traversalFrom(0),
 	secure(secure_)
 {
 	if (token_) token = token_;
@@ -69,6 +79,7 @@ ADC::ClientSession::ClientSession(QuickDC::Core& core_, std::shared_ptr<Samurai:
 ADC::ClientSession::~ClientSession()
 {
 	handshakeDeadline.reset();
+	redial.reset();
 	releaseTransfer();
 	discardLeafPart();
 	delete proxy;
@@ -271,12 +282,67 @@ void ADC::ClientSession::setHandshakeDeadline(std::chrono::milliseconds within)
 	handshakeDeadline = std::make_unique<Samurai::Timer>(getCore().loop(), this, within, true);
 }
 
-void ADC::ClientSession::EventTimeout(Samurai::Timer*)
+void ADC::ClientSession::EventTimeout(Samurai::Timer* timer)
 {
+	if (timer == redial.get())
+	{
+		redialTraversal();
+		return;
+	}
+
 	if (isEstablished()) return;
+
+	/* Between two refused dials there is no socket up to report its closing. */
+	const bool dialling = dial != ADC::PeerDial::Out && !connected;
+	traversalFailed(connected ? "the peer did not complete the handshake in time"
+	                          : "no connection got through the NATs");
 
 	QDBG("The peer did not say who it is in time; closing");
 	socket->disconnect();
+	if (dialling) manager->remove(this);
+}
+
+void ADC::ClientSession::traverse(ADC::PeerDial dial_, const std::string& host,
+                                  uint16_t port, uint16_t from)
+{
+	dial = dial_;
+	traversalHost = host;
+	traversalPort = port;
+	traversalFrom = from;
+	setHandshakeDeadline(std::chrono::seconds(QUICKDC_TRAVERSAL_SECONDS));
+}
+
+void ADC::ClientSession::redialTraversal()
+{
+	auto next = Samurai::IO::Net::Socket::create(getCore().loop(), nullptr,
+		traversalHost.c_str(), traversalPort);
+	if (!next)
+	{
+		traversalFailed("the dial could not be repeated");
+		manager->remove(this);
+		return;
+	}
+
+	next->setReuseLocalPort(traversalFrom);
+	delete proxy;
+	socket = std::move(next);
+	proxy = new ADC::CommandProxy(socket, this);
+	socket->setEventHandler(this);
+	socket->connect();
+}
+
+void ADC::ClientSession::traversalFailed(const char* why)
+{
+	if (dial == ADC::PeerDial::Out || isEstablished()) return;
+	dial = ADC::PeerDial::Out;
+
+	if (auto* hub = dynamic_cast<ADC::HubSession*>(hubsession))
+		hub->onTraversalFailed(remote_sid.c_str(), why);
+
+	/* Nothing will arrive for this request now; the queue may try the source again. */
+	QuickDC::QueueManager* queue = getCore().queue;
+	if (queue && !token.empty() && queue->lookupRequest(token.c_str()))
+		queue->onRequestFailed(token.c_str());
 }
 
 void ADC::ClientSession::requestNextChunk()
@@ -1031,13 +1097,15 @@ void ADC::ClientSession::EventConnecting(const Samurai::IO::Net::Socket* sock)
 
 void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
 {
-	isClient = true;
+	const ADC::PeerRole role = ADC::peerRole(dial);
+	isClient = role.speaksFirst;
+	connected = true;
 	manager->add(this);
 	setHandshakeDeadline(std::chrono::seconds(QUICKDC_PEER_HANDSHAKE_SECONDS));
 
 	if (!secure)
 	{
-		onStartClient();
+		if (isClient) onStartClient(); else onStartServer();
 		return;
 	}
 
@@ -1051,9 +1119,10 @@ void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
 	/* A peer's certificate is vouched for by the keyprint the hub published for
 	   them, checked in EventTLSConnected(), and by nothing a CA ever signed. */
 	socket->TLSsetAllowUntrusted(true);
-	if (!socket->TLSInitialize(false))
+	if (!socket->TLSInitialize(role.tlsServer))
 	{
 		QERR("Unable to initialize TLS for the peer connection");
+		traversalFailed("TLS could not be set up");
 		abandonDownload();
 		manager->remove(this);
 		return;
@@ -1086,7 +1155,7 @@ void ADC::ClientSession::EventTLSConnected(const Samurai::IO::Net::Socket*)
 		QDBG("The peer's certificate matches the keyprint the hub published");
 	}
 
-	if (secure) onStartClient();
+	if (secure && isClient) onStartClient();
 }
 
 void ADC::ClientSession::EventTLSDisconnected(const Samurai::IO::Net::Socket*)
@@ -1122,6 +1191,7 @@ void ADC::ClientSession::abandonDownload()
 void ADC::ClientSession::EventTimeout(const Samurai::IO::Net::Socket*)
 {
 	QDBG("Peer timeout");
+	traversalFailed("the connection timed out");
 	abandonDownload();
 	manager->remove(this);
 }
@@ -1129,6 +1199,7 @@ void ADC::ClientSession::EventTimeout(const Samurai::IO::Net::Socket*)
 void ADC::ClientSession::EventDisconnected(const Samurai::IO::Net::Socket*)
 {
 	QDBG("Disconnected from peer");
+	traversalFailed("the connection closed before the handshake");
 	abandonDownload();
 	manager->remove(this);
 }
@@ -1162,6 +1233,18 @@ void ADC::ClientSession::EventCanWrite(const Samurai::IO::Net::Socket*)
 
 void ADC::ClientSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError error, const char* msg)
 {
+	if (dial != ADC::PeerDial::Out && !connected
+		&& error == Samurai::IO::Net::SocketError::ConnectionRefused)
+	{
+		/* Spread, so two ends refusing each other do not stay in step. */
+		uint8_t jitter = 0;
+		if (!Samurai::Util::secureRandom(&jitter, 1)) jitter = 0;
+		QDBG("Traversal dial refused; dialling again");
+		redial = std::make_unique<Samurai::Timer>(getCore().loop(), this,
+			std::chrono::milliseconds(50 + jitter), true);
+		return;
+	}
+
 	/*
 	 * What the peer is told is a status code and a phrase of ours. 'msg' is the C
 	 * library's text for our own errno, and it went out in a DSTA relayed through
@@ -1185,11 +1268,13 @@ void ADC::ClientSession::EventError(const Samurai::IO::Net::Socket*, Samurai::IO
 	 * says the download it just completed failed; and the peer is the one party that
 	 * already knows what became of its own end of the connection.
 	 */
-	if (hubsession && !isEstablished())
+	/* Not for a traversal: each end's dial fails on its own and each says so. */
+	if (hubsession && !isEstablished() && dial == ADC::PeerDial::Out)
 		hubsession->sendPeerError(remote_sid.empty() ? 0 : remote_sid.c_str(),
 			adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_CONNECT_ERROR).c_str(),
 			ADC_STR_CONNECTION_FAILED, token.empty() ? 0 : token.c_str(), ADC_COMPLIANCE);
 
+	traversalFailed(msg && *msg ? msg : "socket error");
 	abandonDownload();
 	manager->remove(this);
 }

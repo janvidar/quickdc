@@ -50,6 +50,7 @@ exotic_add_tests(quickdc_autotest
     DISCOVER
     SOURCES
         adc_bbs.tcc
+        adc_natt.tcc
         adc_parser.tcc
         filelist.tcc
         filesource.tcc
