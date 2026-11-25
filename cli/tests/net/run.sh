@@ -8,12 +8,18 @@
 #
 #   net NAME                          a network; "wan" is the internet, any
 #                                     other is a lan behind a router
-#   node NAME ROLE ADDR... [nat=MODE] a container; ADDR is NET.HOST, e.g. wan.20
+#   node NAME ROLE ADDR... [nat=MODE] [upnp=on] [also=CORE,...]
+#                                     a container; ADDR is NET.HOST, e.g. wan.20
 #
 # ROLE is router (first ADDR on the wan, second on its lan; nat=home, symmetric
-# or none, see router/router.sh), client (on a lan, default route through that
-# lan's router) or public (on the wan). Every client and public node runs a qdc
+# or none, see router/router.sh; upnp=on runs miniupnpd on its lan), client (on
+# a lan, default route through that lan's router), public (on the wan) or drop
+# (on the wan: a reachability server, drop/dropserver.py, known to every
+# container as drop.test, ipv4.drop.test and ipv6.drop.test and trusted by every
+# qdc; the script gets its name as ${DROP}). Every client and public node runs a qdc
 # agent with one core named after the node; the script addresses it as @NAME.
+# also=x,y adds cores x and y to that agent, so they share its host; they start
+# before the node's own core, so what they bind it finds taken.
 # Each node's first address (a router's on the wan) is ${IP_NAME}. Agents serve
 # on Unix sockets in a directory mounted into every container, so the
 # controller runs here and no control traffic crosses the test networks. Agents
@@ -96,10 +102,12 @@ router_image=$(image router) || exit $?
 
 # --- topology
 
+defines=()
+
 nets=()
 declare -A net_subnet
 nodes=()
-declare -A node_role node_addrs node_nat
+declare -A node_role node_addrs node_nat node_upnp node_also
 
 while read -r word rest
 do
@@ -111,11 +119,15 @@ do
 		name="$1" role="$2"
 		shift 2
 		node_nat[$name]=home
+		node_upnp[$name]=off
+		node_also[$name]=
 		node_addrs[$name]=
 		for arg
 		do
 			case "$arg" in
 			nat=*) node_nat[$name]=${arg#nat=} ;;
+			upnp=*) node_upnp[$name]=${arg#upnp=} ;;
+			also=*) node_also[$name]=${arg#also=} ;;
 			*) node_addrs[$name]="${node_addrs[$name]} $arg" ;;
 			esac
 		done
@@ -176,12 +188,25 @@ network_args() {
 	done
 }
 
-common=(--label "quickdc-net.run=$run" --hostname)
+hosts=()
+agent_env=()
+for name in "${nodes[@]}"
+do
+	[ "${node_role[$name]}" = drop ] || continue
+	set -- ${node_addrs[$name]}
+	for host in drop.test ipv4.drop.test ipv6.drop.test
+	do
+		hosts+=(--add-host "$host:$(ip_of "$1")")
+	done
+	agent_env=(-e SSL_CERT_FILE=/run/qdc/drop/ca.pem)
+	defines+=(-D DROP=drop.test)
+done
+
+common=(--label "quickdc-net.run=$run" "${hosts[@]}" --hostname)
 
 # --- routers first, so a client's route is there before its qdc dials out
 
 declare -A gateway
-defines=()
 for name in "${nodes[@]}"
 do
 	[ "${node_role[$name]}" = router ] || continue
@@ -194,7 +219,7 @@ do
 		--cap-add NET_ADMIN --sysctl net.ipv4.ip_forward=1 \
 		-v "$here/router:/opt/router:ro" -v "$rundir:/run/qdc" \
 		"$router_image" /opt/router/router.sh "$wan_ip" "$lan_ip" "${node_nat[$name]}" \
-		"/run/qdc/log/$name.ready" >/dev/null 2>"$rundir/log/$name.run" \
+		"/run/qdc/log/$name.ready" "${node_upnp[$name]}" >/dev/null 2>"$rundir/log/$name.run" \
 		|| skip "cannot start router $name: $(cat "$rundir/log/$name.run")"
 done
 
@@ -215,7 +240,24 @@ wait_for() {
 
 for name in "${nodes[@]}"
 do
-	[ "${node_role[$name]}" = router ] && wait_for -f "$rundir/log/$name.ready" "$name"
+	[ "${node_role[$name]}" = drop ] || continue
+	set -- ${node_addrs[$name]}
+	defines+=(-D "IP_$name=$(ip_of "$1")")
+	[ -x "${DROPD:-}" ] || skip "no dropd (set DROPD to DROP's server binary)"
+	mkdir -p "$rundir/drop"
+	podman run -d --name "$run-$name" "${common[@]}" "$name" $(network_args "$name") \
+		-v "$here/drop:/opt/drop:ro" -v "$(readlink -f "$DROPD"):/opt/dropd:ro" -v "$rundir:/run/qdc" \
+		"$router_image" sh -c "exec /opt/drop/drop.sh /opt/dropd $(ip_of "$1") /run/qdc/drop \
+			>/run/qdc/log/$name.err 2>&1" >/dev/null 2>"$rundir/log/$name.run" \
+		|| skip "cannot start $name: $(cat "$rundir/log/$name.run")"
+done
+
+for name in "${nodes[@]}"
+do
+	case "${node_role[$name]}" in
+	router) wait_for -f "$rundir/log/$name.ready" "$name" ;;
+	drop) wait_for -f "$rundir/drop/ready" "$name" ;;
+	esac
 done
 
 # --- agents
@@ -225,7 +267,7 @@ qdc_dir=$(dirname "$qdc")
 for name in "${nodes[@]}"
 do
 	role=${node_role[$name]}
-	[ "$role" = router ] && continue
+	[ "$role" = router ] || [ "$role" = drop ] && continue
 	set -- ${node_addrs[$name]}
 	defines+=(-D "IP_$name=$(ip_of "$1")")
 	route=
@@ -237,10 +279,17 @@ do
 		route="ip route replace default via $gw &&"
 		caps=(--cap-add NET_ADMIN)
 	fi
-	podman run -d --name "$run-$name" "${common[@]}" "$name" $(network_args "$name") "${caps[@]}" \
+	cores=
+	for also in ${node_also[$name]//,/ }
+	do
+		cores="$cores --core $also"
+		connect+=(--connect "$also=$rundir/sock/$name")
+	done
+	cores="$cores --core $name"
+	podman run -d --name "$run-$name" "${common[@]}" "$name" $(network_args "$name") "${caps[@]}" "${agent_env[@]}" \
 		-v "$qdc_dir:/opt/qdc:ro" -v "$rundir:/run/qdc" \
 		"$host_image" sh -c "$route exec /opt/qdc/$(basename "$qdc") --serve /run/qdc/sock/$name \
-			--core $name --home /run/qdc/home >/run/qdc/log/$name.out 2>/run/qdc/log/$name.err" \
+			$cores --home /run/qdc/home >/run/qdc/log/$name.out 2>/run/qdc/log/$name.err" \
 		>/dev/null 2>"$rundir/log/$name.run" \
 		|| skip "cannot start $name: $(cat "$rundir/log/$name.run")"
 	connect+=(--connect "$name=$rundir/sock/$name")
@@ -248,7 +297,9 @@ done
 
 for name in "${nodes[@]}"
 do
-	[ "${node_role[$name]}" = router ] || wait_for -S "$rundir/sock/$name" "$name"
+	case "${node_role[$name]}" in
+	client|public) wait_for -S "$rundir/sock/$name" "$name" ;;
+	esac
 done
 
 # --- the script
@@ -264,9 +315,21 @@ then
 	cat "$rundir/log/controller.err" >&2
 	for name in "${nodes[@]}"
 	do
-		[ "${node_role[$name]}" = router ] && continue
-		echo "--- agent $name" >&2
-		tail -n 50 "$rundir/log/$name.err" >&2
+		case "${node_role[$name]}" in
+		router)
+			[ -f "$rundir/log/$name.upnp" ] || continue
+			echo "--- miniupnpd on $name" >&2
+			tail -n 30 "$rundir/log/$name.upnp" >&2
+			;;
+		drop)
+			echo "--- reachability server $name" >&2
+			tail -n 30 "$rundir/log/$name.err" >&2
+			;;
+		*)
+			echo "--- agent $name" >&2
+			tail -n 50 "$rundir/log/$name.err" >&2
+			;;
+		esac
 	done
 	exit 1
 fi

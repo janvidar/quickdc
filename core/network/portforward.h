@@ -171,6 +171,12 @@ class PortForward final
 		std::unique_ptr<Samurai::IO::Net::UPnP::Gateway> gateway;
 		std::unique_ptr<Samurai::IO::Net::UPnP::PortMapper> mapper;
 
+		/* What stop() let go of, kept until its deletions are answered: a start()
+		   right after would otherwise destroy them in flight and leave the old
+		   mapping on the gateway. Its events are not this forward's. */
+		std::unique_ptr<Samurai::IO::Net::UPnP::Gateway> retired_gateway;
+		std::unique_ptr<Samurai::IO::Net::UPnP::PortMapper> retired_mapper;
+
 		uint16_t internal_port = 0;
 		uint16_t external_port = 0;
 		bool tcp_done = false;

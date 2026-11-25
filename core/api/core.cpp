@@ -581,8 +581,11 @@ void AutomationState::applyMapping()
 	const NetworkPlan plan = planFrom(*core->config);
 	GatewayOf gateway(*core->portforward);
 
+	/* Forwarding a port this core could not bind would hand it to whoever holds it. */
+	const uint16_t bound = core->server && core->server->listening(false) ? core->server->boundPort() : 0;
+
 	/* What is measured before the gateway answers is about the network without it. */
-	measurement_owed = mapping.apply(gateway, plan.keys.useUpnp, plan.endpoint.port);
+	measurement_owed = mapping.apply(gateway, plan.keys.useUpnp && bound, bound);
 }
 
 void AutomationState::considerMapping(const QuickDC::DropVerdict&)
@@ -591,7 +594,8 @@ void AutomationState::considerMapping(const QuickDC::DropVerdict&)
 
 	const NetworkPlan plan = planFrom(*core->config);
 	GatewayOf gateway(*core->portforward);
-	measurement_owed = mapping.passive(gateway, plan.keys.useUpnp, plan.endpoint.port);
+	const uint16_t bound = core->server && core->server->listening(false) ? core->server->boundPort() : 0;
+	measurement_owed = mapping.passive(gateway, plan.keys.useUpnp && bound, bound);
 }
 
 /*
@@ -624,6 +628,10 @@ void QuickDC::Core::Automation::reconcile()
 	{
 		if (core->server && !(plan.endpoint == core->server->endpoint()))
 			core->server->listen(plan.endpoint);
+
+		/* A run in flight is testing the port that was; its verdict would be filed for this one. */
+		if (plan.endpoint != applied.endpoint && core->dropcheck && core->dropcheck->isBusy())
+			core->dropcheck->cancel();
 
 		mapping.configurationChanged();
 		applyMapping();

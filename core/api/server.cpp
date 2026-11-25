@@ -82,6 +82,16 @@ void QuickDC::DCServer::listen(const Endpoint& endpoint)
 	}
 
 	/*
+	 * A datagram socket binds a port another program holds (SO_REUSEADDR) and then
+	 * takes its datagrams, so where TCP found the port taken UDP lets it be.
+	 */
+	if (!socket && dgram)
+	{
+		QDBG("Port %d is taken; not sharing it for UDP either", static_cast<int>(port));
+		dgram.reset();
+	}
+
+	/*
 	 * The same port on the other family, in sockets of its own: a wildcard bound
 	 * for IPv6 answers for IPv6 alone - see SocketBase::setV6Only() - so the pair
 	 * above is untouched by this one whether or not it comes up.

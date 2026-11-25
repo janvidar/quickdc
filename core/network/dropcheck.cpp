@@ -8,6 +8,8 @@
 #include "api/core.h"
 #include "config/preferences.h"
 #include "network/reachability.h"
+#include "api/server.h"
+#include "network/portforward.h"
 #include "config/settings.h"
 
 #include <drop/responder.h>
@@ -458,7 +460,14 @@ bool QuickDC::startDropCheck(Core& core_, bool ipv6)
 	const std::string host = dropServerFor(core, ipv6);
 	if (host.empty()) return false;
 
-	const uint16_t port = core->peerPort();
+	/*
+	 * Only a port this core holds - the configured one may be some other program's -
+	 * and on IPv4 the one the gateway granted for it, which is what peers are told
+	 * and may be a different number: the bound one there is whoever else's mapping.
+	 */
+	uint16_t port = core->server && core->server->listening(ipv6) ? core->server->boundPort() : 0;
+	if (port && !ipv6 && core->portforward && core->portforward->isForwarded())
+		port = core->portforward->getExternalPort();
 
 	core->dropcheck->start(host,
 	                       ipv6 ? Drop::Family::IPv6 : Drop::Family::IPv4,

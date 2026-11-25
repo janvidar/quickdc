@@ -93,6 +93,8 @@ QuickDC::PortForward::~PortForward()
 	   depend on, since the mapper borrows the gateway. */
 	mapper.reset();
 	gateway.reset();
+	retired_mapper.reset();
+	retired_gateway.reset();
 }
 
 
@@ -147,13 +149,13 @@ void QuickDC::PortForward::start(uint16_t port, const Samurai::IO::Net::URL& loc
 
 void QuickDC::PortForward::stop()
 {
-	if (mapper)
-	{
-		/* Releases what was added and stops the renewals; the answers are of no
-		   interest, since nothing is being reported after this. */
-		reported = true;
-		mapper->shutdown();
-	}
+	/* Releases what was added and stops the renewals; the answers are of no
+	   interest, since nothing is being reported after this. */
+	reported = true;
+	if (mapper) mapper->shutdown();
+
+	retired_mapper = std::move(mapper);
+	retired_gateway = std::move(gateway);
 
 	busy = false;
 	forwarded = false;
@@ -190,8 +192,10 @@ void QuickDC::PortForward::internal_ready()
 }
 
 
-void QuickDC::PortForward::EventGatewayFound(Gateway*)
+void QuickDC::PortForward::EventGatewayFound(Gateway* found)
 {
+	if (found != gateway.get()) return;
+
 	QDBG("Found the internet gateway '%s', IGD version %d",
 		gateway->getFriendlyName().c_str(), gateway->getDeviceVersion());
 
@@ -215,8 +219,10 @@ void QuickDC::PortForward::EventGatewayFound(Gateway*)
 }
 
 
-void QuickDC::PortForward::EventGatewayError(Gateway*, Error error)
+void QuickDC::PortForward::EventGatewayError(Gateway* from, Error error)
 {
+	if (from != gateway.get()) return;
+
 	internal_fail(describeError(error));
 }
 
@@ -232,8 +238,10 @@ void QuickDC::PortForward::internal_mapUdp()
 }
 
 
-void QuickDC::PortForward::EventMappingAdded(PortMapper*, const Mapping& mapping)
+void QuickDC::PortForward::EventMappingAdded(PortMapper* from, const Mapping& mapping)
 {
+	if (from != mapper.get()) return;
+
 	if (mapping.protocol == Protocol::TCP)
 	{
 		external_port = mapping.externalPort;
@@ -258,9 +266,11 @@ void QuickDC::PortForward::EventMappingAdded(PortMapper*, const Mapping& mapping
 }
 
 
-void QuickDC::PortForward::EventExternalAddress(PortMapper*,
+void QuickDC::PortForward::EventExternalAddress(PortMapper* from,
                                                 const Samurai::IO::Net::InetAddress& address)
 {
+	if (from != mapper.get()) return;
+
 	external_address = address;
 
 	/* Both flags are true by the time the address was even asked for; tested
@@ -286,9 +296,11 @@ void QuickDC::PortForward::EventMappingRemoved(PortMapper*, const MappingKey& ke
 }
 
 
-void QuickDC::PortForward::EventMapperError(PortMapper*, Error error,
+void QuickDC::PortForward::EventMapperError(PortMapper* from, Error error,
                                             DeviceError device, uint16_t code)
 {
+	if (from != mapper.get()) return;
+
 	if (error != Error::Device)
 	{
 		internal_fail(describeError(error));

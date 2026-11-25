@@ -1,0 +1,8 @@
+# Behind one UPnP router: a, sharing its host with x (another client already on
+# 1411, as a QuickDC the user is running would be), and c on a host of its own.
+net wan
+net home1
+node r1   router wan.11 home1.254 nat=home upnp=on
+node drop drop wan.40
+node a    client home1.10 also=x
+node c    client home1.11

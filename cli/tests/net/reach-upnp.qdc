@@ -1,0 +1,65 @@
+# Reachability measured by a server on the wan: w, on the wan, is open; b, behind
+# a router without UPnP, is filtered; a asks its router to map
+# the peer port, is measured open through the mapping, and b downloads from it
+# by dialling it (through r2 traversal cannot work, so only a mapping lets b in).
+# b's port changes while a check of it is out. Back in plain advanced mode the
+# mapping goes, and so does a's reachability.
+
+preset application Network Mode advanced
+preset application Network Bind6 ""
+preset application Network Port 4111
+preset application Network "Reachability server" ${DROP}
+@hub preset application Network Bind ${IP_hub}
+@hub preset application "Local hub" Enabled 1
+@hub preset application User Nickname hubby
+@w preset application Network Bind ${IP_w}
+@w preset application Network "Active mode" 1
+@w preset application User Nickname wally
+@a preset application Network Bind 0.0.0.0
+@a preset application Network "Active mode" 1
+@a preset application Network UseUPnP 1
+@a preset application User Nickname alice
+@b preset application Network Bind 0.0.0.0
+@b preset application Network "Active mode" 1
+@b preset application User Nickname bob
+
+@a file share/a.bin 1M 22
+@a share share as files
+@a wait ShareStatus hashing=false files=1 timeout=30s
+
+@w wait ReachabilityMeasured verdict.tcp=open verdict.udp=open verdict.mode=Active verdict.publicAddress=${IP_w} timeout=30s
+@b wait ReachabilityMeasured verdict.tcp=filtered verdict.udp=no_response verdict.mode=Passive verdict.publicAddress=${IP_r2} timeout=30s
+
+# A port change while a check is out (a filtered probe takes the server 3 s): the
+# verdict that comes back is for the new port, not the one the run set out with.
+@b measure
+@b wait ReachabilityCheckStarted
+@b set application Network Port 4222
+@b wait ReachabilityMeasured verdict.tcp=filtered verdict.port=4222 timeout=30s
+@a wait ReachabilityMeasured verdict.tcp=open verdict.udp=open verdict.mode=Active verdict.publicAddress=${IP_r1} verdict.port=4111 timeout=30s
+
+# Advanced mode advertises what it is told to, measured or not; b says passive.
+@b mode passive
+@b wait ConnectionMode activeMode=false
+
+@hub open adc://${IP_hub}:4111 as hub
+@hub connect hub
+@hub wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a open adc://${IP_hub}:4111 as hub
+@a connect hub
+@b open adc://${IP_hub}:4111 as hub
+@b connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+
+@b wait UserUpdated hub=hub user.nick=alice user.addressIPv4=${IP_r1}
+@b search a.bin as s1
+@b wait SearchResult hub=hub search=$s1 hit.user.nick=alice
+@b download hub a.bin from alice
+@b wait DownloadCompleted size=1048576 timeout=30s
+@b expect-file downloads/a.bin same-as ../a/share/a.bin
+
+@a mode advanced
+@a wait ConnectionMode useUpnp=false
+@a measure
+@a wait ReachabilityMeasured verdict.tcp=filtered verdict.udp=no_response verdict.mode=Passive timeout=30s

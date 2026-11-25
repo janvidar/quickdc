@@ -314,6 +314,33 @@ EXO_TEST(portforward_stop_releases_both_mappings_and_reports_nothing,
 	return 1;
 });
 
+/* A port change is a stop and a start at once; the start must not cancel the release. */
+EXO_TEST(portforward_a_start_right_after_stop_still_releases_the_old_mappings,
+{
+		FakeGateway gateway(*loop, IGD1);
+		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
+		agreeable(gateway);
+
+		Recorder events;
+		QuickDC::PortForward forward(*loop, &events);
+		forward.start(1411, gateway.location());
+		pump([&] { return events.done(); });
+		EXO_ASSERT(events.forwarded == 1);
+
+		forward.stop();
+		forward.start(1412, gateway.location());
+		pump([&] { return events.forwarded == 2 && gateway.count("DeletePortMapping") >= 2; });
+
+		EXO_ASSERT(gateway.count("DeletePortMapping") == 2);
+		EXO_ASSERT(gateway.bodyOf("DeletePortMapping").find("<NewExternalPort>1411<") != std::string::npos);
+		EXO_ASSERT(events.forwarded == 2);
+		EXO_ASSERT(events.failed == 0);
+		EXO_ASSERT(forward.isForwarded());
+		EXO_ASSERT(forward.getExternalPort() == 1412);
+
+	return 1;
+});
+
 /* ---- asked twice ---- */
 EXO_TEST(portforward_a_second_start_while_one_is_in_flight_is_refused,
 {

@@ -1,4 +1,8 @@
 # A home router between a lan and the wan: NAT with nftables, tc for impaired
-# links, miniupnpd for port mapping.
-FROM docker.io/library/alpine:3.22
-RUN apk add --no-cache nftables iproute2 iproute2-tc miniupnpd
+# links, miniupnpd (its nftables build) for port mapping. Also the image of the
+# reachability server node: openssl, for its certificates.
+FROM docker.io/library/ubuntu:26.04
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        nftables iproute2 miniupnpd-nftables openssl \
+ && rm -rf /var/lib/apt/lists/*

@@ -187,3 +187,15 @@ EXO_TEST(migrations_a_server_chosen_after_the_upgrade_is_kept,
 	EXO_ASSERT(s.config->peekString("Network", "Reachability server", "") == "drop.example.org");
 	return 1;
 });
+
+/* A first run given a server - by a front end or a test before start - keeps it. */
+EXO_TEST(migrations_a_server_given_with_a_fresh_installation_is_kept,
+{
+	Stores s;
+	s.config->setString("Network", "Reachability server", "drop.example.org");
+
+	QuickDC::migrateSettings(*s.config, *s.session, true);
+
+	EXO_ASSERT(s.config->peekString("Network", "Reachability server", "") == "drop.example.org");
+	return 1;
+});

@@ -67,11 +67,14 @@ void unpinHubIdentities(QuickDC::Preferences& config, QuickDC::Preferences& sess
  * that still outranked the default, and with nothing on the page to change it a
  * server that had gone away left every check failing for good. A stored one other
  * than the default is put back to it; an empty one is left empty, since nothing
- * stored is how the client is kept from asking a third party at all.
+ * stored is how the client is kept from asking a third party at all. A first run
+ * has nothing from before the page changed, so a server given with it is a choice.
  */
-void resetReachabilityServer(QuickDC::Preferences& config, QuickDC::Preferences&, bool)
+void resetReachabilityServer(QuickDC::Preferences& config, QuickDC::Preferences&, bool freshInstallation)
 {
 	namespace S = QuickDC::Settings;
+
+	if (freshInstallation) return;
 
 	const std::string stored = S::read(config, S::ReachabilityServer);
 	if (stored.empty() || stored == QuickDC::defaultReachabilityServer()) return;

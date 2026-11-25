@@ -132,13 +132,18 @@ if(QUICKDC_BUILD_TESTS)
     # Scenarios across rootless podman networks (tests/net/run.sh): a topology and
     # its script, skipped where podman or its networking is not there. ctest -L net.
     set(net ${scripts}/net)
+    # DROP's own server, for the topologies with a reachability server on the wan:
+    # cd drop && CGO_ENABLED=0 go build ./cmd/dropd. Those tests skip without it.
+    find_program(QUICKDC_DROPD dropd DOC "DROP's server, dropd, for the net tests")
     # test|topology|script|definitions (comma separated)
     foreach(spec
             "public_hub_two_lans|public-hub-two-lans|public-hub-two-lans|"
             "passive_traversal|public-hub-two-lans|passive-traversal|ENCRYPT=0,SECURE=false,KEY=ssl/quickdc.key"
             "passive_traversal_tls|public-hub-two-lans|passive-traversal|ENCRYPT=1,SECURE=true,KEY=spare"
             "traversal_symmetric|public-hub-symmetric|traversal-fails|"
-            "traversal_one_symmetric|public-hub-one-symmetric|traversal-fails|")
+            "traversal_one_symmetric|public-hub-one-symmetric|traversal-fails|"
+            "reach_upnp|upnp|reach-upnp|"
+            "reach_occupied|occupied|reach-occupied|")
         string(REPLACE "|" ";" parts "${spec}")
         list(GET parts 0 test)
         list(GET parts 1 topology)
@@ -155,7 +160,8 @@ if(QUICKDC_BUILD_TESTS)
             COMMAND ${net}/run.sh $<TARGET_FILE:qdc> ${net}/topologies/${topology}.topo
                     ${net}/${script}.qdc --quiet ${defines})
         set_tests_properties(cli_net_${test} PROPERTIES
-            LABELS net SKIP_RETURN_CODE 77 TIMEOUT 300)
+            LABELS net SKIP_RETURN_CODE 77 TIMEOUT 300
+            ENVIRONMENT "DROPD=${QUICKDC_DROPD}")
     endforeach()
 
     # Each core makes a 3072-bit certificate on its first run, which is slow to

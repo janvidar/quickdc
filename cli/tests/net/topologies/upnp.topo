@@ -1,0 +1,13 @@
+# A reachability server, a hub and an active client on the internet; a behind a
+# home router that runs miniupnpd, b behind a symmetric NAT without one (so b
+# reaches a only by dialling it: traversal cannot work through r2).
+net wan
+net home1
+net home2
+node r1   router wan.11 home1.254 nat=home upnp=on
+node r2   router wan.12 home2.254 nat=symmetric
+node drop drop wan.40
+node hub  public wan.20
+node w    public wan.30
+node a    client home1.10
+node b    client home2.10

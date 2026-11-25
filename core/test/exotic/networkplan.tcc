@@ -155,6 +155,28 @@ EXO_TEST(networkplan_port_0_picks_one_port_for_tcp_and_udp,
 	return 1;
 });
 
+/*
+ * A port another program holds is not shared for UDP either: a datagram socket
+ * would bind it beside that program and take its datagrams.
+ */
+EXO_TEST(networkplan_a_taken_port_is_not_bound_for_udp_either,
+{
+	Fixture f;
+	QuickDC::DCServer::Endpoint at;
+	at.port = 0;
+	at.bind = "127.0.0.1";
+	at.bind6 = "";
+	QuickDC::DCServer holder(*f.core, at);
+	EXO_ASSERT(holder.listening(false) && holder.listeningUdp(false));
+
+	at.port = holder.boundPort();
+	QuickDC::DCServer second(*f.core, at);
+	EXO_ASSERT(!second.listening(false));
+	EXO_ASSERT(!second.listeningUdp(false));
+	EXO_ASSERT_EQ_INT(second.boundPort(), 0);
+	return 1;
+});
+
 /* What a hub was told includes the port, so the hubs are told again. */
 EXO_TEST(networkplan_a_changed_port_is_told_to_the_hubs,
 {

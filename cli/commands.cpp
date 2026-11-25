@@ -1286,6 +1286,7 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"save",       "save [application|session]",                         parseSave},
 		{"mode",       "mode <automatic|advanced|passive> [upnp] [force-active]", parseMode},
 		{"state",      "state",                                              parseState},
+		{"measure",    "measure",                                            parseBare<Cmd::MeasureReachability>},
 		{"favourite-add", "favourite-add <url>",                             parseNaming<Cmd::AddFavouriteHub>},
 		{"favourite-remove", "favourite-remove <url>",                       parseNaming<Cmd::RemoveFavouriteHub>},
 		{"recent-forget", "recent-forget <url>",                             parseNaming<Cmd::ForgetRecentHub>},
