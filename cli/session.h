@@ -30,6 +30,8 @@ struct Options {
 	std::string script = "-";
 	bool quiet = false;
 	bool keepGoing = false;
+	/** Events as a person reads them rather than as JSON. */
+	bool readable = false;
 	std::chrono::milliseconds waitTimeout = std::chrono::seconds(10);
 };
 
@@ -90,6 +92,9 @@ class Session {
 		/** Whoever on 'hub' was last seen with the nickname 'nick'. */
 		std::optional<QuickDC::Api::User> user(const std::string& core, QuickDC::Api::HubHandle hub,
 		                                       const std::string& nick) const;
+
+		/** Everybody seen on 'hub' and not seen leaving, by nickname. */
+		std::vector<QuickDC::Api::User> users(const std::string& core, QuickDC::Api::HubHandle hub) const;
 
 		/** The address the core knows 'hub' by: what it said, or else what was opened. */
 		std::string hubUrl(const std::string& core, QuickDC::Api::HubHandle hub) const;
@@ -167,7 +172,7 @@ class Session {
 		bool matches(const Heard& heard, const Expectation& expected, bool claimedToo = false) const;
 		bool remember(const Line& line, const Heard& heard, const Expectation& expected);
 		std::string valueOf(const FieldTest& test) const;
-		void print(const std::string& line) const;
+		void print(const Heard& heard) const;
 
 		Runner& runner;
 		Options settings;

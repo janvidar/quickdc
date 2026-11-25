@@ -21,6 +21,9 @@ struct Verb {
 
 	/** Run before the cores are built, and so only ahead of every other verb. */
 	bool beforeStart = false;
+
+	/** Needs no core, and so may come anywhere without starting them. */
+	bool anytime = false;
 };
 
 const std::vector<Verb>& verbs();

@@ -5,6 +5,7 @@
 
 #include "session.h"
 #include "eventjson.h"
+#include "human.h"
 
 #include <algorithm>
 #include <cctype>
@@ -60,8 +61,9 @@ void QuickDC::Cli::Session::note(const std::string& text) const
 	std::fprintf(stderr, "%s\n", text.c_str());
 }
 
-void QuickDC::Cli::Session::print(const std::string& line) const
+void QuickDC::Cli::Session::print(const Heard& heard) const
 {
+	const std::string line = settings.readable ? readable(heard.event.fields()) : heard.line;
 	std::fwrite(line.data(), 1, line.size(), stdout);
 	std::fputc('\n', stdout);
 	std::fflush(stdout);
@@ -88,7 +90,7 @@ void QuickDC::Cli::Session::take(const Delivery& delivery)
 	heard.event = describe(delivery.core, delivery.event, name);
 	heard.line = heard.event.serialized();
 
-	if (!settings.quiet) print(heard.line);
+	if (!settings.quiet) print(heard);
 
 	backlog.push_back(std::move(heard));
 	while (backlog.size() > BACKLOG_LIMIT) backlog.pop_front();
@@ -171,7 +173,7 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::wait(const Line& line, const Expect
 			if (!matches(heard, expected)) continue;
 
 			heard.claimed = true;
-			if (settings.quiet) print(heard.line);
+			if (settings.quiet) print(heard);
 			return remember(line, heard, expected) ? Outcome::Next : Outcome::Failed;
 		}
 
@@ -347,6 +349,19 @@ std::optional<Api::User> QuickDC::Cli::Session::user(const std::string& core, Ap
 	const auto user = users->second.find(nick);
 	if (user == users->second.end()) return std::nullopt;
 	return user->second;
+}
+
+std::vector<Api::User> QuickDC::Cli::Session::users(const std::string& core, Api::HubHandle hub) const
+{
+	std::vector<Api::User> out;
+	const auto found = cores.find(core);
+	if (found == cores.end()) return out;
+
+	const auto users = found->second.users.find(hub);
+	if (users == found->second.users.end()) return out;
+
+	for (const auto& [nick, user] : users->second) out.push_back(user);
+	return out;
 }
 
 void QuickDC::Cli::Session::preset(const std::string& core, Api::SettingsStore store,

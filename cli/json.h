@@ -64,6 +64,14 @@ class Value {
 		/** What a field=value test compares with: text unquoted, anything else as written. */
 		std::string text() const;
 
+		bool isString() const { return kind == Kind::String; }
+		bool isArray() const { return kind == Kind::Array; }
+		bool isObject() const { return kind == Kind::Object; }
+
+		/** Empty unless this is an array, or an object. */
+		const Array& elements() const { return items; }
+		const Object& fields() const { return members; }
+
 		std::string serialized() const;
 
 	private:

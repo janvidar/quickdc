@@ -146,6 +146,7 @@ bool QuickDC::Cli::parseLine(const Grammar& grammar, int number, const std::stri
 
 	out.line = std::move(line);
 	out.beforeStart = verb->beforeStart;
+	out.anytime = verb->anytime;
 	return true;
 }
 

@@ -9,6 +9,7 @@ add_executable(qdc
     eventjson.cpp
     fileserver.cpp
     freeport.cpp
+    human.cpp
     json.cpp
     runner.cpp
     script.cpp
@@ -53,6 +54,12 @@ if(QUICKDC_BUILD_TESTS)
                 --quiet ${scripts}/boards.qdc)
     set_tests_properties(cli_boards PROPERTIES TIMEOUT 120)
 
+    add_test(NAME cli_operator
+        COMMAND ${scenario} 0 - $<TARGET_FILE:qdc>
+                --core a --core b --core c --free-port PORT --free-port PORT_B --free-port PORT_C
+                --quiet ${scripts}/operator.qdc)
+    set_tests_properties(cli_operator PROPERTIES TIMEOUT 120)
+
     add_test(NAME cli_hub_directory
         COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --free-port HTTP --free-port CLOSED
                 -D LISTS=${scripts}/hublists --quiet ${scripts}/hub-directory.qdc)
@@ -65,6 +72,10 @@ if(QUICKDC_BUILD_TESTS)
         COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --free-port PORT --quiet
                 ${scripts}/recent-hubs.qdc)
     set_tests_properties(cli_favourites cli_recent_hubs PROPERTIES TIMEOUT 120)
+
+    add_test(NAME cli_interactive
+        COMMAND ${scripts}/interactive.sh $<TARGET_FILE:qdc>)
+    set_tests_properties(cli_interactive PROPERTIES TIMEOUT 120)
 
     add_test(NAME cli_wait_times_out
         COMMAND ${scenario} 1 "timed out after 300ms waiting for UserJoined nick=nobody"

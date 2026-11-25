@@ -992,6 +992,252 @@ Step parseRestart(const Line& line)
 	return [line, core](Session& session) { return session.restart(line, core); };
 }
 
+/* A request-only command: the line names nothing but the core. */
+template<typename Command>
+Step parseReport(const Line& line)
+{
+	line.expect(0, 0);
+	const std::string core = line.requireCore();
+
+	return [line, core](Session& session) { return session.submit(line, core, Command{session.nextRequest()}); };
+}
+
+Step parseFindShared(const Line& line)
+{
+	line.expect(1, 1);
+	const std::string tth = line.args[0];
+	const std::string core = line.requireCore();
+
+	return [line, core, tth](Session& session) {
+		return session.submit(line, core, Cmd::FindShared{session.nextRequest(), session.expand(tth)});
+	};
+}
+
+/* "forever", or a duration as sleep takes it, in whole seconds. */
+int64_t parseBanSeconds(const std::string& text, int64_t forever)
+{
+	if (text == "forever") return forever;
+	const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(QuickDC::Cli::parseDuration(text)).count();
+	if (seconds <= 0) throw ScriptError("'" + text + "' is less than a second");
+	return seconds;
+}
+
+/* A user this core has seen on the hub by that nickname, or else taken to be the id. */
+Cmd::KickUser kickOf(Session& session, const std::string& core, Api::HubHandle hub, const std::string& who)
+{
+	const std::optional<Api::User> user = session.user(core, hub, who);
+	Cmd::KickUser command;
+	command.hub = hub;
+	command.userId = user ? user->id : who;
+	return command;
+}
+
+Step parseKick(const Line& line)
+{
+	line.expect(2, std::numeric_limits<size_t>::max());
+	const std::string who = line.args[1];
+	const std::string message = line.rest(2);
+	const std::string core = line.requireCore();
+
+	return onHub(line, line.args[0], [core, who, message](Session& session, Api::HubHandle hub) {
+		Cmd::KickUser command = kickOf(session, core, hub, who);
+		command.message = message;
+		return Api::Command(command);
+	});
+}
+
+Step parseRedirect(const Line& line)
+{
+	line.expect(3, std::numeric_limits<size_t>::max());
+	const std::string who = line.args[1];
+	const std::string address = line.args[2];
+	const std::string message = line.rest(3);
+	const std::string core = line.requireCore();
+
+	return onHub(line, line.args[0], [core, who, address, message](Session& session, Api::HubHandle hub) {
+		Cmd::KickUser command = kickOf(session, core, hub, who);
+		command.redirect = address;
+		command.message = message;
+		return Api::Command(command);
+	});
+}
+
+Step parseBan(const Line& line)
+{
+	line.expect(3, std::numeric_limits<size_t>::max());
+	const std::string who = line.args[1];
+	const int64_t seconds = parseBanSeconds(line.args[2], -1);
+	const std::string message = line.rest(3);
+	const std::string core = line.requireCore();
+
+	return onHub(line, line.args[0], [core, who, seconds, message](Session& session, Api::HubHandle hub) {
+		Cmd::KickUser command = kickOf(session, core, hub, who);
+		command.banSeconds = seconds;
+		command.message = message;
+		return Api::Command(command);
+	});
+}
+
+Step parseHubPolicy(const Line& line)
+{
+	line.expect(1, 3);
+	Cmd::SetHubPolicy policy;
+	for (size_t n = 1; n < line.args.size(); ++n)
+	{
+		if (line.args[n] == "follow-redirects") policy.followRedirects = true;
+		else if (line.args[n] == "no-peers") policy.allowPeerConnections = false;
+		else throw ScriptError("'" + line.args[n] + "' is neither follow-redirects nor no-peers");
+	}
+
+	return onHub(line, line.args[0], [policy](Session&, Api::HubHandle hub) {
+		Cmd::SetHubPolicy command = policy;
+		command.hub = hub;
+		return Api::Command(command);
+	});
+}
+
+Step parseHubKick(const Line& line)
+{
+	line.expect(1, std::numeric_limits<size_t>::max());
+	const std::string who = line.args[0];
+	const std::string message = line.rest(1);
+	const std::string core = line.requireCore();
+
+	return [line, core, who, message](Session& session) {
+		return session.submit(line, core, Cmd::KickFromLocalHub{session.nextRequest(), who, message});
+	};
+}
+
+Step parseHubBan(const Line& line)
+{
+	line.expect(1, std::numeric_limits<size_t>::max());
+	const std::string who = line.args[0];
+	int64_t seconds = 0;
+	size_t reason = 1;
+	if (line.args.size() >= 3 && line.args[1] == "for")
+	{
+		seconds = parseBanSeconds(line.args[2], 0);
+		reason = 3;
+	}
+	const std::string why = line.rest(reason);
+	const std::string core = line.requireCore();
+
+	return [line, core, who, why, seconds](Session& session) {
+		return session.submit(line, core, Cmd::BanFromLocalHub{session.nextRequest(), who, why, seconds});
+	};
+}
+
+Step parseHubUnban(const Line& line)
+{
+	line.expect(1, 1);
+	const std::string who = line.args[0];
+	const std::string core = line.requireCore();
+
+	return [line, core, who](Session& session) {
+		return session.submit(line, core, Cmd::UnbanFromLocalHub{session.nextRequest(), who});
+	};
+}
+
+Api::LocalHubCredential credential(const std::string& word)
+{
+	if (word == "user") return Api::LocalHubCredential::User;
+	if (word == "operator") return Api::LocalHubCredential::Operator;
+	if (word == "admin") return Api::LocalHubCredential::Admin;
+	throw ScriptError("'" + word + "' is not a credential; it is user, operator or admin");
+}
+
+Step parseHubAccount(const Line& line)
+{
+	line.expect(3, 3);
+	const std::string nick = line.args[0];
+	const std::string password = line.args[1];
+	const Api::LocalHubCredential rights = credential(line.args[2]);
+	const std::string core = line.requireCore();
+
+	return [line, core, nick, password, rights](Session& session) {
+		return session.submit(line, core, Cmd::SetLocalHubAccount{session.nextRequest(), nick, password, rights});
+	};
+}
+
+Step parseHubAccountRemove(const Line& line)
+{
+	line.expect(1, 1);
+	const std::string nick = line.args[0];
+	const std::string core = line.requireCore();
+
+	return [line, core, nick](Session& session) {
+		return session.submit(line, core, Cmd::RemoveLocalHubAccount{session.nextRequest(), nick});
+	};
+}
+
+std::string describeUser(const Api::User& user)
+{
+	std::string out = user.nick + (user.op ? " (operator)" : "");
+	if (!user.description.empty()) out += " '" + user.description + "'";
+	out += ", " + std::to_string(user.sharedBytes) + " bytes in " + std::to_string(user.sharedFiles) + " files";
+	return out;
+}
+
+/* What this core has heard of the hub's users, which is what the events said. */
+Step parseUsers(const Line& line)
+{
+	line.expect(1, 1);
+	const std::string hubName = line.args[0];
+	const std::string core = line.requireCore();
+
+	return [line, core, hubName](Session& session) {
+		const std::optional<Api::HubHandle> hub = session.hub(core, hubName);
+		if (!hub) return session.fail(line, "core '" + core + "' has no hub '" + hubName + "' open");
+
+		const std::vector<Api::User> users = session.users(core, *hub);
+		session.note(std::to_string(users.size()) + " users on " + hubName);
+		for (const Api::User& user : users) session.note("  " + describeUser(user));
+		return Outcome::Next;
+	};
+}
+
+Step parseInfo(const Line& line)
+{
+	line.expect(2, 2);
+	const std::string hubName = line.args[0];
+	const std::string nick = line.args[1];
+	const std::string core = line.requireCore();
+
+	return [line, core, hubName, nick](Session& session) {
+		const std::optional<Api::HubHandle> hub = session.hub(core, hubName);
+		if (!hub) return session.fail(line, "core '" + core + "' has no hub '" + hubName + "' open");
+
+		const std::optional<Api::User> user = session.user(core, *hub, nick);
+		if (!user) return session.fail(line, "nobody called '" + nick + "' has been seen on " + hubName);
+
+		session.note(describeUser(*user));
+		session.note("  id " + user->id + ", source " + user->sourceId + ", " + std::to_string(user->slotCount)
+		             + " slots" + (user->away ? ", away" : ""));
+		if (!user->email.empty()) session.note("  e-mail " + user->email);
+		if (!user->userAgent.empty()) session.note("  client " + user->userAgent);
+		if (!user->addressIPv4.empty()) session.note("  address " + user->addressIPv4);
+		if (!user->addressIPv6.empty()) session.note("  address " + user->addressIPv6);
+		if (!user->keyprint.empty()) session.note("  keyprint " + user->keyprint);
+		return Outcome::Next;
+	};
+}
+
+Step parseHelp(const Line& line)
+{
+	line.expect(0, 1);
+	const std::string which = line.args.empty() ? std::string() : line.args[0];
+	if (!which.empty() && !QuickDC::Cli::findVerb(which)) throw ScriptError("there is no command '" + which + "'");
+
+	return [which](Session& session) {
+		for (const QuickDC::Cli::Verb& verb : QuickDC::Cli::verbs())
+			if (which.empty() || which == verb.name) session.note(std::string("  ") + verb.usage);
+		if (which.empty())
+			session.note("A line may start with @core to address one core of several; ${NAME} is a definition, "
+			             "$NAME something a wait remembered.");
+		return Outcome::Next;
+	};
+}
+
 Step parseSleep(const Line& line)
 {
 	line.expect(1, 1);
@@ -1078,8 +1324,24 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"expect-file", "expect-file <path> same-as <path> | size <size>",   parseExpectFile},
 		{"wait",       "wait <Event> [field=value|field!=value ...] [remember NAME=field ...] [timeout=<N>s|<N>ms]", parseWait},
 		{"expect-no",  "expect-no <Event> [field=value|field!=value ...]",   parseExpectNo},
+		{"status",     "status",                                             parseReport<Cmd::ReportStatus>},
+		{"connections", "connections",                                       parseReport<Cmd::SnapshotConnections>},
+		{"find-shared", "find-shared <tth>",                                 parseFindShared},
+		{"hub-policy", "hub-policy <hub> [follow-redirects] [no-peers]",     parseHubPolicy},
+		{"users",      "users <hub>",                                        parseUsers},
+		{"info",       "info <hub> <nick>",                                  parseInfo},
+		{"kick",       "kick <hub> <nick|id> [message...]",                  parseKick},
+		{"redirect",   "redirect <hub> <nick|id> <address> [message...]",    parseRedirect},
+		{"ban",        "ban <hub> <nick|id> <N>s|forever [message...]",      parseBan},
+		{"hub-status", "hub-status",                                         parseReport<Cmd::ReportLocalHub>},
+		{"hub-kick",   "hub-kick <nick|cid|sid> [message...]",               parseHubKick},
+		{"hub-ban",    "hub-ban <nick|cid|address> [for <N>s] [reason...]",  parseHubBan},
+		{"hub-unban",  "hub-unban <name|nick|cid|address>",                  parseHubUnban},
+		{"hub-account", "hub-account <nick> <password> <user|operator|admin>", parseHubAccount},
+		{"hub-account-remove", "hub-account-remove <nick>",                  parseHubAccountRemove},
 		{"sleep",      "sleep <N>s|<N>ms",                                   parseSleep},
 		{"echo",       "echo <text...>",                                     parseEcho},
+		{"help",       "help [command]",                                     parseHelp, false, true},
 		{"quit",       "quit",                                               parseQuit},
 	};
 	return table;

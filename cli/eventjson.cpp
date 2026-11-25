@@ -235,6 +235,57 @@ const char* name(Ev::ReachabilityCheckFailed::Why why)
 	return "?";
 }
 
+const char* name(Ev::KickRefused::Why why)
+{
+	using W = Ev::KickRefused::Why;
+	switch (why)
+	{
+		case W::NoSession:   return "NoSession";
+		case W::NoSuchUser:  return "NoSuchUser";
+		case W::NotOperator: return "NotOperator";
+		case W::Unsupported: return "Unsupported";
+	}
+	return "?";
+}
+
+const char* name(Ev::LocalHubRefused::Why why)
+{
+	using W = Ev::LocalHubRefused::Why;
+	switch (why)
+	{
+		case W::NoHub:       return "NoHub";
+		case W::NoSuchUser:  return "NoSuchUser";
+		case W::NoSuchEntry: return "NoSuchEntry";
+		case W::Invalid:     return "Invalid";
+		case W::NotSaved:    return "NotSaved";
+	}
+	return "?";
+}
+
+const char* name(Api::LocalHubCredential credential)
+{
+	switch (credential)
+	{
+		case Api::LocalHubCredential::User:     return "User";
+		case Api::LocalHubCredential::Operator: return "Operator";
+		case Api::LocalHubCredential::Admin:    return "Admin";
+	}
+	return "?";
+}
+
+const char* name(Api::LocalHubUser::State state)
+{
+	using S = Api::LocalHubUser::State;
+	switch (state)
+	{
+		case S::LoggingIn: return "LoggingIn";
+		case S::Verifying: return "Verifying";
+		case S::Normal:    return "Normal";
+		case S::Leaving:   return "Leaving";
+	}
+	return "?";
+}
+
 const char* name(QuickDC::NetworkMode mode)
 {
 	switch (mode)
@@ -344,6 +395,48 @@ Value transfer(const Api::Transfer& t)
 		{"secure", t.secure},
 		{"peerKeyprint", t.peerKeyprint},
 		{"outbound", t.outbound},
+	};
+}
+
+Value peerConnection(const Api::PeerConnection& c)
+{
+	return Object{
+		{"protocol", c.protocol},
+		{"address", c.address},
+		{"port", c.port},
+		{"peer", c.peer},
+		{"secure", c.secure},
+		{"outbound", c.outbound},
+	};
+}
+
+Value localHubUser(const Api::LocalHubUser& u)
+{
+	return Object{
+		{"sid", u.sid},
+		{"nick", u.nick},
+		{"cid", u.cid},
+		{"address", u.address},
+		{"credential", name(u.credential)},
+		{"state", name(u.state)},
+		{"sendQueue", u.sendQueue},
+	};
+}
+
+Value localHubAccount(const Api::LocalHubAccount& a)
+{
+	return Object{{"nick", a.nick}, {"credential", name(a.credential)}};
+}
+
+Value localHubBan(const Api::LocalHubBan& b)
+{
+	return Object{
+		{"name", b.name},
+		{"reason", b.reason},
+		{"until", b.until},
+		{"cid", b.cid},
+		{"nick", b.nick},
+		{"address", b.address},
 	};
 }
 
@@ -813,6 +906,44 @@ struct Fields {
 	{
 		return {"CompletedDownloads", {
 			{"request", e.request}, {"downloads", each(e.downloads, completedDownload)}}};
+	}
+
+	Out operator()(const Ev::KickRefused& e) const
+	{
+		return {"KickRefused", {{"hub", hub(e.hub)}, {"userId", e.userId}, {"why", name(e.why)}}};
+	}
+
+	Out operator()(const Ev::CoreStatus& e) const
+	{
+		return {"CoreStatus", {
+			{"request", e.request}, {"version", e.version}, {"started", e.started}, {"port", e.port},
+			{"tcp", e.tcp}, {"tcp6", e.tcp6}, {"udp", e.udp}, {"udp6", e.udp6}, {"localHub", e.localHub}}};
+	}
+
+	Out operator()(const Ev::ConnectionsSnapshot& e) const
+	{
+		return {"ConnectionsSnapshot", {
+			{"request", e.request}, {"connections", each(e.connections, peerConnection)}}};
+	}
+
+	Out operator()(const Ev::SharedFile& e) const
+	{
+		return {"SharedFile", {
+			{"request", e.request}, {"tth", e.tth}, {"found", e.found}, {"path", e.path},
+			{"name", e.name}, {"size", e.size}, {"attached", e.attached}}};
+	}
+
+	Out operator()(const Ev::LocalHubState& e) const
+	{
+		return {"LocalHubState", {
+			{"request", e.request}, {"enabled", e.enabled}, {"name", e.name}, {"maxUsers", e.maxUsers},
+			{"started", e.started}, {"users", each(e.users, localHubUser)},
+			{"accounts", each(e.accounts, localHubAccount)}, {"bans", each(e.bans, localHubBan)}}};
+	}
+
+	Out operator()(const Ev::LocalHubRefused& e) const
+	{
+		return {"LocalHubRefused", {{"request", e.request}, {"why", name(e.why)}}};
 	}
 
 	Out operator()(const Ev::ConnectionMode& e) const

@@ -7,21 +7,20 @@ preset application Network Bind 127.0.0.1
 preset application Network Bind6 ""
 @a preset application Network Port ${PORT}
 @b preset application Network Port ${PORT_B}
-# The hub up from the start: turned on live, it takes a turn to follow with no
-# event to say so, and a login in that gap is turned away.
-@a preset application "Local hub" Enabled 1
 
-# Applied live, as a settings page would.
+# Applied live, as a settings page would; the hub takes a turn to follow, and
+# CoreStatus says when it takes logins.
 @a set application User Nickname alice
 @b set application User Nickname bob
+@a set application "Local hub" Enabled 1
+@a wait CoreStatus localHub=true
 
-# a's own login is what says its hub is up.
+# Neither login waits for the other.
 @a open adc://127.0.0.1:${PORT} as hub
 @a connect hub
-@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
-
 @b open adc://127.0.0.1:${PORT} as hub
 @b connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
 @b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
 @a wait UserJoined hub=hub nick=bob
 

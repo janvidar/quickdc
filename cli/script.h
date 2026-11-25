@@ -56,6 +56,7 @@ struct Statement {
 	Line line;
 	Step step;
 	bool beforeStart = false;
+	bool anytime = false;
 };
 
 struct Grammar {

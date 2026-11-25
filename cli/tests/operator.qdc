@@ -1,0 +1,117 @@
+# Operating a hub: a runs the hub and gives b an operator's account; b logs in
+# with its password and kicks, redirects and bans c through the hub, and a
+# kicks, bans and lets c back as the hub's owner. c comes back under a new
+# nickname each time, so every wait names one login and no earlier one.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+@c preset application Network Port ${PORT_C}
+@a preset application User Nickname alice
+@b preset application User Nickname oper
+@c preset application User Nickname carol
+@b preset session adc://127.0.0.1:${PORT} Password secret
+@a file attached.bin 64k 7
+
+# The account first, then the hub turned on live: CoreStatus says when it takes logins.
+@a hub-account oper secret operator
+@a wait LocalHubState accounts.0.nick=oper accounts.0.credential=Operator
+@a set application "Local hub" Enabled 1
+@a wait CoreStatus localHub=true tcp=true port=${PORT}
+
+@a open adc://127.0.0.1:${PORT} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b open adc://127.0.0.1:${PORT} as hub
+@b connect hub
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@c open adc://127.0.0.1:${PORT} as hub
+@c connect hub
+@c wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+
+# The hub vouches for b's rights, and b's own copy says so too.
+@c wait UserUpdated hub=hub user.nick=oper user.op=true
+@b wait UserUpdated hub=hub user.nick=oper user.op=true
+@c wait UserUpdated hub=hub user.nick=alice user.op=false
+@b wait UserUpdated hub=hub user.nick=carol
+@a hub-status
+@a wait LocalHubState users.*.nick=oper users.*.credential=Operator
+
+# Kicked by an operator.
+@b kick hub carol go away
+@c wait HubStatusChanged hub=hub status=Kicked
+@c wait HubNetStatus hub=hub status=Disconnected
+@a wait UserLeft hub=hub user.nick=carol message="go away"
+
+# Somebody who is not an operator is not asked to be one.
+@c set application User Nickname carol2
+@c connect hub
+@c wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@c wait UserUpdated hub=hub user.nick=alice
+@c kick hub alice
+@c wait KickRefused hub=hub why=NotOperator
+
+# Redirected: told where to go, not followed since its policy says not to.
+@b wait UserUpdated hub=hub user.nick=carol2
+@b redirect hub carol2 adc://127.0.0.1:${PORT_B} elsewhere please
+@c wait HubStatusChanged hub=hub status=Redirected
+@c wait HubRedirect hub=hub address=adc://127.0.0.1:${PORT_B} port=${PORT_B} followed=false
+@c wait HubNetStatus hub=hub status=Disconnected
+@a wait UserLeft hub=hub user.nick=carol2 message="elsewhere please"
+
+# Banned by an operator for an hour: by CID, so a new nickname does not get past it.
+@c set application User Nickname carol3
+@c connect hub
+@c wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b wait UserUpdated hub=hub user.nick=carol3
+@b ban hub carol3 3600s not welcome
+@c wait HubStatusChanged hub=hub status=BannedTemporarily
+@c wait HubNetStatus hub=hub status=Disconnected
+@a hub-status
+@a wait LocalHubState bans.0.name=carol3 bans.0.reason="not welcome" bans.0.cid!=""
+@c set application User Nickname carol4
+@c connect hub
+@c wait HubStatusChanged hub=hub status=BannedTemporarily
+@c wait HubNetStatus hub=hub status=Disconnected
+
+# The owner lifts it, and kicks as well.
+@a hub-unban carol3
+@a wait LocalHubState bans=[]
+@c connect hub
+@c wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait UserUpdated hub=hub user.nick=carol4
+@a hub-kick carol4 owner says bye
+@c wait HubStatusChanged hub=hub status=Kicked
+@c wait HubNetStatus hub=hub status=Disconnected
+@b wait UserLeft hub=hub user.nick=carol4 message="owner says bye"
+@a hub-kick nobody
+@a wait LocalHubRefused why=NoSuchUser
+
+# A nickname banned for good by the owner, while nobody holds it.
+@a hub-ban carol
+@a wait LocalHubState bans.0.nick=carol bans.0.until=0
+@c set application User Nickname carol
+@c connect hub
+@c wait HubStatusChanged hub=hub status=BannedPermanently
+@c wait HubNetStatus hub=hub status=Disconnected
+@a hub-unban carol
+@a wait LocalHubState bans=[]
+@a hub-unban carol
+@a wait LocalHubRefused why=NoSuchEntry
+
+# What a holds, and what it offers by hash.
+@a connections
+@a wait ConnectionsSnapshot connections.*.protocol="ADC hub" connections.*.peer=adc://127.0.0.1:${PORT}
+@a attach attached.bin
+@a wait AttachmentReady size=65536 remember T=tth timeout=30s
+@a find-shared $T
+@a wait SharedFile tth=$T found=true attached=true size=65536
+@a find-shared AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+@a wait SharedFile found=false
+
+@a hub-account-remove oper
+@a wait LocalHubState accounts=[]
+@a hub-account-remove oper
+@a wait LocalHubRefused why=NoSuchEntry
