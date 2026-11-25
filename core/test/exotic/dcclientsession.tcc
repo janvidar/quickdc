@@ -26,6 +26,7 @@
 #include "network/dc/clientsession.h"
 #include "network/dc/lock.h"
 #include "network/downloadqueue.h"
+#include "share/sharemanager.h"
 #include "network/securitymanager.h"
 #include "network/user.h"
 #include "network/usermanager.h"
@@ -39,6 +40,7 @@
 #include <samurai/io/net/inetaddress.h>
 
 #include <chrono>
+#include <fstream>
 #include <memory>
 #include <stdio.h>
 #include <string.h>
@@ -93,7 +95,7 @@ class Listener : public QuickDC::HubListener
 		void EventUserUpdate(const QuickDC::User*) override { }
 		void EventSearchResult(void*) override { }
 		void EventHubName(const char*) override { }
-		bool EventHubRedirect(const char*, uint16_t) override { return false; }
+		void EventHubRedirect(const char*, uint16_t, const char*, QuickDC::RedirectRefusal) override { }
 		void EventHubAutenticate() override { }
 		bool EventClientConnect(const char*, uint16_t, const QuickDC::User*) override
 		{ return false; }
@@ -478,6 +480,55 @@ EXO_TEST(dcclientsession_a_file_we_do_not_have_is_refused,
 
 	std::string line;
 	EXO_ASSERT(f.peer.expect("$Error", line));
+	return 1;
+});
+
+/*
+ * The legacy requests for a file list - $GetListLen, and $Get naming a list - are
+ * answered from a list opened for this request alone, which the session owns and
+ * closes; it took them as the share manager's and leaked one each time. Under
+ * LeakSanitizer that is a failure of this case.
+ */
+EXO_TEST(dcclientsession_a_file_list_asked_for_the_old_way_is_closed_after,
+{
+	core->shares->createFileLists(false);
+	const std::string dir = core->shares->getFilelistDirectory();
+	const std::string legacy = dir + "/MyList.DcLst";
+	{
+		std::ofstream out(legacy, std::ios::binary);
+		out << "a list nobody reads any more";
+	}
+
+	bool connected = false;
+	bool listLength = false;
+	bool listFile = false;
+	bool xmlFile = false;
+	{
+		Fixture f;
+		connected = f.ready && f.handshake();
+		if (connected)
+		{
+			f.say("$Direction Download 12345");
+			f.sayKey();
+
+			std::string line;
+			f.say("$GetListLen");
+			listLength = f.peer.expect("$ListLen ", line) && line == "$ListLen 28";
+			f.say("$Get MyList.DcLst$1");
+			listFile = f.peer.expect("$FileLength ", line) && line == "$FileLength 28";
+			f.say("$Get files.xml.bz2$1");
+			xmlFile = f.peer.expect("$FileLength ", line);
+		}
+	}
+
+	Samurai::IO::File(legacy).remove();
+	Samurai::IO::File(dir + "/files.xml").remove();
+	Samurai::IO::File(dir + "/files.xml.bz2").remove();
+
+	if (!connected) EXO_SKIP(NO_LOOPBACK);
+	EXO_ASSERT(listLength);
+	EXO_ASSERT(listFile);
+	EXO_ASSERT(xmlFile);
 	return 1;
 });
 

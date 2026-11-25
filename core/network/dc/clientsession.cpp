@@ -6,6 +6,7 @@
 #include "quickdc.h"
 #include <algorithm>
 #include <stdio.h>
+#include <memory>
 #include <string>
 #include <string.h>
 #include <time.h>
@@ -764,11 +765,11 @@ void DC::ClientSession::onGetListLen()
 {
 	if (upload_approved && state == StateIdle)
 	{
-		QuickDC::Share::Manager* sharemgr = getCore().shares;
-		file = sharemgr->getFile("MyList.DcLst");
-		if (file)
+		/* Opened for this caller to own, as every file list is; only its size is wanted. */
+		std::unique_ptr<Samurai::IO::File> list(getCore().shares->getFile("MyList.DcLst"));
+		if (list)
 		{
-			send(new DC::SendListLength(file->size()));
+			send(new DC::SendListLength(list->size()));
 		}
 		else
 		{
@@ -794,7 +795,9 @@ void DC::ClientSession::onGet(const char* fn, uint64_t offset, int64_t chunklen)
 
 		QDBG("looking up file: '%s'", filename.c_str());
 		QuickDC::Share::Manager* sharemgr = getCore().shares;
+		releaseTransfer();
 		file = sharemgr->getFile(filename.c_str());
+		ownsFile = file && QuickDC::Share::Manager::isFileList(filename);
 
 		if (file)
 		{

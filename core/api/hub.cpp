@@ -5,6 +5,8 @@
 
 #include "quickdc.h"
 #include <atomic>
+#include <cctype>
+#include <chrono>
 #include <stdio.h>
 #include <string.h>
 
@@ -15,6 +17,7 @@
 #include <samurai/io/net/socketmonitor.h>
 #include <samurai/io/net/url.h>
 #include <samurai/util/random.h>
+#include <samurai/stdc.h>
 #include "network/user.h"
 #include "network/dc/dccommandparser.h"
 #include "network/dc/dccommandproxy.h"
@@ -84,12 +87,28 @@ QuickDC::Hub::~Hub()
 
 void QuickDC::Hub::connect()
 {
+	redirected.clear();
+	open();
+}
+
+void QuickDC::Hub::open()
+{
 	if (session)
 	{
 	        requestedDisconnect = true;
 	        session->disconnect();
 	}
-	
+
+	/* Taken over only now: the session just let go of may still be reading the old one. */
+	if (!redirectTarget.empty())
+	{
+		*url = Samurai::IO::Net::URL(redirectTarget);
+		free(canonicalUrl);
+		canonicalUrl = strdup(redirectTarget.c_str());
+		redirectTarget.clear();
+		attempts = 0;
+	}
+
 	std::string scheme = url->getScheme();
 	
 	/**
@@ -126,6 +145,7 @@ void QuickDC::Hub::connect()
 void QuickDC::Hub::disconnect()
 {
 	requestedDisconnect = true;
+	redirectTarget.clear();
 
 	/* Any attempt still pending is not wanted either. */
 	delete timer;
@@ -257,14 +277,7 @@ bool QuickDC::Hub::connectUserByClientID(const char* cid, const char* token)
 	QuickDC::UserManager* users = session->getUserManager();
 	if (!users) return false;
 
-	const QuickDC::User* u = users->getUserByClientID(cid);
-
-	/*
-	 * NMDC users have no client ID, and there the nickname doubles as the
-	 * session ID, so fall back to the plain lookup.
-	 */
-	if (!u) u = session->getUser(cid);
-
+	const QuickDC::User* u = sourceUser(cid);
 	if (!u)
 	{
 		/*
@@ -347,14 +360,39 @@ bool QuickDC::Hub::isLocalUser(const char* cid) const
 	const QuickDC::User* me = session->getLocalUser();
 	if (!me) return false;
 
-	/* The two lookups connectUserByClientID() makes, so the two cannot disagree
+	/* The lookup connectUserByClientID() makes, so the two cannot disagree
 	   about who a caller meant. */
+	return sourceUser(cid) == me;
+}
+
+bool QuickDC::Hub::isNmdc() const
+{
+	return url && url->getScheme() == "dchub";
+}
+
+/*
+ * A SID names a user only while the user stays, and the next one to get it is
+ * somebody else, so on ADC a source is the CID alone.
+ */
+const QuickDC::User* QuickDC::Hub::sourceUser(const char* id) const
+{
+	if (!session || !id || !*id) return 0;
+
 	QuickDC::UserManager* users = session->getUserManager();
+	const QuickDC::User* named = (users) ? users->getUserByClientID(id) : 0;
+	if (!named && isNmdc()) named = session->getUser(id);
+	return named;
+}
 
-	const QuickDC::User* named = (users) ? users->getUserByClientID(cid) : 0;
-	if (!named) named = session->getUser(cid);
+std::string QuickDC::Hub::sourceIdOf(const char* id) const
+{
+	if (!session || !id || !*id) return std::string();
+	if (isNmdc()) return session->getUser(id) ? std::string(id) : std::string();
 
-	return named == me;
+	const QuickDC::User* named = sourceUser(id);
+	if (!named) named = session->getUser(id);
+	const char* cid = (named) ? reinterpret_cast<const char*>(named->getClientID()) : 0;
+	return (cid && *cid) ? std::string(cid) : std::string();
 }
 
 QuickDC::UserManager* QuickDC::Hub::getUserManager() const
@@ -394,7 +432,80 @@ void QuickDC::Hub::onSearchResult(Share::SearchResult* result)
 void QuickDC::Hub::EventTimeout(Samurai::Timer*)
 {
 	delete timer; timer = 0;
-	connect();
+	open();
+}
+
+namespace {
+
+bool isAdcScheme(const std::string& scheme) { return scheme == "adc" || scheme == "adcs"; }
+
+std::string lowered(std::string text)
+{
+	for (char& c : text) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+	return text;
+}
+
+}
+
+QuickDC::RedirectRefusal QuickDC::Hub::judgeRedirect(const std::string& from, const char* address,
+                                                     uint16_t port, bool follow,
+                                                     const std::vector<std::string>& visited,
+                                                     std::string& target)
+{
+	target.clear();
+	if (!follow) return RedirectRefusal::Policy;
+	if (!address || !*address) return RedirectRefusal::Invalid;
+
+	const std::string fromScheme = lowered(Samurai::IO::Net::URL(from).getScheme());
+
+	/* NMDC's $ForceMove names a host, and a port only as a number of its own. */
+	std::string written = address;
+	if (written.find("://") == std::string::npos)
+	{
+		if (fromScheme != "dchub") return RedirectRefusal::Invalid;
+		written = "dchub://" + written;
+		if (port && written.find(':', 8) == std::string::npos) written += ":" + std::to_string(port);
+	}
+
+	const Samurai::IO::Net::URL to(written);
+	const uint16_t toPort = to.isValid() ? to.getEffectivePort() : 0;
+	if (!to.isValid() || !toPort || to.getHostname().empty()) return RedirectRefusal::Invalid;
+
+	const std::string toScheme = lowered(to.getScheme());
+	if (!isAdcScheme(toScheme) && toScheme != "dchub") return RedirectRefusal::Invalid;
+	if (isAdcScheme(toScheme) != isAdcScheme(fromScheme)) return RedirectRefusal::OtherProtocol;
+	if (fromScheme == "adcs" && toScheme == "adc") return RedirectRefusal::Downgrade;
+
+	const std::string going = toScheme + "://" + lowered(to.getHost().toString()) + ":" + std::to_string(toPort);
+	if (Samurai::Util::iequals(going, from)) return RedirectRefusal::Loop;
+	for (const std::string& been : visited)
+		if (Samurai::Util::iequals(going, been)) return RedirectRefusal::Loop;
+	if (visited.size() > QUICKDC_HUB_MAX_REDIRECTS) return RedirectRefusal::Loop;
+
+	target = going;
+	return RedirectRefusal::None;
+}
+
+void QuickDC::Hub::onRedirect(const char* address, uint16_t port)
+{
+	if (redirected.empty() && canonicalUrl) redirected.push_back(canonicalUrl);
+
+	std::string target;
+	const RedirectRefusal why = judgeRedirect(canonicalUrl ? canonicalUrl : "", address, port,
+	                                          followRedirects, redirected, target);
+
+	if (why == RedirectRefusal::None)
+	{
+		QDBG("Redirected from '%s' to '%s'", canonicalUrl, target.c_str());
+		redirected.push_back(target);
+		redirectTarget = target;
+
+		/* Not from inside the session that is being told to go. */
+		delete timer;
+		timer = new Samurai::Timer(core.loop(), this, std::chrono::milliseconds(0), true);
+	}
+
+	listener->EventHubRedirect(address, port, target.c_str(), why);
 }
 
 int QuickDC::Hub::retryDelay(HubListener::StatusNetwork why, size_t attempts)
@@ -462,6 +573,9 @@ void QuickDC::Hub::onDisconnected(HubListener::StatusNetwork why)
 	 */
 	if (requestedDisconnect) return;
 
+	/* On its way elsewhere, by the timer onRedirect() armed. */
+	if (!redirectTarget.empty()) return;
+
 	if (reconnect_time == -1)
 	{
 		listener->EventReconnectScheduled(-1);
@@ -516,11 +630,6 @@ void QuickDC::Hub::refreshIdentity()
 
 bool QuickDC::Hub::hasSourceUser(const char* cid) const
 {
-	if (!session || !session->isLoggedIn() || !cid || !*cid) return false;
-
-	QuickDC::UserManager* users = session->getUserManager();
-	if (users && users->getUserByClientID(cid)) return true;
-
-	/* NMDC, where the nickname is the session ID; see connectUserByClientID(). */
-	return session->getUser(cid) != nullptr;
+	if (!session || !session->isLoggedIn()) return false;
+	return sourceUser(cid) != nullptr;
 }

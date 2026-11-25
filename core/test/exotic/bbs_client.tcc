@@ -149,7 +149,7 @@ class Listener : public QuickDC::HubListener
 			refusals.push_back(refusal);
 		}
 
-		bool EventHubRedirect(const char*, uint16_t) override { return false; }
+		void EventHubRedirect(const char*, uint16_t, const char*, QuickDC::RedirectRefusal) override { }
 		void EventHubAutenticate() override { }
 
 		bool EventClientConnect(const char*, uint16_t, const QuickDC::User*) override

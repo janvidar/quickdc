@@ -322,7 +322,9 @@ struct ReportState {
  * Bulletin boards. The core keeps what every hub says about its boards under
  * the hub's address, follows each board a hub describes, and fetches, checks,
  * offers and lets go of post documents by [Boards] and each hub's own choices.
- * A board is named by its hub's address, however spelled, and its name.
+ * A board is named by its hub's address, however spelled, and its name, by every
+ * command here: what needs the hub asks the session open on that address, and is
+ * answered by BoardUnavailable (PostRefused for a post) where none carries boards.
  */
 
 /** What is held of a board, read without asking its hub; told as BoardEntries (whole) and BoardState. */
@@ -357,6 +359,49 @@ struct SetBoardPolicy {
 	std::string hubUrl;
 	Policy policy = Policy::FetchAhead;
 	Choice choice = Choice::Follow;
+};
+
+/**
+ * Follow a board again - one left, or every entry from the start where
+ * 'fromStart' - rather than from the highest timestamp held.
+ */
+struct SubscribeBoard {
+	std::string hubUrl;
+	std::string board;
+	bool fromStart = false;
+};
+
+/** Leave a board: the hub's descriptors do not take it up again while the session lasts. */
+struct UnsubscribeBoard {
+	std::string hubUrl;
+	std::string board;
+};
+
+/** Ask the hub for one entry of a board, without following it. */
+struct RequestBoardEntry {
+	std::string hubUrl;
+	std::string board;
+	std::string tth;
+};
+
+/**
+ * Write a post signed with this client's ID, offer its document and submit it;
+ * answered by PostSubmitted or PostRefused. 'parent' is empty for a new thread.
+ */
+struct WritePost {
+	uint64_t request = 0;
+	std::string hubUrl;
+	std::string board;
+	std::string parent;
+	std::string subject;
+	std::string body;
+	bool richText = false;
+};
+
+struct WithdrawPost {
+	std::string hubUrl;
+	std::string board;
+	std::string tth;
 };
 
 /*
@@ -421,47 +466,6 @@ struct RequestHistory {
 	int limit = 0;
 };
 
-/**
- * Follow a board again - one left, or every entry from the start where
- * 'fromStart' - rather than from the highest timestamp held.
- */
-struct SubscribeBoard {
-	HubHandle hub = 0;
-	std::string board;
-	bool fromStart = false;
-};
-
-/** Leave a board: the hub's descriptors do not take it up again while the session lasts. */
-struct UnsubscribeBoard {
-	HubHandle hub = 0;
-	std::string board;
-};
-
-struct RequestBoardEntry {
-	HubHandle hub = 0;
-	std::string board;
-	std::string tth;
-};
-
-/**
- * Write a post signed with this client's ID, offer its document and submit it;
- * answered by PostSubmitted or PostRefused. 'parent' is empty for a new thread.
- */
-struct WritePost {
-	uint64_t request = 0;
-	HubHandle hub = 0;
-	std::string board;
-	std::string parent;
-	std::string subject;
-	std::string body;
-	bool richText = false;
-};
-
-struct WithdrawPost {
-	HubHandle hub = 0;
-	std::string tth;
-	std::string board;
-};
 
 /*
  * The public hub directory: the sources it reads, in precedence order, each
@@ -914,14 +918,22 @@ struct HubSystemError { HubHandle hub = 0; std::string message; };
 struct HubAuthenticate { HubHandle hub = 0; };
 
 /**
- * 'followed' is what SetHubPolicy said, and so what the session did. 'address'
- * is a host on NMDC, and on ADC the address the hub gave, whole.
+ * A hub sent the session elsewhere. 'address' is a host on NMDC, and on ADC the
+ * address the hub gave, whole. Where 'followed', the session is connecting to
+ * 'url' under the same handle and every later event names that hub; where not,
+ * 'why' says why: SetHubPolicy said not to, the address is not one, it leads to
+ * the other protocol or from adcs to adc, or to a hub this connection has
+ * already been sent from or past QUICKDC_HUB_MAX_REDIRECTS of them.
  */
 struct HubRedirect {
+	enum class Why { None, Policy, Invalid, OtherProtocol, Downgrade, Loop };
+
 	HubHandle hub = 0;
 	std::string address;
 	uint16_t port = 0;
 	bool followed = false;
+	std::string url;
+	Why why = Why::None;
 };
 
 struct ChatReceived { HubHandle hub = 0; ChatLine line; };
@@ -945,6 +957,16 @@ struct UsersCleared { HubHandle hub = 0; };
 struct SearchResult { HubHandle hub = 0; uint64_t search = 0; SearchHit hit; };
 
 struct BoardsAvailable { HubHandle hub = 0; bool available = false; };
+
+/** No session on 'hubUrl' carries boards just now, so what was asked was not sent. */
+struct BoardUnavailable {
+	enum class Asked { Subscribe, Unsubscribe, Entry, Withdraw };
+
+	std::string hubUrl;
+	std::string board;
+	std::string tth;
+	Asked asked = Asked::Subscribe;
+};
 struct BoardRefused {
 	HubHandle hub = 0;
 	int code = 0;
@@ -1377,6 +1399,7 @@ struct Event {
 		Events::SearchResult,
 		Events::BoardsAvailable,
 		Events::BoardRefused,
+		Events::BoardUnavailable,
 		Events::BoardEntries,
 		Events::BoardState,
 		Events::BoardRead,

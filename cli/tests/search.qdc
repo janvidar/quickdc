@@ -8,6 +8,7 @@ preset application Network Bind6 ""
 @a preset application "Local hub" Enabled 1
 @a preset application User Nickname alice
 @b preset application User Nickname bob
+@b preset application Network Slots 5
 
 @b file share/films/big.bin 3M 7
 @b share share as files
@@ -25,4 +26,5 @@ preset application Network Bind6 ""
 
 @a search big as s1
 @a wait SearchSent search=$s1 hubsAsked=1
-@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob hit.size=3145728
+# A result says how many of b's upload slots are free, none being in use.
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob hit.size=3145728 hit.freeSlots=5

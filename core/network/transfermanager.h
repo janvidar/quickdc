@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_TRANSFERMANAGER_H
 
 #include "quickdc.h"
+#include <optional>
 #include "api/subscription.h"
 
 namespace QuickDC {
@@ -85,6 +86,12 @@ class TransferManager
 		size_t size();
 		
 		size_t countUploads();
+
+		/**
+		 * How many more uploads 'configured' slots would take now, as the upload
+		 * side decides it; nothing to say for a configuration of no limit.
+		 */
+		std::optional<size_t> freeUploadSlots(int configured);
 		
 		/**
 		 * Process transfer jobs.

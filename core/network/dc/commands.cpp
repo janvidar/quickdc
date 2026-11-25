@@ -87,7 +87,7 @@ DC::SendMyInfo::SendMyInfo(const QuickDC::Core& core_, const char* nick, const c
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		/* NMDC has no field for a hub to report the address it sees. */
 		std::string(),
-		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
+		core->peerPort(),
 		core->portforward).active;
 	
 	/* Built to length: a fixed buffer cut a long version or large counts short, '>' and all. */

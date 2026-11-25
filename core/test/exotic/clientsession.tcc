@@ -21,6 +21,7 @@
 #include "api/core.h"
 #include "network/adc/adccommon.h"
 #include "network/adc/client/adcclientsession.h"
+#include "network/connectionmanager.h"
 #include "network/downloadqueue.h"
 #include "network/hubsession.h"
 #include "network/securitymanager.h"
@@ -85,6 +86,7 @@ class Peer :
 		std::shared_ptr<Samurai::IO::Net::Socket> theirs;   /* the session's */
 		std::string received;
 		bool connected = false;
+		bool hungUp = false;
 
 		bool connect()
 		{
@@ -162,7 +164,7 @@ class Peer :
 		void EventConnecting(const Samurai::IO::Net::Socket*) override { }
 		void EventConnected(const Samurai::IO::Net::Socket*) override { connected = true; }
 		void EventTimeout(const Samurai::IO::Net::Socket*) override { }
-		void EventDisconnected(const Samurai::IO::Net::Socket*) override { }
+		void EventDisconnected(const Samurai::IO::Net::Socket*) override { hungUp = true; }
 		/* Read as soon as it is offered rather than only when a case asks for it:
 		   the monitor is level triggered, so a socket left unread is reported on
 		   every pass and the loop spins until something takes the bytes off it. */
@@ -584,7 +586,7 @@ EXO_TEST(clientsession_a_type_that_is_not_four_characters_is_refused,
 	return 1;
 });
 
-/* Without a job named by either side there is nothing to approve. */
+/* Without a job named by either side there is nothing to approve, nor to stay for. */
 EXO_TEST(clientsession_a_connection_for_no_job_uploads_nothing,
 {
 	Session s;
@@ -593,11 +595,66 @@ EXO_TEST(clientsession_a_connection_for_no_job_uploads_nothing,
 
 	s.say("CINF ID" PEER_CID);
 	s.say("CGET file TTH/" A_TTH " 0 -1");
-	pump([] { return false; }, 300);
+	pump([&] { return s.peer.hungUp; }, 2000);
 
 	s.peer.drain();
 	EXO_ASSERT(s.peer.received.find("CSND") == std::string::npos);
-	EXO_ASSERT(s.peer.received.find("CSTA") == std::string::npos);
+	EXO_ASSERT(s.peer.received.find("CSTA 240 ") != std::string::npos);
+	EXO_ASSERT(s.peer.hungUp);
+	return 1;
+});
+
+/*
+ * A token nobody here issued - mistyped, or one whose request has been given up
+ * on - is told so and the connection closed at once, rather than left open and
+ * idle for as long as the peer cares to hold it.
+ */
+EXO_TEST(clientsession_a_connection_quoting_an_unknown_token_is_closed,
+{
+	Session s;
+	if (!s.ready) EXO_SKIP(CANNOT_CONNECT);
+	EXO_ASSERT(s.handshake());
+
+	const size_t before = core->connections->size();
+	s.say("CINF ID" PEER_CID " TOnosuchtoken");
+	EXO_ASSERT(pump([&] { return s.peer.hungUp; }, 2000));
+
+	std::string line;
+	EXO_ASSERT(s.peer.expect("CSTA ", line));
+	EXO_ASSERT(line.compare(0, 9, "CSTA 240 ") == 0);
+	EXO_ASSERT(line.find(" TOnosuchtoken") != std::string::npos);
+
+	EXO_ASSERT(pump([&] { return core->connections->size() < before; }, 2000));
+	return 1;
+});
+
+/* A peer that dials and never says who it is does not keep the socket either. */
+EXO_TEST(clientsession_a_peer_that_never_names_itself_is_closed,
+{
+	Session s;
+	if (!s.ready) EXO_SKIP(CANNOT_CONNECT);
+
+	s.session->setHandshakeDeadline(std::chrono::milliseconds(200));
+	s.say("CSUP ADBASE ADTIGR");
+
+	EXO_ASSERT(pump([&] { return s.peer.hungUp; }, 3000));
+	EXO_ASSERT(!s.session->isEstablished());
+	return 1;
+});
+
+/* And one that has named itself in time is left alone when the deadline passes. */
+EXO_TEST(clientsession_a_peer_that_named_itself_outlives_the_deadline,
+{
+	Session s("job7");
+	if (!s.ready) EXO_SKIP(CANNOT_CONNECT);
+
+	s.session->setHandshakeDeadline(std::chrono::milliseconds(200));
+	EXO_ASSERT(s.handshake());
+	s.say("CINF ID" PEER_CID);
+	pump([] { return false; }, 500);
+
+	EXO_ASSERT(!s.peer.hungUp);
+	EXO_ASSERT(s.session->isEstablished());
 	return 1;
 });
 

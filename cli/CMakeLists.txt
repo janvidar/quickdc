@@ -33,13 +33,16 @@ if(QUICKDC_BUILD_TESTS)
     set(scenario ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenario.sh)
     set(scripts ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 
-    add_test(NAME cli_two_cores_chat
-        COMMAND ${scenario} 0 - $<TARGET_FILE:qdc>
-                --core a --core b --free-port PORT --free-port PORT_B --quiet
-                ${scripts}/two-cores-chat.qdc)
+    # These two ask for port 0 and learn the port picked from CoreStatus.
+    foreach(name two-cores-chat download-active)
+        string(REPLACE "-" "_" test ${name})
+        add_test(NAME cli_${test}
+            COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --core a --core b --quiet ${scripts}/${name}.qdc)
+        set_tests_properties(cli_${test} PROPERTIES TIMEOUT 120)
+    endforeach()
 
-    foreach(name search search-attributed filelist download-active download-passive download-passive-stale-active
-                 download-tls share-live completed chat-media)
+    foreach(name search search-attributed filelist download-passive download-passive-stale-active
+                 share-live completed chat-media)
         string(REPLACE "-" "_" test ${name})
         add_test(NAME cli_${test}
             COMMAND ${scenario} 0 - $<TARGET_FILE:qdc>
@@ -47,6 +50,13 @@ if(QUICKDC_BUILD_TESTS)
                     ${scripts}/${name}.qdc)
         set_tests_properties(cli_${test} PROPERTIES TIMEOUT 120)
     endforeach()
+
+    # An encrypted transfer ending as it should logs nothing as an error, on either side.
+    add_test(NAME cli_download_tls
+        COMMAND ${scenario} 0 "!ERROR" $<TARGET_FILE:qdc>
+                --core a --core b --free-port PORT --free-port PORT_B --quiet
+                ${scripts}/download-tls.qdc)
+    set_tests_properties(cli_download_tls PROPERTIES TIMEOUT 120)
 
     add_test(NAME cli_boards
         COMMAND ${scenario} 0 - $<TARGET_FILE:qdc>
@@ -59,6 +69,12 @@ if(QUICKDC_BUILD_TESTS)
                 --core a --core b --core c --free-port PORT --free-port PORT_B --free-port PORT_C
                 --quiet ${scripts}/operator.qdc)
     set_tests_properties(cli_operator PROPERTIES TIMEOUT 120)
+
+    add_test(NAME cli_redirect
+        COMMAND ${scenario} 0 - $<TARGET_FILE:qdc>
+                --core a --core b --core c --core d --free-port PORT --free-port PORT_B
+                --free-port PORT_C --free-port PORT_D --quiet ${scripts}/redirect.qdc)
+    set_tests_properties(cli_redirect PROPERTIES TIMEOUT 120)
 
     add_test(NAME cli_hub_directory
         COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --free-port HTTP --free-port CLOSED

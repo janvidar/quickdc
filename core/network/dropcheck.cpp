@@ -458,7 +458,7 @@ bool QuickDC::startDropCheck(Core& core_, bool ipv6)
 	const std::string host = dropServerFor(core, ipv6);
 	if (host.empty()) return false;
 
-	const uint16_t port = static_cast<uint16_t>(QuickDC::Settings::read(*core->config, QuickDC::Settings::Port));
+	const uint16_t port = core->peerPort();
 
 	core->dropcheck->start(host,
 	                       ipv6 ? Drop::Family::IPv6 : Drop::Family::IPv4,

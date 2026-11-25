@@ -142,6 +142,8 @@ class Listener : public QuickDC::HubListener
 
 		std::vector<StatusHub> statuses;
 		std::string redirectedTo;
+		std::string redirectFollowing;
+		QuickDC::RedirectRefusal redirectRefusal = QuickDC::RedirectRefusal::None;
 		uint16_t redirectedPort = 0;
 
 		void EventHubStatus(enum StatusHub state) override
@@ -201,11 +203,13 @@ class Listener : public QuickDC::HubListener
 		void EventHubDescription(const char* description) override
 		{ hubDescription = description ? description : ""; }
 
-		bool EventHubRedirect(const char* address, uint16_t port) override
+		void EventHubRedirect(const char* address, uint16_t port, const char* following,
+		                      QuickDC::RedirectRefusal why) override
 		{
 			redirectedTo = address ? address : "";
 			redirectedPort = port;
-			return false;
+			redirectFollowing = following ? following : "";
+			redirectRefusal = why;
 		}
 		void EventHubAutenticate() override { authRequested = true; }
 
@@ -1323,6 +1327,57 @@ EXO_TEST(hubsession_a_qui_naming_this_session_with_an_address_is_a_redirect,
 	EXO_ASSERT(!s.listener.saw(QuickDC::HubListener::HubKicked));
 	EXO_ASSERT(s.listener.redirectedTo == "adc://127.0.0.2:4111");
 	EXO_ASSERT(s.listener.redirectedPort == 4111);
+
+	/* Nobody asked for redirects to be followed, so this one is not. */
+	EXO_ASSERT(s.listener.redirectFollowing.empty());
+	EXO_ASSERT(s.listener.redirectRefusal == QuickDC::RedirectRefusal::Policy);
+	return 1;
+});
+
+/* Where a redirect leads, and which ones are not followed. */
+EXO_TEST(hubsession_a_redirect_is_followed_only_where_it_is_safe_to,
+{
+	using R = QuickDC::RedirectRefusal;
+	const std::vector<std::string> none;
+	std::string to;
+
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://a.example:1511", "adc://B.example:1512", 1512, true, none, to) == R::None);
+	EXO_ASSERT(to == "adc://b.example:1512");
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://a.example:1511", "adcs://b.example:1512", 0, true, none, to) == R::None);
+	EXO_ASSERT(to == "adcs://b.example:1512");
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("dchub://a.example:411", "b.example", 412, true, none, to) == R::None);
+	EXO_ASSERT(to == "dchub://b.example:412");
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("dchub://a.example:411", "b.example:413", 413, true, none, to) == R::None);
+	EXO_ASSERT(to == "dchub://b.example:413");
+
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://a.example:1511", "adc://b.example:1512", 1512, false, none, to) == R::Policy);
+	EXO_ASSERT(to.empty());
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adcs://a.example:1511", "adc://b.example:1512", 1512, true, none, to) == R::Downgrade);
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://a.example:1511", "dchub://b.example:411", 411, true, none, to) == R::OtherProtocol);
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("dchub://a.example:411", "adc://b.example:1511", 1511, true, none, to) == R::OtherProtocol);
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://a.example:1511", "b.example", 1511, true, none, to) == R::Invalid);
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://a.example:1511", "http://b.example:80", 80, true, none, to) == R::Invalid);
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://a.example:1511", "adc://b.example", 0, true, none, to) == R::Invalid);
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://a.example:1511", "", 0, true, none, to) == R::Invalid);
+
+	/* Back where it came from, or anywhere it has been: a ping-pong goes nowhere. */
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://a.example:1511", "adc://A.example:1511", 1511, true, none, to) == R::Loop);
+	const std::vector<std::string> been{"adc://a.example:1511", "adc://b.example:1512"};
+	EXO_ASSERT(QuickDC::Hub::judgeRedirect("adc://b.example:1512", "adc://a.example:1511", 1511, true, been, to) == R::Loop);
+	EXO_ASSERT(to.empty());
+
+	std::vector<std::string> chain{"adc://a.example:1511"};
+	std::string from = chain.front();
+	size_t followed = 0;
+	for (int hop = 0; hop < 20; hop++)
+	{
+		const std::string next = "adc://h" + std::to_string(hop) + ".example:1511";
+		if (QuickDC::Hub::judgeRedirect(from, next.c_str(), 1511, true, chain, to) != R::None) break;
+		chain.push_back(to);
+		from = to;
+		followed++;
+	}
+	EXO_ASSERT(followed == QUICKDC_HUB_MAX_REDIRECTS);
 	return 1;
 });
 
@@ -1924,9 +1979,6 @@ class Certificate
 			key = scratch("peer.key");
 			crt = scratch("peer.crt");
 
-			/* Neither file is overwritten by the generator, so one left behind
-			   by an earlier run is used as it stands rather than regenerated -
-			   a 3072 bit key is not cheap. */
 			if (!Samurai::IO::File(key).exists() || !Samurai::IO::File(crt).exists())
 			{
 				Samurai::IO::File(key).remove();
@@ -1946,6 +1998,10 @@ class Certificate
 			   removable from outside the factory. */
 			Samurai::IO::Net::TlsFactory::setKeys(scratch("none.key").c_str(),
 				scratch("none.crt").c_str());
+
+			/* Named by this process, so nothing after it could have used them. */
+			Samurai::IO::File(key).remove();
+			Samurai::IO::File(crt).remove();
 		}
 
 		Certificate(const Certificate&) = delete;

@@ -5,6 +5,8 @@
 
 #include "quickdc.h"
 #include "network/filesource.h"
+#include "api/huburl.h"
+#include <samurai/stdc.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -49,13 +51,13 @@ QuickDC::FileSource::FileSource(const char* url_)
 		/* No filename at all: this is the file list. */
 	}
 
-	hub = std::string(url.substr(0, slash));
+	hub = hubSettingsGroup(std::string(url.substr(0, slash)));
 }
 
 QuickDC::FileSource::FileSource(const char* hub_, const char* cid_, const char* filename_)
 	: retryCount(0), throughput(0.0)
 {
-	if (hub_) hub = hub_;
+	if (hub_) hub = hubSettingsGroup(hub_);
 	if (cid_) cid = cid_;
 	if (filename_) filename = filename_;
 }
@@ -159,7 +161,30 @@ bool QuickDC::FileSource::isExpired() const
 bool QuickDC::FileSource::matches(const char* hub_, const char* cid_) const
 {
 	if (!isValid() || !hub_ || !cid_) return false;
-	return (*hub == hub_ && *cid == cid_);
+	return samePeer(*hub, *cid, hubSettingsGroup(hub_), cid_);
+}
+
+namespace {
+
+bool isAdcHub(std::string_view hub)
+{
+	return Samurai::Util::istarts_with(hub, "adc://") || Samurai::Util::istarts_with(hub, "adcs://");
+}
+
+}
+
+/*
+ * A CID is the same on every ADC hub, so there it alone is the peer; an NMDC
+ * nickname is only somebody on the hub that has it.
+ */
+bool QuickDC::FileSource::samePeer(std::string_view hubA, std::string_view idA,
+                                   std::string_view hubB, std::string_view idB)
+{
+	if (idA != idB) return false;
+
+	const bool adcA = isAdcHub(hubA);
+	if (adcA != isAdcHub(hubB)) return false;
+	return adcA || Samurai::Util::iequals(hubA, hubB);
 }
 
 void QuickDC::FileSource::setRetryCount(size_t count)

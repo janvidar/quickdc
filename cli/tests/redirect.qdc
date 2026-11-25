@@ -1,0 +1,62 @@
+# Redirects: a runs hub A and is its operator, b runs hub B. a sends carol (c),
+# who follows redirects, back to A - refused as a loop - and then to B, where she
+# logs in under the same hub handle; dave (d) does not follow, and stays off B.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+@c preset application Network Port ${PORT_C}
+@d preset application Network Port ${PORT_D}
+@a preset application User Nickname oper
+@b preset application User Nickname bert
+@c preset application User Nickname carol
+@d preset application User Nickname dave
+@a preset session adc://127.0.0.1:${PORT} Password secret
+@b preset application "Local hub" Enabled 1
+
+@a hub-account oper secret operator
+@a wait LocalHubState accounts.0.nick=oper accounts.0.credential=Operator
+@a set application "Local hub" Enabled 1
+@a wait CoreStatus localHub=true tcp=true port=${PORT}
+@b status
+@b wait CoreStatus localHub=true tcp=true port=${PORT_B}
+
+@a open adc://127.0.0.1:${PORT} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@c open adc://127.0.0.1:${PORT} as hub
+@c hub-policy hub follow-redirects
+@c connect hub
+@d open adc://127.0.0.1:${PORT} as hub
+@d connect hub
+@c wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@d wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait UserUpdated hub=hub user.nick=carol
+@a wait UserUpdated hub=hub user.nick=dave
+
+# Not followed by a session whose policy says not to.
+@a redirect hub dave adc://127.0.0.1:${PORT_B} over there
+@d wait HubRedirect hub=hub address=adc://127.0.0.1:${PORT_B} followed=false why=Policy url=""
+@d wait HubNetStatus hub=hub status=Disconnected
+
+# Back to the hub it is on is a loop, followed or not.
+@a redirect hub carol adc://127.0.0.1:${PORT} round again
+@c wait HubRedirect hub=hub address=adc://127.0.0.1:${PORT} followed=false why=Loop
+@c wait HubNetStatus hub=hub status=Disconnected
+@c connect hub
+@c wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait UserUpdated hub=hub user.nick=carol
+
+# Followed: the same handle, now on B.
+@a redirect hub carol adc://127.0.0.1:${PORT_B} over there
+@c wait HubRedirect hub=hub address=adc://127.0.0.1:${PORT_B} port=${PORT_B} followed=true why=None url=adc://127.0.0.1:${PORT_B}
+@a wait UserLeft hub=hub user.nick=carol message="over there"
+@c wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@c wait RecentHubs hubs.*.url=adc://127.0.0.1:${PORT_B}
+@b hub-status
+@b wait LocalHubState users.*.nick=carol
+@b expect-no LocalHubState users.*.nick=dave
+@c chat hub hello B
+@c wait ChatReceived hub=hub line.text="hello B" line.hubUrl=adc://127.0.0.1:${PORT_B}

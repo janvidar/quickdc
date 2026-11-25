@@ -62,14 +62,24 @@ ADC::ClientSession::ClientSession(QuickDC::Core& core_, std::shared_ptr<Samurai:
 	proxy = new ADC::CommandProxy(socket, this);
 	QDBG("ADC::ClientSession() - token=%s", token.c_str());
 	manager->add(this);
+	setHandshakeDeadline(std::chrono::seconds(QUICKDC_PEER_HANDSHAKE_SECONDS));
 }
 
 
 ADC::ClientSession::~ClientSession()
 {
+	handshakeDeadline.reset();
 	releaseTransfer();
+	discardLeafPart();
 	delete proxy;
 	QDBG("~ADC::ClientSession()");
+}
+
+void ADC::ClientSession::discardLeafPart()
+{
+	if (leafPart.empty()) return;
+	Samurai::IO::File(leafPart).remove();
+	leafPart.clear();
 }
 
 void ADC::ClientSession::initialize()
@@ -234,6 +244,39 @@ void ADC::ClientSession::onINF(const char* cid, const char* remote_token)
 
 	if (download_approved)
 		requestNextChunk();
+	else if (!upload_approved)
+		refuseUnexpected(job);
+}
+
+/*
+ * A token we never issued, or one whose request has already been given up on: a
+ * peer quoting it has nothing coming from us and is owed nothing, so the
+ * connection is not left open for it to sit on.
+ */
+void ADC::ClientSession::refuseUnexpected(const char* quoted)
+{
+	QDBG("Nothing here is waiting for this connection (token '%s'); closing", quoted ? quoted : "");
+
+	ADC::Command* cmd = new ADC::Command(FOURCC('C','S','T','A'));
+	cmd->addArgument(adc_status_code(ADC_STATUS_SEVERITY_FATAL, ADC_CODE_PROTOCOL_ERROR).c_str());
+	cmd->addArgument(ADC_STR_CONNECTION_UNEXPECTED);
+	if (quoted && *quoted) cmd->addArgument("TO", quoted);
+	send(cmd);
+
+	socket->disconnect();
+}
+
+void ADC::ClientSession::setHandshakeDeadline(std::chrono::milliseconds within)
+{
+	handshakeDeadline = std::make_unique<Samurai::Timer>(getCore().loop(), this, within, true);
+}
+
+void ADC::ClientSession::EventTimeout(Samurai::Timer*)
+{
+	if (isEstablished()) return;
+
+	QDBG("The peer did not say who it is in time; closing");
+	socket->disconnect();
 }
 
 void ADC::ClientSession::requestNextChunk()
@@ -515,8 +558,17 @@ void ADC::ClientSession::onTransferStopped(QuickDC::Transfer* which)
 
 	if (wasFetchingLeaves)
 	{
-		if (complete && qfile && !qfile->loadLeavesFromDisk())
-			QDBG("The leaf hashes for '%s' were no use", qfile->getTTH());
+		if (complete && qfile && !qfile->getLeaves())
+		{
+			char* name = qfile->makeLeafFilename();
+			if (name && Samurai::IO::File(leafPart).rename(std::string(name)))
+				leafPart.clear();
+			free(name);
+
+			if (!qfile->loadLeavesFromDisk())
+				QDBG("The leaf hashes for '%s' were no use", qfile->getTTH());
+		}
+		discardLeafPart();
 
 		/* Either way, get on with the file itself. */
 		requestNextChunk();
@@ -902,11 +954,13 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 			return;
 		}
 
-		file = new Samurai::IO::File(name);
-		ownsFile = true;
+		discardLeafPart();
+		leafPart = std::string(name) + "." + token;
 		free(name);
 
-		Samurai::IO::File(file->getName()).remove();
+		Samurai::IO::File(leafPart).remove();
+		file = new Samurai::IO::File(leafPart);
+		ownsFile = true;
 
 		chunk_offset = 0;
 		chunk_length = length;
@@ -979,6 +1033,7 @@ void ADC::ClientSession::EventConnected(const Samurai::IO::Net::Socket*)
 {
 	isClient = true;
 	manager->add(this);
+	setHandshakeDeadline(std::chrono::seconds(QUICKDC_PEER_HANDSHAKE_SECONDS));
 
 	if (!secure)
 	{

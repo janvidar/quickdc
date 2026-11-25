@@ -195,7 +195,8 @@ Step parseOpen(const Line& line)
 		if (session.hub(core, name))
 			return session.fail(line, "core '" + core + "' already has a hub called '" + name + "'");
 
-		return session.submit(line, core, Cmd::OpenHub{session.openHub(core, name, url), url});
+		const std::string address = session.expand(url);
+		return session.submit(line, core, Cmd::OpenHub{session.openHub(core, name, address), address});
 	};
 }
 
@@ -644,8 +645,8 @@ Step parseBoardSubscribe(const Line& line)
 		throw ScriptError("'" + line.args[2] + "' is not from-start");
 	const std::string board = line.args[1];
 	const bool fromStart = line.args.size() == 3;
-	return onHub(line, line.args[0], [board, fromStart](Session&, Api::HubHandle hub) {
-		return Api::Command(Cmd::SubscribeBoard{hub, board, fromStart});
+	return onBoardHub(line, line.args[0], [board, fromStart](Session&, const std::string& url) {
+		return Api::Command(Cmd::SubscribeBoard{url, board, fromStart});
 	});
 }
 
@@ -653,8 +654,8 @@ Step parseBoardLeave(const Line& line)
 {
 	line.expect(2, 2);
 	const std::string board = line.args[1];
-	return onHub(line, line.args[0], [board](Session&, Api::HubHandle hub) {
-		return Api::Command(Cmd::UnsubscribeBoard{hub, board});
+	return onBoardHub(line, line.args[0], [board](Session&, const std::string& url) {
+		return Api::Command(Cmd::UnsubscribeBoard{url, board});
 	});
 }
 
@@ -701,9 +702,19 @@ Step parseBoardPost(const Line& line)
 	}
 
 	const std::string text = line.rest(body);
-	return onHub(line, line.args[0], [board, parent, subject, text](Session& session, Api::HubHandle hub) {
+	return onBoardHub(line, line.args[0], [board, parent, subject, text](Session& session, const std::string& url) {
 		return Api::Command(Cmd::WritePost{
-			session.nextRequest(), hub, board, session.expand(parent), subject, session.expand(text), false});
+			session.nextRequest(), url, board, session.expand(parent), subject, session.expand(text), false});
+	});
+}
+
+Step parseBoardEntry(const Line& line)
+{
+	line.expect(3, 3);
+	const std::string board = line.args[1];
+	const std::string tth = line.args[2];
+	return onBoardHub(line, line.args[0], [board, tth](Session& session, const std::string& url) {
+		return Api::Command(Cmd::RequestBoardEntry{url, board, session.expand(tth)});
 	});
 }
 
@@ -712,8 +723,8 @@ Step parseBoardWithdraw(const Line& line)
 	line.expect(3, 3);
 	const std::string board = line.args[1];
 	const std::string tth = line.args[2];
-	return onHub(line, line.args[0], [board, tth](Session& session, Api::HubHandle hub) {
-		return Api::Command(Cmd::WithdrawPost{hub, session.expand(tth), board});
+	return onBoardHub(line, line.args[0], [board, tth](Session& session, const std::string& url) {
+		return Api::Command(Cmd::WithdrawPost{url, board, session.expand(tth)});
 	});
 }
 
@@ -1307,12 +1318,13 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"media-fetch", "media-fetch <hub|-> <tth> <name> <size>",           parseMediaFetch},
 		{"media-policy", "media-policy <hub url> <follow|always|never>",     parseMediaPolicy},
 		{"board-load", "board-load <hub|url> <board>",                       parseBoardLoad},
-		{"board-subscribe", "board-subscribe <hub> <board> [from-start]",    parseBoardSubscribe},
-		{"board-leave", "board-leave <hub> <board>",                         parseBoardLeave},
+		{"board-subscribe", "board-subscribe <hub|url> <board> [from-start]", parseBoardSubscribe},
+		{"board-leave", "board-leave <hub|url> <board>",                     parseBoardLeave},
 		{"board-read", "board-read <hub|url> <board> <tth> [fetch]",         parseBoardRead},
 		{"board-mark-read", "board-mark-read <hub|url> <board> [tth]",       parseBoardMarkRead},
-		{"board-post", "board-post <hub> <board> <subject>|reply <tth> <body...>", parseBoardPost},
-		{"board-withdraw", "board-withdraw <hub> <board> <tth>",             parseBoardWithdraw},
+		{"board-post", "board-post <hub|url> <board> <subject>|reply <tth> <body...>", parseBoardPost},
+		{"board-entry", "board-entry <hub|url> <board> <tth>",               parseBoardEntry},
+		{"board-withdraw", "board-withdraw <hub|url> <board> <tth>",         parseBoardWithdraw},
 		{"board-policy", "board-policy <hub|url> <fetch-ahead|serve> <follow|always|never>", parseBoardPolicy},
 		{"search",     "search <word|-word ...> [as <name>]",                parseSearch},
 		{"search-forget", "search-forget <name|number>",                     parseSearchForget},

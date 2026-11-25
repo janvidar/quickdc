@@ -13,6 +13,7 @@
 #include "network/chunkmap.h"
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 /** A source is forgotten after this many consecutive failures. */
@@ -195,9 +196,13 @@ class FileSource {
 		bool isExpired() const;
 
 		/**
-		 * @return true if this source refers to the given user on the given hub.
+		 * @return true if this source refers to the given user, however the
+		 *         hub's address is spelled, and on any ADC hub for a CID.
 		 */
 		bool matches(const char* hub, const char* cid) const;
+
+		static bool samePeer(std::string_view hubA, std::string_view idA,
+		                     std::string_view hubB, std::string_view idB);
 
 	public: /* used when loading the queue from disk */
 

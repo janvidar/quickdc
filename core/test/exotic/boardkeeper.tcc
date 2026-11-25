@@ -65,6 +65,7 @@ using QuickDC::Api::Event;
 using QuickDC::Api::Events::BoardEntries;
 using QuickDC::Api::Events::BoardRead;
 using QuickDC::Api::Events::BoardState;
+using QuickDC::Api::Events::BoardUnavailable;
 using QuickDC::Api::Events::PostRefused;
 using QuickDC::Api::Events::PostStatus;
 using State = PostStatus::State;
@@ -153,9 +154,23 @@ class Link : public QuickDC::BoardKeeper::Link {
 			return true;
 		}
 
+		bool requestEntry(const std::string& board, const std::string& tth) override
+		{
+			asked.push_back(board + "/" + tth);
+			return true;
+		}
+
+		bool withdrawPost(const std::string& board, const std::string& tth) override
+		{
+			withdrawn.push_back(board + "/" + tth);
+			return true;
+		}
+
 		std::vector<std::pair<std::string, uint64_t>> subscribed;
 		std::vector<std::string> left;
 		std::vector<std::string> submitted;
+		std::vector<std::string> asked;
+		std::vector<std::string> withdrawn;
 };
 
 /* One keeper over a home of its own, on a hub of its own, with the case's clock. */
@@ -288,7 +303,7 @@ EXO_TEST(boardkeeper_a_board_left_stays_left_until_the_session_is_new,
 {
 	Case c;
 	c.keeper->described(1, general());
-	c.keeper->unsubscribe(1, "general");
+	c.keeper->unsubscribe(c.hub, "general");
 	EXO_ASSERT(c.link.left.size() == 1);
 
 	c.keeper->described(1, general());
@@ -299,9 +314,50 @@ EXO_TEST(boardkeeper_a_board_left_stays_left_until_the_session_is_new,
 	EXO_ASSERT(c.link.subscribed.size() == 2);
 
 	/* And asked for by somebody, it is followed again at once, from the start if they say so. */
-	c.keeper->unsubscribe(1, "general");
-	c.keeper->subscribe(1, "general", true);
+	c.keeper->unsubscribe(c.hub, "general");
+	c.keeper->subscribe(c.hub, "general", true);
 	EXO_ASSERT(c.link.subscribed.size() == 3 && c.link.subscribed[2].second == 0);
+	return 1;
+});
+
+/*
+ * A board is named by its hub's address everywhere, however that is spelled: what
+ * needs the hub goes to the session on it, and with none there is refused, saying so.
+ */
+EXO_TEST(boardkeeper_what_needs_the_hub_finds_its_session_by_address,
+{
+	Case c;
+	c.keeper->described(1, general());
+	const Document one = post("one", NOW);
+	const Document two = post("two", NOW + 1);
+	const std::string spelled = " ADC://127.0.0.1:" + c.hub.substr(c.hub.rfind(':') + 1) + "/";
+
+	c.keeper->requestEntry(spelled, "general", one.entry.tth);
+	c.keeper->withdraw(spelled, "general", two.entry.tth);
+	c.keeper->unsubscribe(spelled, "general");
+	c.keeper->subscribe(spelled, "general", true);
+	EXO_ASSERT(c.link.asked.size() == 1 && c.link.asked[0] == "general/" + one.entry.tth);
+	EXO_ASSERT(c.link.withdrawn.size() == 1 && c.link.withdrawn[0] == "general/" + two.entry.tth);
+	EXO_ASSERT(c.link.left.size() == 1);
+	EXO_ASSERT(c.link.subscribed.size() == 2 && c.link.subscribed[1].second == 0);
+	EXO_ASSERT(c.told<BoardUnavailable>().empty());
+
+	const std::string elsewhere = "adc://elsewhere.example:1511";
+	c.keeper->subscribe(elsewhere, "general", false);
+	c.keeper->unsubscribe(elsewhere, "general");
+	c.keeper->requestEntry(elsewhere, "general", one.entry.tth);
+	c.keeper->withdraw(elsewhere, "general", one.entry.tth);
+	const std::vector<BoardUnavailable> refused = c.told<BoardUnavailable>();
+	EXO_ASSERT(refused.size() == 4);
+	EXO_ASSERT(refused[0].asked == BoardUnavailable::Asked::Subscribe && refused[0].hubUrl == elsewhere);
+	EXO_ASSERT(refused[1].asked == BoardUnavailable::Asked::Unsubscribe);
+	EXO_ASSERT(refused[2].asked == BoardUnavailable::Asked::Entry && refused[2].tth == one.entry.tth);
+	EXO_ASSERT(refused[3].asked == BoardUnavailable::Asked::Withdraw && refused[3].board == "general");
+
+	/* A session without boards is no session to ask either. */
+	c.keeper->available(1, false);
+	c.keeper->withdraw(c.hub, "general", one.entry.tth);
+	EXO_ASSERT(c.told<BoardUnavailable>().size() == 5 && c.link.withdrawn.size() == 1);
 	return 1;
 });
 
@@ -625,7 +681,7 @@ EXO_TEST(boardkeeper_a_post_that_cannot_be_written_says_why,
 
 	QuickDC::Api::Commands::WritePost thread;
 	thread.request = 7;
-	thread.hub = 1;
+	thread.hubUrl = c.hub;
 	thread.board = "general";
 	thread.subject = "   \n  ";
 	thread.body = "no subject";
@@ -638,7 +694,7 @@ EXO_TEST(boardkeeper_a_post_that_cannot_be_written_says_why,
 	const PostRefused large = c.told<PostRefused>().back();
 	EXO_ASSERT(large.why == PostRefused::Why::TooLarge && large.limit == 4096 && large.size > 5000);
 
-	thread.hub = 2;
+	thread.hubUrl = "adc://elsewhere.example:1511";
 	c.keeper->write(thread);
 	EXO_ASSERT(c.told<PostRefused>().back().why == PostRefused::Why::NoHub);
 	EXO_ASSERT(c.link.submitted.empty());
@@ -652,7 +708,7 @@ EXO_TEST(boardkeeper_a_written_post_is_the_document_its_hash_covers,
 
 	QuickDC::Api::Commands::WritePost thread;
 	thread.request = 8;
-	thread.hub = 1;
+	thread.hubUrl = c.hub;
 	thread.board = "general";
 	thread.subject = "Hub upgrade\n on  Saturday";
 	thread.body = "The hub will be **offline** on Saturday.\n\nSee you then.";

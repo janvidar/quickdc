@@ -4,6 +4,7 @@
  */
 
 #include "quickdc.h"
+#include <filesystem>
 
 #include <api/core.h>
 
@@ -106,6 +107,12 @@ ADC::LocalHub::Hub::Hub(Samurai::EventLoop& loop_, QuickDC::Preferences& config_
 	readConfiguration();
 
 	availSid = 0;
+
+	/* Where acl.xml keeps account passwords; see ACL::Table::save(). */
+	std::error_code ignored;
+	if (!home.empty() && std::filesystem::is_directory(home, ignored))
+		std::filesystem::permissions(home, std::filesystem::perms::owner_all,
+		                             std::filesystem::perm_options::replace, ignored);
 
 	acl = new ADC::LocalHub::ACL::Table((home + "/acl.xml").c_str());
 	

@@ -22,6 +22,9 @@ namespace {
 
 }
 
+/** How many ports are picked for TCP before giving up on finding one UDP has free too. */
+#define QUICKDC_PICK_PORT_ATTEMPTS 16
+
 namespace QuickDC {
 
 class Core;
@@ -73,6 +76,9 @@ class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samur
 
 		/** The port peers are taken on, as bound - so the one picked where 0 was asked for - or 0. */
 		uint16_t boundPort() const;
+
+		/** The same for search results and other datagrams, which is the same port wherever both came up. */
+		uint16_t boundUdpPort() const;
 		
 	protected:
 		void EventAcceptError(const Samurai::IO::Net::ServerSocket*, const char* msg) override;

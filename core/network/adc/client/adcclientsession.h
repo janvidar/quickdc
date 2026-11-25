@@ -14,7 +14,10 @@
 #include "network/clientsession.h"
 #include "network/connection.h"
 #include <samurai/io/net/socketevent.h>
+#include <samurai/timer.h>
 #include "network/transfer.h"
+#include <chrono>
+#include <memory>
 
 namespace Samurai {
 	namespace IO {
@@ -46,7 +49,8 @@ bool probe(const char* handshake, size_t length);
 class ClientSession :
 		public QuickDC::ClientSession,
 		public QuickDC::Connection,
-		public QuickDC::PrivateTransferListener
+		public QuickDC::PrivateTransferListener,
+		public Samurai::TimerListener
 {
 	public:
 		
@@ -118,11 +122,26 @@ class ClientSession :
 		/** True while the current transfer is leaf hashes rather than file data. */
 		bool fetchingLeaves;
 
+		/*
+		 * Where this connection writes the leaves it is fetching. Its own, since
+		 * another connection may be fetching the same file's; the first to arrive
+		 * whole becomes the file's.
+		 */
+		std::string leafPart;
+		void discardLeafPart();
+
 		void addSupport(const char* features);
 		bool supports(const char* feature);
 
 		/** Whether the handshake is done and the peer has named itself. */
 		bool isEstablished() const;
+
+		/**
+		 * Close the connection unless both sides have named themselves within this
+		 * long from now. Every connection is given QUICKDC_PEER_HANDSHAKE_SECONDS
+		 * from when it is up, so a peer that dials and says nothing holds no socket.
+		 */
+		void setHandshakeDeadline(std::chrono::milliseconds within);
 
 		std::string peerName() const override { return remote_cid; }
 
@@ -138,6 +157,7 @@ class ClientSession :
 		void EventDataAvailable(const Samurai::IO::Net::Socket*) override;
 		void EventCanWrite(const Samurai::IO::Net::Socket*) override;
 		void EventError(const Samurai::IO::Net::Socket*, Samurai::IO::Net::SocketError, const char* msg) override;
+		void EventTimeout(Samurai::Timer*) override;
 
 		void send(ADC::Command* cmd, bool more = false);
 
@@ -217,6 +237,12 @@ class ClientSession :
 
 		bool upload_approved;
 		bool download_approved;
+
+		std::unique_ptr<Samurai::Timer> handshakeDeadline;
+
+		/** Tell the peer this connection is for nothing we know of, and hang up. */
+		void refuseUnexpected(const char* quoted);
+
 		friend class QuickDC::Connection;
 };
 

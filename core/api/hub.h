@@ -6,6 +6,8 @@
 #ifndef HAVE_QUICKDC_API_H
 #define HAVE_QUICKDC_API_H
 #include <stdio.h>
+#include <string>
+#include <vector>
 
 #include "quickdc.h"
 #include <samurai/io/net/socketbase.h>
@@ -49,6 +51,9 @@ class UserManager;
 
 
 
+
+/** Why a redirect a hub sent was not followed. */
+enum class RedirectRefusal { None, Policy, Invalid, OtherProtocol, Downgrade, Loop };
 
 class HubListener
 {
@@ -342,10 +347,13 @@ class HubListener
 	{ (void) code; (void) message; (void) board; (void) tth; }
 
 	/**
-	 * The hub has redirected you to another hub.
-	 * @return true to follow redirect, or false to ignore it
+	 * The hub has sent this session to another hub.
+	 * @param address   what the hub said: ADC's address whole, NMDC's host
+	 * @param following the address now being connected to, empty where it is not
+	 * @param why       why not, where it is not
 	 */
-	virtual bool EventHubRedirect(const char* address, uint16_t port) = 0;
+	virtual void EventHubRedirect(const char* address, uint16_t port, const char* following,
+	                              RedirectRefusal why) = 0;
 	
 	/**
 	 * The hub requires authentication.
@@ -406,6 +414,9 @@ class DCServerListener
  */
 #define QUICKDC_HUB_STABLE 30
 
+/** How many redirects one connection follows before the next is taken for a loop. */
+#define QUICKDC_HUB_MAX_REDIRECTS 4
+
 /**
  * A host that could not be reached is retried this soon, and only once.
  *
@@ -428,8 +439,31 @@ class Hub
 		Hub(const Hub&) = delete;
 		Hub& operator=(const Hub&) = delete;
 
+		/** Connect to the address the hub was opened at, or was last sent to. */
 		void connect();
 		void disconnect();
+
+		/** Whether a redirect is followed when a hub sends one. Not, until asked. */
+		void setFollowRedirects(bool follow) { followRedirects = follow; }
+
+		/**
+		 * A session was sent elsewhere: ADC's address whole, NMDC's host and port.
+		 * Followed where the policy allows and the address is one to go to, on the
+		 * next turn of the loop, under this same Hub; the listener is told which.
+		 */
+		void onRedirect(const char* address, uint16_t port);
+
+		/**
+		 * Where a redirect from 'from' leads, as a hub's canonical address, or why
+		 * it is not followed. 'visited' is where this connection has been sent
+		 * already, the address it was opened at first: a hub may hand a client
+		 * across only to the same protocol, never from adcs to adc, and not back
+		 * to anywhere it has been.
+		 */
+		static RedirectRefusal judgeRedirect(const std::string& from, const char* address,
+		                                     uint16_t port, bool follow,
+		                                     const std::vector<std::string>& visited,
+		                                     std::string& target);
 
 		/**
 		 * Bring the session in line with the identity the settings now give this
@@ -487,6 +521,13 @@ class Hub
 
 		/** Whether the user a source names - a client ID, or a nickname on NMDC - is here. */
 		bool hasSourceUser(const char* cid) const;
+
+		/**
+		 * What a download source names this user by: the CID of the user with
+		 * that SID or CID on ADC, the nickname itself on NMDC; empty when nobody
+		 * here has it.
+		 */
+		std::string sourceIdOf(const char* id) const;
 
 		/**
 		 * The hub URL in canonical "{scheme}://{host}:{port}" form.
@@ -623,7 +664,18 @@ class Hub
 		Samurai::IO::Net::URL* url;
 		char* canonicalUrl;
 		Samurai::Timer* timer;
-		
+
+		bool followRedirects = false;
+		std::vector<std::string> redirected;
+		std::string redirectTarget;
+
+		/* connect() without forgetting where redirects have taken this connection. */
+		void open();
+
+		/* By CID; only NMDC, which has none, by the nickname that is its session ID. */
+		const User* sourceUser(const char* id) const;
+		bool isNmdc() const;
+
 		void EventTimeout(Samurai::Timer*) override;
 
 	friend class HubManager;

@@ -38,28 +38,47 @@ void QuickDC::DCServer::listen(const Endpoint& endpoint)
 
 	at = endpoint;
 
-	const uint16_t port = at.port;
 	const std::string& bindaddr = at.bind;
 	const std::string& bindaddr6 = at.bind6;
 
-	QDBG("Starting up server at port %d, listening on %s", port, bindaddr.c_str());
+	QDBG("Starting up server at port %d, listening on %s", at.port, bindaddr.c_str());
 
 	Samurai::IO::Net::InetAddress localAddr(bindaddr.c_str());
-	Samurai::IO::Net::InetSocketAddress bindAddr(localAddr, port);
 
-	socket = Samurai::IO::Net::ServerSocket::create(core.loop(), this, bindAddr);
-	dgram  = Samurai::IO::Net::DatagramSocket::create(core.loop(), this, bindAddr);
-
-	if (!socket->listen())
+	/*
+	 * Port 0 is one port picked for both: TCP is given one, and UDP is asked for
+	 * the same number. One taken for UDP already is given back and another one
+	 * picked, so a peer told the port finds both services on it.
+	 */
+	uint16_t port = at.port;
+	for (int attempt = 0; attempt < QUICKDC_PICK_PORT_ATTEMPTS; attempt++)
 	{
-		QDBG("Error: could not bind to port for TCP service. Disabling service");
-		socket.reset();
+		dgram.reset();
+		socket = Samurai::IO::Net::ServerSocket::create(core.loop(), this,
+			Samurai::IO::Net::InetSocketAddress(localAddr, at.port));
+
+		if (!socket->listen())
+		{
+			QDBG("Error: could not bind to port for TCP service. Disabling service");
+			socket.reset();
+		}
+
+		port = (at.port || !socket) ? at.port : socket->getLocalPort();
+		dgram = Samurai::IO::Net::DatagramSocket::create(core.loop(), this,
+			Samurai::IO::Net::InetSocketAddress(localAddr, port));
+
+		if (dgram->listen()) break;
+
+		QDBG("Error: could not bind to port %d for UDP service", port);
+		dgram.reset();
+		if (at.port || !socket) break;
 	}
 
-	if (!dgram->listen())
+	if (!at.port && socket && !dgram)
 	{
-		QDBG("Error: could not bind to port for UDP service. Disabling service");
-		dgram.reset();
+		QDBG("No port was free for both TCP and UDP; disabling the peer port");
+		socket.reset();
+		port = 0;
 	}
 
 	/*
@@ -98,6 +117,13 @@ uint16_t QuickDC::DCServer::boundPort() const
 {
 	if (socket) return socket->getLocalPort();
 	if (socket6) return socket6->getLocalPort();
+	return 0;
+}
+
+uint16_t QuickDC::DCServer::boundUdpPort() const
+{
+	if (dgram) return dgram->getLocalPort();
+	if (dgram6) return dgram6->getLocalPort();
 	return 0;
 }
 

@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 
 /*
@@ -459,5 +460,30 @@ EXO_TEST(acl_bans_and_accounts_are_found_by_what_identifies_them,
 		EXO_ASSERT(reread.accountFor(0, "oper") == 0);
 	}
 	Samurai::IO::File(path).remove();
+	return 1;
+});
+
+/*
+ * The hub has to know an account's password to check a GPA answer, so acl.xml
+ * holds it as given; the file is its owner's alone, also one that was not before.
+ */
+EXO_TEST(acl_the_saved_list_is_readable_by_its_owner_alone,
+{
+	const std::string path = aclPath();
+	writeFile(path, "<AccessList><User credential=\"user\" name=\"bob\"><verify type=\"password\" data=\"secret\" /></User></AccessList>");
+	chmod(path.c_str(), 0644);
+
+	bool saved = false;
+	{
+		ADC::LocalHub::ACL::Table table(path.c_str());
+		saved = table.save();
+	}
+
+	struct stat info;
+	const bool statted = stat(path.c_str(), &info) == 0;
+	Samurai::IO::File(path).remove();
+
+	EXO_ASSERT(saved && statted);
+	EXO_ASSERT_EQ_INT(static_cast<int>(info.st_mode & 0777), 0600);
 	return 1;
 });

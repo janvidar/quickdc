@@ -126,6 +126,35 @@ EXO_TEST(networkplan_a_changed_port_is_listened_on_without_a_restart,
 	return 1;
 });
 
+/*
+ * Port 0 is one port picked for both services: a peer is told one number, and a
+ * search result sent to it has to arrive where its connection would.
+ */
+EXO_TEST(networkplan_port_0_picks_one_port_for_tcp_and_udp,
+{
+	Fixture f;
+	QuickDC::DCServer::Endpoint at;
+	at.port = 0;
+	at.bind = "127.0.0.1";
+	at.bind6 = "";
+
+	for (int n = 0; n < 20; n++)
+	{
+		QuickDC::DCServer server(*f.core, at);
+		EXO_ASSERT(server.listening(false) && server.listeningUdp(false));
+		EXO_ASSERT(server.boundPort() != 0);
+		EXO_ASSERT_EQ_INT(server.boundUdpPort(), server.boundPort());
+	}
+
+	/* And the one bound is what is advertised, not the 0 configured. */
+	delete f.core->server;
+	f.core->server = new QuickDC::DCServer(*f.core, at);
+	f.core->config->setNumber("Network", "Port", 0);
+	EXO_ASSERT(f.core->peerPort() != 0);
+	EXO_ASSERT_EQ_INT(f.core->peerPort(), f.core->server->boundPort());
+	return 1;
+});
+
 /* What a hub was told includes the port, so the hubs are told again. */
 EXO_TEST(networkplan_a_changed_port_is_told_to_the_hubs,
 {

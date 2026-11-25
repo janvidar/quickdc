@@ -96,11 +96,18 @@ EXO_TEST(filesource_ctor_agrees_with_url, {
 	return ok;
 });
 
+/* A CID is the peer on every ADC hub; an NMDC nickname only on its own hub, however that is spelled. */
 EXO_TEST(filesource_matches, {
 	QuickDC::FileSource src("adc://host:7817/CID/f");
+	QuickDC::FileSource nick("dchub://host:411/bob/f");
 	return src.matches("adc://host:7817", "CID")
-		&& !src.matches("adc://other:7817", "CID")
+		&& src.matches("adcs://other:7817", "CID")
 		&& !src.matches("adc://host:7817", "OTHER")
+		&& !src.matches("dchub://host:7817", "CID")
+		&& nick.matches("DCHUB://Host:411", "bob")
+		&& nick.matches(" dchub://host ", "bob")
+		&& !nick.matches("dchub://other:411", "bob")
+		&& !nick.matches("dchub://host:411", "Bob")
 		&& !src.matches(0, 0);
 });
 

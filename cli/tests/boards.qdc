@@ -69,8 +69,9 @@ preset application Network "Active mode" 1
 @b wait PostStatus tth=$R3 state=Verified timeout=30s
 @b wait PostStatus tth=$R2 state=Verified timeout=30s
 
-# Withdrawn, a post goes from every reader, its document with it.
-@a board-withdraw hub general $R1
+# Withdrawn, a post goes from every reader, its document with it. A board is named
+# by its hub's address, however spelled, and that finds the session on it.
+@a board-withdraw ADC://127.0.0.1:${PORT_C}/ general $R1
 @b wait BoardEntries board=general entries.*.tth=$R1 entries.*.removed=true timeout=30s
 @b wait PostStatus tth=$R1 state=Withdrawn
 @c wait PostStatus tth=$R1 state=Withdrawn
@@ -78,6 +79,14 @@ preset application Network "Active mode" 1
 # With its author gone, c reads it from b, who has read it.
 @a close hub
 @c wait UserLeft hub=hub user.nick=alice timeout=30s
+
+# With no session on the hub, what needs it is refused, saying so.
+@a board-withdraw adc://127.0.0.1:${PORT_C} general $R2
+@a wait BoardUnavailable hubUrl=adc://127.0.0.1:${PORT_C} board=general tth=$R2 asked=Withdraw
+@a board-subscribe adc://127.0.0.1:${PORT_C} general
+@a wait BoardUnavailable asked=Subscribe
+@a board-post adc://127.0.0.1:${PORT_C} general Late Nobody to send it to.
+@a wait PostRefused why=NoHub
 @c board-read hub general $ROOT fetch
 @c wait PostStatus tth=$ROOT state=Verified post.body="The first post." timeout=60s
 

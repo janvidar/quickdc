@@ -193,6 +193,9 @@ class Core {
 
 		QuickDC::Share::Manager* shares;
 		DCServer* server;
+
+		/** The peer port as bound - the one picked where 0 was asked for - or as configured where none is. */
+		uint16_t peerPort() const;
 		ConnectionManager* connections;
 		HubManager* hubs;
 		QuickDC::Hash::Manager* hash;

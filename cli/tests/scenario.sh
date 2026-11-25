@@ -2,7 +2,7 @@
 #
 # Run qdc over a home of its own and check how it ends.
 #
-# Usage: scenario.sh <exit status> <text stderr must hold, or -> <qdc> [arguments...]
+# Usage: scenario.sh <exit status> <text stderr must hold, !text it must not, or -> <qdc> [arguments...]
 
 set -u
 
@@ -25,11 +25,24 @@ then
 	failed=1
 fi
 
-if [ "$needle" != "-" ] && ! grep -qF -- "$needle" "$home/stderr"
-then
-	echo "stderr does not say: $needle" >&2
-	failed=1
-fi
+case "$needle" in
+-)
+	;;
+!*)
+	if grep -qF -- "${needle#!}" "$home/stderr"
+	then
+		echo "stderr says what it must not: ${needle#!}" >&2
+		failed=1
+	fi
+	;;
+*)
+	if ! grep -qF -- "$needle" "$home/stderr"
+	then
+		echo "stderr does not say: $needle" >&2
+		failed=1
+	fi
+	;;
+esac
 
 if [ "$failed" -ne 0 ]
 then

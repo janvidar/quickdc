@@ -290,7 +290,7 @@ EXO_TEST(sources_source_is_taken_over_and_found_again,
 		EXO_ASSERT(file.countSources() == 1);
 		EXO_ASSERT(file.findSource(HUB, CID) != 0);
 		EXO_ASSERT(file.findSource(HUB, "SOMEONEELSE") == 0);
-		EXO_ASSERT(file.findSource("adc://other:412", CID) == 0);
+		EXO_ASSERT(file.findSource("dchub://hub.example:412", CID) == 0);
 	
 	return 1;
 });
@@ -334,9 +334,33 @@ EXO_TEST(sources_distinct_sources_all_stay,
 		QuickDC::QueueFile file("/tmp/a.bin", TTH1, 1000);
 		file.addSource(new QuickDC::FileSource(HUB, "AAAA"));
 		file.addSource(new QuickDC::FileSource(HUB, "BBBB"));
-		file.addSource(new QuickDC::FileSource("adc://other:412", "AAAA"));
+		file.addSource(new QuickDC::FileSource("dchub://one:411", "carol"));
+		file.addSource(new QuickDC::FileSource("dchub://two:411", "carol"));
 
-		EXO_ASSERT(file.countSources() == 3);
+		EXO_ASSERT(file.countSources() == 4);
+	
+	return 1;
+});
+
+/*
+ * One peer is one source however it was learned: a CID found on a second ADC
+ * hub, or a hub's address written another way. Two sources for one peer were
+ * two connections to it fetching the same file, each throwing away the
+ * other's leaves.
+ */
+EXO_TEST(sources_one_peer_is_one_source_however_it_was_learned,
+{
+		QuickDC::QueueFile file("/tmp/a.bin", TTH1, 1000);
+		file.addSource(new QuickDC::FileSource(HUB, CID));
+		file.addSource(new QuickDC::FileSource("adcs://elsewhere.example:5000", CID));
+		file.addSource(new QuickDC::FileSource("ADC://Hub.Example:412", CID));
+		file.addSource(new QuickDC::FileSource("dchub://nmdc.example", "dave"));
+		file.addSource(new QuickDC::FileSource("dchub://NMDC.example:411", "dave"));
+		file.addSource(new QuickDC::FileSource(" dchub://nmdc.example:411", "dave", "TTH:" TTH1));
+
+		EXO_ASSERT(file.countSources() == 2);
+		EXO_ASSERT(file.findSource("adc://elsewhere.example:5000", CID) == file.getSource(0));
+		EXO_ASSERT(!strcmp(file.getSource(1)->getHubUrl(), "dchub://nmdc.example:411"));
 	
 	return 1;
 });

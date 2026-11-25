@@ -153,11 +153,10 @@ class Listener : public QuickDC::HubListener
 		void EventHubDescription(const char* description) override
 		{ hubDescription = description ? description : ""; }
 
-		bool EventHubRedirect(const char* host, uint16_t port) override
+		void EventHubRedirect(const char* host, uint16_t port, const char*, QuickDC::RedirectRefusal) override
 		{
 			redirects.push_back(std::string(host ? host : "")
 				+ ":" + std::to_string(port));
-			return false;
 		}
 
 		void EventHubAutenticate() override { authRequested = true; }

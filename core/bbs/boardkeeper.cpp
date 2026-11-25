@@ -23,6 +23,7 @@
 #include <samurai/crypto/digest/merkletree.h>
 #include <samurai/crypto/digest/tiger.h>
 #include <samurai/io/file.h>
+#include <samurai/stdc.h>
 
 #include <chrono>
 #include <cstdio>
@@ -172,9 +173,14 @@ QuickDC::BoardKeeper::Session* QuickDC::BoardKeeper::session(Api::HubHandle hub)
 
 QuickDC::BoardKeeper::Session* QuickDC::BoardKeeper::sessionFor(const std::string& hubKey)
 {
+	Session* found = nullptr;
 	for (auto& [handle, at] : sessions)
-		if (at.key == hubKey) return &at;
-	return nullptr;
+	{
+		if (!Samurai::Util::iequals(at.key, hubKey)) continue;
+		if (at.available && at.link) return &at;
+		if (!found) found = &at;
+	}
+	return found;
 }
 
 bool QuickDC::BoardKeeper::fetchesAhead(const std::string& hubUrl) const
@@ -419,11 +425,23 @@ void QuickDC::BoardKeeper::load(const std::string& hubUrl, const std::string& bo
 			tell(entry.tth, State::Unavailable, Why::KnownBad);
 }
 
-void QuickDC::BoardKeeper::subscribe(Api::HubHandle hub, const std::string& board, bool fromStart)
+QuickDC::BoardKeeper::Session* QuickDC::BoardKeeper::carrying(const std::string& hubUrl, const std::string& board,
+                                                              const std::string& tth, Api::Events::BoardUnavailable::Asked asked)
 {
-	Session* at = session(hub);
+	Session* at = sessionFor(hubSettingsGroup(hubUrl));
+	if (at && at->link && at->available) return at;
+
+	publish(Api::Events::BoardUnavailable{hubSettingsGroup(hubUrl), board, tth, asked});
+	return nullptr;
+}
+
+void QuickDC::BoardKeeper::subscribe(const std::string& hubUrl, const std::string& board, bool fromStart)
+{
+	using Asked = Api::Events::BoardUnavailable::Asked;
+	if (board.empty()) return;
+	Session* at = carrying(hubUrl, board, std::string(), Asked::Subscribe);
 	Store* here = store();
-	if (!at || !here || board.empty() || !at->available) return;
+	if (!at || !here) return;
 
 	at->left.erase(board);
 	if (at->subscribed.count(board) && !fromStart) return;
@@ -432,15 +450,31 @@ void QuickDC::BoardKeeper::subscribe(Api::HubHandle hub, const std::string& boar
 		announceState(at->key, board, false, false);
 }
 
-void QuickDC::BoardKeeper::unsubscribe(Api::HubHandle hub, const std::string& board)
+void QuickDC::BoardKeeper::unsubscribe(const std::string& hubUrl, const std::string& board)
 {
-	Session* at = session(hub);
-	if (!at || board.empty()) return;
+	using Asked = Api::Events::BoardUnavailable::Asked;
+	if (board.empty()) return;
+	Session* at = carrying(hubUrl, board, std::string(), Asked::Unsubscribe);
+	if (!at) return;
 
-	if (at->link && at->available) at->link->unsubscribeBoard(board);
+	at->link->unsubscribeBoard(board);
 	at->subscribed.erase(board);
 	at->left.insert(board);
 	announceState(at->key, board, false, false);
+}
+
+void QuickDC::BoardKeeper::requestEntry(const std::string& hubUrl, const std::string& board, const std::string& tth)
+{
+	using Asked = Api::Events::BoardUnavailable::Asked;
+	if (board.empty() || tth.empty()) return;
+	if (Session* at = carrying(hubUrl, board, tth, Asked::Entry)) at->link->requestEntry(board, tth);
+}
+
+void QuickDC::BoardKeeper::withdraw(const std::string& hubUrl, const std::string& board, const std::string& tth)
+{
+	using Asked = Api::Events::BoardUnavailable::Asked;
+	if (board.empty() || tth.empty()) return;
+	if (Session* at = carrying(hubUrl, board, tth, Asked::Withdraw)) at->link->withdrawPost(board, tth);
 }
 
 void QuickDC::BoardKeeper::markRead(const std::string& hubUrl, const std::string& board, const std::string& tth)
@@ -816,7 +850,7 @@ void QuickDC::BoardKeeper::write(const Api::Commands::WritePost& command)
 {
 	using Refused = Api::Events::PostRefused;
 
-	Session* at = session(command.hub);
+	Session* at = sessionFor(hubSettingsGroup(command.hubUrl));
 	if (!at || !at->link || !at->available || command.board.empty())
 	{
 		publish(Refused{command.request, Refused::Why::NoHub, 0, 0, std::string()});
@@ -908,7 +942,7 @@ void QuickDC::BoardKeeper::EventAttachmentReady(const char* path, const char* tt
 	const Writing done = found->second;
 	writing.erase(found);
 
-	Session* at = session(done.command.hub);
+	Session* at = sessionFor(done.hub);
 	if (!at || !at->link
 	    || !at->link->submitPost(tth, size, done.command.board, done.subject, done.command.parent))
 	{

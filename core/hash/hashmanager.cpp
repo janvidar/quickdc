@@ -335,6 +335,13 @@ void QuickDC::Hash::Manager::loadCache()
 {
 	QDBG("QuickDC::Hash::Manager::loadCache()");
 	
+	/* A home that has hashed nothing yet has no cache, and that is no fault. */
+	if (!Samurai::IO::File::exists(cachefile.c_str()))
+	{
+		QDBG("No hash database cache yet");
+		return;
+	}
+
 	QuickDC::Hash::CacheStorage store{Samurai::IO::File(cachefile)};
 	if (!store.open(CacheStorage::ReadAccess))
 	{

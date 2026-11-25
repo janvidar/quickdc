@@ -35,8 +35,10 @@
 #include "network/downloadqueue.h"
 #include "network/leafhashes.h"
 #include "network/filesource.h"
+#include "network/transfermanager.h"
 #include "network/user.h"
 #include "config/settings.h"
+#include <optional>
 #include <string>
 #include <string_view>
 #include <samurai/crypto/digest/tiger.h>
@@ -742,6 +744,10 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 	const QuickDC::User* user = reply->getRequest()->getUser();
 	QuickDC::Share::File* file = reply->getFile();
 
+	const std::optional<size_t> freeSlots = getCore().transfers && getCore().config
+		? getCore().transfers->freeUploadSlots(QuickDC::Settings::read(*getCore().config, QuickDC::Settings::Slots))
+		: std::nullopt;
+
 	if (user->getAddressIPv4() && user->getPortIPv4() && getCore().server)
 	{
 		/* Send UDP packet */
@@ -752,7 +758,7 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		cmd.addArgument("TR", file->getTTH());
 		cmd.addArgument("TD", "0");
 		cmd.addArgument("TO", req->getToken());
-		// cmd.addArgument("SL", "3"); // FIXME: implement me
+		if (freeSlots) cmd.addArgument("SL", std::to_string(*freeSlots));
 
 		Samurai::IO::Buffer buffer;
 		cmd.write(&buffer);
@@ -771,7 +777,7 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		cmd->addArgument("TR", file->getTTH());
 		cmd->addArgument("TD", "0");
 		cmd->addArgument("TO", req->getToken());
-		// cmd.addArgument("SL", "3"); // FIXME: implement me
+		if (freeSlots) cmd->addArgument("SL", std::to_string(*freeSlots));
 
 		send(cmd);
 	}
@@ -909,7 +915,7 @@ void ADC::HubSession::onQuit(const char* id, const char* message, const char* re
 	{
 		const Samurai::IO::Net::URL to(redirect);
 		listener->EventHubStatus(QuickDC::HubListener::HubRedirected);
-		listener->EventHubRedirect(redirect, to.isValid() ? to.getPort() : 0);
+		if (hub) hub->onRedirect(redirect, to.isValid() ? to.getPort() : 0);
 	}
 	else if (timeLeft && *timeLeft)
 	{
@@ -1029,7 +1035,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 		core->server != 0 && core->server->listening(false),
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		observedAddress,
-		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
+		core->peerPort(),
 		core->portforward);
 
 	QDBG("Active mode %d (server=%p)\n", endpoint.active ? 1 : 0, core->server);
@@ -1043,7 +1049,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 		QuickDC::networkModeKeysInForce(*config).activeMode,
 		core->server != 0 && core->server->listening(true),
 		QuickDC::lastDropVerdict(*core, true).publicAddress,
-		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)));
+		core->peerPort());
 
 	/* Evidence belongs to the endpoint it was gathered for; announcing a different
 	   one discards what was known about the old. */
@@ -1360,7 +1366,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 		core->server != 0 && core->server->listening(false),
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		observedAddress,
-		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
+		core->peerPort(),
 		core->portforward);
 
 	/*
@@ -2641,7 +2647,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 		core->server != 0 && core->server->listening(false),
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		observedAddress,
-		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
+		core->peerPort(),
 		core->portforward);
 
 	if (endpoint.active) {
@@ -2747,7 +2753,7 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	if (indexes.empty()) return;
 
 	QuickDC::Preferences* config = core->config;
-	int port = QuickDC::networkModeKeysInForce(*config).activeMode ? QuickDC::Settings::read(*config, QuickDC::Settings::Port) : 0;
+	int port = QuickDC::networkModeKeysInForce(*config).activeMode ? core->peerPort() : 0;
 
 	/* HI names the hub without the scheme, which is how DC++ reports it. */
 	std::string hubIpPort;

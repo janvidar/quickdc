@@ -950,9 +950,22 @@ bool QuickDC::QueueManager::requestSourceSearch(const char* tth, SourceSearchRes
 	return outcome == SourceSearchSent;
 }
 
-bool QuickDC::QueueManager::addKnownSource(const char* tth, const char* hubUrl, const char* cid)
+std::string QuickDC::QueueManager::sourceIdOn(const char* hubUrl, const char* id) const
 {
-	if (!isTigerRoot(tth) || !isRecordablePeer(hubUrl, cid)) return false;
+	if (!id) return std::string();
+
+	QuickDC::Hub* hub = (core && core->hubs && hubUrl) ? core->hubs->getHubByUrl(hubUrl) : 0;
+	const std::string known = (hub) ? hub->sourceIdOf(id) : std::string();
+	return known.empty() ? std::string(id) : known;
+}
+
+bool QuickDC::QueueManager::addKnownSource(const char* tth, const char* hubUrl, const char* given)
+{
+	if (!isTigerRoot(tth) || !isRecordablePeer(hubUrl, given)) return false;
+
+	const std::string id = sourceIdOn(hubUrl, given);
+	const char* cid = id.c_str();
+	if (!isRecordablePeer(hubUrl, cid)) return false;
 
 	/* The author of a post is a known source for it, and sometimes that is us. */
 	if (isOurselves(core, hubUrl, cid)) return false;
@@ -1161,9 +1174,12 @@ bool QuickDC::QueueManager::getNextTransfer(QueueFile*& file, FileSource*& sourc
 	return true;
 }
 
-void QuickDC::QueueManager::onPartialSources(const char* hubUrl, const char* id, const char* tth, const char* indexes)
+void QuickDC::QueueManager::onPartialSources(const char* hubUrl, const char* given, const char* tth, const char* indexes)
 {
-	if (!hubUrl || !id || !tth || !indexes) return;
+	if (!hubUrl || !given || !tth || !indexes) return;
+
+	const std::string named = sourceIdOn(hubUrl, given);
+	const char* id = named.c_str();
 
 	QueueFile* file = getFileByTTH(tth);
 	if (!file) return;
@@ -1251,6 +1267,19 @@ bool QuickDC::QueueManager::sourceIsUseful(QueueFile* file, FileSource* source) 
 	if (!source->getAvailability(leaves->getLeafSize(), file->getSize(), theirs)) return true;
 
 	return file->getChunks().hasFreeRangeWithin(theirs);
+}
+
+bool QuickDC::QueueManager::isPeerBusyWith(QueueFile* file, FileSource* source) const
+{
+	if (!file || !source) return false;
+
+	for (const auto& [token, request] : pending)
+	{
+		if (request->getFile() != file) continue;
+		const FileSource* other = request->getSource();
+		if (other && source->matches(other->getHubUrl(), other->getClientID())) return true;
+	}
+	return false;
 }
 
 bool QuickDC::QueueManager::reserveChunk(QueueFile* file, FileSource* source, uint64_t& offset, uint64_t& length)
@@ -1780,6 +1809,7 @@ void QuickDC::QueueManager::schedule()
 				FileSource* source = file->getSource(s);
 				if (!source || source->isExpired()) continue;
 				if (file->isSourceActive(source)) continue;
+				if (isPeerBusyWith(file, source)) continue;
 				if (!source->isReadyToRetry()) continue;
 				if (!sourceIsUseful(file, source)) continue;
 

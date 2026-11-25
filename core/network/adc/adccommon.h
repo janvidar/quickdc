@@ -211,6 +211,10 @@ inline std::string adc_status_code(int severity, int code)
  */
 #define ADC_STR_CONNECTION_LOST         "Connection lost"
 #define ADC_STR_CONNECTION_FAILED       "Connection failed"
+#define ADC_STR_CONNECTION_UNEXPECTED   "Connection not expected"
+
+/* How long a peer connection has from coming up to both sides having named themselves. */
+#define QUICKDC_PEER_HANDSHAKE_SECONDS  30
 
 
 #endif // HAVE_QUICKDC_ADC_COMMON_H

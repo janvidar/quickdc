@@ -256,6 +256,23 @@ QuickDC::Api::NetStatus converted(QuickDC::HubListener::StatusNetwork status)
 	return Out::Invalid;
 }
 
+QuickDC::Api::Events::HubRedirect::Why converted(QuickDC::RedirectRefusal why)
+{
+	using In = QuickDC::RedirectRefusal;
+	using Out = QuickDC::Api::Events::HubRedirect::Why;
+
+	switch (why)
+	{
+		case In::None:          return Out::None;
+		case In::Policy:        return Out::Policy;
+		case In::Invalid:       return Out::Invalid;
+		case In::OtherProtocol: return Out::OtherProtocol;
+		case In::Downgrade:     return Out::Downgrade;
+		case In::Loop:          return Out::Loop;
+	}
+	return Out::Invalid;
+}
+
 QuickDC::Api::HubStatus converted(QuickDC::HubListener::StatusHub status)
 {
 	using In = QuickDC::HubListener;
@@ -303,7 +320,7 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 
 		void setPolicy(bool follow, bool allowPeers)
 		{
-			followRedirects = follow;
+			setFollowRedirects(follow);
 			allowPeerConnections = allowPeers;
 		}
 
@@ -334,6 +351,16 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 			return Hub::submitPost(tth.c_str(), size, board.c_str(),
 			                       subject.empty() ? nullptr : subject.c_str(),
 			                       parent.empty() ? nullptr : parent.c_str());
+		}
+
+		bool requestEntry(const std::string& board, const std::string& tth) override
+		{
+			return Hub::requestEntry(board.c_str(), tth.c_str());
+		}
+
+		bool withdrawPost(const std::string& board, const std::string& tth) override
+		{
+			return Hub::withdrawPost(tth.c_str(), board.c_str());
 		}
 
 		void EventNetStatus(enum StatusNetwork netstate) override
@@ -490,10 +517,24 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 			owner.publish(Events::HubDescription{handle, text(description)});
 		}
 
-		bool EventHubRedirect(const char* address, uint16_t port) override
+		void EventHubRedirect(const char* address, uint16_t port, const char* following,
+		                      QuickDC::RedirectRefusal why) override
 		{
-			owner.publish(Events::HubRedirect{handle, text(address), port, followRedirects});
-			return followRedirects;
+			const std::string to = text(following);
+			if (!to.empty())
+			{
+				if (owner.boards)
+				{
+					owner.boards->closed(handle);
+					owner.boards->opened(handle, this, to);
+				}
+				if (owner.recents)
+				{
+					owner.recents->visited(to, static_cast<uint64_t>(time(0)));
+					owner.publish(owner.recentHubs(0));
+				}
+			}
+			owner.publish(Events::HubRedirect{handle, text(address), port, !to.empty(), to, converted(why)});
 		}
 
 		void EventHubAutenticate() override
@@ -516,7 +557,6 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 		HubHandle handle;
 		/** The address it was opened by, which is what the visit was recorded under. */
 		std::string opened;
-		bool followRedirects = false;
 		bool allowPeerConnections = true;
 };
 
@@ -1014,9 +1054,10 @@ void QuickDC::Api::Service::run(const Commands::EnqueueFromSearch& command)
 		command.tth.empty() ? nullptr : command.tth.c_str(), command.size);
 	if (!file) return;
 
-	if (file->findSource(command.hubUrl.c_str(), command.sourceId.c_str())) return;
+	const std::string id = core.queue->sourceIdOn(command.hubUrl.c_str(), command.sourceId.c_str());
+	if (file->findSource(command.hubUrl.c_str(), id.c_str())) return;
 
-	file->addSource(new FileSource(command.hubUrl.c_str(), command.sourceId.c_str(),
+	file->addSource(new FileSource(command.hubUrl.c_str(), id.c_str(),
 		command.remoteName.empty() ? nullptr : command.remoteName.c_str()));
 }
 
@@ -1040,6 +1081,7 @@ void QuickDC::Api::Service::run(const Commands::RemoveFromQueue& command)
 	/* Copied first: the entry, and its idea of where the part is, go with remove(). */
 	std::string partial;
 	if (command.deletePartial && file->getTempFilename()) partial = file->getTempFilename();
+	if (file->getTTH()) mediaFetches.erase(file->getTTH());
 
 	core.queue->remove(file);
 	if (!partial.empty()) Samurai::IO::File(partial).remove();
@@ -1669,18 +1711,17 @@ void QuickDC::Api::Service::run(const Commands::RequestHistory& command)
 
 void QuickDC::Api::Service::run(const Commands::SubscribeBoard& command)
 {
-	if (boards) boards->subscribe(command.hub, command.board, command.fromStart);
+	if (boards) boards->subscribe(command.hubUrl, command.board, command.fromStart);
 }
 
 void QuickDC::Api::Service::run(const Commands::UnsubscribeBoard& command)
 {
-	if (boards) boards->unsubscribe(command.hub, command.board);
+	if (boards) boards->unsubscribe(command.hubUrl, command.board);
 }
 
 void QuickDC::Api::Service::run(const Commands::RequestBoardEntry& command)
 {
-	if (HubSession* hub = session(command.hub))
-		hub->requestEntry(command.board.c_str(), command.tth.c_str());
+	if (boards) boards->requestEntry(command.hubUrl, command.board, command.tth);
 }
 
 void QuickDC::Api::Service::run(const Commands::WritePost& command)
@@ -1691,8 +1732,7 @@ void QuickDC::Api::Service::run(const Commands::WritePost& command)
 
 void QuickDC::Api::Service::run(const Commands::WithdrawPost& command)
 {
-	if (HubSession* hub = session(command.hub))
-		hub->withdrawPost(command.tth.c_str(), command.board.c_str());
+	if (boards) boards->withdraw(command.hubUrl, command.board, command.tth);
 }
 
 void QuickDC::Api::Service::run(const Commands::LoadBoard& command)

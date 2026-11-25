@@ -321,7 +321,7 @@ void DC::HubSession::onPrivateChat(const char* to, const char* from, const char*
 
 void DC::HubSession::onRedirect(const char* host, uint16_t port)
 {
-	listener->EventHubRedirect(host, port);
+	if (hub) hub->onRedirect(host, port);
 }
 
 void DC::HubSession::onBadPassword()
@@ -414,7 +414,7 @@ void DC::HubSession::onPassiveConnect(const char* user)
 				QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 				/* NMDC has no field for a hub to report the address it sees. */
 				std::string(),
-				static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
+				core->peerPort(),
 				core->portforward);
 
 			if (endpoint.active)
@@ -446,7 +446,7 @@ void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		/* NMDC has no field for a hub to report the address it sees. */
 		std::string(),
-		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)),
+		core->peerPort(),
 		core->portforward);
 
 	if (endpoint.active)
@@ -659,7 +659,7 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	}
 
 	QuickDC::Preferences* config = core->config;
-	int myPort = QuickDC::networkModeKeysInForce(*config).activeMode ? QuickDC::Settings::read(*config, QuickDC::Settings::Port) : 0;
+	int myPort = QuickDC::networkModeKeysInForce(*config).activeMode ? core->peerPort() : 0;
 
 	/* NI is what identifies us on an NMDC hub, where we have no client ID. */
 	ADC::Command cmd(FOURCC('U','P','S','R'), getCore().identity->getCID());

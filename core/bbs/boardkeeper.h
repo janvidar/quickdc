@@ -84,6 +84,8 @@ class BoardKeeper : private Share::AttachmentListener, private Samurai::TimerLis
 				virtual bool unsubscribeBoard(const std::string& board) = 0;
 				virtual bool submitPost(const std::string& tth, uint64_t size, const std::string& board,
 				                        const std::string& subject, const std::string& parent) = 0;
+				virtual bool requestEntry(const std::string& board, const std::string& tth) = 0;
+				virtual bool withdrawPost(const std::string& board, const std::string& tth) = 0;
 		};
 
 		/** Steady milliseconds for the fetches, and seconds since the epoch for the store. */
@@ -116,8 +118,10 @@ class BoardKeeper : private Share::AttachmentListener, private Samurai::TimerLis
 
 		/* What a front end asks. */
 		void load(const std::string& hubUrl, const std::string& board);
-		void subscribe(Api::HubHandle hub, const std::string& board, bool fromStart);
-		void unsubscribe(Api::HubHandle hub, const std::string& board);
+		void subscribe(const std::string& hubUrl, const std::string& board, bool fromStart);
+		void unsubscribe(const std::string& hubUrl, const std::string& board);
+		void requestEntry(const std::string& hubUrl, const std::string& board, const std::string& tth);
+		void withdraw(const std::string& hubUrl, const std::string& board, const std::string& tth);
 		void read(const std::string& hubUrl, const std::string& board, const std::string& tth, bool fetch);
 		void markRead(const std::string& hubUrl, const std::string& board, const std::string& tth);
 		void write(const Api::Commands::WritePost& command);
@@ -192,6 +196,10 @@ class BoardKeeper : private Share::AttachmentListener, private Samurai::TimerLis
 		Store* store();
 		Session* session(Api::HubHandle hub);
 		Session* sessionFor(const std::string& hubKey);
+
+		/* The session on that address that carries boards, or none, which is told. */
+		Session* carrying(const std::string& hubUrl, const std::string& board, const std::string& tth,
+		                  Api::Events::BoardUnavailable::Asked asked);
 
 		/** Subscribe from 'cursor' and say so; false where the session would not send it. */
 		bool follow(Session& at, const std::string& board, uint64_t cursor);

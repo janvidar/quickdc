@@ -15,6 +15,8 @@
 #include "network/usermanager.h"
 #include "api/core.h"
 #include "api/hub.h"
+#include "api/huburl.h"
+#include <samurai/stdc.h>
 
 QuickDC::HubManager::HubManager(Core& core_)
 	: core(core_)
@@ -72,11 +74,12 @@ void QuickDC::HubManager::remove(QuickDC::Hub* hub) {
 
 QuickDC::Hub* QuickDC::HubManager::getHubByUrl(const char* url) {
 	if (!url) return 0;
+	const std::string wanted = hubSettingsGroup(url);
 	for (size_t i = 0; i < hubs.size(); i++)
 	{
 		QuickDC::Hub* hub = hubs[i];
 		const char* hubUrl = hub->getUrl();
-		if (hubUrl && std::string_view(hubUrl) == url) return hub;
+		if (hubUrl && Samurai::Util::iequals(hubUrl, wanted)) return hub;
 	}
 	return 0;
 }

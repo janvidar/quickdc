@@ -127,6 +127,12 @@ size_t QuickDC::TransferManager::countUploads() {
 
 }
 
+std::optional<size_t> QuickDC::TransferManager::freeUploadSlots(int configured) {
+	if (configured <= 0) return std::nullopt;
+	const size_t busy = countUploads();
+	return busy >= static_cast<size_t>(configured) ? 0 : static_cast<size_t>(configured) - busy;
+}
+
 bool QuickDC::TransferManager::EventMessage(const Samurai::Message* msg)
 {
 	if (msg->getID() == QuickDC::MsgTransferStopped)

@@ -812,6 +812,13 @@ class QueueManager {
 		 */
 		bool addKnownSource(const char* tth, const char* hubUrl, const char* cid);
 
+		/**
+		 * What a source on that hub is to be recorded under: a SID given on ADC
+		 * becomes the CID of the user who has it there, so a peer is one source
+		 * however it was named. What the hub cannot place is returned as given.
+		 */
+		std::string sourceIdOn(const char* hubUrl, const char* id) const;
+
 	public: /* file lists - transient, never stored */
 
 		/**
@@ -930,6 +937,9 @@ class QueueManager {
 
 		/** @return false if this source holds nothing we still need. */
 		bool sourceIsUseful(QueueFile* file, FileSource* source) const;
+
+		/** Whether a request on this file is already out to the peer this source names. */
+		bool isPeerBusyWith(QueueFile* file, FileSource* source) const;
 
 		void clearRequestsFor(QueueFile*);
 		void removeRequest(const char* token);

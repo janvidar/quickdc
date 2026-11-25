@@ -1014,4 +1014,9 @@ const char* QuickDC::Core::getVersion() const
 	 ;
 }
 
-
+uint16_t QuickDC::Core::peerPort() const
+{
+	const uint16_t bound = server ? server->boundPort() : 0;
+	if (bound) return bound;
+	return config ? static_cast<uint16_t>(Settings::read(*config, Settings::Port)) : 0;
+}

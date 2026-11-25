@@ -235,6 +235,34 @@ const char* name(Ev::ReachabilityCheckFailed::Why why)
 	return "?";
 }
 
+const char* name(Ev::BoardUnavailable::Asked asked)
+{
+	using A = Ev::BoardUnavailable::Asked;
+	switch (asked)
+	{
+		case A::Subscribe:   return "Subscribe";
+		case A::Unsubscribe: return "Unsubscribe";
+		case A::Entry:       return "Entry";
+		case A::Withdraw:    return "Withdraw";
+	}
+	return "?";
+}
+
+const char* name(Ev::HubRedirect::Why why)
+{
+	using W = Ev::HubRedirect::Why;
+	switch (why)
+	{
+		case W::None:          return "None";
+		case W::Policy:        return "Policy";
+		case W::Invalid:       return "Invalid";
+		case W::OtherProtocol: return "OtherProtocol";
+		case W::Downgrade:     return "Downgrade";
+		case W::Loop:          return "Loop";
+	}
+	return "?";
+}
+
 const char* name(Ev::KickRefused::Why why)
 {
 	using W = Ev::KickRefused::Why;
@@ -773,7 +801,8 @@ struct Fields {
 	Out operator()(const Ev::HubRedirect& e) const
 	{
 		return {"HubRedirect", {
-			{"hub", hub(e.hub)}, {"address", e.address}, {"port", e.port}, {"followed", e.followed}}};
+			{"hub", hub(e.hub)}, {"address", e.address}, {"port", e.port}, {"followed", e.followed},
+			{"url", e.url}, {"why", name(e.why)}}};
 	}
 
 	Out operator()(const Ev::ChatReceived& e) const
@@ -823,6 +852,12 @@ struct Fields {
 	Out operator()(const Ev::BoardsAvailable& e) const
 	{
 		return {"BoardsAvailable", {{"hub", hub(e.hub)}, {"available", e.available}}};
+	}
+
+	Out operator()(const Ev::BoardUnavailable& e) const
+	{
+		return {"BoardUnavailable", {
+			{"hubUrl", e.hubUrl}, {"board", e.board}, {"tth", e.tth}, {"asked", name(e.asked)}}};
 	}
 
 	Out operator()(const Ev::BoardRefused& e) const

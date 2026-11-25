@@ -406,8 +406,15 @@ bool ADC::LocalHub::ACL::Table::save() {
 	
 	xmlout->append("</AccessList>" XML_NEWLINE);
 	
+	/*
+	 * Passwords are kept as given: ADC's GPA/PAS proves a password by the tiger hash
+	 * of it and a salt the hub chooses each time, so the hub needs the password
+	 * itself, and no stored digest could answer a fresh salt. So the file, and the
+	 * directory it is in, are its owner's alone.
+	 */
 	Samurai::IO::File xmlacl(path);
-	bool ret = xmlacl.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
+	bool ret = xmlacl.open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate
+	                       | Samurai::IO::File::Mode::Private);
 	if (ret) {
 		char* out = new char[xmlout->size()];
 		xmlout->pop(out, xmlout->size());
