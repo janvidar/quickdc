@@ -143,6 +143,32 @@ const char* name(Ev::AttachmentFailed::Why why)
 	return "?";
 }
 
+const char* name(Ev::ChatMedia::State state)
+{
+	using S = Ev::ChatMedia::State;
+	switch (state)
+	{
+		case S::Queued:  return "Queued";
+		case S::Ready:   return "Ready";
+		case S::Skipped: return "Skipped";
+	}
+	return "?";
+}
+
+const char* name(Ev::ChatMedia::Why why)
+{
+	using W = Ev::ChatMedia::Why;
+	switch (why)
+	{
+		case W::None:     return "None";
+		case W::Off:      return "Off";
+		case W::Unsized:  return "Unsized";
+		case W::TooLarge: return "TooLarge";
+		case W::Refused:  return "Refused";
+	}
+	return "?";
+}
+
 const char* name(Ev::ShareFolderRefused::Why why)
 {
 	using W = Ev::ShareFolderRefused::Why;
@@ -261,7 +287,6 @@ Value searchHit(const Api::SearchHit& h)
 {
 	return Object{
 		{"hubUrl", h.hubUrl},
-		{"token", h.token},
 		{"name", h.name},
 		{"tth", h.tth},
 		{"size", h.size},
@@ -460,6 +485,11 @@ struct Fields {
 		return {"AttachmentFailed", {{"path", e.path}, {"why", name(e.why)}, {"reason", e.reason}}};
 	}
 
+	Out operator()(const Ev::PastedKept& e) const
+	{
+		return {"PastedKept", {{"request", e.request}, {"path", e.path}, {"reason", e.reason}}};
+	}
+
 	Out operator()(const Ev::FilelistReady& e) const
 	{
 		return {"FilelistReady", {
@@ -474,7 +504,7 @@ struct Fields {
 
 	Out operator()(const Ev::SearchSent& e) const
 	{
-		return {"SearchSent", {{"token", e.token}, {"hubsAsked", e.hubsAsked}}};
+		return {"SearchSent", {{"request", e.request}, {"search", e.search}, {"hubsAsked", e.hubsAsked}}};
 	}
 
 	Out operator()(const Ev::TransferStarted& e) const
@@ -588,6 +618,12 @@ struct Fields {
 		return {"ChatReceived", {{"hub", hub(e.hub)}, {"line", chatLine(e.line)}}};
 	}
 
+	Out operator()(const Ev::ChatMedia& e) const
+	{
+		return {"ChatMedia", {{"hub", hub(e.hub)}, {"tth", e.tth}, {"name", e.name}, {"size", e.size},
+		                      {"state", name(e.state)}, {"why", name(e.why)}, {"path", e.path}}};
+	}
+
 	Out operator()(const Ev::HistoryRestored& e) const
 	{
 		return {"HistoryRestored", {
@@ -618,7 +654,7 @@ struct Fields {
 
 	Out operator()(const Ev::SearchResult& e) const
 	{
-		return {"SearchResult", {{"hub", hub(e.hub)}, {"hit", searchHit(e.hit)}}};
+		return {"SearchResult", {{"hub", hub(e.hub)}, {"search", e.search}, {"hit", searchHit(e.hit)}}};
 	}
 
 	Out operator()(const Ev::BoardsAvailable& e) const

@@ -102,6 +102,15 @@ class Session {
 
 		uint64_t nextRequest() { return ++requests; }
 
+		/** Remember the number SearchSent gives the search sent as 'request' as 'name'. */
+		void nameSearch(const std::string& core, uint64_t request, const std::string& name);
+
+		/** 'text' with each '$NAME' that names something remembered replaced by it. */
+		std::string expand(const std::string& text) const;
+
+		/** The search remembered as 'which', or 'which' read as a number. */
+		std::optional<uint64_t> search(const std::string& which) const;
+
 		/** The directory the cores' homes are made in, one per core, named after it. */
 		void setBase(std::string directory) { base = std::move(directory); }
 
@@ -134,6 +143,7 @@ class Session {
 			std::map<QuickDC::Api::HubHandle, std::map<std::string, QuickDC::Api::User>> users;
 			std::map<QuickDC::Api::HubHandle, std::string> urls;
 			std::deque<std::pair<QuickDC::Api::HubHandle, QuickDC::Api::SearchHit>> hits;
+			std::map<uint64_t, std::string> searchNames;
 			int shares = 0;
 		};
 

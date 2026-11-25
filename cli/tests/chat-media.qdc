@@ -1,0 +1,74 @@
+# A picture shown in chat is fetched by the core it is shown to - when fetching is
+# on there and it is within the limit - and offered again by its hash once here.
+# Otherwise nothing is fetched until somebody asks, and the core says why.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+preset application Network "Active mode" 1
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+@a preset application "Local hub" Enabled 1
+@a preset application User Nickname alice
+@b preset application User Nickname bob
+@a preset application "Chat media" "Fetch automatically" 1
+@a preset application "Chat media" "Maximum size" 1048576
+
+@b file media/pic.png 100k 11
+@b file media/other.png 200k 12
+@b file media/big.png 3M 13
+@b file media/clip.png 5k 14
+
+@b attach media/pic.png
+@b wait AttachmentReady size=102400 remember PIC=tth timeout=30s
+@b attach media/other.png
+@b wait AttachmentReady size=204800 remember OTHER=tth timeout=30s
+@b attach media/big.png
+@b wait AttachmentReady size=3145728 remember BIG=tth timeout=30s
+
+@a open adc://127.0.0.1:${PORT} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b open adc://127.0.0.1:${PORT} as hub
+@b connect hub
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b wait HubExtensions hub=hub richText=true
+@a wait UserUpdated hub=hub user.nick=bob
+
+@b chat-md hub look at this ![pic](magnet:?xt=urn:tree:tiger:$PIC&dn=pic.png&xl=102400)
+@a wait ChatMedia hub=hub tth=$PIC state=Queued
+@a wait ChatMedia hub=hub tth=$PIC state=Ready timeout=30s
+@a expect-file downloads/pic.png same-as ../b/media/pic.png
+@a wait AttachmentReady tth=$PIC timeout=30s
+
+# Shown again, it is here already.
+@b chat-md hub again ![pic](magnet:?xt=urn:tree:tiger:$PIC&dn=pic.png&xl=102400)
+@a wait ChatMedia hub=hub tth=$PIC state=Ready path!=""
+
+@b chat-md hub ![big](magnet:?xt=urn:tree:tiger:$BIG&dn=big.png&xl=3145728)
+@a wait ChatMedia hub=hub tth=$BIG state=Skipped why=TooLarge
+
+# A link offered as a file rather than shown is never fetched unasked.
+@b chat-md hub [offered](magnet:?xt=urn:tree:tiger:$OTHER&dn=offered.png&xl=204800) and `![code](magnet:?xt=urn:tree:tiger:$OTHER&dn=code.png&xl=1)`
+
+@a media-policy adc://127.0.0.1:${PORT} never
+@a wait SettingChanged store=session group=adc://127.0.0.1:${PORT} key="Fetch automatically"
+@b chat-md hub ![other](magnet:?xt=urn:tree:tiger:$OTHER&dn=other.png&xl=204800)
+@a wait ChatMedia hub=hub tth=$OTHER state=Skipped why=Off
+@a expect-no ChatMedia tth=$OTHER state=Queued
+@a expect-no ChatMedia name=offered.png
+@a expect-no ChatMedia name=code.png
+
+@a media-fetch hub $OTHER other.png 204800
+@a wait ChatMedia hub=hub tth=$OTHER state=Queued
+@a wait ChatMedia hub=hub tth=$OTHER state=Ready timeout=30s
+@a expect-file downloads/other.png same-as ../b/media/other.png
+
+@a media-fetch hub $BIG big.png 3145728
+@a wait ChatMedia hub=hub tth=$BIG state=Ready timeout=30s
+@a expect-file downloads/big.png same-as ../b/media/big.png
+
+# A pasted picture is kept among the core's media and offered like any other.
+@b paste media/clip.png
+@b wait PastedKept path!="" reason="" remember PASTED=path
+@b wait AttachmentReady path=$PASTED size=5120 timeout=30s

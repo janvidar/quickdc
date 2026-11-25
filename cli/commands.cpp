@@ -240,6 +240,16 @@ Step parseChat(const Line& line)
 	});
 }
 
+/* Markdown, with '$NAME' standing for what was remembered as NAME. */
+Step parseChatMarkdown(const Line& line)
+{
+	line.expect(2, std::numeric_limits<size_t>::max());
+	const std::string text = line.rest(1);
+	return onHub(line, line.args[0], [text](Session& session, Api::HubHandle hub) {
+		return Api::Command(Cmd::SendChat{hub, session.expand(text), true});
+	});
+}
+
 /* A nickname this core has seen on the hub, or else taken to be the user's id. */
 Step parsePrivate(const Line& line)
 {
@@ -484,16 +494,17 @@ Step parseShareStatus(const Line& line)
 	};
 }
 
-/* A word with a leading '-' is one a result must not hold. */
+/* A word with a leading '-' is one a result must not hold; 'as' names the search the core numbers. */
 Step parseSearch(const Line& line)
 {
 	line.expect(1, std::numeric_limits<size_t>::max());
 
 	Cmd::Search command;
+	std::string name;
 	size_t words = line.args.size();
 	if (words >= 3 && line.args[words - 2] == "as")
 	{
-		command.token = line.args[words - 1];
+		name = line.args[words - 1];
 		words -= 2;
 	}
 
@@ -507,9 +518,92 @@ Step parseSearch(const Line& line)
 	if (command.include.empty()) throw ScriptError("nothing to search for");
 	const std::string core = line.requireCore();
 
-	return [line, core, command](Session& session) mutable {
-		if (command.token.empty()) command.token = "qdc" + std::to_string(session.nextRequest());
+	return [line, core, command, name](Session& session) mutable {
+		command.request = session.nextRequest();
+		if (!name.empty()) session.nameSearch(core, command.request, name);
 		return session.submit(line, core, command);
+	};
+}
+
+/* By the name 'search ... as' gave it, or by its number. */
+Step parseSearchForget(const Line& line)
+{
+	line.expect(1, 1);
+	const std::string which = line.args[0];
+	const std::string core = line.requireCore();
+
+	return [line, core, which](Session& session) {
+		const std::optional<uint64_t> search = session.search(which);
+		if (!search) return session.fail(line, "no search is known as '" + which + "'");
+		return session.submit(line, core, Cmd::ForgetSearch{*search});
+	};
+}
+
+Step parseAttach(const Line& line)
+{
+	line.expect(1, 1);
+	const std::string path = line.args[0];
+	const std::string core = line.requireCore();
+
+	return [line, core, path](Session& session) {
+		return session.submit(line, core, Cmd::AttachFile{session.resolve(line, path), true, false});
+	};
+}
+
+/* The bytes of 'path' handed over as though pasted, its extension as their kind. */
+Step parsePaste(const Line& line)
+{
+	line.expect(1, 1);
+	const std::string path = line.args[0];
+	const std::string core = line.requireCore();
+
+	return [line, core, path](Session& session) {
+		const std::string from = session.resolve(line, path);
+		std::ifstream in(from, std::ios::binary);
+		if (!in) return session.fail(line, "'" + from + "' cannot be read");
+		std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+		const std::string extension = std::filesystem::path(from).extension().string();
+		return session.submit(line, core, Cmd::AttachPasted{
+			session.nextRequest(), std::move(data), extension.empty() ? extension : extension.substr(1)});
+	};
+}
+
+/* A hub of '-' leaves where to look to the queue. */
+Step parseMediaFetch(const Line& line)
+{
+	line.expect(4, 4);
+	const std::string hubName = line.args[0];
+	const std::string tth = line.args[1];
+	const std::string name = line.args[2];
+	const uint64_t size = parseSize(line.args[3]);
+	const std::string core = line.requireCore();
+
+	return [line, core, hubName, tth, name, size](Session& session) {
+		Api::HubHandle handle = 0;
+		if (hubName != "-")
+		{
+			const std::optional<Api::HubHandle> hub = session.hub(core, hubName);
+			if (!hub) return session.fail(line, "core '" + core + "' has no hub '" + hubName + "' open");
+			handle = *hub;
+		}
+		return session.submit(line, core, Cmd::FetchAttachment{handle, session.expand(tth), name, size});
+	};
+}
+
+Step parseMediaPolicy(const Line& line)
+{
+	line.expect(2, 2);
+	using Choice = Cmd::SetChatMediaFetch::Choice;
+	Choice choice = Choice::Follow;
+	if (line.args[1] == "always") choice = Choice::Always;
+	else if (line.args[1] == "never") choice = Choice::Never;
+	else if (line.args[1] != "follow") throw ScriptError("'" + line.args[1] + "' is none of follow, always, never");
+
+	const std::string url = line.args[0];
+	const std::string core = line.requireCore();
+	return [line, core, url, choice](Session& session) {
+		return session.submit(line, core, Cmd::SetChatMediaFetch{url, choice});
 	};
 }
 
@@ -753,6 +847,7 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"connect",    "connect <hub>",                                      parseConnect},
 		{"disconnect", "disconnect <hub>",                                   parseDisconnect},
 		{"chat",       "chat <hub> <text...>",                               parseChat},
+		{"chat-md",    "chat-md <hub> <markdown...>",                        parseChatMarkdown},
 		{"pm",         "pm <hub> <nick|id> <text...>",                       parsePrivate},
 		{"password",   "password <hub> <password>",                          parsePassword},
 		{"file",       "file <path> <size>[k|M|G] [seed]",                   parseFile, true},
@@ -761,7 +856,12 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"share-remove", "share-remove <directory>",                         parseShareRemove},
 		{"share-rename", "share-rename <directory> <name...>",               parseShareRename},
 		{"share-status", "share-status",                                     parseShareStatus},
-		{"search",     "search <word|-word ...> [as <token>]",               parseSearch},
+		{"attach",     "attach <path>",                                      parseAttach},
+		{"paste",      "paste <path>",                                       parsePaste},
+		{"media-fetch", "media-fetch <hub|-> <tth> <name> <size>",           parseMediaFetch},
+		{"media-policy", "media-policy <hub url> <follow|always|never>",     parseMediaPolicy},
+		{"search",     "search <word|-word ...> [as <name>]",                parseSearch},
+		{"search-forget", "search-forget <name|number>",                     parseSearchForget},
 		{"download",   "download <hub> <name|tth> [from <nick>] [to <path>]", parseDownload},
 		{"browse",     "browse <hub> <nick|id>",                             parseBrowse},
 		{"transfers",  "transfers",                                          parseTransfers},

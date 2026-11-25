@@ -25,7 +25,7 @@ preset application Network Bind6 ""
 @a wait UserUpdated hub=hub user.nick=bob
 
 @a search big.bin as s1
-@a wait SearchResult hub=hub hit.token=s1 hit.user.nick=bob
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob
 
 @a download hub big.bin from bob
 @a wait DownloadCompleted size=5242880 timeout=20s

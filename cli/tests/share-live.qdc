@@ -31,7 +31,7 @@ preset application Network Bind6 ""
 @b wait ShareStatus hashing=false files=2 timeout=30s
 
 @a search fresh.bin as s1
-@a wait SearchResult hub=hub hit.token=s1 hit.user.nick=bob
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob
 
 @b share-add fresh/
 @b wait ShareFolderRefused why=AlreadyShared
@@ -41,5 +41,5 @@ preset application Network Bind6 ""
 
 @a search fresh.bin as s2
 @a search kept.bin as s3
-@a wait SearchResult hub=hub hit.token=s3 hit.user.nick=bob
-@a expect-no SearchResult hit.token=s2
+@a wait SearchResult hub=hub search=$s3 hit.user.nick=bob
+@a expect-no SearchResult search=$s2

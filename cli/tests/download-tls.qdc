@@ -35,7 +35,7 @@ preset application Network "Require encrypted transfers" 1
 
 # a asks b to connect, so b dials and sees the certificate a presents.
 @a search one.bin as s1
-@a wait SearchResult hub=hub hit.token=s1 hit.user.nick=bob
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob
 @a download hub one.bin from bob
 @b wait TransferStarted transfer.upload=true transfer.secure=true transfer.peerKeyprint=$KP_A timeout=20s
 @a wait DownloadCompleted size=3145728 timeout=20s
@@ -43,7 +43,7 @@ preset application Network "Require encrypted transfers" 1
 
 # And the other way about: a dials, and sees b's.
 @b search two.bin as s2
-@b wait SearchResult hub=hub hit.token=s2 hit.user.nick=alice
+@b wait SearchResult hub=hub search=$s2 hit.user.nick=alice
 @b download hub two.bin from alice
 @a wait TransferStarted transfer.upload=true transfer.secure=true transfer.peerKeyprint=$KP_B timeout=20s
 @b wait DownloadCompleted size=3145728 timeout=20s

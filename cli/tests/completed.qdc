@@ -24,7 +24,7 @@ preset application Network "Active mode" 1
 @a wait UserUpdated hub=hub user.nick=bob
 
 @a search small.bin as s1
-@a wait SearchResult hub=hub hit.token=s1 hit.user.nick=bob
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob
 @a download hub small.bin from bob
 @a wait DownloadCompleted size=204800 timeout=20s remember FILE=filename
 @a wait CompletedDownloads downloads.0.filename=$FILE downloads.0.size=204800 downloads.0.finished!=0

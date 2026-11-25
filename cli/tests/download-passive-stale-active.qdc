@@ -29,7 +29,7 @@ preset application Network "Active mode" 1
 @a wait UserUpdated hub=hub user.nick=bob
 
 @a search big.bin as s1
-@a wait SearchResult hub=hub hit.token=s1 hit.user.nick=bob
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob
 
 @a download hub big.bin from bob
 @a wait TransferStarted transfer.upload=false transfer.outbound=true timeout=20s

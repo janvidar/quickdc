@@ -1,0 +1,49 @@
+# Searches in flight together on both cores, each result told as the answer to
+# the search that asked for it and to no other.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+@a preset application "Local hub" Enabled 1
+@a preset application User Nickname alice
+@b preset application User Nickname bob
+
+@a file mine/notes.txt 10k 3
+@a share mine as files
+@b file share/films/big.bin 3M 7
+@b file share/music/song.mp3 1M 5
+@b share share as files
+
+@a wait ShareStatus hashing=false files=1 timeout=30s
+@b wait ShareStatus hashing=false files=2 timeout=30s
+
+@a open adc://127.0.0.1:${PORT} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b open adc://127.0.0.1:${PORT} as hub
+@b connect hub
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait UserUpdated hub=hub user.nick=bob
+@b wait UserUpdated hub=hub user.nick=alice
+
+@a search big as s1
+@a search song as s2
+@b search notes as s3
+@a wait SearchSent search=$s1 hubsAsked=1
+@a wait SearchSent search=$s2 hubsAsked=1
+@b wait SearchSent search=$s3 hubsAsked=1
+
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=bob hit.size=3145728
+@a wait SearchResult hub=hub search=$s2 hit.user.nick=bob hit.size=1048576
+@b wait SearchResult hub=hub search=$s3 hit.user.nick=alice hit.size=10240
+
+@a expect-no SearchResult search=$s1 hit.size=1048576
+@a expect-no SearchResult search=$s2 hit.size=3145728
+@b expect-no SearchResult hit.user.nick=bob
+
+# Forgotten, a search is told nothing more: asked again, the answer is the new one's.
+@a search-forget s1
+@a search big as s4
+@a wait SearchResult hub=hub search=$s4 hit.size=3145728

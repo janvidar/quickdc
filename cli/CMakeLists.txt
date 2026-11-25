@@ -36,8 +36,8 @@ if(QUICKDC_BUILD_TESTS)
                 --core a --core b --free-port PORT --free-port PORT_B --quiet
                 ${scripts}/two-cores-chat.qdc)
 
-    foreach(name search filelist download-active download-passive download-passive-stale-active
-                 download-tls share-live completed)
+    foreach(name search search-attributed filelist download-active download-passive download-passive-stale-active
+                 download-tls share-live completed chat-media)
         string(REPLACE "-" "_" test ${name})
         add_test(NAME cli_${test}
             COMMAND ${scenario} 0 - $<TARGET_FILE:qdc>

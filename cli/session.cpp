@@ -7,6 +7,7 @@
 #include "eventjson.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 
@@ -112,6 +113,15 @@ void QuickDC::Cli::Session::observe(Hubs& hubs, const Api::Event& event)
 		if (!result->hit.hubUrl.empty()) hubs.urls[result->hub] = result->hit.hubUrl;
 		hubs.hits.emplace_back(result->hub, result->hit);
 		while (hubs.hits.size() > HITS_LIMIT) hubs.hits.pop_front();
+	}
+	else if (const auto* sent = event.as<Api::Events::SearchSent>())
+	{
+		const auto named = hubs.searchNames.find(sent->request);
+		if (named != hubs.searchNames.end())
+		{
+			remembered[named->second] = std::to_string(sent->search);
+			hubs.searchNames.erase(named);
+		}
 	}
 	else if (const auto* chat = event.as<Api::Events::ChatReceived>())
 	{
@@ -251,6 +261,42 @@ std::optional<Api::SearchHit> QuickDC::Cli::Session::searchHit(const std::string
 	}
 
 	return std::nullopt;
+}
+
+void QuickDC::Cli::Session::nameSearch(const std::string& core, uint64_t request, const std::string& name)
+{
+	cores[core].searchNames[request] = name;
+}
+
+std::string QuickDC::Cli::Session::expand(const std::string& text) const
+{
+	std::string out;
+	for (size_t at = 0; at < text.size();)
+	{
+		size_t end = at + 1;
+		if (text[at] == '$')
+			while (end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_')) ++end;
+
+		const auto found = text[at] == '$' ? remembered.find(text.substr(at + 1, end - at - 1)) : remembered.end();
+		if (found != remembered.end())
+		{
+			out += found->second;
+			at = end;
+		}
+		else
+		{
+			out += text[at++];
+		}
+	}
+	return out;
+}
+
+std::optional<uint64_t> QuickDC::Cli::Session::search(const std::string& which) const
+{
+	const auto found = remembered.find(which);
+	const std::string& number = found == remembered.end() ? which : found->second;
+	if (number.empty() || number.find_first_not_of("0123456789") != std::string::npos) return std::nullopt;
+	return std::stoull(number);
 }
 
 std::string QuickDC::Cli::Session::resolve(const Line& line, const std::string& path) const
