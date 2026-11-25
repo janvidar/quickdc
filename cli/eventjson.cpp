@@ -103,18 +103,58 @@ const char* name(Api::BoardView view)
 	return "?";
 }
 
-const char* name(Ev::PostAdopted::Outcome outcome)
+const char* name(Ev::PostStatus::State state)
 {
-	using O = Ev::PostAdopted::Outcome;
-	switch (outcome)
+	using S = Ev::PostStatus::State;
+	switch (state)
 	{
-		case O::Verified:   return "Verified";
-		case O::Disputed:   return "Disputed";
-		case O::NoStore:    return "NoStore";
-		case O::Unreadable: return "Unreadable";
-		case O::TooLarge:   return "TooLarge";
-		case O::WrongHash:  return "WrongHash";
-		case O::NotAPost:   return "NotAPost";
+		case S::Announced:   return "Announced";
+		case S::Fetching:    return "Fetching";
+		case S::Verified:    return "Verified";
+		case S::Disputed:    return "Disputed";
+		case S::Unavailable: return "Unavailable";
+		case S::Unreadable:  return "Unreadable";
+		case S::Withdrawn:   return "Withdrawn";
+	}
+	return "?";
+}
+
+const char* name(Ev::PostStatus::Why why)
+{
+	using W = Ev::PostStatus::Why;
+	switch (why)
+	{
+		case W::None:           return "None";
+		case W::NotAHash:       return "NotAHash";
+		case W::Withdrawn:      return "Withdrawn";
+		case W::TooLarge:       return "TooLarge";
+		case W::Unsized:        return "Unsized";
+		case W::Allowance:      return "Allowance";
+		case W::NobodyAnswered: return "NobodyAnswered";
+		case W::Oversent:       return "Oversent";
+		case W::Mismatch:       return "Mismatch";
+		case W::NoStore:        return "NoStore";
+		case W::Unreadable:     return "Unreadable";
+		case W::OverCap:        return "OverCap";
+		case W::WrongHash:      return "WrongHash";
+		case W::NotAPost:       return "NotAPost";
+		case W::KnownBad:       return "KnownBad";
+		case W::Evicted:        return "Evicted";
+	}
+	return "?";
+}
+
+const char* name(Ev::PostRefused::Why why)
+{
+	using W = Ev::PostRefused::Why;
+	switch (why)
+	{
+		case W::NoIdentity: return "NoIdentity";
+		case W::NoSubject:  return "NoSubject";
+		case W::TooLarge:   return "TooLarge";
+		case W::NotWritten: return "NotWritten";
+		case W::NotOffered: return "NotOffered";
+		case W::NoHub:      return "NoHub";
 	}
 	return "?";
 }
@@ -240,11 +280,6 @@ Array each(const std::vector<T>& items, F convert)
 Array strings(const std::vector<std::string>& items)
 {
 	return each(items, [](const std::string& s) { return Value(s); });
-}
-
-Array numbers(const std::vector<int>& items)
-{
-	return each(items, [](int n) { return Value(n); });
 }
 
 Value user(const Api::User& u)
@@ -386,11 +421,6 @@ Value boardEntry(const QuickDC::BoardEntry& e)
 		{"timestamp", e.timestamp},
 		{"removed", e.removed},
 	};
-}
-
-Value readState(const Api::BoardReadState& s)
-{
-	return Object{{"board", s.board}, {"unread", s.unread}, {"read", strings(s.read)}};
 }
 
 Value postDocument(const Api::PostDocument& p)
@@ -702,16 +732,6 @@ struct Fields {
 		return {"BoardsAvailable", {{"hub", hub(e.hub)}, {"available", e.available}}};
 	}
 
-	Out operator()(const Ev::BoardDescribed& e) const
-	{
-		return {"BoardDescribed", {{"hub", hub(e.hub)}, {"board", board(e.board)}}};
-	}
-
-	Out operator()(const Ev::BoardEntryArrived& e) const
-	{
-		return {"BoardEntryArrived", {{"hub", hub(e.hub)}, {"entry", boardEntry(e.entry)}}};
-	}
-
 	Out operator()(const Ev::BoardRefused& e) const
 	{
 		return {"BoardRefused", {
@@ -719,58 +739,46 @@ struct Fields {
 			{"board", e.board}, {"tth", e.tth}}};
 	}
 
-	Out operator()(const Ev::BoardEntriesStored& e) const
+	Out operator()(const Ev::BoardEntries& e) const
 	{
-		return {"BoardEntriesStored", {
-			{"store", e.store}, {"request", e.request}, {"kept", numbers(e.kept)},
-			{"boards", each(e.boards, readState)}, {"held", strings(e.held)},
-			{"failed", strings(e.failed)}, {"offered", strings(e.offered)}}};
+		return {"BoardEntries", {
+			{"hubUrl", e.hubUrl}, {"board", e.board}, {"entries", each(e.entries, boardEntry)},
+			{"whole", e.whole}, {"unread", e.unread}, {"read", strings(e.read)}}};
 	}
 
-	Out operator()(const Ev::BoardStateReported& e) const
+	Out operator()(const Ev::BoardState& e) const
 	{
-		return {"BoardStateReported", {
-			{"store", e.store}, {"request", e.request}, {"cursor", e.cursor},
-			{"view", name(e.view)}}};
+		return {"BoardState", {
+			{"hubUrl", e.hubUrl}, {"board", e.board}, {"described", e.described},
+			{"descriptor", board(e.descriptor)}, {"cursor", e.cursor}, {"view", name(e.view)},
+			{"subscribed", e.subscribed}, {"left", e.left}, {"gone", e.gone}}};
 	}
 
-	Out operator()(const Ev::BoardLoaded& e) const
+	Out operator()(const Ev::BoardRead& e) const
 	{
-		return {"BoardLoaded", {
-			{"store", e.store}, {"request", e.request}, {"entries", each(e.entries, boardEntry)},
-			{"unread", e.unread}, {"read", strings(e.read)}, {"held", strings(e.held)},
-			{"failed", strings(e.failed)}, {"offered", strings(e.offered)}}};
+		return {"BoardRead", {
+			{"hubUrl", e.hubUrl}, {"board", e.board}, {"unread", e.unread},
+			{"read", strings(e.read)}, {"whole", e.whole}}};
 	}
 
-	Out operator()(const Ev::BoardResumed& e) const
+	Out operator()(const Ev::PostStatus& e) const
 	{
-		return {"BoardResumed", {
-			{"store", e.store}, {"request", e.request}, {"cursor", e.cursor},
-			{"view", name(e.view)}, {"offered", strings(e.offered)}}};
+		return {"PostStatus", {
+			{"tth", e.tth}, {"state", name(e.state)}, {"why", name(e.why)}, {"size", e.size},
+			{"post", postDocument(e.post)}, {"attributedTo", e.attributedTo}}};
 	}
 
-	Out operator()(const Ev::BoardReadChanged& e) const
+	Out operator()(const Ev::PostSubmitted& e) const
 	{
-		return {"BoardReadChanged", {
-			{"store", e.store}, {"request", e.request}, {"state", readState(e.state)}}};
+		return {"PostSubmitted", {
+			{"request", e.request}, {"board", e.board}, {"tth", e.tth}, {"size", e.size}}};
 	}
 
-	Out operator()(const Ev::PostKnown& e) const
+	Out operator()(const Ev::PostRefused& e) const
 	{
-		return {"PostKnown", {
-			{"store", e.store}, {"request", e.request}, {"path", e.path}, {"failed", e.failed}}};
-	}
-
-	Out operator()(const Ev::PostAdopted& e) const
-	{
-		return {"PostAdopted", {
-			{"store", e.store}, {"request", e.request}, {"outcome", name(e.outcome)},
-			{"post", postDocument(e.post)}, {"held", e.held}}};
-	}
-
-	Out operator()(const Ev::PostsEvicted& e) const
-	{
-		return {"PostsEvicted", {{"store", e.store}, {"request", e.request}, {"marked", e.marked}}};
+		return {"PostRefused", {
+			{"request", e.request}, {"why", name(e.why)}, {"size", e.size}, {"limit", e.limit},
+			{"reason", e.reason}}};
 	}
 
 	Out operator()(const Ev::SettingChanged& e) const

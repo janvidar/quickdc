@@ -47,6 +47,12 @@ if(QUICKDC_BUILD_TESTS)
         set_tests_properties(cli_${test} PROPERTIES TIMEOUT 120)
     endforeach()
 
+    add_test(NAME cli_boards
+        COMMAND ${scenario} 0 - $<TARGET_FILE:qdc>
+                --core a --core b --core c --free-port PORT --free-port PORT_B --free-port PORT_C
+                --quiet ${scripts}/boards.qdc)
+    set_tests_properties(cli_boards PROPERTIES TIMEOUT 120)
+
     add_test(NAME cli_hub_directory
         COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --free-port HTTP --free-port CLOSED
                 -D LISTS=${scripts}/hublists --quiet ${scripts}/hub-directory.qdc)

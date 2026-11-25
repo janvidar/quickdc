@@ -607,6 +607,136 @@ Step parseMediaPolicy(const Line& line)
 	};
 }
 
+/* A board's hub, by the name the script opened it as, or by an address. */
+std::optional<std::string> boardHub(Session& session, const std::string& core, const std::string& word)
+{
+	if (word.find("://") != std::string::npos) return word;
+	const std::optional<Api::HubHandle> hub = session.hub(core, word);
+	if (!hub) return std::nullopt;
+	return session.hubUrl(core, *hub);
+}
+
+template<typename Make>
+Step onBoardHub(const Line& line, const std::string& hubName, Make make)
+{
+	const std::string core = line.requireCore();
+
+	return [line, core, hubName, make](Session& session) {
+		const std::optional<std::string> url = boardHub(session, core, hubName);
+		if (!url) return session.fail(line, "core '" + core + "' has no hub '" + hubName + "' open");
+		return session.submit(line, core, make(session, *url));
+	};
+}
+
+Step parseBoardLoad(const Line& line)
+{
+	line.expect(2, 2);
+	const std::string board = line.args[1];
+	return onBoardHub(line, line.args[0], [board](Session&, const std::string& url) {
+		return Api::Command(Cmd::LoadBoard{url, board});
+	});
+}
+
+Step parseBoardSubscribe(const Line& line)
+{
+	line.expect(2, 3);
+	if (line.args.size() == 3 && line.args[2] != "from-start")
+		throw ScriptError("'" + line.args[2] + "' is not from-start");
+	const std::string board = line.args[1];
+	const bool fromStart = line.args.size() == 3;
+	return onHub(line, line.args[0], [board, fromStart](Session&, Api::HubHandle hub) {
+		return Api::Command(Cmd::SubscribeBoard{hub, board, fromStart});
+	});
+}
+
+Step parseBoardLeave(const Line& line)
+{
+	line.expect(2, 2);
+	const std::string board = line.args[1];
+	return onHub(line, line.args[0], [board](Session&, Api::HubHandle hub) {
+		return Api::Command(Cmd::UnsubscribeBoard{hub, board});
+	});
+}
+
+Step parseBoardRead(const Line& line)
+{
+	line.expect(3, 4);
+	if (line.args.size() == 4 && line.args[3] != "fetch") throw ScriptError("'" + line.args[3] + "' is not fetch");
+	const std::string board = line.args[1];
+	const std::string tth = line.args[2];
+	const bool fetch = line.args.size() == 4;
+	return onBoardHub(line, line.args[0], [board, tth, fetch](Session& session, const std::string& url) {
+		return Api::Command(Cmd::ReadPost{url, board, session.expand(tth), fetch});
+	});
+}
+
+Step parseBoardMarkRead(const Line& line)
+{
+	line.expect(2, 3);
+	const std::string board = line.args[1];
+	const std::string tth = line.args.size() == 3 ? line.args[2] : std::string();
+	return onBoardHub(line, line.args[0], [board, tth](Session& session, const std::string& url) {
+		return Api::Command(Cmd::MarkRead{url, board, session.expand(tth)});
+	});
+}
+
+/* A new thread with a subject, or with 'reply' a reply to '$NAME' or a hash. */
+Step parseBoardPost(const Line& line)
+{
+	line.expect(4, std::numeric_limits<size_t>::max());
+	const std::string board = line.args[1];
+	std::string parent;
+	std::string subject;
+	size_t body = 3;
+
+	if (line.args[2] == "reply")
+	{
+		line.expect(5, std::numeric_limits<size_t>::max());
+		parent = line.args[3];
+		body = 4;
+	}
+	else
+	{
+		subject = line.args[2];
+	}
+
+	const std::string text = line.rest(body);
+	return onHub(line, line.args[0], [board, parent, subject, text](Session& session, Api::HubHandle hub) {
+		return Api::Command(Cmd::WritePost{
+			session.nextRequest(), hub, board, session.expand(parent), subject, session.expand(text), false});
+	});
+}
+
+Step parseBoardWithdraw(const Line& line)
+{
+	line.expect(3, 3);
+	const std::string board = line.args[1];
+	const std::string tth = line.args[2];
+	return onHub(line, line.args[0], [board, tth](Session& session, Api::HubHandle hub) {
+		return Api::Command(Cmd::WithdrawPost{hub, session.expand(tth), board});
+	});
+}
+
+Step parseBoardPolicy(const Line& line)
+{
+	line.expect(3, 3);
+	using Policy = Cmd::SetBoardPolicy::Policy;
+	using Choice = Cmd::SetBoardPolicy::Choice;
+
+	Policy policy = Policy::FetchAhead;
+	if (line.args[1] == "serve") policy = Policy::Serve;
+	else if (line.args[1] != "fetch-ahead") throw ScriptError("'" + line.args[1] + "' is neither fetch-ahead nor serve");
+
+	Choice choice = Choice::Follow;
+	if (line.args[2] == "always") choice = Choice::Always;
+	else if (line.args[2] == "never") choice = Choice::Never;
+	else if (line.args[2] != "follow") throw ScriptError("'" + line.args[2] + "' is none of follow, always, never");
+
+	return onBoardHub(line, line.args[0], [policy, choice](Session&, const std::string& url) {
+		return Api::Command(Cmd::SetBoardPolicy{url, policy, choice});
+	});
+}
+
 /* The result is one this core has heard, so the line waits for it first. */
 Step parseDownload(const Line& line)
 {
@@ -930,6 +1060,14 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"paste",      "paste <path>",                                       parsePaste},
 		{"media-fetch", "media-fetch <hub|-> <tth> <name> <size>",           parseMediaFetch},
 		{"media-policy", "media-policy <hub url> <follow|always|never>",     parseMediaPolicy},
+		{"board-load", "board-load <hub|url> <board>",                       parseBoardLoad},
+		{"board-subscribe", "board-subscribe <hub> <board> [from-start]",    parseBoardSubscribe},
+		{"board-leave", "board-leave <hub> <board>",                         parseBoardLeave},
+		{"board-read", "board-read <hub|url> <board> <tth> [fetch]",         parseBoardRead},
+		{"board-mark-read", "board-mark-read <hub|url> <board> [tth]",       parseBoardMarkRead},
+		{"board-post", "board-post <hub> <board> <subject>|reply <tth> <body...>", parseBoardPost},
+		{"board-withdraw", "board-withdraw <hub> <board> <tth>",             parseBoardWithdraw},
+		{"board-policy", "board-policy <hub|url> <fetch-ahead|serve> <follow|always|never>", parseBoardPolicy},
 		{"search",     "search <word|-word ...> [as <name>]",                parseSearch},
 		{"search-forget", "search-forget <name|number>",                     parseSearchForget},
 		{"download",   "download <hub> <name|tth> [from <nick>] [to <path>]", parseDownload},

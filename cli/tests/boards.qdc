@@ -1,0 +1,99 @@
+# Bulletin boards on c's hub. a writes, b and c read. A post is fetched from whoever
+# holds it and only when somebody asks to read it - the rest of its thread with it
+# where the hub says to fetch ahead - and is offered by those who read it, so c can
+# read what a wrote after a has gone. A tombstone takes the post away, the cache
+# bounds let documents go, and a board the hub has not got is said to be gone.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+preset application Network "Active mode" 1
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+@c preset application Network Port ${PORT_C}
+@c preset application "Local hub" Enabled 1
+@c preset application "Local hub board general" Title "General discussion"
+@a preset application User Nickname alice
+@b preset application User Nickname bob
+@c preset application User Nickname carol
+
+@c open adc://127.0.0.1:${PORT_C} as hub
+@c connect hub
+@c wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a open adc://127.0.0.1:${PORT_C} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b open adc://127.0.0.1:${PORT_C} as hub
+@b connect hub
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+
+# Every board a hub describes is followed, by nobody's asking.
+@a wait BoardState board=general subscribed=true
+@b wait BoardState board=general subscribed=true
+@c wait BoardState board=general subscribed=true
+@b board-policy hub serve always
+@b wait SettingChanged store=session key="Offer what I have read"
+
+@a board-post hub general Hello The first post.
+@a wait PostSubmitted board=general remember ROOT=tth timeout=30s
+@a wait PostStatus tth=$ROOT state=Verified post.body="The first post."
+@b wait BoardEntries board=general entries.*.tth=$ROOT unread=1
+
+# An entry arriving is not somebody reading it.
+@b expect-no PostStatus tth=$ROOT
+@b board-read hub general $ROOT fetch
+@b wait BoardRead board=general unread=0 read.*=$ROOT
+@b wait PostStatus tth=$ROOT state=Fetching
+@b wait PostStatus tth=$ROOT state=Verified post.subject=Hello post.body="The first post." timeout=30s
+@b expect-no CompletedDownloads downloads.*.tth=$ROOT
+
+@a board-post hub general reply $ROOT First reply.
+@a wait PostSubmitted board=general remember R1=tth timeout=30s
+@a board-post hub general reply $ROOT Second reply.
+@a wait PostSubmitted board=general remember R2=tth timeout=30s
+@b wait BoardEntries board=general entries.*.tth=$R2
+
+# Not fetching ahead, reading one reply fetches that reply and no other.
+@b board-read hub general $R1 fetch
+@b wait PostStatus tth=$R1 state=Verified timeout=30s
+@b expect-no PostStatus tth=$R2
+
+@b board-policy hub fetch-ahead always
+@b wait SettingChanged store=session key="Fetch a thread ahead"
+@a board-post hub general reply $ROOT Third reply.
+@a wait PostSubmitted board=general remember R3=tth timeout=30s
+@b wait BoardEntries board=general entries.*.tth=$R3
+
+# Fetching ahead, the rest of the thread comes with it.
+@b board-read hub general $R3 fetch
+@b wait PostStatus tth=$R3 state=Verified timeout=30s
+@b wait PostStatus tth=$R2 state=Verified timeout=30s
+
+# Withdrawn, a post goes from every reader, its document with it.
+@a board-withdraw hub general $R1
+@b wait BoardEntries board=general entries.*.tth=$R1 entries.*.removed=true timeout=30s
+@b wait PostStatus tth=$R1 state=Withdrawn
+@c wait PostStatus tth=$R1 state=Withdrawn
+
+# With its author gone, c reads it from b, who has read it.
+@a close hub
+@c wait UserLeft hub=hub user.nick=alice timeout=30s
+@c board-read hub general $ROOT fetch
+@c wait PostStatus tth=$ROOT state=Verified post.body="The first post." timeout=60s
+
+# Read back from the disk after a restart, read where it was read.
+@b restart
+@b board-load adc://127.0.0.1:${PORT_C} general
+@b wait BoardEntries board=general whole=true entries.*.tth=$R3 unread=1
+@b board-read adc://127.0.0.1:${PORT_C} general $ROOT
+@b wait PostStatus tth=$ROOT state=Verified post.body="The first post."
+
+# Held to one byte, b lets every document go.
+@b set application Boards "Cache size" 1
+@b wait PostStatus tth=$ROOT state=Announced why=Evicted timeout=30s
+@b wait PostStatus tth=$R3 state=Announced why=Evicted
+
+# A board the hub does not have is gone.
+@c board-subscribe hub nosuch
+@c wait BoardRefused hub=hub code=71 board=nosuch
+@c wait BoardState board=nosuch gone=true
