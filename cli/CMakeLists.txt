@@ -129,6 +129,18 @@ if(QUICKDC_BUILD_TESTS)
     set_tests_properties(cli_remote_two_cores_chat cli_remote_download_active cli_remote_fails
                          cli_remote_agent_dies PROPERTIES TIMEOUT 120)
 
+    # Scenarios across rootless podman networks (tests/net/run.sh): a topology and
+    # its script, skipped where podman or its networking is not there. ctest -L net.
+    set(net ${scripts}/net)
+    foreach(name public-hub-two-lans)
+        string(REPLACE "-" "_" test ${name})
+        add_test(NAME cli_net_${test}
+            COMMAND ${net}/run.sh $<TARGET_FILE:qdc> ${net}/topologies/${name}.topo
+                    ${net}/${name}.qdc --quiet)
+        set_tests_properties(cli_net_${test} PROPERTIES
+            LABELS net SKIP_RETURN_CODE 77 TIMEOUT 300)
+    endforeach()
+
     # Each core makes a 3072-bit certificate on its first run, which is slow to
     # generate on a loaded machine.
     set_tests_properties(cli_two_cores_chat cli_wait_times_out PROPERTIES TIMEOUT 120)

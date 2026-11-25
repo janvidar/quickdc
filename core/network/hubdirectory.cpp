@@ -112,39 +112,52 @@ bool hasKeyprint(const std::string& address)
  * Read with a reader for what JSON can say, not only for what that writer said,
  * since the files are already on people's disks.
  */
+struct JsonMember;
+
 struct Json {
 	enum class Kind { Null, Bool, Number, String, Array, Object };
 
 	Kind kind = Kind::Null;
 	std::string text;
 	std::vector<Json> items;
-	std::vector<std::pair<std::string, Json>> members;
+	std::vector<JsonMember> members;
 
-	const Json* member(std::string_view key) const
-	{
-		for (const auto& [name, value] : members)
-			if (name == key) return &value;
-		return nullptr;
-	}
-
-	std::string string(std::string_view key) const
-	{
-		const Json* found = member(key);
-		return found && found->kind == Kind::String ? found->text : std::string();
-	}
-
+	const Json* member(std::string_view key) const;
+	std::string string(std::string_view key) const;
 	/* Exact for an integer, which a share total in bytes needs; nought for anything negative. */
-	uint64_t number(std::string_view key) const
-	{
-		const Json* found = member(key);
-		if (!found || found->kind != Kind::Number || found->text.empty() || found->text[0] == '-')
-			return 0;
-		if (found->text.find_first_of(".eE") == std::string::npos)
-			return std::strtoull(found->text.c_str(), nullptr, 10);
-		const double value = std::strtod(found->text.c_str(), nullptr);
-		return value > 0 && value < 1.8e19 ? static_cast<uint64_t>(value) : 0;
-	}
+	uint64_t number(std::string_view key) const;
 };
+
+/* Not a std::pair: instantiating one asks whether Json can be default
+ * constructed while Json is still incomplete, which clang refuses. */
+struct JsonMember {
+	std::string name;
+	Json value;
+};
+
+const Json* Json::member(std::string_view key) const
+{
+	for (const auto& [name, value] : members)
+		if (name == key) return &value;
+	return nullptr;
+}
+
+std::string Json::string(std::string_view key) const
+{
+	const Json* found = member(key);
+	return found && found->kind == Kind::String ? found->text : std::string();
+}
+
+uint64_t Json::number(std::string_view key) const
+{
+	const Json* found = member(key);
+	if (!found || found->kind != Kind::Number || found->text.empty() || found->text[0] == '-')
+		return 0;
+	if (found->text.find_first_of(".eE") == std::string::npos)
+		return std::strtoull(found->text.c_str(), nullptr, 10);
+	const double value = std::strtod(found->text.c_str(), nullptr);
+	return value > 0 && value < 1.8e19 ? static_cast<uint64_t>(value) : 0;
+}
 
 class JsonReader {
 	public:
@@ -210,7 +223,7 @@ class JsonReader {
 
 				Json value;
 				if (!parse(value, depth + 1)) return false;
-				out.members.emplace_back(std::move(key), std::move(value));
+				out.members.push_back({std::move(key), std::move(value)});
 
 				space();
 				if (at >= in.size()) return false;

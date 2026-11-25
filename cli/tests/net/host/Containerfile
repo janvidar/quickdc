@@ -1,0 +1,8 @@
+# A host on a test network: the runtime of a qdc built on the host (Ubuntu
+# 26.04), which is mounted read-only rather than copied in. The sanitizer
+# runtimes are here so an ASan/UBSan build runs too.
+FROM docker.io/library/ubuntu:26.04
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        libssl3t64 zlib1g libbz2-1.0 libzstd1 libasan8 libubsan1 iproute2 nftables \
+ && rm -rf /var/lib/apt/lists/*
