@@ -368,6 +368,54 @@ EXO_TEST(service_a_favourite_is_kept_and_let_go,
 	return 1;
 });
 
+/* The directory's sources are the core's, told on ReportState and on each change, a failed fetch with its reason. */
+EXO_TEST(service_the_hub_directory_is_announced,
+{
+	namespace Ev = QuickDC::Api::Events;
+
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::ResetHubListSources{}));
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::ReportState{7}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::HubListSources>([](const Ev::HubListSources& e) {
+		return e.request == 7 && e.sources.size() == 3 && e.sources[0].url == "https://dchublist.org/hublist.xml.bz2";
+	}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::HubDirectory>([](const Ev::HubDirectory& e) {
+		return e.request == 7 && e.hubs.empty();
+	}));
+
+	const std::string down = "http://127.0.0.1:1/hublist.xml";
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::AddHubListSource{down}));
+	const std::optional<Ev::HubListSources> failed = recorder.waitForEvent<Ev::HubListSources>(
+		[&](const Ev::HubListSources& e) {
+			return e.sources.size() == 4 && e.sources[3].url == down && !e.sources[3].error.empty();
+		});
+	EXO_ASSERT(failed.has_value());
+	if (failed) EXO_ASSERT(!failed->sources[3].fetching);
+
+	std::string stored;
+	running.onCore([&] { stored = running.core->config->peekString("Hublists", "List 3", ""); });
+	EXO_ASSERT(stored == down);
+
+	bool told = false;
+	running.onCore([&] {
+		for (const QuickDC::Api::Event& event : running.core->state())
+			if (const auto* sources = event.as<Ev::HubListSources>()) told = sources->sources.size() == 4;
+	});
+	EXO_ASSERT(told);
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::RemoveHubListSource{down}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::HubListSources>([](const Ev::HubListSources& e) {
+		return e.request == 0 && e.sources.size() == 3;
+	}));
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
+
 /* The core numbers each search and says which request it was; the front end invents nothing. */
 EXO_TEST(service_each_search_is_numbered_by_the_core,
 {

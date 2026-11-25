@@ -47,6 +47,7 @@ set(QUICKDC_EXOTIC_TESTS
     boardindex.tcc
     config.tcc
     hublist.tcc
+    hubdirectory.tcc
     transfer.tcc
     users.tcc
     adccommand.tcc

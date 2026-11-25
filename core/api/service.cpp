@@ -502,6 +502,9 @@ QuickDC::Api::Service::Service(Core& core_)
 		favourites = std::make_unique<QuickDC::FavouriteHubs>(*core.config);
 		recents = std::make_unique<QuickDC::RecentHubs>(*core.config);
 		completed = std::make_unique<QuickDC::CompletedDownloads>(*core.config);
+		directory = std::make_unique<QuickDC::HubDirectory>(core.loop(), *core.config,
+			core.homeDirectory.empty() ? std::string() : core.homeDirectory + "/hublists",
+			[this] { publish(hubListSources(0)); }, [this] { publish(hubDirectory(0)); });
 		sweepPasted(mediaFolder(), Settings::read(*core.config, Settings::ChatMediaKeepDays), time(0));
 	}
 }
@@ -534,7 +537,8 @@ void QuickDC::Api::Service::announceState()
 std::vector<QuickDC::Api::Event> QuickDC::Api::Service::state(uint64_t request) const
 {
 	return {connectionMode(request), shareFolders(request), favouriteHubs(request),
-	        recentHubs(request), completedDownloads(request)};
+	        recentHubs(request), completedDownloads(request), hubListSources(request),
+	        hubDirectory(request)};
 }
 
 void QuickDC::Api::Service::run(const Commands::ReportState& command)
@@ -585,6 +589,46 @@ void QuickDC::Api::Service::run(const Commands::FetchHubList& command)
 	if (fetch->busy()) return;
 
 	fetch->start();
+}
+
+QuickDC::Api::Events::HubListSources QuickDC::Api::Service::hubListSources(uint64_t request) const
+{
+	Events::HubListSources told;
+	told.request = request;
+	if (directory) told.sources = directory->sources();
+	return told;
+}
+
+QuickDC::Api::Events::HubDirectory QuickDC::Api::Service::hubDirectory(uint64_t request) const
+{
+	Events::HubDirectory told;
+	told.request = request;
+	if (directory)
+	{
+		told.sources = directory->mergedFrom();
+		told.hubs = directory->hubs();
+	}
+	return told;
+}
+
+void QuickDC::Api::Service::run(const Commands::AddHubListSource& command)
+{
+	if (directory) directory->add(command.url, static_cast<uint64_t>(time(0)));
+}
+
+void QuickDC::Api::Service::run(const Commands::RemoveHubListSource& command)
+{
+	if (directory) directory->remove(command.url);
+}
+
+void QuickDC::Api::Service::run(const Commands::ResetHubListSources&)
+{
+	if (directory) directory->reset();
+}
+
+void QuickDC::Api::Service::run(const Commands::RefreshHubDirectory& command)
+{
+	if (directory) directory->refresh(command.force, static_cast<uint64_t>(time(0)));
 }
 
 bool QuickDC::Api::Service::haveReachabilityServer()

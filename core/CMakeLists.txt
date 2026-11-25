@@ -22,6 +22,7 @@ set(QUICKDC_SOURCES
     network/downloadqueue.cpp
     network/filesource.cpp
     network/hublist.cpp
+    network/hubdirectory.cpp
     network/hubsession.cpp
     network/hubmanager.cpp
     network/keyprint.cpp

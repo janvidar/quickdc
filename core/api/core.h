@@ -126,9 +126,10 @@ class Core {
 
 		/**
 		 * What a front end shows as it stands - the connection mode, the share
-		 * folders, the hubs kept and visited, what has finished downloading - as
-		 * the events that announce each changing, so one taken with the settings
-		 * snapshot and the events after it are the whole story. Core thread only.
+		 * folders, the hubs kept and visited, what has finished downloading, the
+		 * public hub directory - as the events that announce each changing, so one
+		 * taken with the settings snapshot and the events after it are the whole
+		 * story. Core thread only.
 		 */
 		std::vector<Api::Event> state() const;
 
@@ -298,7 +299,7 @@ class Core {
 		 */
 		QuickDC::SearchTokens* searchTokens;
 
-		/** Where this core keeps what it writes; the configuration's own folder for a core built from files. */
+		/** Where this core keeps what it writes, "~" expanded; the configuration's own folder for a core built from files. */
 		std::string homeDirectory;
 
 	protected:

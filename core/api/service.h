@@ -15,6 +15,7 @@
 #include "share/searchmanager.h"
 #include "share/sharefolders.h"
 #include "config/userlists.h"
+#include "network/hubdirectory.h"
 #include "api/subscription.h"
 
 #include <map>
@@ -63,6 +64,13 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		class BoardStore;
 
 		void run(const Commands::FetchHubList& command);
+		void run(const Commands::AddHubListSource& command);
+		void run(const Commands::RemoveHubListSource& command);
+		void run(const Commands::ResetHubListSources& command);
+		void run(const Commands::RefreshHubDirectory& command);
+
+		Events::HubListSources hubListSources(uint64_t request) const;
+		Events::HubDirectory hubDirectory(uint64_t request) const;
 		void run(const Commands::MeasureReachability& command);
 		void run(const Commands::LookupPublicAddress& command);
 		void run(const Commands::ReplayReachability& command);
@@ -222,6 +230,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		std::unique_ptr<QuickDC::FavouriteHubs> favourites;
 		std::unique_ptr<QuickDC::RecentHubs> recents;
 		std::unique_ptr<QuickDC::CompletedDownloads> completed;
+		std::unique_ptr<QuickDC::HubDirectory> directory;
 
 		/* Last, so the sessions go before the subscriptions they report through. */
 		std::map<HubHandle, std::unique_ptr<HubSession>> hubs;

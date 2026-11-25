@@ -98,6 +98,26 @@ struct CompletedDownload {
 	uint64_t finished = 0;
 };
 
+/** A public hublist the directory reads, and how the last attempt at it went. */
+struct HubListSource {
+	std::string url;
+	/** When the list in hand was fetched, in seconds since the epoch; 0 where there is none. */
+	uint64_t fetched = 0;
+	/** How many hubs the list in hand names. */
+	uint64_t hubs = 0;
+	/** Whether the list in hand was read from the cache rather than fetched by this run. */
+	bool cached = false;
+	bool fetching = false;
+	/** Why the last attempt failed, fit to show; empty where it did not. */
+	std::string error;
+};
+
+/** One hub of the merged directory, and which sources named it, as indices into its 'sources'. */
+struct DirectoryHub {
+	HubListEntry hub;
+	std::vector<uint32_t> listedBy;
+};
+
 /** One file in the download queue. */
 struct QueueItem {
 	std::string filename;
@@ -470,6 +490,22 @@ struct WithdrawPost {
 	std::string board;
 };
 
+/*
+ * The public hub directory: the sources it reads, in precedence order, each
+ * change answered by HubListSources and, where the merged list changed with
+ * it, HubDirectory. A source added is fetched unless its cache is fresh.
+ */
+struct AddHubListSource { std::string url; };
+struct RemoveHubListSource { std::string url; };
+struct ResetHubListSources { };
+
+/**
+ * Bring the directory up to date: fetch the sources whose list is stale, or
+ * every one with 'force'. Cheap to send whenever the directory is looked at -
+ * a source that was just asked, or whose list is fresh, is left alone.
+ */
+struct RefreshHubDirectory { bool force = false; };
+
 /** Download and parse the hublist at 'url'; one at a time per address. */
 struct FetchHubList {
 	std::string url;
@@ -829,6 +865,23 @@ struct BoardRefused {
 	std::string tth;
 };
 
+/** The directory's sources and how each stands; told on ReportState and on every change. */
+struct HubListSources {
+	uint64_t request = 0;
+	std::vector<HubListSource> sources;
+};
+
+/**
+ * Every hub any source named, merged; told on ReportState and whenever a source's
+ * list arrives, is read from the cache or goes. 'sources' are the addresses
+ * 'listedBy' indexes.
+ */
+struct HubDirectory {
+	uint64_t request = 0;
+	std::vector<std::string> sources;
+	std::vector<DirectoryHub> hubs;
+};
+
 struct HubListFetched {
 	std::string url;
 	std::vector<HubListEntry> hubs;
@@ -1035,6 +1088,10 @@ struct ReachabilityCheckFailed {
 struct Command {
 	using Variant = std::variant<
 		Commands::FetchHubList,
+		Commands::AddHubListSource,
+		Commands::RemoveHubListSource,
+		Commands::ResetHubListSources,
+		Commands::RefreshHubDirectory,
 		Commands::MeasureReachability,
 		Commands::LookupPublicAddress,
 		Commands::ReplayReachability,
@@ -1106,6 +1163,8 @@ struct Event {
 	using Variant = std::variant<
 		Events::HubListFetched,
 		Events::HubListFailed,
+		Events::HubListSources,
+		Events::HubDirectory,
 		Events::ReachabilityCheckStarted,
 		Events::ReachabilityMeasured,
 		Events::ReachabilityCheckFailed,

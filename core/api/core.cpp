@@ -665,7 +665,7 @@ QuickDC::Core::Core(const Home& home)
 	references = 0;
 
 	const std::string& dir = home.directory;
-	homeDirectory = dir;
+	homeDirectory = Samurai::IO::File::resolvePath(dir);
 	Samurai::IO::File::mkdir(dir.c_str(),                     0700);
 	Samurai::IO::File::mkdir((dir + "/hub").c_str(),          0700);
 	Samurai::IO::File::mkdir((dir + "/hub/bbs").c_str(),      0700);
