@@ -1,0 +1,13 @@
+# An agent that goes away mid-script ends the controller's wait at once.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+preset application Network Port 0
+
+@a status
+@a wait CoreStatus port!=0
+@b status
+@b wait CoreStatus port!=0
+echo both cores are up
+@a wait UserJoined nick=nobody timeout=60s

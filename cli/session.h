@@ -55,6 +55,38 @@ struct Expectation {
 	std::string describe() const;
 };
 
+/** What an agent's session tells the controller driving it, in the order it happens. */
+class Relay {
+	public:
+		virtual ~Relay() = default;
+		virtual void heard(const std::string& line) = 0;
+		virtual void failed(const std::string& why) = 0;
+		virtual void noted(const std::string& text) = 0;
+		virtual void learned(const std::string& name, const std::string& value) = 0;
+		virtual void forgot(const std::string& core) = 0;
+};
+
+/** An event as an agent told it. */
+struct Arrival {
+	std::string core;
+	Json::Value event;
+	std::string line;
+};
+
+/** Where a controller's session hears the cores that run in other processes. */
+class Feed {
+	public:
+		virtual ~Feed() = default;
+
+		/** The next event from any agent, or nothing by 'deadline' or once one is lost. */
+		virtual std::optional<Arrival> next(std::chrono::steady_clock::time_point deadline) = 0;
+
+		virtual void learned(const std::string& name, const std::string& value) = 0;
+
+		/** Why the cores cannot all be heard any more; empty while they can. */
+		virtual std::string broken() const = 0;
+};
+
 /**
  * What a script runs against: the cores, the names it gave its hubs, and every
  * event heard so far that no wait has claimed.
@@ -64,6 +96,24 @@ class Session {
 		Session(Runner& runner, Options options);
 
 		const Options& options() const { return settings; }
+
+		/** Send what this session hears and says to a controller, keeping none of it. */
+		void setRelay(Relay* to) { relay = to; }
+
+		/** Hear the events of 'from', not of the runner's cores. */
+		void setFeed(Feed* from) { feed = from; }
+
+		/** Keep an event an agent told. */
+		void hear(Arrival arrival);
+
+		/** Drop what 'core' said, as a restart of it does. */
+		void forget(const std::string& core);
+
+		/** Remember 'value' as 'name', telling whoever drives or is driven by this session. */
+		void learn(const std::string& name, const std::string& value);
+
+		/** Remember 'value' as 'name', as the other side of a relay already knows it. */
+		void adopt(const std::string& name, const std::string& value) { remembered[name] = value; }
 
 		/** Report a failure of the line being run. */
 		Outcome fail(const Line& line, const std::string& why);
@@ -168,6 +218,8 @@ class Session {
 		};
 
 		void take(const Delivery& delivery);
+		bool receive(std::chrono::steady_clock::time_point deadline);
+		void keep(Heard heard);
 		void observe(Hubs& hubs, const QuickDC::Api::Event& event);
 		bool matches(const Heard& heard, const Expectation& expected, bool claimedToo = false) const;
 		bool remember(const Line& line, const Heard& heard, const Expectation& expected);
@@ -176,6 +228,8 @@ class Session {
 
 		Runner& runner;
 		Options settings;
+		Relay* relay = nullptr;
+		Feed* feed = nullptr;
 		std::map<std::string, Hubs> cores;
 		std::deque<Heard> backlog;
 		std::map<std::string, QuickDC::Api::SettingsSnapshot> presetsByCore;

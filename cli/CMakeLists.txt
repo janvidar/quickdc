@@ -11,6 +11,7 @@ add_executable(qdc
     freeport.cpp
     human.cpp
     json.cpp
+    remote.cpp
     runner.cpp
     script.cpp
     session.cpp)
@@ -108,6 +109,25 @@ if(QUICKDC_BUILD_TESTS)
     add_test(NAME cli_late_preset
         COMMAND ${scenario} 2 "late-preset.qdc:4: 'preset' is taken before the cores start"
                 $<TARGET_FILE:qdc> ${scripts}/late-preset.qdc)
+
+    # The same scenarios with each core in a qdc agent of its own, driven by a controller.
+    set(remote ${scripts}/remote.sh)
+    foreach(name two-cores-chat download-active)
+        string(REPLACE "-" "_" test ${name})
+        add_test(NAME cli_remote_${test}
+            COMMAND ${remote} 0 - $<TARGET_FILE:qdc> ${scripts}/${name}.qdc a b)
+    endforeach()
+
+    add_test(NAME cli_remote_fails
+        COMMAND ${remote} 1 "remote-fails.qdc:10: @b chat nohub hello: core 'b' has no hub 'nohub' open"
+                $<TARGET_FILE:qdc> ${scripts}/remote-fails.qdc a b)
+
+    add_test(NAME cli_remote_agent_dies
+        COMMAND ${remote} 1 "remote-agent-dies.qdc:13: @a wait UserJoined nick=nobody timeout=60s: the agent at"
+                $<TARGET_FILE:qdc> --kill b "both cores are up" ${scripts}/remote-agent-dies.qdc a b)
+
+    set_tests_properties(cli_remote_two_cores_chat cli_remote_download_active cli_remote_fails
+                         cli_remote_agent_dies PROPERTIES TIMEOUT 120)
 
     # Each core makes a 3072-bit certificate on its first run, which is slow to
     # generate on a loaded machine.

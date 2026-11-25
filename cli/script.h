@@ -57,6 +57,7 @@ struct Statement {
 	Step step;
 	bool beforeStart = false;
 	bool anytime = false;
+	bool script = false;
 };
 
 struct Grammar {
@@ -69,6 +70,9 @@ struct Grammar {
  * comment. Throws ScriptError for anything that cannot run.
  */
 bool parseLine(const Grammar& grammar, int number, const std::string& text, Statement& out);
+
+/** 'text' with each ${NAME} replaced by its definition; throws ScriptError for one undefined. */
+std::string expandDefinitions(const Grammar& grammar, const std::string& text);
 
 /** "250ms", "10s", or a bare number of seconds. */
 std::chrono::milliseconds parseDuration(const std::string& text);

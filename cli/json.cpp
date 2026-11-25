@@ -171,3 +171,185 @@ void QuickDC::Cli::Json::Value::write(std::string& out) const
 			break;
 	}
 }
+
+namespace {
+
+class Parser {
+	public:
+		explicit Parser(std::string_view text) : text(text) { }
+
+		bool value(QuickDC::Cli::Json::Value& out, int depth = 0)
+		{
+			using namespace QuickDC::Cli::Json;
+
+			space();
+			if (at == text.size() || depth > 64) return false;
+
+			const char c = text[at];
+			if (c == '{')
+			{
+				++at;
+				Object object;
+				space();
+				if (peek('}')) { out = Value(std::move(object)); return true; }
+				while (true)
+				{
+					Member member;
+					space();
+					if (!string(member.key)) return false;
+					space();
+					if (!peek(':')) return false;
+					if (!value(member.value, depth + 1)) return false;
+					object.push_back(std::move(member));
+					space();
+					if (peek('}')) break;
+					if (!peek(',')) return false;
+				}
+				out = Value(std::move(object));
+				return true;
+			}
+			if (c == '[')
+			{
+				++at;
+				Array array;
+				space();
+				if (peek(']')) { out = Value(std::move(array)); return true; }
+				while (true)
+				{
+					Value item;
+					if (!value(item, depth + 1)) return false;
+					array.push_back(std::move(item));
+					space();
+					if (peek(']')) break;
+					if (!peek(',')) return false;
+				}
+				out = Value(std::move(array));
+				return true;
+			}
+			if (c == '"')
+			{
+				std::string scalar;
+				if (!string(scalar)) return false;
+				out = Value(std::move(scalar));
+				return true;
+			}
+			if (word("true")) { out = Value(true); return true; }
+			if (word("false")) { out = Value(false); return true; }
+			if (word("null")) { out = Value(); return true; }
+
+			const size_t begin = at;
+			while (at < text.size() && std::string_view("+-0123456789.eE").find(text[at]) != std::string_view::npos) ++at;
+			if (at == begin) return false;
+			out = Value(Number{std::string(text.substr(begin, at - begin))});
+			return true;
+		}
+
+		bool ended()
+		{
+			space();
+			return at == text.size();
+		}
+
+	private:
+		void space()
+		{
+			while (at < text.size() && (text[at] == ' ' || text[at] == '\t' || text[at] == '\n' || text[at] == '\r')) ++at;
+		}
+
+		bool peek(char c)
+		{
+			if (at < text.size() && text[at] == c) { ++at; return true; }
+			return false;
+		}
+
+		bool word(std::string_view w)
+		{
+			if (text.substr(at, w.size()) != w) return false;
+			at += w.size();
+			return true;
+		}
+
+		bool hex(unsigned& out)
+		{
+			if (at + 4 > text.size()) return false;
+			const auto parsed = std::from_chars(text.data() + at, text.data() + at + 4, out, 16);
+			if (parsed.ptr != text.data() + at + 4) return false;
+			at += 4;
+			return true;
+		}
+
+		static void utf8(std::string& out, unsigned code)
+		{
+			if (code < 0x80) out += static_cast<char>(code);
+			else if (code < 0x800)
+			{
+				out += static_cast<char>(0xc0 | (code >> 6));
+				out += static_cast<char>(0x80 | (code & 0x3f));
+			}
+			else if (code < 0x10000)
+			{
+				out += static_cast<char>(0xe0 | (code >> 12));
+				out += static_cast<char>(0x80 | ((code >> 6) & 0x3f));
+				out += static_cast<char>(0x80 | (code & 0x3f));
+			}
+			else
+			{
+				out += static_cast<char>(0xf0 | (code >> 18));
+				out += static_cast<char>(0x80 | ((code >> 12) & 0x3f));
+				out += static_cast<char>(0x80 | ((code >> 6) & 0x3f));
+				out += static_cast<char>(0x80 | (code & 0x3f));
+			}
+		}
+
+		bool string(std::string& out)
+		{
+			if (!peek('"')) return false;
+			while (at < text.size())
+			{
+				const char c = text[at++];
+				if (c == '"') return true;
+				if (c != '\\') { out += c; continue; }
+				if (at == text.size()) return false;
+
+				switch (text[at++])
+				{
+					case '"':  out += '"'; break;
+					case '\\': out += '\\'; break;
+					case '/':  out += '/'; break;
+					case 'b':  out += '\b'; break;
+					case 'f':  out += '\f'; break;
+					case 'n':  out += '\n'; break;
+					case 'r':  out += '\r'; break;
+					case 't':  out += '\t'; break;
+					case 'u':
+					{
+						unsigned code = 0;
+						if (!hex(code)) return false;
+						if (code >= 0xd800 && code < 0xdc00 && word("\\u"))
+						{
+							unsigned low = 0;
+							if (!hex(low)) return false;
+							code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+						}
+						utf8(out, code);
+						break;
+					}
+					default: return false;
+				}
+			}
+			return false;
+		}
+
+		std::string_view text;
+		size_t at = 0;
+};
+
+}
+
+std::optional<QuickDC::Cli::Json::Value> QuickDC::Cli::Json::parse(std::string_view text)
+{
+	Parser parser(text);
+	Value out;
+	if (!parser.value(out) || !parser.ended()) return std::nullopt;
+	return out;
+}

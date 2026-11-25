@@ -7,6 +7,7 @@
 #define HAVE_QUICKDC_CLI_JSON_H
 
 #include <concepts>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -90,6 +91,9 @@ struct Member {
 	std::string key;
 	Value value;
 };
+
+/** The value 'text' holds, or nothing where it is not one whole JSON value. */
+std::optional<Value> parse(std::string_view text);
 
 }
 }

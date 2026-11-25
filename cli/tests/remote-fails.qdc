@@ -1,0 +1,11 @@
+# A line an agent refuses fails the controller, which names the line.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+preset application Network Port 0
+
+@a status
+@a wait CoreStatus port!=0
+@b chat nohub hello
+@a echo not reached

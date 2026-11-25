@@ -44,6 +44,11 @@ QuickDC::Cli::Session::Session(Runner& runner, Options options)
 
 QuickDC::Cli::Outcome QuickDC::Cli::Session::fail(const Line& line, const std::string& why)
 {
+	if (relay)
+	{
+		relay->failed(why);
+		return Outcome::Failed;
+	}
 	std::fprintf(stderr, "qdc: %s:%d: %s: %s\n", settings.script.c_str(), line.number,
 	             line.source.c_str(), why.c_str());
 	return Outcome::Failed;
@@ -58,6 +63,7 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::submit(const Line& line, const std:
 
 void QuickDC::Cli::Session::note(const std::string& text) const
 {
+	if (relay) return relay->noted(text);
 	std::fprintf(stderr, "%s\n", text.c_str());
 }
 
@@ -71,7 +77,52 @@ void QuickDC::Cli::Session::print(const Heard& heard) const
 
 void QuickDC::Cli::Session::pump(std::chrono::steady_clock::time_point deadline)
 {
-	while (std::optional<Delivery> delivery = runner.next(deadline)) take(*delivery);
+	while (receive(deadline)) { }
+}
+
+bool QuickDC::Cli::Session::receive(std::chrono::steady_clock::time_point deadline)
+{
+	if (feed)
+	{
+		std::optional<Arrival> arrival = feed->next(deadline);
+		if (!arrival) return false;
+		hear(std::move(*arrival));
+		return true;
+	}
+
+	std::optional<Delivery> delivery = runner.next(deadline);
+	if (!delivery) return false;
+	take(*delivery);
+	return true;
+}
+
+void QuickDC::Cli::Session::hear(Arrival arrival)
+{
+	Heard heard;
+	heard.core = std::move(arrival.core);
+	heard.event = std::move(arrival.event);
+	heard.line = std::move(arrival.line);
+	keep(std::move(heard));
+}
+
+void QuickDC::Cli::Session::keep(Heard heard)
+{
+	if (!settings.quiet) print(heard);
+
+	backlog.push_back(std::move(heard));
+	while (backlog.size() > BACKLOG_LIMIT) backlog.pop_front();
+}
+
+void QuickDC::Cli::Session::forget(const std::string& core)
+{
+	std::erase_if(backlog, [&core](const Heard& heard) { return heard.core == core; });
+}
+
+void QuickDC::Cli::Session::learn(const std::string& name, const std::string& value)
+{
+	remembered[name] = value;
+	if (relay) relay->learned(name, value);
+	if (feed) feed->learned(name, value);
 }
 
 void QuickDC::Cli::Session::take(const Delivery& delivery)
@@ -90,10 +141,8 @@ void QuickDC::Cli::Session::take(const Delivery& delivery)
 	heard.event = describe(delivery.core, delivery.event, name);
 	heard.line = heard.event.serialized();
 
-	if (!settings.quiet) print(heard);
-
-	backlog.push_back(std::move(heard));
-	while (backlog.size() > BACKLOG_LIMIT) backlog.pop_front();
+	if (relay) return relay->heard(heard.line);
+	keep(std::move(heard));
 }
 
 void QuickDC::Cli::Session::observe(Hubs& hubs, const Api::Event& event)
@@ -122,7 +171,7 @@ void QuickDC::Cli::Session::observe(Hubs& hubs, const Api::Event& event)
 		const auto named = hubs.searchNames.find(sent->request);
 		if (named != hubs.searchNames.end())
 		{
-			remembered[named->second] = std::to_string(sent->search);
+			learn(named->second, std::to_string(sent->search));
 			hubs.searchNames.erase(named);
 		}
 	}
@@ -177,16 +226,15 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::wait(const Line& line, const Expect
 			return remember(line, heard, expected) ? Outcome::Next : Outcome::Failed;
 		}
 
-		std::optional<Delivery> delivery = runner.next(deadline);
-		if (!delivery) break;
-
 		const size_t before = backlog.size();
-		take(*delivery);
+		if (!receive(deadline)) break;
 
 		/* Trimmed from the front, so what was looked at already has moved. */
 		const size_t dropped = before + 1 - backlog.size();
 		looked = looked > dropped ? looked - dropped : 0;
 	}
+
+	if (feed && !feed->broken().empty()) return fail(line, feed->broken() + ", waiting for " + expected.describe());
 
 	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(expected.timeout);
 	return fail(line, "timed out after " + std::to_string(ms.count()) + "ms waiting for "
@@ -222,7 +270,7 @@ bool QuickDC::Cli::Session::remember(const Line& line, const Heard& heard, const
 			fail(line, "the event has no '" + path + "' to remember as " + name);
 			return false;
 		}
-		remembered[name] = field->text();
+		learn(name, field->text());
 	}
 	return true;
 }
@@ -397,8 +445,9 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::restart(const Line& line, const std
 
 	/* Everything it said before it stopped is queued by now. */
 	pump(std::chrono::steady_clock::now());
-	std::erase_if(backlog, [&core](const Heard& heard) { return heard.core == core; });
+	forget(core);
 	cores.erase(core);
+	if (relay) relay->forgot(core);
 
 	std::string failure;
 	if (!runner.start(core, base + "/" + core, presets(core), failure))

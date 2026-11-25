@@ -11,9 +11,7 @@
 #include <charconv>
 #include <cstdint>
 
-namespace {
-
-std::string expand(const QuickDC::Cli::Grammar& grammar, const std::string& text)
+std::string QuickDC::Cli::expandDefinitions(const Grammar& grammar, const std::string& text)
 {
 	std::string out;
 	size_t at = 0;
@@ -39,6 +37,8 @@ std::string expand(const QuickDC::Cli::Grammar& grammar, const std::string& text
 	out.append(text, at, std::string::npos);
 	return out;
 }
+
+namespace {
 
 std::vector<std::string> split(const std::string& text)
 {
@@ -111,7 +111,7 @@ bool QuickDC::Cli::parseLine(const Grammar& grammar, int number, const std::stri
 	line.number = number;
 	line.source = text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
 
-	std::vector<std::string> words = split(expand(grammar, line.source));
+	std::vector<std::string> words = split(expandDefinitions(grammar, line.source));
 
 	if (!words.empty() && words.front().size() > 1 && words.front()[0] == '@')
 	{
@@ -147,6 +147,7 @@ bool QuickDC::Cli::parseLine(const Grammar& grammar, int number, const std::stri
 	out.line = std::move(line);
 	out.beforeStart = verb->beforeStart;
 	out.anytime = verb->anytime;
+	out.script = verb->script;
 	return true;
 }
 

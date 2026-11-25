@@ -24,6 +24,9 @@ struct Verb {
 
 	/** Needs no core, and so may come anywhere without starting them. */
 	bool anytime = false;
+
+	/** Runs where the script is read, on the events of every core, never on a core's agent. */
+	bool script = false;
 };
 
 const std::vector<Verb>& verbs();

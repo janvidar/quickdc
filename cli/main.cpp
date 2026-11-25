@@ -11,6 +11,7 @@
  */
 
 #include "freeport.h"
+#include "remote.h"
 #include "runner.h"
 #include "script.h"
 #include "session.h"
@@ -42,6 +43,8 @@ void usage(FILE* to)
 	std::fprintf(to,
 		"Usage: qdc [options] <script | ->\n"
 		"       qdc [options] [-i]\n"
+		"       qdc --serve ENDPOINT [--core NAME ...] [--home DIR] [--quiet]\n"
+		"       qdc --connect NAME=ENDPOINT ... [options] <script | ->\n"
 		"\n"
 		"  --core NAME         run a core called NAME; repeat for several (default: one, 'a')\n"
 		"  --home DIR          keep core NAME's files in DIR/NAME (default: a fresh\n"
@@ -55,6 +58,12 @@ void usage(FILE* to)
 		"                      comes, even where stdin is not a terminal (the default\n"
 		"                      for a terminal with no script); 'help' lists them\n"
 		"  --json              print events as JSON when interactive, as a script does\n"
+		"  --serve ENDPOINT    be an agent: run the cores for one controller that connects\n"
+		"                      to ENDPOINT (PORT on loopback, HOST:PORT, or a socket path;\n"
+		"                      port 0 picks one), printing 'serving ENDPOINT' once bound.\n"
+		"                      Whoever connects runs commands: for test networks only\n"
+		"  --connect NAME=ENDPOINT  run the script's core NAME on the agent at ENDPOINT;\n"
+		"                      repeat for each core (several may share one agent)\n"
 		"\n"
 		"Exit status: 0 when the script ran to its end, 1 when a line failed,\n"
 		"2 for a usage error or a script that does not parse. Interactively a failed\n"
@@ -69,6 +78,8 @@ struct Arguments {
 	QuickDC::Cli::Options options;
 	bool interactive = false;
 	bool json = false;
+	std::string serve;
+	std::vector<std::pair<std::string, std::string>> connect;
 };
 
 /* Exits on a usage error, since nothing has been started yet. */
@@ -152,6 +163,22 @@ Arguments parseArguments(int argc, char** argv)
 		{
 			out.json = true;
 		}
+		else if (arg == "--serve")
+		{
+			out.serve = value(n);
+		}
+		else if (arg == "--connect")
+		{
+			const std::string agent = value(n);
+			const size_t equals = agent.find('=');
+			if (equals == std::string::npos || equals == 0 || equals + 1 == agent.size())
+			{
+				std::fprintf(stderr, "qdc: --connect wants NAME=ENDPOINT, not '%s'\n", agent.c_str());
+				std::exit(EXIT_USAGE);
+			}
+			out.connect.emplace_back(agent.substr(0, equals), agent.substr(equals + 1));
+			out.cores.push_back(agent.substr(0, equals));
+		}
 		else if (arg.size() > 1 && arg[0] == '-')
 		{
 			std::fprintf(stderr, "qdc: unknown option '%s'\n", arg.c_str());
@@ -167,6 +194,22 @@ Arguments parseArguments(int argc, char** argv)
 			std::fprintf(stderr, "qdc: one script at a time\n");
 			std::exit(EXIT_USAGE);
 		}
+	}
+
+	if (!out.serve.empty())
+	{
+		if (!out.connect.empty() || out.interactive || !out.script.empty())
+		{
+			std::fprintf(stderr, "qdc: an agent takes its commands from its controller, not --connect, -i or a script\n");
+			std::exit(EXIT_USAGE);
+		}
+		out.script = "agent";
+	}
+
+	if (!out.connect.empty() && out.interactive)
+	{
+		std::fprintf(stderr, "qdc: a controller runs a script, not -i\n");
+		std::exit(EXIT_USAGE);
 	}
 
 	if (out.interactive && !out.script.empty())
@@ -369,6 +412,50 @@ int run(const Arguments& arguments, std::vector<QuickDC::Cli::Statement>& statem
 	return status;
 }
 
+/* The cores of this process, run for a controller in another. */
+int agent(const Arguments& arguments)
+{
+	Scratch scratch;
+	std::string base;
+	if (!baseDirectory(arguments, scratch, base)) return EXIT_FAILED;
+
+	QuickDC::Cli::Runner runner;
+	QuickDC::Cli::Session session(runner, arguments.options);
+	session.setBase(base);
+
+	std::string bound;
+	std::string why;
+	const int listener = QuickDC::Cli::listenOn(arguments.serve, bound, why);
+	if (listener == -1)
+	{
+		std::fprintf(stderr, "qdc: cannot serve: %s\n", why.c_str());
+		return EXIT_FAILED;
+	}
+
+	std::printf("serving %s\n", bound.c_str());
+	std::fflush(stdout);
+
+	const int status = QuickDC::Cli::serveController(listener, arguments.cores, runner, session,
+		[&]() { return startCores(arguments, base, runner, session); });
+
+	if (arguments.serve.find('/') != std::string::npos) unlink(bound.c_str());
+	return status;
+}
+
+/* The script, its cores run by agents. */
+int controller(const Arguments& arguments, const std::vector<QuickDC::Cli::Statement>& statements)
+{
+	Scratch scratch;
+	std::string base;
+	if (!baseDirectory(arguments, scratch, base)) return EXIT_FAILED;
+
+	QuickDC::Cli::Runner runner;
+	QuickDC::Cli::Session session(runner, arguments.options);
+	session.setBase(base);
+
+	return QuickDC::Cli::control(arguments.connect, arguments.grammar, statements, session);
+}
+
 /* Lines from a descriptor, read while the events that arrive in the meantime are printed. */
 class LineReader {
 	public:
@@ -483,10 +570,12 @@ int interact(const Arguments& arguments)
 int main(int argc, char** argv)
 {
 	const Arguments arguments = parseArguments(argc, argv);
+	if (!arguments.serve.empty()) return agent(arguments);
 	if (arguments.interactive) return interact(arguments);
 
 	std::vector<QuickDC::Cli::Statement> statements;
 	if (!parseScript(arguments, statements)) return EXIT_USAGE;
 
+	if (!arguments.connect.empty()) return controller(arguments, statements);
 	return run(arguments, statements);
 }
