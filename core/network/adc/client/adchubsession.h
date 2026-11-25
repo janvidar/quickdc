@@ -327,6 +327,17 @@ class HubSession :
 		QuickDC::PeerEndpoint ownEndpoint6() const;
 
 		/**
+		 * The IPv6 address the INF's I6 names: the active endpoint's, or, for a
+		 * client that cannot be dialled, the address it would be dialled at all
+		 * the same - which is what traversal needs, as I4 is for IPv4. Empty when
+		 * nothing has said what it is.
+		 */
+		std::string publishedIPv6() const;
+
+		/** Whether a traversal with 'peer' goes over IPv6: both ends publish I6. */
+		bool traverseOverIPv6(const QuickDC::User* peer) const;
+
+		/**
 		 * The port a CTM to 'peer' names: the endpoint of the family the peer will
 		 * dial, which is IPv6 when both ends have it and it gets in, as the peer's
 		 * addressToDial() decides. Zero where the evidence says neither family gets

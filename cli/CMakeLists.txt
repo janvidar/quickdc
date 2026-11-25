@@ -150,6 +150,7 @@ if(QUICKDC_BUILD_TESTS)
             "reach_occupied|occupied|reach-occupied|"
             "ipv6_dual_stack|ipv6-dual|ipv6-dual|"
             "ipv6_only|ipv6-only|ipv6-only|"
+            "ipv6_traversal|ipv6-closed|ipv6-traversal|"
             "lossy_link|lossy|lossy|"
             "link_cut|link-cut|link-cut|"
             "router_restart|link-reboot|link-cut|")

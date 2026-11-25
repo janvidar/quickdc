@@ -1,0 +1,10 @@
+# Two lans with no IPv4, each behind a router whose IPv6 firewall drops what
+# it was not asked for; a dual-stack hub on the internet.
+net wan ipv6=on
+net home1 ipv6=only
+net home2 ipv6=only
+node r1  router wan.11 home1.254 nat=home
+node r2  router wan.12 home2.254 nat=home
+node hub public wan.20
+node a   client home1.10
+node b   client home2.10

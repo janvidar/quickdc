@@ -1158,12 +1158,12 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	/*
 	 * And the same for IPv6, claimed from that family's own evidence.
 	 *
-	 * Sent only where there is an endpoint: unlike I4 there is no wildcard that
-	 * asks a hub to fill the address in, so a client that does not know its own
-	 * IPv6 address says nothing rather than naming one no peer could reach. An
-	 * empty field is what withdraws a claim made while we did know.
+	 * I6 is sent whenever the address is known, passive or not, since traversal
+	 * dials it; what says whether it can be dialled unasked is TCP6. Unlike I4
+	 * there is no wildcard asking a hub to fill it in, so a client that does not
+	 * know its own IPv6 address says nothing, and an empty field withdraws it.
 	 */
-	fields.emplace_back("I6", endpoint6.active ? endpoint6.address : std::string());
+	fields.emplace_back("I6", publishedIPv6());
 	const bool udp6 = endpoint6.active && reachableByDatagram(getCore(), config, true);
 	fields.emplace_back("U6", udp6 ? std::to_string(endpoint6.port) : std::string());
 
@@ -2482,6 +2482,24 @@ QuickDC::PeerEndpoint ADC::HubSession::ownEndpoint6() const
 }
 
 
+std::string ADC::HubSession::publishedIPv6() const
+{
+	const QuickDC::PeerEndpoint endpoint6 = ownEndpoint6();
+	if (endpoint6.active) return endpoint6.address;
+
+	std::string address = QuickDC::lastDropVerdict(getCore(), true).publicAddress;
+	if (address.empty()) address = globalIPv6Of(socket.get());
+	return address;
+}
+
+
+bool ADC::HubSession::traverseOverIPv6(const QuickDC::User* peer) const
+{
+	const char* theirs = peer ? peer->getAddressIPv6() : nullptr;
+	return theirs && *theirs && !publishedIPv6().empty();
+}
+
+
 uint16_t ADC::HubSession::connectablePort(const QuickDC::User* peer) const
 {
 	QuickDC::Core& core = getCore();
@@ -2531,10 +2549,16 @@ bool ADC::HubSession::dialFromHubPort(const QuickDC::User* user, const char* pro
 		return false;
 	}
 
-	const char* ip = user->getAddressIPv4();
+	/*
+	 * Over IPv6 where both ends have it: nothing translates there, so the port
+	 * named is the one dialled, and the crossing SYNs only have a stateful
+	 * firewall at each end to get past. Both sides decide from the same two INFs,
+	 * so they pick the same family.
+	 */
+	const char* ip = traverseOverIPv6(user) ? user->getAddressIPv6() : user->getAddressIPv4();
 	if (!ip || !*ip)
 	{
-		/* The hub is required to forward I4 for a client that uses this. */
+		/* The hub is required to forward I4 (or I6) for a client that uses this. */
 		QERR("The hub did not say where '%s' is; nothing to dial", user->getNick());
 		return false;
 	}
