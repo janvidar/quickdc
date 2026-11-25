@@ -511,11 +511,10 @@ void ADC::ClientSession::onSTA(const char* code, const char* message)
 	 * back and blame the source, which also makes the scheduler wait before
 	 * trying it again - it may simply be out of upload slots.
 	 */
-	if (download_approved && !token.empty())
-	{
-		QuickDC::QueueManager* queue = getCore().queue;
-		if (queue) queue->onRequestFailed(token.c_str());
-	}
+	/* Also before approval: a peer refusing the token we dialled with ends that request now. */
+	QuickDC::QueueManager* queue = getCore().queue;
+	if (queue && !token.empty() && (download_approved || queue->lookupRequest(token.c_str())))
+		queue->onRequestFailed(token.c_str());
 
 	socket->disconnect();
 }

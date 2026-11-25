@@ -3,7 +3,10 @@
 # Run a script with each core in a qdc agent of its own, driven by a controller,
 # and check how the controller ends.
 #
-# Usage: remote.sh <exit status> <text stderr must hold, or -> <qdc> [--kill CORE TEXT] <script> <core...>
+# Usage: remote.sh <exit status> <text stderr must hold, or -> <qdc> [--kill CORE TEXT] [--wrong-key] <script> <core...>
+#
+# The agents and controller share a QDC_AGENT_KEY; --wrong-key gives the
+# controller another one.
 #
 # --kill CORE TEXT kills the agent of CORE once the controller's stderr says TEXT,
 # and then the controller must end within 20 seconds.
@@ -24,8 +27,18 @@ then
 	shift 3
 fi
 
+controller_key=
+if [ "$1" = "--wrong-key" ]
+then
+	controller_key=not-the-key
+	shift
+fi
+
 script="$1"
 shift
+
+QDC_AGENT_KEY="key-$$-$(date +%s%N)"
+export QDC_AGENT_KEY
 
 home=$(mktemp -d "${TMPDIR:-/tmp}/qdc-remote-XXXXXX") || exit 1
 agents=
@@ -56,7 +69,7 @@ do
 done
 
 started=$(date +%s)
-"$qdc" --home "$home" $connect --quiet "$script" >"$home/stdout" 2>"$home/stderr" &
+QDC_AGENT_KEY="${controller_key:-$QDC_AGENT_KEY}" "$qdc" --home "$home" $connect --quiet "$script" >"$home/stdout" 2>"$home/stderr" &
 controller=$!
 
 failed=0
@@ -100,8 +113,17 @@ then
 	failed=1
 fi
 
-# Agents end with their controller, however it ends.
-for pid in $agents
+# Agents end with their controller, however it ends - except one they turned
+# away, which they keep waiting past. The controller stops at the first.
+if [ -n "$controller_key" ]
+then
+	grep -q "refused a controller" "$home/agent-$1.err" || { echo "agent $1 did not refuse" >&2; failed=1; }
+	agents_to_wait=
+else
+	agents_to_wait=$agents
+fi
+
+for pid in $agents_to_wait
 do
 	tries=0
 	while kill -0 $pid 2>/dev/null && [ "$(cut -d' ' -f3 /proc/$pid/stat 2>/dev/null)" != Z ]

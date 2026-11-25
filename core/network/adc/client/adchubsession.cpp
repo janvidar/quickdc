@@ -1367,7 +1367,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	 * the INF could disagree: a client that told the hub it was passive could still
 	 * answer with a CTM.
 	 */
-	const uint16_t port = connectablePort();
+	const uint16_t port = connectablePort(user);
 	const bool connectable = port != 0;
 
 	const char* protocol = peerConnectProtocol(user, connectable);
@@ -2482,16 +2482,21 @@ QuickDC::PeerEndpoint ADC::HubSession::ownEndpoint6() const
 }
 
 
-uint16_t ADC::HubSession::connectablePort() const
+uint16_t ADC::HubSession::connectablePort(const QuickDC::User* peer) const
 {
 	QuickDC::Core& core = getCore();
 
 	const QuickDC::PeerEndpoint endpoint = ownEndpoint();
-	if (endpoint.active && reachable(core, core.config, false)) return endpoint.port;
-
 	const QuickDC::PeerEndpoint endpoint6 = ownEndpoint6();
-	if (endpoint6.active && reachable(core, core.config, true)) return endpoint6.port;
+	const bool in4 = endpoint.active && reachable(core, core.config, false);
+	const bool in6 = endpoint6.active && reachable(core, core.config, true);
 
+	/* We claim TCP6 whenever in6, so a peer with an IPv6 address of its own dials that. */
+	const char* peer6 = peer ? peer->getAddressIPv6() : nullptr;
+	if (in6 && peer6 && *peer6) return endpoint6.port;
+
+	if (in4) return endpoint.port;
+	if (in6) return endpoint6.port;
 	return 0;
 }
 
@@ -2715,7 +2720,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 
 	/* The endpoint the INF advertised, for the same reason as in
 	   sendConnectionRequest(): a gateway may have granted another port. */
-	const uint16_t port = connectablePort();
+	const uint16_t port = connectablePort(user);
 
 	if (port) {
 		QDBG("Requesting active connection to user: %s", user->getNick());

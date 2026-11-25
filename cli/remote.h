@@ -21,7 +21,8 @@
  * runs the lines that look at events itself, over every agent's events, and
  * hands each other line to the agent of the core it names.
  *
- * Both ways a message is one line of JSON. To an agent:
+ * Both ways a message is one line of JSON. To an agent, first {"key":"..."}, the
+ * QDC_AGENT_KEY both sides have (empty when unset), then:
  *   {"run":"<line, definitions expanded>"}   answered by {"qdc":"done","outcome":"next|failed|quit"}
  *   {"start":true}                            the cores start; answered by done
  *   {"remember":"NAME","value":"..."}         a $NAME the controller learned

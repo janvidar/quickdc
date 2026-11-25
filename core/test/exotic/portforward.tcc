@@ -314,6 +314,40 @@ EXO_TEST(portforward_stop_releases_both_mappings_and_reports_nothing,
 	return 1;
 });
 
+/* The shutdown path: it drives the loop itself, so the deletions are done when it returns. */
+EXO_TEST(portforward_release_waits_for_the_gateway_to_delete_both_mappings,
+{
+		FakeGateway gateway(*loop, IGD1);
+		if (!gateway.ready()) EXO_SKIP("could not listen on the loopback");
+		agreeable(gateway);
+
+		Recorder events;
+		QuickDC::PortForward forward(*loop, &events);
+		forward.start(1411, gateway.location());
+		pump([&] { return events.done(); });
+		EXO_ASSERT(events.forwarded == 1);
+
+		forward.release(std::chrono::seconds(2));
+
+		EXO_ASSERT(gateway.count("DeletePortMapping") == 2);
+		EXO_ASSERT(!forward.isForwarded());
+		EXO_ASSERT(events.failed == 0);
+
+	return 1;
+});
+
+EXO_TEST(portforward_release_with_nothing_mapped_returns_at_once,
+{
+		Recorder events;
+		QuickDC::PortForward forward(*loop, &events);
+
+		const auto before = std::chrono::steady_clock::now();
+		forward.release(std::chrono::seconds(2));
+		EXO_ASSERT(std::chrono::steady_clock::now() - before < std::chrono::milliseconds(100));
+
+	return 1;
+});
+
 /* A port change is a stop and a start at once; the start must not cancel the release. */
 EXO_TEST(portforward_a_start_right_after_stop_still_releases_the_old_mappings,
 {

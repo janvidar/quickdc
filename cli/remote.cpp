@@ -12,12 +12,14 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -223,6 +225,28 @@ int milliseconds(Clock::time_point deadline)
 	return static_cast<int>(std::clamp<long long>(left, 0, 1000));
 }
 
+bool isLoopback(const sockaddr_storage& storage)
+{
+	if (storage.ss_family == AF_INET)
+		return (ntohl(reinterpret_cast<const sockaddr_in&>(storage).sin_addr.s_addr) >> 24) == 127;
+	if (storage.ss_family == AF_INET6)
+		return IN6_IS_ADDR_LOOPBACK(&reinterpret_cast<const sockaddr_in6&>(storage).sin6_addr);
+	return false;
+}
+
+std::string agentKey()
+{
+	const char* key = std::getenv("QDC_AGENT_KEY");
+	return key ? key : "";
+}
+
+bool sameKey(const std::string& a, const std::string& b)
+{
+	unsigned char differs = a.size() != b.size();
+	for (size_t n = 0; n < a.size() && n < b.size(); ++n) differs |= static_cast<unsigned char>(a[n] ^ b[n]);
+	return differs == 0;
+}
+
 std::string text(const Json::Value& message, const char* key)
 {
 	const Json::Value* found = message.find(key);
@@ -282,6 +306,29 @@ class AgentRelay : public QuickDC::Cli::Relay {
 
 }
 
+namespace {
+
+/* Whether the first line from 'connection', within a few seconds, is {"key":...} with 'key'. */
+bool presentsKey(Connection& connection, const std::string& key)
+{
+	const auto deadline = Clock::now() + std::chrono::seconds(10);
+	while (Clock::now() < deadline)
+	{
+		if (std::optional<std::string> line = connection.line())
+		{
+			const std::optional<Json::Value> said = Json::parse(*line);
+			const Json::Value* given = said ? said->find("key") : nullptr;
+			return given && sameKey(given->text(), key);
+		}
+		pollfd watched{connection.fd, POLLIN, 0};
+		poll(&watched, 1, milliseconds(deadline));
+		if (!connection.read() && !connection.line()) return false;
+	}
+	return false;
+}
+
+}
+
 int QuickDC::Cli::listenOn(const std::string& endpoint, std::string& bound, std::string& why)
 {
 	Address address;
@@ -299,11 +346,22 @@ int QuickDC::Cli::listenOn(const std::string& endpoint, std::string& bound, std:
 			continue;
 		}
 
+		if (!address.local && !isLoopback(storage) && agentKey().empty())
+		{
+			why = endpoint + " is reachable from other hosts; set QDC_AGENT_KEY on the agent and its controller";
+			close(fd);
+			return -1;
+		}
+
 		const int on = 1;
 		if (!address.local) setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
 		else unlink(address.path.c_str());
 
-		if (bind(fd, reinterpret_cast<const sockaddr*>(&storage), size) == 0 && listen(fd, 4) == 0)
+		const mode_t mask = address.local ? umask(0177) : 0;
+		const bool isBound = bind(fd, reinterpret_cast<const sockaddr*>(&storage), size) == 0;
+		if (address.local) umask(mask);
+
+		if (isBound && listen(fd, 4) == 0)
 		{
 			bound = describeBound(fd, address);
 			return fd;
@@ -318,19 +376,28 @@ int QuickDC::Cli::listenOn(const std::string& endpoint, std::string& bound, std:
 int QuickDC::Cli::serveController(int listener, const std::vector<std::string>& cores, Runner& runner,
                                   Session& session, const std::function<bool()>& start)
 {
-	int fd = -1;
-	while (fd == -1)
+	const std::string key = agentKey();
+	std::unique_ptr<Connection> accepted;
+	while (!accepted)
 	{
-		fd = accept4(listener, nullptr, nullptr, SOCK_CLOEXEC);
-		if (fd == -1 && errno != EINTR && errno != ECONNABORTED)
+		const int fd = accept4(listener, nullptr, nullptr, SOCK_CLOEXEC);
+		if (fd == -1)
 		{
+			if (errno == EINTR || errno == ECONNABORTED) continue;
 			std::fprintf(stderr, "qdc: accept: %s\n", std::strerror(errno));
 			return EXIT_FAILED;
+		}
+
+		accepted = std::make_unique<Connection>(fd);
+		if (!presentsKey(*accepted, key))
+		{
+			std::fprintf(stderr, "qdc: refused a controller without the agent key\n");
+			accepted.reset();
 		}
 	}
 	close(listener);
 
-	Connection connection(fd);
+	Connection& connection = *accepted;
 	AgentRelay relay(connection);
 	session.setRelay(&relay);
 
@@ -500,6 +567,7 @@ class Controller : public QuickDC::Cli::Feed {
 					agent = agents.back().get();
 					agent->endpoint = endpoint;
 					agent->connection = std::make_unique<Connection>(fd);
+					agent->connection->send(message({{"key", agentKey()}}));
 					if (!hello(*agent)) return false;
 				}
 

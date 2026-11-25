@@ -327,11 +327,12 @@ class HubSession :
 		QuickDC::PeerEndpoint ownEndpoint6() const;
 
 		/**
-		 * The port a CTM names, which is the IPv4 endpoint's or, where only IPv6
-		 * gets in, the IPv6 one's. Zero where the evidence says neither does, so
-		 * the peer is asked to let us dial instead.
+		 * The port a CTM to 'peer' names: the endpoint of the family the peer will
+		 * dial, which is IPv6 when both ends have it and it gets in, as the peer's
+		 * addressToDial() decides. Zero where the evidence says neither family gets
+		 * in, so the peer is asked to let us dial instead.
 		 */
-		uint16_t connectablePort() const;
+		uint16_t connectablePort(const QuickDC::User* peer) const;
 
 		/**
 		 * Where to dial 'user': its IPv6 address where it says a connection gets

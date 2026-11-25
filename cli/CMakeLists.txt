@@ -126,8 +126,12 @@ if(QUICKDC_BUILD_TESTS)
         COMMAND ${remote} 1 "remote-agent-dies.qdc:13: @a wait UserJoined nick=nobody timeout=60s: the agent at"
                 $<TARGET_FILE:qdc> --kill b "both cores are up" ${scripts}/remote-agent-dies.qdc a b)
 
+    add_test(NAME cli_remote_wrong_key
+        COMMAND ${remote} 1 "did not say hello"
+                $<TARGET_FILE:qdc> --wrong-key ${scripts}/two-cores-chat.qdc a b)
+
     set_tests_properties(cli_remote_two_cores_chat cli_remote_download_active cli_remote_fails
-                         cli_remote_agent_dies PROPERTIES TIMEOUT 120)
+                         cli_remote_agent_dies cli_remote_wrong_key PROPERTIES TIMEOUT 120)
 
     # Scenarios across rootless podman networks (tests/net/run.sh): a topology and
     # its script, skipped where podman or its networking is not there. ctest -L net.

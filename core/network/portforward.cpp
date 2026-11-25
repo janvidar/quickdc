@@ -3,7 +3,11 @@
  * See the file "COPYING" for licensing details.
  */
 
+#include <samurai/eventloop.h>
+#include <samurai/io/net/socketmonitor.h>
 #include <samurai/io/net/url.h>
+#include <samurai/messagehandler.h>
+#include <samurai/timer.h>
 
 #include "quickdc.h"
 #include "debug/dbg.h"
@@ -87,10 +91,9 @@ QuickDC::PortForward::PortForward(Samurai::EventLoop& loop_, PortForwardListener
 
 QuickDC::PortForward::~PortForward()
 {
-	/* Deliberately not stop(): releasing a mapping means talking to the gateway,
-	   which needs an event loop that is still running. The lease is what covers
-	   a client that went away without asking. Both are dropped in the order they
-	   depend on, since the mapper borrows the gateway. */
+	/* Not stop(): releasing needs the loop running, which is release()'s job
+	   while the core is still whole. The mapper borrows the gateway, so it goes
+	   first. */
 	mapper.reset();
 	gateway.reset();
 	retired_mapper.reset();
@@ -162,6 +165,25 @@ void QuickDC::PortForward::stop()
 	external_port = 0;
 	tcp_done = false;
 	udp_done = false;
+}
+
+
+void QuickDC::PortForward::release(std::chrono::milliseconds within)
+{
+	if (!mapper || mapper->getMappings().empty()) return;
+	stop();
+
+	const auto deadline = std::chrono::steady_clock::now() + within;
+	while (retired_mapper && !retired_mapper->getMappings().empty()
+		&& std::chrono::steady_clock::now() < deadline)
+	{
+		loop.monitor().wait(50);
+		loop.timers().process();
+		loop.messages().process();
+	}
+
+	if (retired_mapper && !retired_mapper->getMappings().empty())
+		QDBG("The gateway did not confirm every release; the lease will see to the rest");
 }
 
 

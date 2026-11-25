@@ -10,6 +10,7 @@
 #include <samurai/io/net/upnp/gateway.h>
 #include <samurai/io/net/upnp/portmapper.h>
 
+#include <chrono>
 #include <memory>
 #include <stdint.h>
 #include <string>
@@ -126,6 +127,13 @@ class PortForward final
 		 * lease expiring.
 		 */
 		void stop();
+
+		/**
+		 * stop(), then drive the loop until the gateway has answered every
+		 * deletion or 'within' has passed. For shutdown, while the loop's other
+		 * users are still alive; what is left over the lease cleans up.
+		 */
+		void release(std::chrono::milliseconds within);
 
 		/** True between start() and the listener hearing back. */
 		bool isBusy() const { return busy; }

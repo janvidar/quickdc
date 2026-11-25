@@ -870,6 +870,9 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 
 QuickDC::Core::~Core()
 {
+	/* Before anything goes, since it runs the loop a moment more. */
+	if (portforward) portforward->release(std::chrono::seconds(2));
+
 	/* First: what it holds reports into the rest. */
 	delete service; service = 0;
 
@@ -895,11 +898,6 @@ QuickDC::Core::~Core()
 
 	delete dropcheck; dropcheck = 0;
 
-	/*
-	 * Before the socket monitor is left behind, and deliberately without asking
-	 * the gateway to release anything: that would mean talking to it while the
-	 * event loop is being torn down. The finite lease is what cleans up.
-	 */
 	delete portforward; portforward = 0;
 
 	delete automation; automation = 0;
