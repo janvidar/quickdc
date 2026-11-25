@@ -368,6 +368,41 @@ EXO_TEST(service_a_favourite_is_kept_and_let_go,
 	return 1;
 });
 
+/* A hub's own board choices are kept in its session group, and following the general setting keeps none. */
+EXO_TEST(service_a_hubs_board_choices_are_kept_in_its_group,
+{
+	namespace Ev = QuickDC::Api::Events;
+	using Policy = QuickDC::Api::Commands::SetBoardPolicy;
+
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	EXO_ASSERT(running.core->submit(Policy{"adc://127.0.0.1:1/", Policy::Policy::Serve, Policy::Choice::Never}));
+	EXO_ASSERT(running.core->submit(Policy{"127.0.0.1:1", Policy::Policy::FetchAhead, Policy::Choice::Always}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::SettingChanged>([](const Ev::SettingChanged& e) {
+		return e.key == "Fetch a thread ahead" && e.value == "true";
+	}));
+
+	std::string serve;
+	std::string ahead;
+	running.onCore([&] {
+		serve = running.core->session->peekString("adc://127.0.0.1:1", "Offer what I have read", "");
+		ahead = running.core->session->peekString("dchub://127.0.0.1:1", "Fetch a thread ahead", "");
+	});
+	EXO_ASSERT(serve == "false");
+	EXO_ASSERT(ahead == "true");
+
+	EXO_ASSERT(running.core->submit(Policy{"adc://127.0.0.1:1", Policy::Policy::Serve, Policy::Choice::Follow}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::SettingChanged>([](const Ev::SettingChanged& e) {
+		return e.key == "Offer what I have read" && e.removed;
+	}));
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
+
 /* The directory's sources are the core's, told on ReportState and on each change, a failed fetch with its reason. */
 EXO_TEST(service_the_hub_directory_is_announced,
 {

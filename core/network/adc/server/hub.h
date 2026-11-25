@@ -455,7 +455,7 @@ namespace LocalHub {
 			ServiceMap* services;
 			std::deque<char*> history;
 	
-			bool processing;
+			bool processing = false;
 
 			/* Outstanding deferred work, keyed by ticket. See deferFor(). */
 			std::map<uint64_t, User*> pending;

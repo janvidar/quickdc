@@ -16,6 +16,7 @@
 #include "share/sharefolders.h"
 #include "config/userlists.h"
 #include "network/hubdirectory.h"
+#include "bbs/boardkeeper.h"
 #include "api/subscription.h"
 
 #include <map>
@@ -61,7 +62,6 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 	private:
 		class HubListFetch;
 		class HubSession;
-		class BoardStore;
 
 		void run(const Commands::FetchHubList& command);
 		void run(const Commands::AddHubListSource& command);
@@ -99,8 +99,6 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::ForgetSearch& command);
 		void run(const Commands::Enqueue& command);
 		void run(const Commands::EnqueueFromSearch& command);
-		void run(const Commands::EnqueueForReading& command);
-		void run(const Commands::AddFallbackSource& command);
 		void run(const Commands::SetPriority& command);
 		void run(const Commands::RemoveFromQueue& command);
 		void run(const Commands::SnapshotTransfers& command);
@@ -126,22 +124,12 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::SubscribeBoard& command);
 		void run(const Commands::UnsubscribeBoard& command);
 		void run(const Commands::RequestBoardEntry& command);
-		void run(const Commands::SubmitPost& command);
+		void run(const Commands::WritePost& command);
 		void run(const Commands::WithdrawPost& command);
-
-		void run(const Commands::OpenBoardStore& command);
-		void run(const Commands::CloseBoardStore& command);
-		void run(const Commands::StoreBoardEntries& command);
-		void run(const Commands::DescribeBoard& command);
-		void run(const Commands::QueryBoardState& command);
 		void run(const Commands::LoadBoard& command);
-		void run(const Commands::ResumeBoard& command);
+		void run(const Commands::ReadPost& command);
 		void run(const Commands::MarkRead& command);
-		void run(const Commands::ServePosts& command);
-		void run(const Commands::QueryPost& command);
-		void run(const Commands::AdoptPost& command);
-		void run(const Commands::EvictPosts& command);
-		void run(const Commands::ReleasePosts& command);
+		void run(const Commands::SetBoardPolicy& command);
 		void run(const Commands::SetSetting& command);
 		void run(const Commands::ReplaceGroup& command);
 		void run(const Commands::SaveSettings& command);
@@ -170,8 +158,6 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		                         const std::string& key, const std::string* value) override;
 
 		Preferences* preferences(SettingsStore store) const;
-
-		BoardStore* boardStore(BoardStoreHandle store);
 
 		/** The open session 'hub' names, or null. */
 		HubSession* session(HubHandle hub);
@@ -213,7 +199,8 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		bool connectionModeChanged = false;
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
 
-		std::map<BoardStoreHandle, std::unique_ptr<BoardStore>> boardStores;
+		/* Null without a configuration; before the sessions, which tell it when they go. */
+		std::unique_ptr<QuickDC::BoardKeeper> boards;
 
 		struct MediaFetch {
 			HubHandle hub = 0;

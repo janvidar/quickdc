@@ -45,6 +45,7 @@ set(QUICKDC_EXOTIC_TESTS
     chunkmap.tcc
     chatarchive.tcc
     boardindex.tcc
+    boardkeeper.tcc
     config.tcc
     hublist.tcc
     hubdirectory.tcc

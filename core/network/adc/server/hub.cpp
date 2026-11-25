@@ -113,7 +113,6 @@ ADC::LocalHub::Hub::Hub(Samurai::EventLoop& loop_, QuickDC::Preferences& config_
 	new ADC::LocalHub::SrvHistory(services);
 	new ADC::LocalHub::SrvMyIP(services);
 	
-	processing = false;
 	nextPendingTicket = 1;
 
 	timer = new Samurai::Timer(eventLoop, this, ADC::LocalHub::HUB_SWEEP_INTERVAL, false);

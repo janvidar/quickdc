@@ -55,6 +55,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <new>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -499,6 +500,28 @@ EXO_TEST(bbs_hub_a_hub_with_a_board_announces_the_extension,
 	 * cannot fetch a post body.
 	 */
 	EXO_ASSERT(c.sawLine({"ISUP", "AD" ADC_HASH_TIGER, "AD" ADC_EXT_BULLETIN}));
+	return 1;
+});
+
+/*
+ * A hub built where something else lived is not left inside a broadcast. Reading the
+ * configuration announces each board it finds, and that happened before the flag a
+ * broadcast restores was given a value - so a hub made over used memory with a board
+ * configured could believe for ever that it was walking its users.
+ */
+EXO_TEST(bbs_hub_a_hub_made_over_used_memory_is_not_left_inside_a_broadcast,
+{
+	configureBoard("dirty", 15);
+
+	void* raw = ::operator new(sizeof(TestHub));
+	memset(raw, 0xff, sizeof(TestHub));
+	TestHub* hub = new (raw) TestHub();
+
+	EXO_ASSERT(hub->hasBoards());
+	EXO_ASSERT(!hub->processing);
+
+	hub->~TestHub();
+	::operator delete(raw);
 	return 1;
 });
 

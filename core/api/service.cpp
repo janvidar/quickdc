@@ -5,7 +5,6 @@
 
 #include "api/service.h"
 #include "api/core.h"
-#include "api/service_boards.h"
 #include "api/dropverdict.h"
 #include "api/networkmode.h"
 #include "config/preferences.h"
@@ -283,7 +282,8 @@ QuickDC::Api::HubStatus converted(QuickDC::HubListener::StatusHub status)
  * What the core lends a listener - a User it deletes on the next line, a string
  * in a buffer the next command reuses - is copied here, before publish().
  */
-class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public QuickDC::HubListener {
+class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public QuickDC::HubListener,
+                                                 public QuickDC::BoardKeeper::Link {
 	public:
 		HubSession(Service& owner, HubHandle handle, Samurai::IO::Net::URL* url, std::string opened)
 			: QuickDC::Hub(owner.core, this, url)
@@ -310,9 +310,32 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 			sendPrivateChatMessage(user, message.c_str(), richText);
 		}
 
+		bool subscribeBoard(const std::string& board, uint64_t cursor) override
+		{
+			return Hub::subscribeBoard(board.c_str(), cursor);
+		}
+
+		bool unsubscribeBoard(const std::string& board) override
+		{
+			return Hub::unsubscribeBoard(board.c_str());
+		}
+
+		bool submitPost(const std::string& tth, uint64_t size, const std::string& board,
+		                const std::string& subject, const std::string& parent) override
+		{
+			return Hub::submitPost(tth.c_str(), size, board.c_str(),
+			                       subject.empty() ? nullptr : subject.c_str(),
+			                       parent.empty() ? nullptr : parent.c_str());
+		}
+
 		void EventNetStatus(enum StatusNetwork netstate) override
 		{
 			owner.publish(Events::HubNetStatus{handle, converted(netstate), isSecure()});
+
+			/* What a hub agreed to does not outlive the connection it was agreed on. */
+			if (owner.boards && netstate != NetLookup && netstate != NetConnecting
+			    && netstate != NetConnected && netstate != NetTlsConnected)
+				owner.boards->available(handle, false);
 		}
 
 		void EventReconnectScheduled(int seconds) override
@@ -333,22 +356,24 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 		void EventBoardsAvailable(bool available) override
 		{
 			owner.publish(Events::BoardsAvailable{handle, available});
+			if (owner.boards) owner.boards->available(handle, available);
 		}
 
 		void EventBoardDescribed(const QuickDC::Board& board) override
 		{
-			owner.publish(Events::BoardDescribed{handle, board});
+			if (owner.boards) owner.boards->described(handle, board);
 		}
 
 		void EventBoardEntry(const QuickDC::BoardEntry& entry) override
 		{
-			owner.publish(Events::BoardEntryArrived{handle, entry});
+			if (owner.boards) owner.boards->arrived(handle, entry);
 		}
 
 		void EventBoardRefused(int code, const char* message, const char* board,
 		                       const char* tth) override
 		{
 			owner.publish(Events::BoardRefused{handle, code, text(message), text(board), text(tth)});
+			if (owner.boards) owner.boards->refused(handle, code, text(board), text(tth));
 		}
 
 		void EventSystemError(const char* msg) override
@@ -505,6 +530,14 @@ QuickDC::Api::Service::Service(Core& core_)
 		directory = std::make_unique<QuickDC::HubDirectory>(core.loop(), *core.config,
 			core.homeDirectory.empty() ? std::string() : core.homeDirectory + "/hublists",
 			[this] { publish(hubListSources(0)); }, [this] { publish(hubDirectory(0)); });
+		boards = std::make_unique<QuickDC::BoardKeeper>(core, core.homeDirectory,
+			[this](const std::string& url) {
+				const std::string group = hubSettingsGroup(url);
+				for (const std::string& kept : favourites->urls())
+					if (hubSettingsGroup(kept) == group) return true;
+				return false;
+			},
+			[this](const Event& event) { publish(event); });
 		sweepPasted(mediaFolder(), Settings::read(*core.config, Settings::ChatMediaKeepDays), time(0));
 	}
 }
@@ -979,27 +1012,6 @@ void QuickDC::Api::Service::run(const Commands::EnqueueFromSearch& command)
 		command.remoteName.empty() ? nullptr : command.remoteName.c_str()));
 }
 
-void QuickDC::Api::Service::run(const Commands::EnqueueForReading& command)
-{
-	if (!core.queue || command.tth.empty()) return;
-
-	QueueFile* file = core.queue->add(command.filename.c_str(), command.tth.c_str(), command.size);
-	if (file && !command.onlyHub.empty()) file->searchOnlyOn(command.onlyHub.c_str());
-	core.queue->requestSourceSearch(command.tth.c_str());
-}
-
-/* Only where nothing else is known: a source found by searching is a better one. */
-void QuickDC::Api::Service::run(const Commands::AddFallbackSource& command)
-{
-	if (!core.queue) return;
-
-	QueueFile* file = core.queue->getFileByTTH(command.tth.c_str());
-	if (!file || file->countSources() > 0) return;
-
-	core.queue->addKnownSource(command.tth.c_str(), command.hubUrl.c_str(),
-	                           command.sourceId.c_str());
-}
-
 void QuickDC::Api::Service::run(const Commands::SetPriority& command)
 {
 	if (!core.queue) return;
@@ -1030,17 +1042,29 @@ void QuickDC::Api::Service::run(const Commands::SnapshotTransfers& command)
 	Events::TransfersSnapshot taken;
 	taken.request = command.request;
 
+	/* A post somebody is reading is not a download anybody chose, so it is not listed as one. */
+	const auto listed = [this](const std::string& filename) { return !boards || !boards->isFetch(filename); };
+
 	if (core.transfers)
 		for (QuickDC::Transfer* t = core.transfers->first(); t; t = core.transfers->next())
-			taken.active.push_back(converted(t));
+		{
+			Transfer row = converted(t);
+			if (t->isUpload() || listed(row.filename)) taken.active.push_back(std::move(row));
+		}
 
 	if (core.queue)
 	{
 		std::vector<QueueStatus> status;
 		core.queue->getStatus(status);
 		taken.queued.reserve(status.size());
-		for (const QueueStatus& entry : status) taken.queued.push_back(converted(entry));
-		taken.activeDownloads = static_cast<uint32_t>(core.queue->countActiveTransfers());
+		size_t reading = 0;
+		for (const QueueStatus& entry : status)
+		{
+			if (listed(entry.filename ? entry.filename : "")) taken.queued.push_back(converted(entry));
+			else reading += entry.activeSources;
+		}
+		const size_t active = core.queue->countActiveTransfers();
+		taken.activeDownloads = static_cast<uint32_t>(active > reading ? active - reading : 0);
 	}
 
 	publish(taken);
@@ -1136,6 +1160,11 @@ void QuickDC::Api::Service::EventQueueFileVerified(const QueueFile* file)
 {
 	if (!file) return;
 
+	/* A post's document is the store's, and not a download anybody chose. */
+	if (boards && file->getLocalFilename()
+	    && boards->downloaded(file->getLocalFilename(), file->getTTH() ? file->getTTH() : ""))
+		return;
+
 	const Events::DownloadCompleted done{
 		file->getLocalFilename() ? file->getLocalFilename() : "",
 		file->getSize(),
@@ -1166,16 +1195,19 @@ void QuickDC::Api::Service::EventTransferStarted(QuickDC::Transfer* transfer)
 void QuickDC::Api::Service::EventTransferFinished(QuickDC::Transfer* transfer)
 {
 	publish(Events::TransferFinished{converted(transfer)});
+	if (boards && transfer && transfer->isUpload()) boards->transfersChanged();
 }
 
 void QuickDC::Api::Service::EventTransferStopped(QuickDC::Transfer* transfer)
 {
 	publish(Events::TransferStopped{converted(transfer)});
+	if (boards && transfer && transfer->isUpload()) boards->transfersChanged();
 }
 
 void QuickDC::Api::Service::EventTransferError(QuickDC::Transfer* transfer)
 {
 	publish(Events::TransferError{converted(transfer)});
+	if (boards && transfer && transfer->isUpload()) boards->transfersChanged();
 }
 
 QuickDC::Api::Service::HubSession* QuickDC::Api::Service::session(HubHandle hub)
@@ -1194,7 +1226,9 @@ void QuickDC::Api::Service::run(const Commands::OpenHub& command)
 		return;
 	}
 
-	hubs[command.hub] = std::make_unique<HubSession>(*this, command.hub, &parsed, command.url);
+	auto made = std::make_unique<HubSession>(*this, command.hub, &parsed, command.url);
+	if (boards) boards->opened(command.hub, made.get(), command.url);
+	hubs[command.hub] = std::move(made);
 
 	if (recents)
 	{
@@ -1238,12 +1272,20 @@ QuickDC::Api::Events::CompletedDownloads QuickDC::Api::Service::completedDownloa
 
 void QuickDC::Api::Service::run(const Commands::AddFavouriteHub& command)
 {
-	if (favourites && favourites->add(command.url)) publish(favouriteHubs(0));
+	if (favourites && favourites->add(command.url))
+	{
+		publish(favouriteHubs(0));
+		if (boards) boards->policyChanged();
+	}
 }
 
 void QuickDC::Api::Service::run(const Commands::RemoveFavouriteHub& command)
 {
-	if (favourites && favourites->remove(command.url)) publish(favouriteHubs(0));
+	if (favourites && favourites->remove(command.url))
+	{
+		publish(favouriteHubs(0));
+		if (boards) boards->policyChanged();
+	}
 }
 
 void QuickDC::Api::Service::run(const Commands::ForgetRecentHub& command)
@@ -1274,6 +1316,7 @@ void QuickDC::Api::Service::run(const Commands::CloseHub& command)
 
 	std::unique_ptr<HubSession> closing = std::move(found->second);
 	hubs.erase(found);
+	if (boards) boards->closed(command.hub);
 	closing->disconnect();
 }
 
@@ -1343,13 +1386,12 @@ void QuickDC::Api::Service::run(const Commands::RequestHistory& command)
 
 void QuickDC::Api::Service::run(const Commands::SubscribeBoard& command)
 {
-	if (HubSession* hub = session(command.hub))
-		hub->subscribeBoard(command.board.c_str(), command.timestamp);
+	if (boards) boards->subscribe(command.hub, command.board, command.fromStart);
 }
 
 void QuickDC::Api::Service::run(const Commands::UnsubscribeBoard& command)
 {
-	if (HubSession* hub = session(command.hub)) hub->unsubscribeBoard(command.board.c_str());
+	if (boards) boards->unsubscribe(command.hub, command.board);
 }
 
 void QuickDC::Api::Service::run(const Commands::RequestBoardEntry& command)
@@ -1358,20 +1400,48 @@ void QuickDC::Api::Service::run(const Commands::RequestBoardEntry& command)
 		hub->requestEntry(command.board.c_str(), command.tth.c_str());
 }
 
-void QuickDC::Api::Service::run(const Commands::SubmitPost& command)
+void QuickDC::Api::Service::run(const Commands::WritePost& command)
 {
-	HubSession* hub = session(command.hub);
-	if (!hub) return;
-
-	hub->submitPost(command.tth.c_str(), command.size, command.board.c_str(),
-	                command.subject.empty() ? nullptr : command.subject.c_str(),
-	                command.parent.empty() ? nullptr : command.parent.c_str());
+	if (boards) boards->write(command);
+	else publish(Events::PostRefused{command.request, Events::PostRefused::Why::NoHub, 0, 0, std::string()});
 }
 
 void QuickDC::Api::Service::run(const Commands::WithdrawPost& command)
 {
 	if (HubSession* hub = session(command.hub))
 		hub->withdrawPost(command.tth.c_str(), command.board.c_str());
+}
+
+void QuickDC::Api::Service::run(const Commands::LoadBoard& command)
+{
+	if (boards) boards->load(command.hubUrl, command.board);
+}
+
+void QuickDC::Api::Service::run(const Commands::ReadPost& command)
+{
+	if (boards) boards->read(command.hubUrl, command.board, command.tth, command.fetch);
+}
+
+void QuickDC::Api::Service::run(const Commands::MarkRead& command)
+{
+	if (boards) boards->markRead(command.hubUrl, command.board, command.tth);
+}
+
+/* Nothing written is what following the general setting means; the change is heard as a setting. */
+void QuickDC::Api::Service::run(const Commands::SetBoardPolicy& command)
+{
+	if (!core.session) return;
+
+	const std::string group = hubSettingsGroup(command.hubUrl);
+	if (group.empty()) return;
+
+	using Policy = Commands::SetBoardPolicy::Policy;
+	using Choice = Commands::SetBoardPolicy::Choice;
+	const char* key = command.policy == Policy::Serve ? Settings::BoardServe.key : Settings::BoardPrefetch.key;
+
+	if (command.choice == Choice::Follow) core.session->remove(group, key);
+	else core.session->setBool(group, key, command.choice == Choice::Always);
+	core.session->write();
 }
 
 QuickDC::Preferences* QuickDC::Api::Service::preferences(SettingsStore store) const
@@ -1410,6 +1480,10 @@ void QuickDC::Api::Service::EventSettingChanged(const Preferences& store, const 
 	publish(changed);
 
 	namespace S = QuickDC::Settings;
+	if (boards && ((&store == core.config && group == S::BoardServe.group)
+	               || (&store == core.session && (key == S::BoardServe.key || key == S::BoardPrefetch.key))))
+		boards->policyChanged();
+
 	if (&store == core.config && group == S::ConnectionMode.group
 	    && (key == S::ConnectionMode.key || key == S::ActiveMode.key || key == S::UseUpnp.key
 	        || key == S::ForceActiveMode.key || key == S::ReachabilityServer.key))

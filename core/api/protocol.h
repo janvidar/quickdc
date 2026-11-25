@@ -192,12 +192,6 @@ struct SearchHit {
 	User user;
 };
 
-/**
- * A board store a front end keeps posts and indexes in, named the way a hub
- * session is: by a number the front end picks when it opens one.
- */
-using BoardStoreHandle = uint64_t;
-
 /** Whether everything before what is held of a board will still be replayed. */
 enum class BoardView { Unknown, Complete, Gap };
 
@@ -211,13 +205,6 @@ struct PostDocument {
 	bool dated = false;
 	uint64_t date = 0;
 	bool richText = false;
-};
-
-struct BoardReadState {
-	std::string board;
-	int unread = 0;
-	/** Which of the posts the request concerned are marked read. */
-	std::vector<std::string> read;
 };
 
 /** The two preference files: the configuration, and what one session leaves the next. */
@@ -285,115 +272,44 @@ struct ReportState {
 };
 
 /*
- * Every board store request names its store and carries a 'request' number
- * the answer echoes, since every sink hears every answer.
+ * Bulletin boards. The core keeps what every hub says about its boards under
+ * the hub's address, follows each board a hub describes, and fetches, checks,
+ * offers and lets go of post documents by [Boards] and each hub's own choices.
+ * A board is named by its hub's address, however spelled, and its name.
  */
 
-struct OpenBoardStore {
-	BoardStoreHandle store = 0;
-	std::string boardsDir;
-	std::string documentsDir;
-	/** Where fetched documents land before they are adopted; made if absent. */
-	std::string incomingDir;
-};
-
-/** Nothing is released: marks survive, and the next opening releases them. */
-struct CloseBoardStore { BoardStoreHandle store = 0; };
-
-/** Append what a hub sent to the index; answered by BoardEntriesStored. */
-struct StoreBoardEntries {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	std::string hubUrl;
-	std::vector<BoardEntry> entries;
-	/** Offer the documents of these posts to anybody who asks. */
-	bool serving = false;
-};
-
-/** Record a board's descriptor; answered by BoardStateReported. */
-struct DescribeBoard {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	std::string hubUrl;
-	Board board;
-};
-
-struct QueryBoardState {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	std::string hubUrl;
-	std::string board;
-};
-
-/** Everything held of a board; answered by BoardLoaded. */
+/** What is held of a board, read without asking its hub; told as BoardEntries (whole) and BoardState. */
 struct LoadBoard {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
 	std::string hubUrl;
 	std::string board;
-	bool serving = false;
 };
 
-/** Where to pick a subscription up from, offering what is held; BoardResumed. */
-struct ResumeBoard {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
+/** Somebody opened a post: it is read, shown where its document is here, and fetched if 'fetch'. */
+struct ReadPost {
 	std::string hubUrl;
 	std::string board;
-	bool serving = false;
+	std::string tth;
+	bool fetch = false;
 };
 
-/** Answered by BoardReadChanged. An empty 'tth' marks the whole board. */
+/** Mark a post read, or with an empty 'tth' everything held of the board; told as BoardRead. */
 struct MarkRead {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
 	std::string hubUrl;
 	std::string board;
 	std::string tth;
 };
 
-struct ServePosts {
-	BoardStoreHandle store = 0;
-	std::vector<std::string> tths;
-	bool serving = false;
-};
-
-/** What the store knows of one document; answered by PostKnown. */
-struct QueryPost {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	std::string tth;
-};
-
 /**
- * Check the document at 'path' is the post 'entry' names, and keep it;
- * answered by PostAdopted. 'cap' bounds what is read, 0 for no bound.
+ * Whether a hub fetches the rest of a thread when one post of it is fetched, or
+ * offers the posts read from it: as [Boards] says, always, or never.
  */
-struct AdoptPost {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	std::string path;
-	BoardEntry entry;
-	bool serving = false;
-	uint64_t cap = 0;
-};
+struct SetBoardPolicy {
+	enum class Policy { FetchAhead, Serve };
+	enum class Choice { Follow, Always, Never };
 
-/** Mark documents past either bound to go; answered by PostsEvicted. */
-struct EvictPosts {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	uint64_t age = 0;
-	uint64_t total = 0;
-	uint64_t now = 0;
-};
-
-/**
- * Let go of every document marked to go that nobody is being sent. 'sending'
- * names files a front end knows are going out, beside what the core sees.
- */
-struct ReleasePosts {
-	BoardStoreHandle store = 0;
-	std::vector<std::string> sending;
+	std::string hubUrl;
+	Policy policy = Policy::FetchAhead;
+	Choice choice = Choice::Follow;
 };
 
 /*
@@ -458,12 +374,17 @@ struct RequestHistory {
 	int limit = 0;
 };
 
+/**
+ * Follow a board again - one left, or every entry from the start where
+ * 'fromStart' - rather than from the highest timestamp held.
+ */
 struct SubscribeBoard {
 	HubHandle hub = 0;
 	std::string board;
-	uint64_t timestamp = 0;
+	bool fromStart = false;
 };
 
+/** Leave a board: the hub's descriptors do not take it up again while the session lasts. */
 struct UnsubscribeBoard {
 	HubHandle hub = 0;
 	std::string board;
@@ -475,13 +396,18 @@ struct RequestBoardEntry {
 	std::string tth;
 };
 
-struct SubmitPost {
+/**
+ * Write a post signed with this client's ID, offer its document and submit it;
+ * answered by PostSubmitted or PostRefused. 'parent' is empty for a new thread.
+ */
+struct WritePost {
+	uint64_t request = 0;
 	HubHandle hub = 0;
-	std::string tth;
-	uint64_t size = 0;
 	std::string board;
-	std::string subject;
 	std::string parent;
+	std::string subject;
+	std::string body;
+	bool richText = false;
 };
 
 struct WithdrawPost {
@@ -559,17 +485,6 @@ struct EnqueueFromSearch {
 };
 
 /**
- * Queue a file somebody named by hash so it can be read here, and look for a
- * source at once - only on 'onlyHub' where that is given.
- */
-struct EnqueueForReading {
-	std::string filename;
-	std::string tth;
-	uint64_t size = 0;
-	std::string onlyHub;
-};
-
-/**
  * Fetch the file a message named by hash into the download folder, whatever the
  * picture policy says, looking for it on 'hub' alone where that is given; told
  * as ChatMedia, and offered again by its hash once it has arrived.
@@ -590,13 +505,6 @@ struct SetChatMediaFetch {
 
 	std::string hubUrl;
 	Choice choice = Choice::Follow;
-};
-
-/** Record a source for a queued 'tth' that has none, such as the one who named it. */
-struct AddFallbackSource {
-	std::string tth;
-	std::string hubUrl;
-	std::string sourceId;
 };
 
 struct SetPriority {
@@ -727,82 +635,136 @@ struct ConnectionMode {
 	std::string reachabilityServer;
 };
 
-struct BoardEntriesStored {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	/** Indices into the command's entries of the ones the index took. */
-	std::vector<int> kept;
-	std::vector<BoardReadState> boards;
-	std::vector<std::string> held;
-	std::vector<std::string> failed;
-	std::vector<std::string> offered;
-};
-
-struct BoardStateReported {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	uint64_t cursor = 0;
-	BoardView view = BoardView::Unknown;
-};
-
-struct BoardLoaded {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
+/**
+ * What is held of a board: all of it, oldest first, where 'whole' (LoadBoard),
+ * else what just arrived and was kept - a tombstone among them. 'read' names
+ * those of 'entries' that read as read; 'unread' counts the whole board.
+ */
+struct BoardEntries {
+	std::string hubUrl;
+	std::string board;
 	std::vector<BoardEntry> entries;
+	bool whole = false;
 	int unread = 0;
 	std::vector<std::string> read;
-	std::vector<std::string> held;
-	std::vector<std::string> failed;
-	std::vector<std::string> offered;
 };
 
-struct BoardResumed {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
+/**
+ * Where a board stands: what its hub last described it as, where 'described';
+ * the cursor a subscription resumes from; whether what is held has a hole no
+ * subscription will close; whether the session follows it, or somebody 'left'
+ * it on this session; and 'gone' once its hub said it is no more. Told on
+ * LoadBoard, a descriptor, a subscription or leaving one, and a refusal naming
+ * the board as not there.
+ */
+struct BoardState {
+	std::string hubUrl;
+	std::string board;
+	bool described = false;
+	Board descriptor;
 	uint64_t cursor = 0;
 	BoardView view = BoardView::Unknown;
-	std::vector<std::string> offered;
+	bool subscribed = false;
+	bool left = false;
+	bool gone = false;
 };
 
-struct BoardReadChanged {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	BoardReadState state;
+/** What reads as read moved: 'read' is every such post where 'whole', else the ones just marked. */
+struct BoardRead {
+	std::string hubUrl;
+	std::string board;
+	int unread = 0;
+	std::vector<std::string> read;
+	bool whole = false;
 };
 
-struct PostKnown {
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	/** Where the document is, or empty where it is not held. */
-	std::string path;
-	/** Held, and known not to be the post it was asked for as. */
-	bool failed = false;
-};
-
-struct PostAdopted {
-	enum class Outcome {
+/** What is known of one post's document, wherever it is indexed. */
+struct PostStatus {
+	enum class State {
+		/** Not here, and not being fetched. */
+		Announced,
+		Fetching,
 		Verified,
-		/** It is the post, but somebody other than the index's author wrote it. */
+		/** It is the post, but its document names an author other than the hub's. */
 		Disputed,
-		NoStore,
+		/** Not this time; it may be asked for again. */
+		Unavailable,
+		/** Here, and not the post it claims to be: every copy is these bytes. */
 		Unreadable,
-		TooLarge,
-		WrongHash,
-		NotAPost
+		Withdrawn
 	};
 
-	BoardStoreHandle store = 0;
-	uint64_t request = 0;
-	Outcome outcome = Outcome::Unreadable;
+	enum class Why {
+		None,
+		/** The hub named it with something that is not a hash. */
+		NotAHash,
+		Withdrawn,
+		/** Declared larger than [Boards] lets one post be fetched; 'size' says how large. */
+		TooLarge,
+		/** Nothing bounds it: no size declared and no limit set. */
+		Unsized,
+		/** Its board has been asked for as much as it may be for the moment. */
+		Allowance,
+		/** Nobody who has it could be reached. */
+		NobodyAnswered,
+		/** The peer sent more than the post was said to be. */
+		Oversent,
+		/** What arrived is not the file that was asked for. */
+		Mismatch,
+		NoStore,
+		/** The copy here could not be read. */
+		Unreadable,
+		/** Larger than this client will read for one post. */
+		OverCap,
+		/** Its bytes hash to another name, so they were thrown away. */
+		WrongHash,
+		/** Its header does not parse. */
+		NotAPost,
+		/** Known already not to be the post. */
+		KnownBad,
+		/** Let go of by the bounds on what is kept. */
+		Evicted
+	};
+
+	std::string tth;
+	State state = State::Announced;
+	Why why = Why::None;
+	uint64_t size = 0;
+	/** Where Verified or Disputed. */
 	PostDocument post;
-	/** Whether the store holds the document after this. */
-	bool held = false;
+	/** Who the post is attributed to: the CID the index entry named, never the document's. */
+	std::string attributedTo;
 };
 
-struct PostsEvicted {
-	BoardStoreHandle store = 0;
+/** WritePost was carried out: the document is offered and submitted under 'tth'. */
+struct PostSubmitted {
 	uint64_t request = 0;
-	int marked = 0;
+	std::string board;
+	std::string tth;
+	uint64_t size = 0;
+};
+
+struct PostRefused {
+	enum class Why {
+		/** This client has no ID to sign it with yet. */
+		NoIdentity,
+		/** A new thread needs a subject. */
+		NoSubject,
+		/** Larger than the board takes; 'size' and 'limit' say by how much. */
+		TooLarge,
+		/** The document could not be written; 'reason' says why. */
+		NotWritten,
+		/** The document could not be offered; 'reason' says why. */
+		NotOffered,
+		/** No session on that hub, or it does not carry boards. */
+		NoHub
+	};
+
+	uint64_t request = 0;
+	Why why = Why::NoHub;
+	uint64_t size = 0;
+	uint64_t limit = 0;
+	std::string reason;
 };
 
 /** OpenHub was given an address no session can be made for. */
@@ -855,8 +817,6 @@ struct UsersCleared { HubHandle hub = 0; };
 struct SearchResult { HubHandle hub = 0; uint64_t search = 0; SearchHit hit; };
 
 struct BoardsAvailable { HubHandle hub = 0; bool available = false; };
-struct BoardDescribed { HubHandle hub = 0; Board board; };
-struct BoardEntryArrived { HubHandle hub = 0; BoardEntry entry; };
 struct BoardRefused {
 	HubHandle hub = 0;
 	int code = 0;
@@ -1102,8 +1062,6 @@ struct Command {
 		Commands::ForgetSearch,
 		Commands::Enqueue,
 		Commands::EnqueueFromSearch,
-		Commands::EnqueueForReading,
-		Commands::AddFallbackSource,
 		Commands::FetchAttachment,
 		Commands::SetChatMediaFetch,
 		Commands::SetPriority,
@@ -1125,21 +1083,12 @@ struct Command {
 		Commands::SubscribeBoard,
 		Commands::UnsubscribeBoard,
 		Commands::RequestBoardEntry,
-		Commands::SubmitPost,
+		Commands::WritePost,
 		Commands::WithdrawPost,
-		Commands::OpenBoardStore,
-		Commands::CloseBoardStore,
-		Commands::StoreBoardEntries,
-		Commands::DescribeBoard,
-		Commands::QueryBoardState,
 		Commands::LoadBoard,
-		Commands::ResumeBoard,
+		Commands::ReadPost,
 		Commands::MarkRead,
-		Commands::ServePosts,
-		Commands::QueryPost,
-		Commands::AdoptPost,
-		Commands::EvictPosts,
-		Commands::ReleasePosts,
+		Commands::SetBoardPolicy,
 		Commands::SetSetting,
 		Commands::ReplaceGroup,
 		Commands::SaveSettings,
@@ -1203,17 +1152,13 @@ struct Event {
 		Events::UsersCleared,
 		Events::SearchResult,
 		Events::BoardsAvailable,
-		Events::BoardDescribed,
-		Events::BoardEntryArrived,
 		Events::BoardRefused,
-		Events::BoardEntriesStored,
-		Events::BoardStateReported,
-		Events::BoardLoaded,
-		Events::BoardResumed,
-		Events::BoardReadChanged,
-		Events::PostKnown,
-		Events::PostAdopted,
-		Events::PostsEvicted,
+		Events::BoardEntries,
+		Events::BoardState,
+		Events::BoardRead,
+		Events::PostStatus,
+		Events::PostSubmitted,
+		Events::PostRefused,
 		Events::SettingChanged,
 		Events::SettingsWritten,
 		Events::SettingsSaved,

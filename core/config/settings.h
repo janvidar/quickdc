@@ -135,8 +135,19 @@ inline constexpr Number ChatMediaLimit          {"Chat media", "Maximum size", 2
 /** About six months; zero keeps them for ever. */
 inline constexpr Number ChatMediaKeepDays       {"Chat media", "Keep pasted for days", 180};
 
+/*
+ * [Boards]; a hub's own group in the session store may override the first two.
+ * Fetching ahead is off because a post is fetched from whoever holds it, which at
+ * first is only its author: fetching unasked tells them who read it and when.
+ * Offering is for hubs kept as favourites only, where the hub says nothing.
+ */
+inline constexpr Flag   BoardPrefetch           {"Boards", "Fetch a thread ahead", false};
+inline constexpr Flag   BoardServe              {"Boards", "Offer what I have read", true};
+inline constexpr Number BoardKeepDays           {"Boards", "Keep posts for days", 90};
+inline constexpr Number BoardCache              {"Boards", "Cache size", 256 * 1024 * 1024};
+
 /* [Local hub] */
-inline constexpr Flag   HubEnabled              {"Local hub", "Enabled", false};
+inline constexpr Flag   HubEnabled             {"Local hub", "Enabled", false};
 inline constexpr Text   HubName                 {"Local hub", "Name", "A QuickDC hub"};
 inline constexpr Text   HubDescription          {"Local hub", "Description", "My QuickDC hub"};
 inline constexpr Number HubMaxUsers             {"Local hub", "Max users", 128};

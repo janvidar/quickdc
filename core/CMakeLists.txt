@@ -87,7 +87,7 @@ set(QUICKDC_SOURCES
     api/networkmode.cpp
     api/server.cpp
     api/service.cpp
-    api/service_boards.cpp
+    bbs/boardkeeper.cpp
     config/migrations.cpp
     hash/hashmanager.cpp
     hash/hashjob.cpp
