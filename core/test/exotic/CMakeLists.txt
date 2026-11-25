@@ -79,6 +79,8 @@ set(QUICKDC_EXOTIC_TESTS
     localaddresses.tcc
     queuecomplete.tcc
     twocores.tcc
+    sharefolders.tcc
+    userlists.tcc
     zupload.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)

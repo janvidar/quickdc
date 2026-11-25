@@ -63,10 +63,9 @@ const char* defaultReachabilityServer();
 /**
  * What a mode implies for the settings the rest of the core reads.
  *
- * The whole of the mapping, in one place and as a function of its arguments. Both
- * the core and a front end need the answer and neither can ask the other for it -
- * the core settles it before a bridge exists, and a settings page must not wait on
- * the core thread - so what they share is this, which needs nothing from either.
+ * The whole of the mapping, in one place and as a function of its arguments. A
+ * front end does not work it out: it sends SetConnectionMode and is told the
+ * answer as ConnectionMode.
  *
  * 'storedUseUpnp', 'storedForceActive' and 'storedServer' are what the file holds
  * now. Advanced answers with them, because advanced means the plumbing is as
@@ -113,8 +112,29 @@ NetworkMode networkMode(Preferences& config, bool freshInstallation);
 /** The mode a store already records, without settling or writing anything. */
 NetworkMode storedNetworkMode(const Preferences& config);
 
+/**
+ * The mode a store is acted on in: the one it records, or for a store that records
+ * none, the one networkMode() would settle on - passive where Active mode is false.
+ */
+NetworkMode networkModeInForce(const Preferences& config);
+
+/**
+ * What the mode in force derives, from the store as it stands.
+ *
+ * The one answer to whether this client is active and claims to be reachable:
+ * everything that tells a hub or a peer, or acts on it, asks this rather than
+ * reading Active mode or Force active mode, which the mode decides.
+ */
+NetworkModeKeys networkModeKeysInForce(const Preferences& config);
+
 /** Write 'mode' and every setting it derives. */
 void setNetworkMode(Preferences& config, NetworkMode mode);
+
+/**
+ * The same, with the choices advanced leaves to the user; the other two modes
+ * decide them and ignore these.
+ */
+void setNetworkMode(Preferences& config, NetworkMode mode, bool useUpnp, bool forceActive);
 
 }
 

@@ -119,7 +119,7 @@ bool AutomationState::measureIfStale(bool ipv6)
 	 * the key is absent - and this is reached from a timer, so it would mark the
 	 * file dirty every few minutes over a question it only asked.
 	 */
-	if (!QuickDC::Settings::read(*core->config, QuickDC::Settings::ActiveMode)) return false;
+	if (!QuickDC::networkModeKeysInForce(*core->config).activeMode) return false;
 
 	if (QuickDC::dropMeasurementIsFresh(QuickDC::lastDropVerdict(*core, ipv6), time(0)))
 		return false;
@@ -501,11 +501,8 @@ struct NetworkPlan {
 NetworkPlan planFrom(const QuickDC::Preferences& config)
 {
 	NetworkPlan plan;
-	plan.mode = QuickDC::storedNetworkMode(config);
-	plan.keys = QuickDC::networkModeKeys(plan.mode,
-		QuickDC::Settings::read(config, QuickDC::Settings::UseUpnp),
-		QuickDC::Settings::read(config, QuickDC::Settings::ForceActiveMode),
-		QuickDC::Settings::read(config, QuickDC::Settings::ReachabilityServer));
+	plan.mode = QuickDC::networkModeInForce(config);
+	plan.keys = QuickDC::networkModeKeysInForce(config);
 	plan.endpoint.port = static_cast<uint16_t>(QuickDC::Settings::read(config, QuickDC::Settings::Port));
 	plan.endpoint.bind = QuickDC::Settings::read(config, QuickDC::Settings::Bind);
 
@@ -745,10 +742,7 @@ QuickDC::Core::Core(const Home& home)
 	 * The stored values are peeked, since the ordinary accessors would write their
 	 * defaults back and this read is meant to leave the file as it found it.
 	 */
-	const NetworkModeKeys wanted = networkModeKeys(storedNetworkMode(*config),
-		QuickDC::Settings::read(*config, QuickDC::Settings::UseUpnp),
-		QuickDC::Settings::read(*config, QuickDC::Settings::ForceActiveMode),
-		QuickDC::Settings::read(*config, QuickDC::Settings::ReachabilityServer));
+	const NetworkModeKeys wanted = networkModeKeysInForce(*config);
 
 	/*
 	 * Which also settles whether the first measurement waits for the gateway: see
@@ -826,7 +820,11 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	 * and it is what this is made for rather than left null.
 	 */
 	hash = new QuickDC::Hash::Manager(hashCacheBeside(config_file).c_str());
-	shares = new QuickDC::Share::Manager(config, hash);
+
+	/* The file lists too, for the same reason: they are written whenever the share changes. */
+	const size_t slash = config_file.rfind('/');
+	const std::string lists = slash == std::string::npos ? "." : config_file.substr(0, slash);
+	shares = new QuickDC::Share::Manager(config, hash, lists.c_str());
 
 	/* Peer sessions reach for this without checking whether there is one. */
 	securityManager = new QuickDC::SecurityManager();
@@ -942,6 +940,8 @@ void QuickDC::Core::run()
 	// on a list for exactly that reason, and this drains it.
 	if (transfers) transfers->process();
 
+	if (shares && shares->hasRetired()) shares->releaseRetired(transfers);
+
 	// Expire dead sources, start queued transfers, and flush the queue now
 	// and then. Cheap enough to run on every iteration.
 	if (queue) queue->process();
@@ -982,6 +982,11 @@ bool QuickDC::Core::submit(Api::Command command)
 QuickDC::Api::SettingsSnapshot QuickDC::Core::settingsSnapshot() const
 {
 	return service->settingsSnapshot();
+}
+
+std::vector<QuickDC::Api::Event> QuickDC::Core::state() const
+{
+	return service->state(0);
 }
 
 QuickDC::Subscription QuickDC::Core::subscribe(Api::EventSink* sink)

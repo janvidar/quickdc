@@ -117,6 +117,22 @@ QuickDC::NetworkMode QuickDC::storedNetworkMode(const QuickDC::Preferences& conf
 	                       NetworkMode::Advanced);
 }
 
+QuickDC::NetworkMode QuickDC::networkModeInForce(const QuickDC::Preferences& config)
+{
+	if (config.haveSetting(GROUP, MODE)) return storedNetworkMode(config);
+
+	return config.peekBool(GROUP, ACTIVE, false) ? NetworkMode::Advanced
+	                                             : NetworkMode::Passive;
+}
+
+QuickDC::NetworkModeKeys QuickDC::networkModeKeysInForce(const QuickDC::Preferences& config)
+{
+	return networkModeKeys(networkModeInForce(config),
+		config.peekBool(GROUP, USE_UPNP, false),
+		config.peekBool(GROUP, FORCE_ACTIVE, false),
+		config.peekString(GROUP, SERVER, ""));
+}
+
 QuickDC::NetworkMode QuickDC::networkMode(QuickDC::Preferences& config,
                                           bool freshInstallation)
 {
@@ -153,9 +169,14 @@ QuickDC::NetworkMode QuickDC::networkMode(QuickDC::Preferences& config,
 
 void QuickDC::setNetworkMode(QuickDC::Preferences& config, QuickDC::NetworkMode mode)
 {
-	const NetworkModeKeys keys = networkModeKeys(mode,
-		config.peekBool(GROUP, USE_UPNP, false),
-		config.peekBool(GROUP, FORCE_ACTIVE, false),
+	setNetworkMode(config, mode, config.peekBool(GROUP, USE_UPNP, false),
+	               config.peekBool(GROUP, FORCE_ACTIVE, false));
+}
+
+void QuickDC::setNetworkMode(QuickDC::Preferences& config, QuickDC::NetworkMode mode,
+                             bool useUpnp, bool forceActive)
+{
+	const NetworkModeKeys keys = networkModeKeys(mode, useUpnp, forceActive,
 		config.peekString(GROUP, SERVER, ""));
 
 	config.setString(GROUP, MODE, toString(mode));

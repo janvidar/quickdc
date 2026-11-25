@@ -9,6 +9,7 @@
 #include "api/dropverdict.h"
 #include "api/networkmode.h"
 #include "config/preferences.h"
+#include "config/settings.h"
 #include "network/dropcheck.h"
 #include "network/hublist.h"
 #include "api/hub.h"
@@ -31,6 +32,7 @@
 
 #include <samurai/io/net/url.h>
 
+#include <ctime>
 #include <string_view>
 #include <utility>
 
@@ -151,6 +153,7 @@ QuickDC::Api::Transfer converted(QuickDC::Transfer* transfer)
 	{
 		out.secure = socket->isSecure();
 		if (out.secure && !QuickDC::Keyprint::ofPeer(socket, out.peerKeyprint)) out.peerKeyprint.clear();
+		out.outbound = socket->isOutbound();
 	}
 	return out;
 }
@@ -278,10 +281,11 @@ QuickDC::Api::HubStatus converted(QuickDC::HubListener::StatusHub status)
  */
 class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public QuickDC::HubListener {
 	public:
-		HubSession(Service& owner, HubHandle handle, Samurai::IO::Net::URL* url)
+		HubSession(Service& owner, HubHandle handle, Samurai::IO::Net::URL* url, std::string opened)
 			: QuickDC::Hub(owner.core, this, url)
 			, owner(owner)
 			, handle(handle)
+			, opened(std::move(opened))
 		{
 		}
 
@@ -434,6 +438,7 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 		void EventHubName(const char* hubname) override
 		{
 			owner.publish(Events::HubName{handle, text(hubname)});
+			owner.hubNamed(opened, text(hubname));
 		}
 
 		void EventHubDescription(const char* description) override
@@ -465,6 +470,8 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 	private:
 		Service& owner;
 		HubHandle handle;
+		/** The address it was opened by, which is what the visit was recorded under. */
+		std::string opened;
 		bool followRedirects = false;
 		bool allowPeerConnections = true;
 };
@@ -478,6 +485,13 @@ QuickDC::Api::Service::Service(Core& core_)
 	, sessionObserved(core_.session ? core_.session->subscribe(this) : Subscription())
 {
 	if (core.shares) core.shares->setHashedCallback([this] { publish(shareStatus(0)); });
+
+	if (core.config)
+	{
+		favourites = std::make_unique<QuickDC::FavouriteHubs>(*core.config);
+		recents = std::make_unique<QuickDC::RecentHubs>(*core.config);
+		completed = std::make_unique<QuickDC::CompletedDownloads>(*core.config);
+	}
 }
 
 QuickDC::Api::Service::~Service()
@@ -493,6 +507,56 @@ QuickDC::Api::Service::~Service()
 void QuickDC::Api::Service::execute(const Command& command)
 {
 	std::visit([this](const auto& c) { run(c); }, command.value);
+	announceState();
+}
+
+void QuickDC::Api::Service::announceState()
+{
+	if (connectionModeChanged)
+	{
+		connectionModeChanged = false;
+		publish(connectionMode(0));
+	}
+}
+
+std::vector<QuickDC::Api::Event> QuickDC::Api::Service::state(uint64_t request) const
+{
+	return {connectionMode(request), shareFolders(request), favouriteHubs(request),
+	        recentHubs(request), completedDownloads(request)};
+}
+
+void QuickDC::Api::Service::run(const Commands::ReportState& command)
+{
+	for (const Event& event : state(command.request)) publish(event);
+}
+
+QuickDC::Api::Events::ConnectionMode QuickDC::Api::Service::connectionMode(uint64_t request) const
+{
+	Events::ConnectionMode told;
+	told.request = request;
+	if (!core.config) return told;
+
+	const NetworkModeKeys keys = networkModeKeysInForce(*core.config);
+	told.mode = networkModeInForce(*core.config);
+	told.activeMode = keys.activeMode;
+	told.useUpnp = keys.useUpnp;
+	told.forceActive = keys.forceActive;
+	told.reachabilityServer = keys.reachabilityServer;
+	return told;
+}
+
+void QuickDC::Api::Service::run(const Commands::SetConnectionMode& command)
+{
+	if (core.config)
+	{
+		writing = command.origin;
+		setNetworkMode(*core.config, command.mode, command.useUpnp, command.forceActive);
+		writing = 0;
+	}
+
+	/* Told even where nothing changed, so the front end that asked is answered. */
+	connectionModeChanged = true;
+	publish(Events::SettingsWritten{SettingsStore::Application, command.origin});
 }
 
 void QuickDC::Api::Service::publish(const Event& event)
@@ -776,6 +840,62 @@ void QuickDC::Api::Service::run(const Commands::ReportShare& command)
 	publish(shareStatus(command.request));
 }
 
+QuickDC::Api::Events::ShareFolders QuickDC::Api::Service::shareFolders(uint64_t request) const
+{
+	Events::ShareFolders told;
+	told.request = request;
+
+	if (core.shares)
+		for (const Share::Folder& folder : core.shares->getFolders())
+			told.folders.push_back(ShareFolder{folder.name, folder.path});
+
+	return told;
+}
+
+void QuickDC::Api::Service::foldersAnswered(Share::FolderRefusal refusal, const std::string& path,
+                                            uint64_t request)
+{
+	using Refused = Events::ShareFolderRefused;
+	using Why = Share::FolderRefusal;
+
+	switch (refusal)
+	{
+		case Why::None:
+			publish(shareFolders(request));
+			publish(shareStatus(request));
+			if (core.hubs) core.hubs->requestClientInfoUpdate();
+			return;
+
+		case Why::AlreadyShared: publish(Refused{request, path, Refused::Why::AlreadyShared}); return;
+		case Why::InsideShared:  publish(Refused{request, path, Refused::Why::InsideShared});  return;
+		case Why::NotADirectory: publish(Refused{request, path, Refused::Why::NotADirectory}); return;
+		case Why::NotShared:     publish(Refused{request, path, Refused::Why::NotShared});     return;
+		case Why::NoName:        publish(Refused{request, path, Refused::Why::NoName});        return;
+	}
+}
+
+void QuickDC::Api::Service::run(const Commands::AddShareFolder& command)
+{
+	if (!core.shares) return;
+	const Share::FolderRefusal refusal = core.shares->addFolder(command.path, command.name, core.transfers);
+	foldersAnswered(refusal, command.path, command.request);
+}
+
+void QuickDC::Api::Service::run(const Commands::RemoveShareFolder& command)
+{
+	if (!core.shares) return;
+	const Share::FolderRefusal refusal = core.shares->removeFolder(command.path, core.transfers);
+	foldersAnswered(refusal, command.path, command.request);
+}
+
+void QuickDC::Api::Service::run(const Commands::RenameShareFolder& command)
+{
+	if (!core.shares) return;
+	const Share::FolderRefusal refusal =
+		core.shares->renameFolder(command.path, command.name, core.transfers);
+	foldersAnswered(refusal, command.path, command.request);
+}
+
 void QuickDC::Api::Service::EventQueueFileAdded(const QueueFile*)
 {
 	publish(Events::QueueChanged{});
@@ -790,10 +910,15 @@ void QuickDC::Api::Service::EventQueueFileVerified(const QueueFile* file)
 {
 	if (!file) return;
 
-	publish(Events::DownloadCompleted{
+	const Events::DownloadCompleted done{
 		file->getLocalFilename() ? file->getLocalFilename() : "",
 		file->getSize(),
-		file->getTTH() ? file->getTTH() : ""});
+		file->getTTH() ? file->getTTH() : ""};
+	publish(done);
+
+	if (completed && completed->add(QuickDC::CompletedDownload{
+	        done.filename, done.tth, done.size, static_cast<uint64_t>(time(0))}))
+		publish(completedDownloads(0));
 }
 
 void QuickDC::Api::Service::EventTransferStarted(QuickDC::Transfer* transfer)
@@ -832,7 +957,76 @@ void QuickDC::Api::Service::run(const Commands::OpenHub& command)
 		return;
 	}
 
-	hubs[command.hub] = std::make_unique<HubSession>(*this, command.hub, &parsed);
+	hubs[command.hub] = std::make_unique<HubSession>(*this, command.hub, &parsed, command.url);
+
+	if (recents)
+	{
+		recents->visited(command.url, static_cast<uint64_t>(time(0)));
+		publish(recentHubs(0));
+	}
+}
+
+void QuickDC::Api::Service::hubNamed(const std::string& url, const std::string& name)
+{
+	if (recents && !name.empty() && recents->named(url, name)) publish(recentHubs(0));
+}
+
+QuickDC::Api::Events::FavouriteHubs QuickDC::Api::Service::favouriteHubs(uint64_t request) const
+{
+	Events::FavouriteHubs told;
+	told.request = request;
+	if (favourites) told.urls = favourites->urls();
+	return told;
+}
+
+QuickDC::Api::Events::RecentHubs QuickDC::Api::Service::recentHubs(uint64_t request) const
+{
+	Events::RecentHubs told;
+	told.request = request;
+	if (recents)
+		for (const QuickDC::RecentHub& hub : recents->entries())
+			told.hubs.push_back(Api::RecentHub{hub.url, hub.name, hub.visited});
+	return told;
+}
+
+QuickDC::Api::Events::CompletedDownloads QuickDC::Api::Service::completedDownloads(uint64_t request) const
+{
+	Events::CompletedDownloads told;
+	told.request = request;
+	if (completed)
+		for (const QuickDC::CompletedDownload& one : completed->entries())
+			told.downloads.push_back(Api::CompletedDownload{one.filename, one.tth, one.size, one.finished});
+	return told;
+}
+
+void QuickDC::Api::Service::run(const Commands::AddFavouriteHub& command)
+{
+	if (favourites && favourites->add(command.url)) publish(favouriteHubs(0));
+}
+
+void QuickDC::Api::Service::run(const Commands::RemoveFavouriteHub& command)
+{
+	if (favourites && favourites->remove(command.url)) publish(favouriteHubs(0));
+}
+
+void QuickDC::Api::Service::run(const Commands::ForgetRecentHub& command)
+{
+	if (recents && recents->remove(command.url)) publish(recentHubs(0));
+}
+
+void QuickDC::Api::Service::run(const Commands::ClearRecentHubs&)
+{
+	if (recents && recents->clear()) publish(recentHubs(0));
+}
+
+void QuickDC::Api::Service::run(const Commands::ForgetCompletedDownload& command)
+{
+	if (completed && completed->remove(command.filename)) publish(completedDownloads(0));
+}
+
+void QuickDC::Api::Service::run(const Commands::ClearCompletedDownloads&)
+{
+	if (completed && completed->clear()) publish(completedDownloads(0));
 }
 
 /* Disconnected first: ~Hub frees the session, and does not close it. */
@@ -977,6 +1171,12 @@ void QuickDC::Api::Service::EventSettingChanged(const Preferences& store, const 
 	changed.revision = store.revision();
 	changed.origin = writing;
 	publish(changed);
+
+	namespace S = QuickDC::Settings;
+	if (&store == core.config && group == S::ConnectionMode.group
+	    && (key == S::ConnectionMode.key || key == S::ActiveMode.key || key == S::UseUpnp.key
+	        || key == S::ForceActiveMode.key || key == S::ReachabilityServer.key))
+		connectionModeChanged = true;
 }
 
 void QuickDC::Api::Service::run(const Commands::SetSetting& command)

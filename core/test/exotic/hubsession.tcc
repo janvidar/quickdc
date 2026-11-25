@@ -2579,6 +2579,42 @@ EXO_TEST(hubsession_a_passive_client_asks_the_peer_to_invite_it,
 	return 1;
 });
 
+/*
+ * Passive is the mode, whatever Active mode was left saying.
+ *
+ * An installation can hold Mode passive beside Active mode 1 - a file edited by
+ * hand, or one written before the mode decided the key - and a session that read
+ * the key told peers to dial a client that had said nothing may connect here.
+ */
+EXO_TEST(hubsession_passive_mode_asks_for_a_reverse_connection_whatever_active_mode_says,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	ActiveCore active;
+	QuickDC::Preferences* config = core->config;
+	config->setString("Network", "Mode", "passive");
+
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+	const QuickDC::User* peer = s.session->getUser("BBBB");
+	EXO_ASSERT_NOT_NULL(peer);
+
+	s.hub.drain();
+	s.hub.received.clear();
+	s.session->sendConnectionRequest(peer, "job5");
+
+	std::string line;
+	const bool got = s.hub.nextLine(line);
+	config->remove("Network", "Mode");
+
+	EXO_ASSERT(got);
+	EXO_ASSERT(line.compare(0, 5, "DRCM ") == 0);
+	EXO_ASSERT(line.find("job5") != std::string::npos);
+	return 1;
+});
+
 /* ------------------------------------------------------------------------- */
 /* Withdrawing the claim that peers can reach us                             */
 /* ------------------------------------------------------------------------- */

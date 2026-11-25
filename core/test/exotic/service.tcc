@@ -14,6 +14,7 @@
 #include "quickdc.h"
 #include "api/core.h"
 #include "api/protocol.h"
+#include "config/preferences.h"
 
 #include <samurai/io/file.h>
 
@@ -22,6 +23,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <variant>
@@ -50,6 +52,24 @@ class Recorder : public QuickDC::Api::EventSink {
 		{
 			std::unique_lock<std::mutex> lock(mutex);
 			return arrived.wait_for(lock, limit, [&] { return events.size() >= count; });
+		}
+
+		/* The first event of type T that meets 'wanted', waiting for it if need be. */
+		template<typename T, typename Wanted>
+		std::optional<T> waitForEvent(Wanted wanted, std::chrono::seconds limit = std::chrono::seconds(10))
+		{
+			std::unique_lock<std::mutex> lock(mutex);
+			std::optional<T> found;
+			arrived.wait_for(lock, limit, [&] {
+				for (const QuickDC::Api::Event& event : events)
+					if (const T* e = event.as<T>(); e && wanted(*e))
+					{
+						found = *e;
+						return true;
+					}
+				return false;
+			});
+			return found;
 		}
 
 		std::vector<QuickDC::Api::Event> taken()
@@ -220,6 +240,129 @@ EXO_TEST(service_a_file_list_nobody_could_be_asked_for_is_refused,
 	const auto* failed = events[0].as<QuickDC::Api::Events::FilelistFailed>();
 	EXO_ASSERT(failed != nullptr);
 	if (failed) EXO_ASSERT(failed->sourceId == "../escape");
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
+
+/* The core turns a mode into the settings it decides, and says what is in force. */
+EXO_TEST(service_choosing_the_connection_mode_writes_what_it_decides,
+{
+	using QuickDC::NetworkMode;
+	namespace Ev = QuickDC::Api::Events;
+
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::SetSetting{
+		QuickDC::Api::SettingsStore::Application, "Network", "Active mode", "true", false, 1}));
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::SetConnectionMode{
+		NetworkMode::Passive, true, true, 2}));
+
+	const std::optional<Ev::ConnectionMode> passive = recorder.waitForEvent<Ev::ConnectionMode>(
+		[](const Ev::ConnectionMode& e) { return e.mode == NetworkMode::Passive; });
+	EXO_ASSERT(passive.has_value());
+	if (passive)
+	{
+		EXO_ASSERT(!passive->activeMode);
+		EXO_ASSERT(!passive->useUpnp);
+		EXO_ASSERT(!passive->forceActive);
+		EXO_ASSERT(!passive->reachabilityServer.empty());
+	}
+
+	bool stored = true;
+	running.onCore([&] { stored = running.core->config->peekBool("Network", "Active mode", true); });
+	EXO_ASSERT(!stored);
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::SetConnectionMode{
+		NetworkMode::Advanced, false, true, 3}));
+	const std::optional<Ev::ConnectionMode> advanced = recorder.waitForEvent<Ev::ConnectionMode>(
+		[](const Ev::ConnectionMode& e) { return e.mode == NetworkMode::Advanced && e.forceActive; });
+	EXO_ASSERT(advanced.has_value());
+	if (advanced)
+	{
+		EXO_ASSERT(advanced->activeMode);
+		EXO_ASSERT(!advanced->useUpnp);
+	}
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
+
+/* A mode written as a setting is announced as one chosen by command is. */
+EXO_TEST(service_a_mode_written_as_a_setting_is_announced,
+{
+	using QuickDC::NetworkMode;
+	namespace Ev = QuickDC::Api::Events;
+
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::SetSetting{
+		QuickDC::Api::SettingsStore::Application, "Network", "Mode", "passive", false, 1}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::ConnectionMode>(
+		[](const Ev::ConnectionMode& e) { return e.mode == NetworkMode::Passive && !e.activeMode; }));
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::ReportState{7}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::ConnectionMode>(
+		[](const Ev::ConnectionMode& e) { return e.request == 7 && e.mode == NetworkMode::Passive; }));
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
+
+/* Opening a hub is a visit, recorded by the core whatever opened it. */
+EXO_TEST(service_opening_a_hub_records_a_visit,
+{
+	namespace Ev = QuickDC::Api::Events;
+
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::OpenHub{1, "adc://127.0.0.1:1"}));
+	const std::optional<Ev::RecentHubs> recent = recorder.waitForEvent<Ev::RecentHubs>(
+		[](const Ev::RecentHubs& e) { return !e.hubs.empty(); });
+	EXO_ASSERT(recent.has_value());
+	if (recent)
+	{
+		EXO_ASSERT(recent->hubs[0].url == "adc://127.0.0.1:1");
+		EXO_ASSERT(recent->hubs[0].visited > 0);
+	}
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::CloseHub{1}));
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::ClearRecentHubs{}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::RecentHubs>([](const Ev::RecentHubs& e) { return e.hubs.empty(); }));
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
+
+EXO_TEST(service_a_favourite_is_kept_and_let_go,
+{
+	namespace Ev = QuickDC::Api::Events;
+
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::AddFavouriteHub{"hub.example.org"}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::FavouriteHubs>([](const Ev::FavouriteHubs& e) {
+		return e.urls.size() == 1 && e.urls[0] == "dchub://hub.example.org:411";
+	}));
+
+	std::string stored;
+	running.onCore([&] { stored = running.core->config->peekString("Favourites", "Hub 0", ""); });
+	EXO_ASSERT(stored == "dchub://hub.example.org:411");
+
+	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::RemoveFavouriteHub{"dchub://hub.example.org"}));
+	EXO_ASSERT(recorder.waitForEvent<Ev::FavouriteHubs>([](const Ev::FavouriteHubs& e) { return e.urls.empty(); }));
 
 	running.onCore([&] { subscription.reset(); });
 	return 1;

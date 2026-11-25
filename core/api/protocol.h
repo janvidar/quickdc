@@ -22,6 +22,7 @@
 #include "api/bulletins.h"
 #include "api/dropverdict.h"
 #include "api/hublistentry.h"
+#include "api/networkmode.h"
 
 #include <cstdint>
 #include <map>
@@ -69,6 +70,32 @@ struct Transfer {
 	bool secure = false;
 	/** What the peer's certificate hashes to; empty where it presented none. */
 	std::string peerKeyprint;
+	/** Whether this end dialled the connection; false where the peer did. */
+	bool outbound = false;
+};
+
+/** A folder offered to other users: what they see it called, and where it is here. */
+struct ShareFolder {
+	std::string name;
+	std::string path;
+};
+
+/** A hub that was opened, and when it last was. */
+struct RecentHub {
+	std::string url;
+	/** What the hub called itself, where it has said. */
+	std::string name;
+	/** Seconds since the epoch. */
+	uint64_t visited = 0;
+};
+
+/** A download that finished and was verified. */
+struct CompletedDownload {
+	std::string filename;
+	std::string tth;
+	uint64_t size = 0;
+	/** Seconds since the epoch. */
+	uint64_t finished = 0;
 };
 
 /** One file in the download queue. */
@@ -218,6 +245,26 @@ struct SaveSettings {
 	uint64_t request = 0;
 };
 
+/**
+ * Choose the connection mode, and have the core write every setting it decides.
+ * 'useUpnp' and 'forceActive' are read in Advanced only, where they are the user's
+ * to choose. Answered by ConnectionMode; SettingsWritten echoes 'origin'.
+ */
+struct SetConnectionMode {
+	NetworkMode mode = NetworkMode::Advanced;
+	bool useUpnp = false;
+	bool forceActive = false;
+	uint64_t origin = 0;
+};
+
+/**
+ * Tell every piece of state a front end shows, each as the event that announces
+ * its changes, with 'request' echoed; see Core::state().
+ */
+struct ReportState {
+	uint64_t request = 0;
+};
+
 /*
  * Every board store request names its store and carries a 'request' number
  * the answer echoes, since every sink hears every answer.
@@ -329,6 +376,24 @@ struct ReleasePosts {
 	BoardStoreHandle store = 0;
 	std::vector<std::string> sending;
 };
+
+/*
+ * The hubs kept, the hubs visited, and what finished downloading. Addresses are
+ * taken however they are spelled; each change is answered by the list it
+ * changed - FavouriteHubs, RecentHubs, CompletedDownloads - and a change that
+ * changes nothing by nothing.
+ */
+
+struct AddFavouriteHub { std::string url; };
+struct RemoveFavouriteHub { std::string url; };
+
+/** A hub is recorded as visited when it is opened; these forget visits. */
+struct ForgetRecentHub { std::string url; };
+struct ClearRecentHubs { };
+
+/** Forget a finished download by the file it went to; the file is left alone. */
+struct ForgetCompletedDownload { std::string filename; };
+struct ClearCompletedDownloads { };
 
 /** Start a session for the hub at 'url', not yet connected; see ConnectHub. */
 struct OpenHub {
@@ -497,6 +562,31 @@ struct ReportShare {
 	uint64_t request = 0;
 };
 
+/*
+ * Change the shared folders. Each is answered by ShareFolders and a ShareStatus,
+ * or by ShareFolderRefused, echoing 'request'; a folder added is hashed in the
+ * background, and ShareStatus says when it is done.
+ */
+
+/** An empty 'name' shows the folder by its own. */
+struct AddShareFolder {
+	std::string path;
+	std::string name;
+	uint64_t request = 0;
+};
+
+struct RemoveShareFolder {
+	std::string path;
+	uint64_t request = 0;
+};
+
+/** What others see the folder at 'path' called. */
+struct RenameShareFolder {
+	std::string path;
+	std::string name;
+	uint64_t request = 0;
+};
+
 /** Measure reachability against the configured server, IPv4 first. */
 struct MeasureReachability { };
 
@@ -546,6 +636,21 @@ struct SettingsSaved {
 	SettingsStore store = SettingsStore::Application;
 	uint64_t request = 0;
 	bool ok = false;
+};
+
+/**
+ * The connection mode in force and what it decides, told on ReportState and,
+ * with 'request' 0, whenever any of it changes.
+ */
+struct ConnectionMode {
+	uint64_t request = 0;
+	NetworkMode mode = NetworkMode::Advanced;
+	/** Whether peers are told they may connect here. */
+	bool activeMode = false;
+	bool useUpnp = false;
+	bool forceActive = false;
+	/** Who a check would ask; the default where none is stored. */
+	std::string reachabilityServer;
 };
 
 struct BoardEntriesStored {
@@ -780,6 +885,47 @@ struct ShareStatus {
 	bool hashing = false;
 };
 
+/** The shared folders, in order; told on ReportState and whenever they change. */
+struct ShareFolders {
+	uint64_t request = 0;
+	std::vector<ShareFolder> folders;
+};
+
+/** The hubs kept, in the order they were added; told on ReportState and on every change. */
+struct FavouriteHubs {
+	uint64_t request = 0;
+	std::vector<std::string> urls;
+};
+
+/** The hubs visited, newest first; told on ReportState and on every change. */
+struct RecentHubs {
+	uint64_t request = 0;
+	std::vector<RecentHub> hubs;
+};
+
+/** What finished downloading, newest first; told on ReportState and on every change. */
+struct CompletedDownloads {
+	uint64_t request = 0;
+	std::vector<CompletedDownload> downloads;
+};
+
+struct ShareFolderRefused {
+	enum class Why {
+		AlreadyShared,
+		/** It is inside a shared folder, so everything in it is shared already. */
+		InsideShared,
+		NotADirectory,
+		/** No shared folder has that path. */
+		NotShared,
+		/** Nothing is left of the name once what it cannot hold is taken out. */
+		NoName
+	};
+
+	uint64_t request = 0;
+	std::string path;
+	Why why = Why::NotShared;
+};
+
 struct ReachabilityCheckStarted {
 	bool ipv6 = false;
 };
@@ -825,6 +971,9 @@ struct Command {
 		Commands::RemoveFromQueue,
 		Commands::SnapshotTransfers,
 		Commands::ReportShare,
+		Commands::AddShareFolder,
+		Commands::RemoveShareFolder,
+		Commands::RenameShareFolder,
 		Commands::OpenHub,
 		Commands::CloseHub,
 		Commands::ConnectHub,
@@ -854,7 +1003,15 @@ struct Command {
 		Commands::ReleasePosts,
 		Commands::SetSetting,
 		Commands::ReplaceGroup,
-		Commands::SaveSettings
+		Commands::SaveSettings,
+		Commands::SetConnectionMode,
+		Commands::ReportState,
+		Commands::AddFavouriteHub,
+		Commands::RemoveFavouriteHub,
+		Commands::ForgetRecentHub,
+		Commands::ClearRecentHubs,
+		Commands::ForgetCompletedDownload,
+		Commands::ClearCompletedDownloads
 	>;
 
 	template<typename T>
@@ -883,6 +1040,8 @@ struct Event {
 		Events::DownloadCompleted,
 		Events::TransfersSnapshot,
 		Events::ShareStatus,
+		Events::ShareFolders,
+		Events::ShareFolderRefused,
 		Events::HubOpenFailed,
 		Events::HubNetStatus,
 		Events::HubReconnectScheduled,
@@ -914,7 +1073,11 @@ struct Event {
 		Events::PostsEvicted,
 		Events::SettingChanged,
 		Events::SettingsWritten,
-		Events::SettingsSaved
+		Events::SettingsSaved,
+		Events::ConnectionMode,
+		Events::FavouriteHubs,
+		Events::RecentHubs,
+		Events::CompletedDownloads
 	>;
 
 	template<typename T>

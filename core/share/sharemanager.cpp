@@ -9,6 +9,8 @@
 
 #include "quickdc.h"
 #include <algorithm>
+#include <filesystem>
+#include <unordered_set>
 #include <stdio.h>
 #include <span>
 #include <string>
@@ -31,9 +33,6 @@
 #include "network/transfer.h"
 #include "network/transfermanager.h"
 #include "config/settings.h"
-
-/* An upper bound on "Total shares", which is read from the configuration file. */
-#define MAX_SHARES 1024
 
 #ifdef SEARCH_DEBUG
 #include <sys/time.h>
@@ -63,50 +62,11 @@ QuickDC::Share::Manager::Attachment::~Attachment() {
 
 void QuickDC::Share::Manager::initialize() {
 	QDBG("QuickDC::Share::Manager::initialize()");
-	
-	config->setGroup("Shares");
 
-	/*
-	 * Clamped, because the count comes from a file: shares are directories
-	 * someone chose by hand, so anything past this is a typo or a corrupt
-	 * configuration, and a negative value walked the loop nowhere useful.
-	 */
-	const int configured = QuickDC::Settings::read(*config, QuickDC::Settings::TotalShares);
-	const int num = std::clamp(configured, 0, MAX_SHARES);
-
-	if (num != configured)
-		QERR("'Total shares' is %d, which is not a number of shares; using %d", configured, num);
-
-	QDBG("Shares found: %d", num);
-
-	/**
-	 * We store the directories shared in the following format:
-	 * "fakename:/real/path/name"
-	 */
-	for (int i = 0; i < num; i++) {
-		/* Wide enough for the longest key the loop above can reach, and
-		   snprintf so that a wider one truncates rather than overflows. */
-		char key[32];
-		snprintf(key, sizeof(key), "Share %d", i);
-		char* data = strdup(config->peekString("Shares", key, "").c_str());
-		
-		QDBG("Share %d='%s' (%s)", i, data, key);
-		
-		if (strlen(data) == 0) {
-			config->remove(key);
-		} else {
-			char* split = strchr(data, ':');
-			if (split && strlen(split) > 0) {
-				split[0] = '\0';
-				char* fakepath = data;
-				char* realpath = &split[1];
-				QuickDC::Share::Dir* dir = new QuickDC::Share::Dir(realpath, fakepath, this);
-				this->addShare(dir);
-			} else {
-				config->remove(key);
-			}
-		}
-		free(data);
+	for (const QuickDC::Share::Folder& folder : readFolders(*config)) {
+		QDBG("Share '%s' (%s)", folder.name.c_str(), folder.path.c_str());
+		this->addShare(new QuickDC::Share::Dir(folder.path, folder.name, this));
+		folders.push_back(folder);
 	}
 
 	loadAttachments();
@@ -114,8 +74,169 @@ void QuickDC::Share::Manager::initialize() {
 	createFileLists(true);
 }
 
+QuickDC::Share::FolderRefusal QuickDC::Share::Manager::addFolder(const std::string& path,
+                                                                 const std::string& name,
+                                                                 QuickDC::TransferManager*) {
+	const std::string clean = cleanFolderPath(path);
+
+	std::error_code error;
+	if (clean.empty() || !std::filesystem::is_directory(clean, error))
+		return FolderRefusal::NotADirectory;
+
+	const FolderRefusal covered = coveredBy(folders, clean);
+	if (covered != FolderRefusal::None) return covered;
+
+	std::string shown = cleanFolderName(name);
+	if (shown.empty()) shown = defaultFolderName(clean);
+
+	this->addShare(new QuickDC::Share::Dir(clean, shown, this));
+	folders.push_back(Folder{shown, clean});
+	foldersChanged();
+	return FolderRefusal::None;
+}
+
+QuickDC::Share::FolderRefusal QuickDC::Share::Manager::removeFolder(const std::string& path,
+                                                                    QuickDC::TransferManager* transfers) {
+	const std::string clean = cleanFolderPath(path);
+
+	for (size_t n = 0; n < folders.size(); n++) {
+		if (cleanFolderPath(folders[n].path) != clean) continue;
+
+		QuickDC::Share::Dir* dir = dirs[n];
+		dirs.erase(dirs.begin() + n);
+		folders.erase(folders.begin() + n);
+		withdraw(dir, transfers);
+		foldersChanged();
+		return FolderRefusal::None;
+	}
+
+	return FolderRefusal::NotShared;
+}
+
+/* Read again under the new name: every name below it is built from this one. */
+QuickDC::Share::FolderRefusal QuickDC::Share::Manager::renameFolder(const std::string& path,
+                                                                    const std::string& name,
+                                                                    QuickDC::TransferManager* transfers) {
+	const std::string clean = cleanFolderPath(path);
+	const std::string shown = cleanFolderName(name);
+	if (shown.empty()) return FolderRefusal::NoName;
+
+	for (size_t n = 0; n < folders.size(); n++) {
+		if (cleanFolderPath(folders[n].path) != clean) continue;
+		if (folders[n].name == shown) return FolderRefusal::None;
+
+		QuickDC::Share::Dir* old = dirs[n];
+		dirs.erase(dirs.begin() + n);
+		withdraw(old, transfers);
+
+		dirs.insert(dirs.begin() + n, new QuickDC::Share::Dir(folders[n].path, shown, this));
+		folders[n].name = shown;
+		foldersChanged();
+		return FolderRefusal::None;
+	}
+
+	return FolderRefusal::NotShared;
+}
+
+void QuickDC::Share::Manager::foldersChanged() {
+	writeFolders(*config, folders);
+	config->write();
+	createFileLists(hash && hash->isBusy());
+}
+
+void QuickDC::Share::Manager::collectFiles(const QuickDC::Share::Dir* dir,
+                                           std::unordered_set<const QuickDC::Share::File*>& into,
+                                           std::vector<const QuickDC::Share::File*>& order) {
+	for (const QuickDC::Share::File* file : dir->files) {
+		into.insert(file);
+		order.push_back(file);
+	}
+	for (const QuickDC::Share::Dir* sub : dir->subdirs) collectFiles(sub, into, order);
+}
+
+bool QuickDC::Share::Manager::holds(const QuickDC::Share::Dir* dir, const Samurai::IO::File* handle) {
+	for (const QuickDC::Share::File* file : dir->files)
+		if (&file->getFile() == handle) return true;
+	for (const QuickDC::Share::Dir* sub : dir->subdirs)
+		if (holds(sub, handle)) return true;
+	return false;
+}
+
+bool QuickDC::Share::Manager::sending(const QuickDC::Share::Dir* dir, QuickDC::TransferManager* transfers) {
+	if (!transfers) return false;
+
+	for (QuickDC::Transfer* xfer = transfers->first(); xfer; xfer = transfers->next())
+		if (xfer->isUpload() && holds(dir, xfer->getFile())) return true;
+
+	return false;
+}
+
+void QuickDC::Share::Manager::withdraw(QuickDC::Share::Dir* dir, QuickDC::TransferManager* transfers) {
+	std::unordered_set<const QuickDC::Share::File*> gone;
+	std::vector<const QuickDC::Share::File*> order;
+	collectFiles(dir, gone, order);
+
+	searchTable.erase(std::remove_if(searchTable.begin(), searchTable.end(),
+		[&gone](const std::pair<std::string, QuickDC::Share::File*>& entry) {
+			return gone.count(entry.second) > 0;
+		}), searchTable.end());
+
+	/* A hash this folder answered for may still be held elsewhere, and is answered from there. */
+	std::unordered_set<std::string> orphaned;
+	for (const QuickDC::Share::File* file : order) {
+		const char* sum = file->getTTH();
+		if (!sum) {
+			if (hash) hash->removeJob(file->getFile());
+			continue;
+		}
+
+		const auto it = tthTable.find(sum);
+		if (it != tthTable.end() && it->second == file) {
+			tthTable.erase(it);
+			orphaned.insert(sum);
+		}
+	}
+
+	if (!orphaned.empty()) {
+		std::vector<QuickDC::Share::Dir*> walk(dirs.begin(), dirs.end());
+		while (!walk.empty() && !orphaned.empty()) {
+			QuickDC::Share::Dir* at = walk.back();
+			walk.pop_back();
+			for (QuickDC::Share::File* file : at->files) {
+				const char* sum = file->getTTH();
+				if (sum && orphaned.erase(sum)) tthTable.insert(std::make_pair(std::string(sum), file));
+			}
+			walk.insert(walk.end(), at->subdirs.begin(), at->subdirs.end());
+		}
+
+		for (const std::unique_ptr<Attachment>& record : attachments)
+			if (!record->file && orphaned.count(record->tth)) registerAttachment(*record);
+	}
+
+	size -= std::min<uint64_t>(size, dir->getSize());
+	files -= std::min<uint32_t>(files, static_cast<uint32_t>(dir->filecount));
+	dir->manager = 0;
+
+	if (sending(dir, transfers)) retired.push_back(dir);
+	else delete dir;
+}
+
+void QuickDC::Share::Manager::releaseRetired(QuickDC::TransferManager* transfers) {
+	for (auto it = retired.begin(); it != retired.end(); ) {
+		if (sending(*it, transfers)) {
+			++it;
+			continue;
+		}
+		delete *it;
+		it = retired.erase(it);
+	}
+}
+
 QuickDC::Share::Manager::~Manager() {
 	if (hash) hash->setIdleCallback(nullptr);
+
+	for (QuickDC::Share::Dir* dir : retired) delete dir;
+	retired.clear();
 
 	/* delete all shares here, they will remove themselves */
 	while (dirs.size()) {

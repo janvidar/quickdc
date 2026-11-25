@@ -124,6 +124,14 @@ class Core {
 		/** Both preference stores as they stand. Core thread only. */
 		Api::SettingsSnapshot settingsSnapshot() const;
 
+		/**
+		 * What a front end shows as it stands - the connection mode, the share
+		 * folders, the hubs kept and visited, what has finished downloading - as
+		 * the events that announce each changing, so one taken with the settings
+		 * snapshot and the events after it are the whole story. Core thread only.
+		 */
+		std::vector<Api::Event> state() const;
+
 		/** Tell 'sink' every event until the subscription ends. Core thread only. */
 		Subscription subscribe(Api::EventSink* sink);
 		

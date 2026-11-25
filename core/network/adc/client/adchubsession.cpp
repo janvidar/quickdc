@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "quickdc.h"
+#include "api/networkmode.h"
 #include "api/core.h"
 #include "api/dropverdict.h"
 #include "network/portforward.h"
@@ -129,7 +130,7 @@ static bool peerCanTraverse(const QuickDC::User* user)
 static bool reachable(QuickDC::Core& core, QuickDC::Preferences* config, bool ipv6)
 {
 
-	if (QuickDC::Settings::read(*config, QuickDC::Settings::ForceActiveMode)) return true;
+	if (QuickDC::networkModeKeysInForce(*config).forceActive) return true;
 
 	const QuickDC::Reachability* known =
 		core.reachabilityFor(ipv6);
@@ -987,7 +988,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 */
 	QuickDC::Core* core = &getCore();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
+		QuickDC::networkModeKeysInForce(*config).activeMode,
 		core->server != 0 && core->server->listening(false),
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		observedAddress,
@@ -1002,7 +1003,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * configured to fall back on and no wildcard a hub would fill in.
 	 */
 	const QuickDC::PeerEndpoint endpoint6 = QuickDC::peerEndpoint6(
-		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
+		QuickDC::networkModeKeysInForce(*config).activeMode,
 		core->server != 0 && core->server->listening(true),
 		QuickDC::lastDropVerdict(*core, true).publicAddress,
 		static_cast<uint16_t>(QuickDC::Settings::read(*config, QuickDC::Settings::Port)));
@@ -1318,7 +1319,7 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	 */
 	const QuickDC::Core* core = &getCore();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
+		QuickDC::networkModeKeysInForce(*config).activeMode,
 		core->server != 0 && core->server->listening(false),
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		observedAddress,
@@ -2599,7 +2600,7 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 	   sendConnectionRequest(): a gateway may have granted another port. */
 	const QuickDC::Core* core = &getCore();
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
+		QuickDC::networkModeKeysInForce(*config).activeMode,
 		core->server != 0 && core->server->listening(false),
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		observedAddress,
@@ -2709,7 +2710,7 @@ void ADC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	if (indexes.empty()) return;
 
 	QuickDC::Preferences* config = core->config;
-	int port = QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode) ? QuickDC::Settings::read(*config, QuickDC::Settings::Port) : 0;
+	int port = QuickDC::networkModeKeysInForce(*config).activeMode ? QuickDC::Settings::read(*config, QuickDC::Settings::Port) : 0;
 
 	/* HI names the hub without the scheme, which is how DC++ reports it. */
 	std::string hubIpPort;

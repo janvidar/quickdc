@@ -5,6 +5,7 @@
 
 #include "api/core.h"
 #include "api/hub.h"
+#include "api/networkmode.h"
 #include "config/preferences.h"
 #include "network/hubmanager.h"
 #include "network/portforward.h"
@@ -82,7 +83,7 @@ DC::SendMyInfo::SendMyInfo(const QuickDC::Core& core_, const char* nick, const c
 	QuickDC::Preferences* config = core->config;
 
 	const bool active_mode = QuickDC::peerEndpoint(
-		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode), core->server != 0,
+		QuickDC::networkModeKeysInForce(*config).activeMode, core->server != 0,
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		/* NMDC has no field for a hub to report the address it sees. */
 		std::string(),

@@ -4,6 +4,7 @@
  */
 
 #include "quickdc.h"
+#include "api/networkmode.h"
 #include <stdio.h>
 #include <string.h>
 #include <string_view>
@@ -407,7 +408,7 @@ void DC::HubSession::onPassiveConnect(const char* user)
 			QuickDC::Preferences* config = core->config;
 		
 			const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-				QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
+				QuickDC::networkModeKeysInForce(*config).activeMode,
 		core->server != 0 && core->server->listening(false),
 				QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 				/* NMDC has no field for a hub to report the address it sees. */
@@ -439,7 +440,7 @@ void DC::HubSession::sendConnectionRequest(const QuickDC::User* u, const char*)
 	expectPeer(u->getID());
 
 	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode),
+		QuickDC::networkModeKeysInForce(*config).activeMode,
 		core->server != 0 && core->server->listening(false),
 		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
 		/* NMDC has no field for a hub to report the address it sees. */
@@ -657,7 +658,7 @@ void DC::HubSession::sendPartialStatus(QuickDC::Share::SearchRequest* request)
 	}
 
 	QuickDC::Preferences* config = core->config;
-	int myPort = QuickDC::Settings::read(*config, QuickDC::Settings::ActiveMode) ? QuickDC::Settings::read(*config, QuickDC::Settings::Port) : 0;
+	int myPort = QuickDC::networkModeKeysInForce(*config).activeMode ? QuickDC::Settings::read(*config, QuickDC::Settings::Port) : 0;
 
 	/* NI is what identifies us on an NMDC hub, where we have no client ID. */
 	ADC::Command cmd(FOURCC('U','P','S','R'), getCore().identity->getCID());

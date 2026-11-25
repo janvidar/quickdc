@@ -11,11 +11,14 @@
 #include "config/preferences.h"
 #include "network/downloadqueue.h"
 #include "network/transfermanager.h"
+#include "share/sharefolders.h"
+#include "config/userlists.h"
 #include "api/subscription.h"
 
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace QuickDC {
 
@@ -49,6 +52,9 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		/** Both preference stores as they stand. Core thread only. */
 		SettingsSnapshot settingsSnapshot() const;
 
+		/** What ReportState tells, with 'request' in each. Core thread only. */
+		std::vector<Event> state(uint64_t request) const;
+
 	private:
 		class HubListFetch;
 		class HubSession;
@@ -69,6 +75,15 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::RemoveFromQueue& command);
 		void run(const Commands::SnapshotTransfers& command);
 		void run(const Commands::ReportShare& command);
+		void run(const Commands::AddShareFolder& command);
+		void run(const Commands::RemoveShareFolder& command);
+		void run(const Commands::RenameShareFolder& command);
+
+		Events::ShareFolders shareFolders(uint64_t request) const;
+
+		/** Answer a change to the folders, made or refused. */
+		void foldersAnswered(Share::FolderRefusal refusal, const std::string& path,
+		                     uint64_t request);
 		void run(const Commands::OpenHub& command);
 		void run(const Commands::CloseHub& command);
 		void run(const Commands::ConnectHub& command);
@@ -100,6 +115,26 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::SetSetting& command);
 		void run(const Commands::ReplaceGroup& command);
 		void run(const Commands::SaveSettings& command);
+		void run(const Commands::SetConnectionMode& command);
+		void run(const Commands::ReportState& command);
+		void run(const Commands::AddFavouriteHub& command);
+		void run(const Commands::RemoveFavouriteHub& command);
+		void run(const Commands::ForgetRecentHub& command);
+		void run(const Commands::ClearRecentHubs& command);
+		void run(const Commands::ForgetCompletedDownload& command);
+		void run(const Commands::ClearCompletedDownloads& command);
+
+		Events::FavouriteHubs favouriteHubs(uint64_t request) const;
+		Events::RecentHubs recentHubs(uint64_t request) const;
+		Events::CompletedDownloads completedDownloads(uint64_t request) const;
+
+		/** What a hub opened as 'url' calls itself. */
+		void hubNamed(const std::string& url, const std::string& name);
+
+		Events::ConnectionMode connectionMode(uint64_t request) const;
+
+		/** Tell what the command just carried out changed of the state ReportState tells. */
+		void announceState();
 
 		void EventSettingChanged(const Preferences& store, const std::string& group,
 		                         const std::string& key, const std::string* value) override;
@@ -143,9 +178,17 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 
 		/** The write being carried out, which the changes it makes are attributed to. */
 		uint64_t writing = 0;
+
+		/** A setting the connection mode is made of has changed since it was last told. */
+		bool connectionModeChanged = false;
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
 
 		std::map<BoardStoreHandle, std::unique_ptr<BoardStore>> boardStores;
+
+		/* Null without a configuration to keep them in. */
+		std::unique_ptr<QuickDC::FavouriteHubs> favourites;
+		std::unique_ptr<QuickDC::RecentHubs> recents;
+		std::unique_ptr<QuickDC::CompletedDownloads> completed;
 
 		/* Last, so the sessions go before the subscriptions they report through. */
 		std::map<HubHandle, std::unique_ptr<HubSession>> hubs;

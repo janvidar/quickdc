@@ -325,3 +325,61 @@ EXO_TEST(networkmode_reading_the_mode_does_not_settle_it,
 	EXO_ASSERT(!prefs.haveSetting("Network", "Mode"));
 	return 1;
 });
+
+/* The mode decides whether this client is active; the stored key does not. */
+EXO_TEST(networkmode_passive_is_passive_whatever_active_mode_says,
+{
+	ModeConf conf;
+
+	EXO_ASSERT(conf.write(
+		"[Network]\n"
+		"Mode=passive\n"
+		"Active mode=true\n"
+		"Force active mode=true\n"));
+
+	QuickDC::Preferences prefs(conf.path);
+
+	const NetworkModeKeys keys = QuickDC::networkModeKeysInForce(prefs);
+	EXO_ASSERT(!keys.activeMode);
+	EXO_ASSERT(!keys.forceActive);
+	return 1;
+});
+
+/* A store with no mode is read the way the migration would settle it. */
+EXO_TEST(networkmode_a_store_with_no_mode_is_read_by_its_active_key,
+{
+	ModeConf on("on.conf");
+	ModeConf off("off.conf");
+
+	EXO_ASSERT(on.write("[Network]\nActive mode=true\n"));
+	EXO_ASSERT(off.write("[Network]\nActive mode=false\n"));
+
+	QuickDC::Preferences active(on.path);
+	QuickDC::Preferences passive(off.path);
+
+	EXO_ASSERT(QuickDC::networkModeInForce(active) == NetworkMode::Advanced);
+	EXO_ASSERT(QuickDC::networkModeInForce(passive) == NetworkMode::Passive);
+	EXO_ASSERT(QuickDC::networkModeKeysInForce(active).activeMode);
+	EXO_ASSERT(!QuickDC::networkModeKeysInForce(passive).activeMode);
+	EXO_ASSERT(!active.haveSetting("Network", "Mode"));
+	return 1;
+});
+
+/* Advanced takes the user's choices; the other modes decide them. */
+EXO_TEST(networkmode_advanced_takes_the_choices_it_is_given,
+{
+	ModeConf conf;
+	EXO_ASSERT(conf.write("[Network]\nMode=automatic\nUseUPnP=true\n"));
+
+	QuickDC::Preferences prefs(conf.path);
+
+	QuickDC::setNetworkMode(prefs, NetworkMode::Advanced, false, true);
+	EXO_ASSERT(prefs.peekString("Network", "Mode", "") == "advanced");
+	EXO_ASSERT(!prefs.peekBool("Network", "UseUPnP", true));
+	EXO_ASSERT(prefs.peekBool("Network", "Force active mode", false));
+
+	QuickDC::setNetworkMode(prefs, NetworkMode::Automatic, false, true);
+	EXO_ASSERT(prefs.peekBool("Network", "UseUPnP", false));
+	EXO_ASSERT(!prefs.peekBool("Network", "Force active mode", true));
+	return 1;
+});

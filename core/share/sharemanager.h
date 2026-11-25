@@ -12,10 +12,12 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 
 #include "quickdc.h"
 #include "hash/hashjob.h"
 #include "network/dc/dcfile.h"
+#include "share/sharefolders.h"
 
 namespace Samurai {
 	namespace IO {
@@ -59,6 +61,31 @@ class Manager : public QuickDC::Hash::JobListener {
 		 * Read configuration and initialize.
 		 */
 		void initialize();
+
+		/** The shared folders, in the order they are listed. */
+		const std::vector<QuickDC::Share::Folder>& getFolders() const { return folders; }
+
+		/*
+		 * Change what is shared, at once: the configuration is rewritten, a folder
+		 * added is scanned now and hashed in the background as one read at start-up
+		 * is, and a folder taken out answers no search from here on. Its files go
+		 * when nothing is being sent from them; see releaseRetired().
+		 *
+		 * 'transfers' is what is running, to tell whether a folder's files are in
+		 * use; null counts as nothing running.
+		 */
+
+		/** @param name what others see it called; the folder's own name where empty. */
+		QuickDC::Share::FolderRefusal addFolder(const std::string& path, const std::string& name,
+		                                         QuickDC::TransferManager* transfers);
+		QuickDC::Share::FolderRefusal removeFolder(const std::string& path,
+		                                            QuickDC::TransferManager* transfers);
+		QuickDC::Share::FolderRefusal renameFolder(const std::string& path, const std::string& name,
+		                                            QuickDC::TransferManager* transfers);
+
+		/** Free the folders taken out of the share that nothing is being sent from any more. */
+		void releaseRetired(QuickDC::TransferManager* transfers);
+		bool hasRetired() const { return !retired.empty(); }
 		
 		/**
 		 * Returns the number bytes being shared at this moment.
@@ -314,6 +341,19 @@ class Manager : public QuickDC::Hash::JobListener {
 		void EventFileHashProgress(const QuickDC::Hash::Job*, uint64_t, uint64_t) override;
 
 	protected:
+		/** Take a top-level directory out of the share: out of every table and every count. */
+		void withdraw(QuickDC::Share::Dir* dir, QuickDC::TransferManager* transfers);
+
+		/** Whether a running upload reads a file in 'dir'. */
+		static bool sending(const QuickDC::Share::Dir* dir, QuickDC::TransferManager* transfers);
+		static bool holds(const QuickDC::Share::Dir* dir, const Samurai::IO::File* handle);
+		static void collectFiles(const QuickDC::Share::Dir* dir,
+		                         std::unordered_set<const QuickDC::Share::File*>& into,
+		                         std::vector<const QuickDC::Share::File*>& order);
+
+		/** Write the folders out, and file lists that say what is shared now. */
+		void foldersChanged();
+
 		/**
 		 * Add a directory to the share manager.
 		 * This is a very fast operation since the 
@@ -477,6 +517,10 @@ class Manager : public QuickDC::Hash::JobListener {
 
 	protected:
 		std::vector<QuickDC::Share::Dir*> dirs;
+		/** What each of 'dirs' was configured as, index for index. */
+		std::vector<QuickDC::Share::Folder> folders;
+		/** Taken out of the share while something was being sent from them. */
+		std::vector<QuickDC::Share::Dir*> retired;
 		/* Owns the name; the callers pass one that does not outlive the call. */
 		std::vector< std::pair<std::string, QuickDC::Share::File*> > searchTable;
 		std::map<std::string, QuickDC::Share::File*> tthTable;

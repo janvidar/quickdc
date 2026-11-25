@@ -52,7 +52,11 @@
  *                 server this client's address and the port it listens on, and has
  *                 it connect back to prove the answer, which is a disclosure a
  *                 user should choose.
- *   [Shares]      Total shares, Share 0 .. Share N
+ *   [Shares]      Total shares, Share 0 .. Share N - read at start-up, and
+ *                 changed while running by the share folder commands, which a
+ *                 front end uses rather than writing these keys.
+ *   [Favourites], [Recent hubs], [Completed] - kept by the core; see
+ *                 config/userlists.h and the commands that change them.
  *   [Chat media]  Fetch automatically, Maximum size, Keep pasted for days - all
  *                 read by the user interface, none by the core.
  *   [Attachments] Total, File 0 .. File N - files offered in chat by their hash
@@ -65,11 +69,9 @@
  *   [HTTP server] Enabled
  *
  * A key not in that list can be stored and read back, but nothing in the core
- * will act on it. Two settings a user interface is likely to want are in that
+ * will act on it. One setting a user interface is likely to want is in that
  * position today: there is no global transfer rate limit (rates live in
- * Samurai::IO::Net::BandwidthManager, which only reports), and the shares are
- * read once at Share::Manager::initialize() with addShare() and removeShare()
- * protected, so a folder added here does not take effect until a restart.
+ * Samurai::IO::Net::BandwidthManager, which only reports).
  *
  * Not thread safe. Belongs to the thread that constructed the Core.
  */

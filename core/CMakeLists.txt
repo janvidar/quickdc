@@ -68,6 +68,7 @@ set(QUICKDC_SOURCES
     share/dcfilelist.cpp
     share/sharedir.cpp
     share/sharefile.cpp
+    share/sharefolders.cpp
     share/sharemanager.cpp
     share/searchmanager.cpp
     share/searchrequest.cpp
@@ -75,9 +76,11 @@ set(QUICKDC_SOURCES
     config/backend.cpp
     config/iniparser.cpp
     config/preferences.cpp
+    config/userlists.cpp
     debug/dbg.cpp
     api/core.cpp
     api/hub.cpp
+    api/huburl.cpp
     api/inbox.cpp
     api/networkmode.cpp
     api/server.cpp
