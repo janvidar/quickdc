@@ -13,6 +13,7 @@ set(QUICKDC_SOURCES
     bbs/boardindex.cpp
     bbs/poststore.cpp
     chat/archive.cpp
+    chat/chatmedia.cpp
     network/chunkmap.cpp
     network/commandparser.cpp
     network/commandproxy.cpp

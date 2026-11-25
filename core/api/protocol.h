@@ -165,7 +165,6 @@ struct ChatLine {
 
 struct SearchHit {
 	std::string hubUrl;
-	std::string token;
 	std::string name;
 	std::string tth;
 	uint64_t size = 0;
@@ -486,20 +485,24 @@ struct RequestFilelist {
 };
 
 /**
- * Search every hub. 'token' is the caller's, and what results quote back; the
- * words are matched as given, 'exclude' ones must not appear, and a non-empty
- * 'extensions' limits what is asked for to those.
+ * Search every hub; answered by SearchSent with 'request' in it. The words are
+ * matched as given, 'exclude' ones must not appear, and a non-empty 'extensions'
+ * limits what is asked for to those. Results are told as the search's until
+ * ForgetSearch.
  */
 struct Search {
 	enum class Size { Any, AtLeast, AtMost };
 
-	std::string token;
+	uint64_t request = 0;
 	std::vector<std::string> include;
 	std::vector<std::string> exclude;
 	std::vector<std::string> extensions;
 	Size sizePolicy = Size::Any;
 	uint64_t size = 0;
 };
+
+/** Tell no more results for 'search'; what arrives for it from now on is dropped. */
+struct ForgetSearch { uint64_t search = 0; };
 
 /** Queue 'filename' for download; an empty 'tth' leaves it to be found by name. */
 struct Enqueue {
@@ -528,6 +531,29 @@ struct EnqueueForReading {
 	std::string tth;
 	uint64_t size = 0;
 	std::string onlyHub;
+};
+
+/**
+ * Fetch the file a message named by hash into the download folder, whatever the
+ * picture policy says, looking for it on 'hub' alone where that is given; told
+ * as ChatMedia, and offered again by its hash once it has arrived.
+ */
+struct FetchAttachment {
+	HubHandle hub = 0;
+	std::string tth;
+	std::string name;
+	uint64_t size = 0;
+};
+
+/**
+ * Whether pictures in chat on the hub at 'hubUrl' are fetched by themselves:
+ * always, never, or as the general setting says.
+ */
+struct SetChatMediaFetch {
+	enum class Choice { Follow, Always, Never };
+
+	std::string hubUrl;
+	Choice choice = Choice::Follow;
 };
 
 /** Record a source for a queued 'tth' that has none, such as the one who named it. */
@@ -608,6 +634,18 @@ struct AttachFile {
 	std::string path;
 	bool remembered = true;
 	bool freeSlot = false;
+};
+
+/**
+ * Keep 'data', a pasted picture, among the core's media - a name made of when,
+ * the extension 'suffix' - and offer it as AttachFile does. Answered by
+ * PastedKept, then AttachmentReady or AttachmentFailed for the path. What is
+ * kept goes once it is older than [Chat media] "Keep pasted for days".
+ */
+struct AttachPasted {
+	uint64_t request = 0;
+	std::string data;
+	std::string suffix;
 };
 
 }
@@ -777,7 +815,8 @@ struct UserLeft {
 struct UserUpdated { HubHandle hub = 0; User user; };
 struct UsersCleared { HubHandle hub = 0; };
 
-struct SearchResult { HubHandle hub = 0; SearchHit hit; };
+/** A result for the live search 'search'; one answering none is not told. */
+struct SearchResult { HubHandle hub = 0; uint64_t search = 0; SearchHit hit; };
 
 struct BoardsAvailable { HubHandle hub = 0; bool available = false; };
 struct BoardDescribed { HubHandle hub = 0; Board board; };
@@ -822,9 +861,13 @@ struct FilelistFailed {
 	Why why = Why::NotArrived;
 };
 
-/** A Search went out; 'hubsAsked' is how many hubs it went to. */
+/**
+ * A Search went out as 'search', which its results name; 'hubsAsked' is how many
+ * hubs it went to.
+ */
 struct SearchSent {
-	std::string token;
+	uint64_t request = 0;
+	uint64_t search = 0;
 	int hubsAsked = 0;
 };
 
@@ -856,6 +899,41 @@ struct AttachmentReady {
 	std::string path;
 	std::string tth;
 	uint64_t size = 0;
+};
+
+/** Where AttachPasted kept its picture; 'reason', fit to show, where it could not. */
+struct PastedKept {
+	uint64_t request = 0;
+	std::string path;
+	std::string reason;
+};
+
+/**
+ * What became of a picture a rich text message showed, or of a file asked for
+ * with FetchAttachment: queued to 'path', there at 'path' - already, or now -
+ * or left for somebody to ask for, and why.
+ */
+struct ChatMedia {
+	enum class State { Queued, Ready, Skipped };
+	enum class Why {
+		None,
+		/** Pictures are not fetched by themselves on this hub. */
+		Off,
+		/** The message gave no size. */
+		Unsized,
+		/** Larger than [Chat media] "Maximum size". */
+		TooLarge,
+		/** The download queue would not take it. */
+		Refused
+	};
+
+	HubHandle hub = 0;
+	std::string tth;
+	std::string name;
+	uint64_t size = 0;
+	State state = State::Queued;
+	Why why = Why::None;
+	std::string path;
 };
 
 struct AttachmentFailed {
@@ -961,12 +1039,16 @@ struct Command {
 		Commands::LookupPublicAddress,
 		Commands::ReplayReachability,
 		Commands::AttachFile,
+		Commands::AttachPasted,
 		Commands::RequestFilelist,
 		Commands::Search,
+		Commands::ForgetSearch,
 		Commands::Enqueue,
 		Commands::EnqueueFromSearch,
 		Commands::EnqueueForReading,
 		Commands::AddFallbackSource,
+		Commands::FetchAttachment,
+		Commands::SetChatMediaFetch,
 		Commands::SetPriority,
 		Commands::RemoveFromQueue,
 		Commands::SnapshotTransfers,
@@ -1029,6 +1111,7 @@ struct Event {
 		Events::ReachabilityCheckFailed,
 		Events::AttachmentReady,
 		Events::AttachmentFailed,
+		Events::PastedKept,
 		Events::FilelistReady,
 		Events::FilelistFailed,
 		Events::SearchSent,
@@ -1053,6 +1136,7 @@ struct Event {
 		Events::HubAuthenticate,
 		Events::HubRedirect,
 		Events::ChatReceived,
+		Events::ChatMedia,
 		Events::HistoryRestored,
 		Events::UserJoined,
 		Events::UserLeft,

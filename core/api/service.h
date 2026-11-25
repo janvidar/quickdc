@@ -7,10 +7,12 @@
 #define HAVE_QUICKDC_API_SERVICE_H
 
 #include "api/attachments.h"
+#include "chat/chatmedia.h"
 #include "api/protocol.h"
 #include "config/preferences.h"
 #include "network/downloadqueue.h"
 #include "network/transfermanager.h"
+#include "share/searchmanager.h"
 #include "share/sharefolders.h"
 #include "config/userlists.h"
 #include "api/subscription.h"
@@ -65,8 +67,28 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::LookupPublicAddress& command);
 		void run(const Commands::ReplayReachability& command);
 		void run(const Commands::AttachFile& command);
+		void run(const Commands::AttachPasted& command);
+		void run(const Commands::FetchAttachment& command);
+		void run(const Commands::SetChatMediaFetch& command);
+
+		/** Decide about each picture a rich text message on 'hub' shows; 'sender' may be empty. */
+		void chatMediaIn(HubHandle hub, const std::string& hubUrl, const std::string& sender,
+		                 const std::string& text);
+
+		/** Queue 'file' unless it is queued already, and say so. */
+		void fetchMedia(HubHandle hub, const ChatAttachment& file, const std::string& hubUrl,
+		                const std::string& sender);
+
+		/** Where a file with this hash is on this disk, offered or downloaded; empty where it is not. */
+		std::string localCopy(const std::string& tth) const;
+
+		std::string downloadDirectory() const;
+
+		/** Where pasted pictures are kept; empty for a core with no home. */
+		std::string mediaFolder() const;
 		void run(const Commands::RequestFilelist& command);
 		void run(const Commands::Search& command);
+		void run(const Commands::ForgetSearch& command);
 		void run(const Commands::Enqueue& command);
 		void run(const Commands::EnqueueFromSearch& command);
 		void run(const Commands::EnqueueForReading& command);
@@ -184,6 +206,17 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		std::map<std::string, std::unique_ptr<HubListFetch>> hublists;
 
 		std::map<BoardStoreHandle, std::unique_ptr<BoardStore>> boardStores;
+
+		struct MediaFetch {
+			HubHandle hub = 0;
+			std::string name;
+		};
+
+		/** Files fetched because a message named them, by hash, to be offered again once here. */
+		std::map<std::string, MediaFetch> mediaFetches;
+
+		/** The searches front ends sent, which results are told as answers to. */
+		Share::SearchManager searches;
 
 		/* Null without a configuration to keep them in. */
 		std::unique_ptr<QuickDC::FavouriteHubs> favourites;

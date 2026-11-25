@@ -28,36 +28,12 @@
 
 #include <chrono>
 #include <memory>
-#include <new>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <string>
 #include <unistd.h>
 #include <vector>
-
-/* Counting allocations is how the search manager's bookkeeping is checked. */
-static size_t live = 0;
-
-void* operator new(size_t n)
-{
-	void* p = malloc(n ? n : 1);
-	if (!p) throw std::bad_alloc();
-	live++;
-	return p;
-}
-
-void operator delete(void* p) noexcept
-{
-	if (!p) return;
-	live--;
-	free(p);
-}
-
-void* operator new[](size_t n) { return operator new(n); }
-void operator delete[](void* p) noexcept { operator delete(p); }
-void operator delete(void* p, size_t) noexcept { operator delete(p); }
-void operator delete[](void* p, size_t) noexcept { operator delete(p); }
 
 using Request = QuickDC::Share::SearchRequest;
 
@@ -114,14 +90,6 @@ class Replies : public QuickDC::Share::SearchReplyHandler
 		std::vector<QuickDC::Share::File*> files;
 };
 
-/* Takes whatever the search manager routes to it. */
-class Results : public QuickDC::Share::SearchResultHandler
-{
-	public:
-		Results() : received(0) { }
-		void EventSearchResult(QuickDC::Share::SearchResult*) override { received++; }
-		int received;
-};
 
 /*
  * A directory of files, scanned into a share manager with its own hash cache,
@@ -654,86 +622,149 @@ EXO_TEST(search_no_more_results_than_the_request_allows,
 	return 1;
 });
 
-/* A reply is routed to the search that asked for it, by its token. */
+/* A result quoting a token goes to the search that went out with it. */
 EXO_TEST(search_a_result_goes_to_the_search_whose_token_it_carries,
 {
-		QuickDC::Share::SearchManager mgr(0);
+		QuickDC::Share::SearchManager mgr;
 
-		Results mine, theirs;
 		Request a(0), b(0);
 		a.setToken("mine");
+		a.addInclusion("film");
 		b.setToken("theirs");
+		b.addInclusion("film");
 
-		mgr.add(&a, &mine);
-		mgr.add(&b, &theirs);
+		const uint64_t mine = mgr.add(a);
+		const uint64_t theirs = mgr.add(b);
+		EXO_ASSERT(mine && theirs && mine != theirs);
 
-		QuickDC::Share::SearchResult result("file.txt", 100, 1, 0, 0, "mine");
-		mgr.handle(&result);
+		QuickDC::Share::SearchResult toMine("film.mkv", 100, 1, 0, 0, "mine");
+		QuickDC::Share::SearchResult toTheirs("film.mkv", 100, 1, 0, 0, "theirs");
+		EXO_ASSERT(mgr.attribute(toMine) == mine);
+		EXO_ASSERT(mgr.attribute(toTheirs) == theirs);
 
-		EXO_ASSERT(mine.received == 1);
-		EXO_ASSERT(theirs.received == 0);
-	
 	return 1;
 });
 
-/* A result for a search nobody is running goes nowhere. */
-EXO_TEST(search_a_result_for_a_search_we_are_not_running_is_dropped,
+/* A token no live search went out with is nobody's, whatever the name says. */
+EXO_TEST(search_a_result_quoting_a_strange_token_is_dropped,
 {
-		QuickDC::Share::SearchManager mgr(0);
+		QuickDC::Share::SearchManager mgr;
 
-		Results mine;
 		Request a(0);
 		a.setToken("mine");
-		mgr.add(&a, &mine);
+		a.addInclusion("file");
+		mgr.add(a);
 
 		QuickDC::Share::SearchResult stray("file.txt", 100, 1, 0, 0, "somebody else");
-		mgr.handle(&stray);
-		EXO_ASSERT(mine.received == 0);
+		EXO_ASSERT(mgr.attribute(stray) == 0);
 
-		/* Nor does one carrying no token at all. */
-		QuickDC::Share::SearchResult anonymous("file.txt", 100, 1, 0, 0, 0);
-		mgr.handle(&anonymous);
-		EXO_ASSERT(mine.received == 0);
-	
 	return 1;
 });
 
-/* A search that has been taken off the list stops receiving. */
-EXO_TEST(search_a_search_that_was_removed_stops_receiving_results,
+/* Without a token, as on NMDC, the name has to hold every word of the search, in any case. */
+EXO_TEST(search_a_result_without_a_token_is_placed_by_its_name,
 {
-		QuickDC::Share::SearchManager mgr(0);
+		QuickDC::Share::SearchManager mgr;
 
-		Results mine;
+		Request a(0);
+		a.setToken("t");
+		a.addInclusion("holiday");
+		a.addInclusion("2019");
+		const uint64_t holiday = mgr.add(a);
+
+		QuickDC::Share::SearchResult both("Photos/2019 HOLIDAY/beach.jpg", 100, 1);
+		QuickDC::Share::SearchResult one("Photos/holiday/beach.jpg", 100, 1);
+		EXO_ASSERT(mgr.attribute(both) == holiday);
+		EXO_ASSERT(mgr.attribute(one) == 0);
+
+	return 1;
+});
+
+/* Nor may it hold a word the search excluded. */
+EXO_TEST(search_a_name_holding_an_excluded_word_answers_no_search,
+{
+		QuickDC::Share::SearchManager mgr;
+
+		Request a(0);
+		a.addInclusion("concert");
+		a.addExclusion("bootleg");
+		const uint64_t concert = mgr.add(a);
+
+		QuickDC::Share::SearchResult clean("concert.flac", 100, 1);
+		QuickDC::Share::SearchResult excluded("concert (Bootleg).flac", 100, 1);
+		EXO_ASSERT(mgr.attribute(clean) == concert);
+		EXO_ASSERT(mgr.attribute(excluded) == 0);
+
+	return 1;
+});
+
+/* A name two searches would take goes to the newer; each keeps what only it matches. */
+EXO_TEST(search_two_searches_at_once_each_get_their_own,
+{
+		QuickDC::Share::SearchManager mgr;
+
+		Request older(0), newer(0);
+		older.addInclusion("linux");
+		newer.addInclusion("linux");
+		newer.addInclusion("iso");
+		newer.addExclusion("beta");
+		const uint64_t first = mgr.add(older);
+		const uint64_t second = mgr.add(newer);
+
+		QuickDC::Share::SearchResult iso("linux-6.1.iso", 100, 1);
+		QuickDC::Share::SearchResult tarball("linux-6.1.tar.xz", 100, 1);
+		QuickDC::Share::SearchResult beta("linux-beta.iso", 100, 1);
+		EXO_ASSERT(mgr.attribute(iso) == second);
+		EXO_ASSERT(mgr.attribute(tarball) == first);
+		EXO_ASSERT(mgr.attribute(beta) == first);
+
+	return 1;
+});
+
+/* A search taken off the list is answered no more, by token or by name. */
+EXO_TEST(search_a_forgotten_search_is_answered_no_more,
+{
+		QuickDC::Share::SearchManager mgr;
+
 		Request a(0);
 		a.setToken("mine");
-		mgr.add(&a, &mine);
-		mgr.remove(&a);
+		a.addInclusion("file");
+		const uint64_t mine = mgr.add(a);
+		EXO_ASSERT(mgr.remove(mine));
+		EXO_ASSERT(!mgr.remove(mine));
 
-		QuickDC::Share::SearchResult result("file.txt", 100, 1, 0, 0, "mine");
-		mgr.handle(&result);
-		EXO_ASSERT(mine.received == 0);
-	
+		QuickDC::Share::SearchResult late("file.txt", 100, 1, 0, 0, "mine");
+		QuickDC::Share::SearchResult untokened("file.txt", 100, 1);
+		EXO_ASSERT(mgr.attribute(late) == 0);
+		EXO_ASSERT(mgr.attribute(untokened) == 0);
+		EXO_ASSERT(mgr.live() == 0);
+
 	return 1;
 });
 
-/* And the manager keeps nothing of the searches it is done with. */
-EXO_TEST(search_the_search_manager_frees_what_it_allocated,
+/* Searches nobody forgets are let go oldest first, and numbers are never reused. */
+EXO_TEST(search_the_oldest_live_search_goes_beyond_the_limit,
 {
-		Request a(0), b(0);
-		a.setToken("a");
-		b.setToken("b");
+		QuickDC::Share::SearchManager mgr;
 
-		Results ra, rb;
-
-		const size_t before = live;
+		std::vector<uint64_t> ids;
+		for (int n = 0; n <= QUICKDC_SEARCHES_LIVE; ++n)
 		{
-			QuickDC::Share::SearchManager mgr(0);
-			mgr.add(&a, &ra);
-			mgr.add(&b, &rb);
-			mgr.remove(&a);
-			/* 'b' is still running when the manager goes. */
+			Request request(0);
+			request.setToken(("t" + std::to_string(n)).c_str());
+			request.addInclusion("x");
+			ids.push_back(mgr.add(request));
 		}
-		EXO_ASSERT(live == before);
-	
+
+		EXO_ASSERT(mgr.live() == QUICKDC_SEARCHES_LIVE);
+		QuickDC::Share::SearchResult oldest("x", 1, 1, 0, 0, "t0");
+		QuickDC::Share::SearchResult newest("x", 1, 1, 0, 0, ("t" + std::to_string(QUICKDC_SEARCHES_LIVE)).c_str());
+		EXO_ASSERT(mgr.attribute(oldest) == 0);
+		EXO_ASSERT(mgr.attribute(newest) == ids.back());
+		EXO_ASSERT(!mgr.remove(ids.front()));
+
+		Request again(0);
+		EXO_ASSERT(mgr.add(again) > ids.back());
+
 	return 1;
 });

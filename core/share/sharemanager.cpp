@@ -700,6 +700,14 @@ QuickDC::Share::Manager::Attachment* QuickDC::Share::Manager::findAttachment(con
 	return 0;
 }
 
+std::string QuickDC::Share::Manager::attachedPath(const std::string& tth) const {
+	for (const std::unique_ptr<Attachment>& record : attachments)
+		if (!tth.empty() && record->tth == tth)
+			return record->path;
+
+	return std::string();
+}
+
 bool QuickDC::Share::Manager::isAttachment(const QuickDC::Share::File* ptr) const {
 	for (const std::unique_ptr<Attachment>& record : attachments)
 		if (record->file == ptr)

@@ -18,6 +18,9 @@ namespace QuickDC {
  */
 std::string canonicalHubUrl(const std::string& url);
 
+/** The session store group a hub's own settings are kept in: its canonical address up to the path. */
+std::string hubSettingsGroup(const std::string& url);
+
 }
 
 #endif // HAVE_QUICKDC_API_HUBURL_H

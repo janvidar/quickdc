@@ -14,6 +14,8 @@
 #include "network/hublist.h"
 #include "api/hub.h"
 #include "chat/archive.h"
+#include "chat/chatmedia.h"
+#include "api/huburl.h"
 #include "network/user.h"
 #include "share/searchresult.h"
 #include "share/dcfilelist.h"
@@ -33,6 +35,8 @@
 #include <samurai/io/net/url.h>
 
 #include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <string_view>
 #include <utility>
 
@@ -362,7 +366,9 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 			line.timestamp = timestamp;
 			line.action = action;
 			line.richText = richText;
+			const std::string sender = line.from.sourceId;
 			owner.publish(Events::ChatReceived{handle, std::move(line)});
+			if (richText) owner.chatMediaIn(handle, text(getUrl()), sender, text(message));
 		}
 
 		void EventPrivateChat(const QuickDC::User* from, const QuickDC::User*,
@@ -382,7 +388,9 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 			/* A conversation with nobody else in it is named after who it is with. */
 			if (line.context.empty()) line.context = line.from.id;
 
+			const std::string sender = line.from.sourceId;
 			owner.publish(Events::ChatReceived{handle, std::move(line)});
+			if (richText) owner.chatMediaIn(handle, text(getUrl()), sender, text(message));
 		}
 
 		void EventHubMessage(const char* fakeuser, const char* message, bool action,
@@ -396,6 +404,7 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 			line.action = action;
 			line.richText = richText;
 			owner.publish(Events::ChatReceived{handle, std::move(line)});
+			if (richText) owner.chatMediaIn(handle, text(getUrl()), std::string(), text(message));
 		}
 
 		void EventUserJoin(const char* user) override
@@ -424,15 +433,17 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 			const auto* result = static_cast<const QuickDC::Share::SearchResult*>(pointer);
 			if (!result) return;
 
+			const uint64_t search = owner.searches.attribute(*result);
+			if (!search) return;
+
 			SearchHit hit;
 			hit.hubUrl = text(getUrl());
-			hit.token = text(result->getToken());
 			hit.name = text(result->getFile());
 			hit.tth = text(result->getTTH());
 			hit.size = result->getSize();
 			hit.freeSlots = static_cast<uint32_t>(result->getFreeSlots());
 			hit.user = converted(result->getUser());
-			owner.publish(Events::SearchResult{handle, std::move(hit)});
+			owner.publish(Events::SearchResult{handle, search, std::move(hit)});
 		}
 
 		void EventHubName(const char* hubname) override
@@ -491,6 +502,7 @@ QuickDC::Api::Service::Service(Core& core_)
 		favourites = std::make_unique<QuickDC::FavouriteHubs>(*core.config);
 		recents = std::make_unique<QuickDC::RecentHubs>(*core.config);
 		completed = std::make_unique<QuickDC::CompletedDownloads>(*core.config);
+		sweepPasted(mediaFolder(), Settings::read(*core.config, Settings::ChatMediaKeepDays), time(0));
 	}
 }
 
@@ -653,6 +665,171 @@ void QuickDC::Api::Service::run(const Commands::AttachFile& command)
 		publish(Failed{command.path, Failed::Why::Unreadable, std::string()});
 }
 
+void QuickDC::Api::Service::run(const Commands::AttachPasted& command)
+{
+	const std::string folder = mediaFolder();
+	if (folder.empty() || command.data.empty())
+	{
+		publish(Events::PastedKept{command.request, std::string(), "There is nowhere to keep a pasted picture."});
+		return;
+	}
+
+	std::error_code error;
+	std::filesystem::create_directories(folder, error);
+	const std::string path = folder + "/" + pastedName(time(0), command.suffix);
+
+	std::ofstream out(path, std::ios::binary | std::ios::trunc);
+	out.write(command.data.data(), static_cast<std::streamsize>(command.data.size()));
+	out.close();
+	if (error || !out)
+	{
+		publish(Events::PastedKept{command.request, std::string(),
+		                           "A pasted picture could not be written to '" + path + "'."});
+		return;
+	}
+
+	publish(Events::PastedKept{command.request, path, std::string()});
+	run(Commands::AttachFile{path, true, false});
+}
+
+std::string QuickDC::Api::Service::mediaFolder() const
+{
+	return core.homeDirectory.empty() ? std::string() : core.homeDirectory + "/media";
+}
+
+std::string QuickDC::Api::Service::downloadDirectory() const
+{
+	std::string directory = core.config
+		? core.config->peekString(Settings::DownloadDirectory.group, Settings::DownloadDirectory.key, "")
+		: std::string();
+
+	if (directory.empty())
+		directory = core.homeDirectory.empty() ? std::string(Settings::DownloadDirectory.fallback)
+		                                       : core.homeDirectory + "/downloads";
+
+	return Samurai::IO::File::resolvePath(directory);
+}
+
+std::string QuickDC::Api::Service::localCopy(const std::string& tth) const
+{
+	std::error_code error;
+	const auto here = [&error](const std::string& path) {
+		return !path.empty() && std::filesystem::is_regular_file(Samurai::IO::File::resolvePath(path), error);
+	};
+
+	if (core.shares)
+		if (const std::string attached = core.shares->attachedPath(tth); here(attached))
+			return Samurai::IO::File::resolvePath(attached);
+
+	if (completed)
+		for (const QuickDC::CompletedDownload& done : completed->entries())
+			if (done.tth == tth && here(done.filename))
+				return Samurai::IO::File::resolvePath(done.filename);
+
+	return std::string();
+}
+
+void QuickDC::Api::Service::chatMediaIn(HubHandle hub, const std::string& hubUrl, const std::string& sender,
+                                        const std::string& text)
+{
+	if (!core.config || !core.session) return;
+
+	const bool fetching = chatMediaFetchedOn(*core.config, *core.session, hubUrl);
+	const int limit = Settings::read(*core.config, Settings::ChatMediaLimit);
+
+	for (const ChatAttachment& file : attachmentsIn(text))
+	{
+		if (!file.inlineMedia) continue;
+
+		using Media = Events::ChatMedia;
+		if (const std::string path = localCopy(file.tth); !path.empty())
+		{
+			publish(Media{hub, file.tth, file.name, file.size, Media::State::Ready, Media::Why::None, path});
+			continue;
+		}
+
+		switch (chatMediaVerdict(file.size, fetching, limit > 0 ? static_cast<uint64_t>(limit) : 0))
+		{
+			case ChatMediaSkip::None:
+				fetchMedia(hub, file, hubUrl, sender);
+				break;
+			case ChatMediaSkip::Off:
+				publish(Media{hub, file.tth, file.name, file.size, Media::State::Skipped, Media::Why::Off, {}});
+				break;
+			case ChatMediaSkip::Unsized:
+				publish(Media{hub, file.tth, file.name, file.size, Media::State::Skipped, Media::Why::Unsized, {}});
+				break;
+			case ChatMediaSkip::TooLarge:
+				publish(Media{hub, file.tth, file.name, file.size, Media::State::Skipped, Media::Why::TooLarge, {}});
+				break;
+		}
+	}
+}
+
+void QuickDC::Api::Service::fetchMedia(HubHandle hub, const ChatAttachment& file, const std::string& hubUrl,
+                                       const std::string& sender)
+{
+	if (!core.queue) return;
+
+	using Media = Events::ChatMedia;
+	Media told{hub, file.tth, file.name, file.size, Media::State::Queued, Media::Why::None, {}};
+
+	if (QueueFile* queued = core.queue->getFileByTTH(file.tth.c_str()))
+	{
+		told.path = queued->getLocalFilename() ? queued->getLocalFilename() : "";
+	}
+	else
+	{
+		told.path = downloadDirectory() + "/" + file.name;
+		if (!core.queue->add(told.path.c_str(), file.tth.c_str(), file.size))
+		{
+			publish(Media{hub, file.tth, file.name, file.size, Media::State::Skipped, Media::Why::Refused, {}});
+			return;
+		}
+		if (!hubUrl.empty() && !sender.empty())
+			core.queue->addKnownSource(file.tth.c_str(), hubUrl.c_str(), sender.c_str());
+		core.queue->requestSourceSearch(file.tth.c_str());
+	}
+
+	mediaFetches[file.tth] = MediaFetch{hub, file.name};
+	publish(told);
+}
+
+void QuickDC::Api::Service::run(const Commands::FetchAttachment& command)
+{
+	ChatAttachment file;
+	file.tth = command.tth;
+	file.size = command.size;
+	file.name = readMagnet("magnet:?dn=" + command.name).name;
+	if (file.tth.size() != 39) return;
+	if (file.name.empty()) file.name = file.tth;
+
+	if (const std::string path = localCopy(file.tth); !path.empty())
+	{
+		using Media = Events::ChatMedia;
+		publish(Media{command.hub, file.tth, file.name, file.size, Media::State::Ready, Media::Why::None, path});
+		return;
+	}
+
+	HubSession* hub = command.hub ? session(command.hub) : nullptr;
+	fetchMedia(command.hub, file, hub ? text(hub->getUrl()) : std::string(), std::string());
+}
+
+void QuickDC::Api::Service::run(const Commands::SetChatMediaFetch& command)
+{
+	if (!core.session) return;
+
+	const std::string group = hubSettingsGroup(command.hubUrl);
+	if (group.empty()) return;
+
+	using Choice = Commands::SetChatMediaFetch::Choice;
+	if (command.choice == Choice::Follow)
+		core.session->remove(group, Settings::ChatMediaFetch.key);
+	else
+		core.session->setBool(group, Settings::ChatMediaFetch.key, command.choice == Choice::Always);
+	core.session->write();
+}
+
 void QuickDC::Api::Service::EventAttachmentReady(const char* path, const char* tth, uint64_t size)
 {
 	publish(Events::AttachmentReady{path ? path : "", tth ? tth : "", size});
@@ -722,13 +899,18 @@ void QuickDC::Api::Service::run(const Commands::Search& command)
 	if (command.sizePolicy == Commands::Search::Size::AtLeast) policy = Request::SizeMin;
 	if (command.sizePolicy == Commands::Search::Size::AtMost) policy = Request::SizeMax;
 
-	Request request(policy, command.size, nullptr, command.token.c_str(), nullptr);
+	Request request(policy, command.size, nullptr, nullptr, nullptr);
 	for (const std::string& term : command.include) request.addInclusion(term.c_str());
 	for (const std::string& term : command.exclude) request.addExclusion(term.c_str());
 	for (const std::string& ext : command.extensions) request.addExtension(ext.c_str());
 
 	const int asked = static_cast<int>(core.hubs->searchAllHubs(&request));
-	publish(Events::SearchSent{command.token, asked});
+	publish(Events::SearchSent{command.request, searches.add(request), asked});
+}
+
+void QuickDC::Api::Service::run(const Commands::ForgetSearch& command)
+{
+	searches.remove(command.search);
 }
 
 void QuickDC::Api::Service::run(const Commands::Enqueue& command)
@@ -919,6 +1101,17 @@ void QuickDC::Api::Service::EventQueueFileVerified(const QueueFile* file)
 	if (completed && completed->add(QuickDC::CompletedDownload{
 	        done.filename, done.tth, done.size, static_cast<uint64_t>(time(0))}))
 		publish(completedDownloads(0));
+
+	const auto fetched = mediaFetches.find(done.tth);
+	if (fetched == mediaFetches.end()) return;
+
+	const std::string path = Samurai::IO::File::resolvePath(done.filename);
+	publish(Events::ChatMedia{fetched->second.hub, done.tth, fetched->second.name, done.size,
+	                          Events::ChatMedia::State::Ready, Events::ChatMedia::Why::None, path});
+	mediaFetches.erase(fetched);
+
+	/* Whoever else was shown it may ask this client for it now. */
+	run(Commands::AttachFile{path, true, false});
 }
 
 void QuickDC::Api::Service::EventTransferStarted(QuickDC::Transfer* transfer)

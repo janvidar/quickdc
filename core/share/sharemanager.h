@@ -292,6 +292,9 @@ class Manager : public QuickDC::Hash::JobListener {
 		 */
 		void forgetListener(QuickDC::Share::AttachmentListener* listener);
 
+		/** The path a file attached with this hash was given as, or empty. */
+		std::string attachedPath(const std::string& tth) const;
+
 		/**
 		 * Stop offering an attachment: take back everything attach() made
 		 * reachable, and forget the file.

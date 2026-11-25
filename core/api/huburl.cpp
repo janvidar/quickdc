@@ -32,3 +32,11 @@ std::string QuickDC::canonicalHubUrl(const std::string& url)
 	canonical.insert(end, ":411");
 	return canonical;
 }
+
+std::string QuickDC::hubSettingsGroup(const std::string& url)
+{
+	const std::string canonical = canonicalHubUrl(url);
+	const size_t scheme = canonical.find("://");
+	if (scheme == std::string::npos) return canonical;
+	return canonical.substr(0, canonical.find_first_of("/?#", scheme + 3));
+}

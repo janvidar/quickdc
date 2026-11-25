@@ -1,19 +1,21 @@
 /*
- * Copyright (C) 2001-2008 Jan Vidar Krey, janvidar@extatic.org
+ * Copyright (C) 2001-2026 Jan Vidar Krey, janvidar@extatic.org
  * See the file "COPYING" for licensing details.
  */
 
 #ifndef HAVE_QUICKDC_SEARCH_MANAGER_H
 #define HAVE_QUICKDC_SEARCH_MANAGER_H
 
+#include <cstdint>
+#include <deque>
+#include <string>
 #include <vector>
-#include <samurai/timestamp.h>
 
-namespace Samurai {
-namespace IO {
-class File;
-}
-}
+/*
+ * How many searches are attributed to at once; the oldest is forgotten beyond
+ * that, for a front end that never says it is done with one.
+ */
+#define QUICKDC_SEARCHES_LIVE 64
 
 namespace QuickDC {
 namespace Share {
@@ -21,64 +23,39 @@ namespace Share {
 class SearchResult;
 class SearchRequest;
 
-class SearchResultHandler
-{
-	public:
-		virtual ~SearchResultHandler() { }
-		
-		/**
-		 * Implement this to be able to receive search results.
-		 */
-		virtual void EventSearchResult(Share::SearchResult*) = 0;
-};
-
 /**
- * This class manages active search requests, and 
- * will sort incoming search results to the correct 
+ * The searches a front end sent and still wants answers to, and which of them a
+ * result answers.
+ *
+ * By the token the result quotes back where it carries one. NMDC has nowhere to
+ * put a token, so a result without one goes to the newest search whose words its
+ * name holds, none of whose exclusions it does - a name matching two searches
+ * says nothing to settle it, and the newest is the likelier to have been asked.
  */
 class SearchManager {
 	public:
-		SearchManager(Samurai::IO::File* file);
-		virtual ~SearchManager();
-	
-		/*
-		void addResultHandler(Share::SearchResultHandler* resultHandler);
-		void removeResultHandler(Share::SearchResultHandler* resultHandler);
-		*/
-		
-		void add(Share::SearchRequest* request, Share::SearchResultHandler* resultHandler = 0);
-		void remove(Share::SearchRequest* request);
-		
-		/**
-		 * Send the search result to the correct search result handler.
-		 * If no handler is found, drop it.
-		 * 
-		 * NOTE: some searches don't have have a token (only NMDC), 
-		 *       in that case we will have to match based on name or tth root.
-		 */
-		void handle(Share::SearchResult* result);
+		/** Remember 'request' as it went out; returns the number it goes by. */
+		uint64_t add(const SearchRequest& request);
 
-	protected:
-		/**
-		 * Load active searches from file.
-		 */
-		bool load();
-		
-		/**
-		 * Save active searches to file.
-		 */
-		bool save();
-		
-	protected:
-		
-		struct SearchContainer {
-			QuickDC::Share::SearchRequest* request;        /* The request */
-			QuickDC::Share::SearchResultHandler* handler;  /* Who will handle the result? */
-			Samurai::TimeStamp timestamp;                  /* When was the search request last sent? */
+		/** No more results for 'search'; false where it was not live. */
+		bool remove(uint64_t search);
+
+		/** The live search 'result' answers, or 0 for none. */
+		uint64_t attribute(const SearchResult& result) const;
+
+		size_t live() const { return searches.size(); }
+
+	private:
+		struct Live {
+			uint64_t id = 0;
+			std::string token;
+			std::vector<std::string> include;
+			std::vector<std::string> exclude;
 		};
-		
-		std::vector<SearchContainer*> active_searches;
-		Samurai::IO::File* file;
+
+		/* Oldest first. */
+		std::deque<Live> searches;
+		uint64_t last = 0;
 };
 
 }

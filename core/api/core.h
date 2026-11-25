@@ -298,6 +298,9 @@ class Core {
 		 */
 		QuickDC::SearchTokens* searchTokens;
 
+		/** Where this core keeps what it writes; the configuration's own folder for a core built from files. */
+		std::string homeDirectory;
+
 	protected:
 		/* First, so it is the last thing destroyed: the inbox below holds a socket on it. */
 		Samurai::EventLoop eventLoop;

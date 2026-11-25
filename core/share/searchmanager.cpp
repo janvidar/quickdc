@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2001-2008 Jan Vidar Krey, janvidar@extatic.org
+ * Copyright (C) 2001-2026 Jan Vidar Krey, janvidar@extatic.org
  * See the file "COPYING" for licensing details.
  */
 
@@ -7,81 +7,60 @@
 #include "share/searchmanager.h"
 #include "share/searchrequest.h"
 #include "share/searchresult.h"
-#include <samurai/io/file.h>
-#include <string_view>
 
-QuickDC::Share::SearchManager::SearchManager(Samurai::IO::File* file_)
+#include <samurai/stdc.h>
+
+#include <algorithm>
+
+uint64_t QuickDC::Share::SearchManager::add(const SearchRequest& request)
 {
-	file = 0;
-	if (file_)
-		file = new Samurai::IO::File(*file_);
+	Live search;
+	search.id = ++last;
+	if (const char* token = request.getToken()) search.token = token;
+	search.include = request.getInclusions();
+	search.exclude = request.getExclusions();
+	searches.push_back(std::move(search));
 
-	load();
+	while (searches.size() > QUICKDC_SEARCHES_LIVE)
+		searches.pop_front();
+
+	return last;
 }
 
-QuickDC::Share::SearchManager::~SearchManager()
+bool QuickDC::Share::SearchManager::remove(uint64_t search)
 {
-	save();
+	const auto found = std::find_if(searches.begin(), searches.end(),
+	                                [search](const Live& live) { return live.id == search; });
+	if (found == searches.end()) return false;
 
-	while (active_searches.size())
+	searches.erase(found);
+	return true;
+}
+
+uint64_t QuickDC::Share::SearchManager::attribute(const SearchResult& result) const
+{
+	if (const char* token = result.getToken())
 	{
-		delete active_searches.back();
-		active_searches.pop_back();
+		for (const Live& search : searches)
+			if (!search.token.empty() && search.token == token) return search.id;
+		return 0;
 	}
 
-	delete file;
-}
+	const char* file = result.getFile();
+	if (!file) return 0;
+	const std::string_view name(file);
 
-bool QuickDC::Share::SearchManager::load()
-{
-	return false;	
-}
-
-bool QuickDC::Share::SearchManager::save()
-{
-	return false;
-}
-
-void QuickDC::Share::SearchManager::add(QuickDC::Share::SearchRequest* request, QuickDC::Share::SearchResultHandler* resultHandler)
-{
-	SearchContainer* container = new SearchContainer();
-	container->request = request;
-	container->handler = resultHandler;
-	active_searches.push_back(container);
-}
-
-void QuickDC::Share::SearchManager::remove(QuickDC::Share::SearchRequest* request)
-{
-	if (!request || !active_searches.size()) return;
-	
-	std::vector<SearchContainer*>::iterator it = active_searches.begin();
-	for (; it != active_searches.end(); it++)
+	for (auto search = searches.crbegin(); search != searches.crend(); ++search)
 	{
-		SearchContainer* container = (*it);
-		if (container->request == request)
+		if (search->include.empty()) continue;
+
+		const auto holds = [name](const std::string& word) { return Samurai::Util::icontains(name, word); };
+		if (std::all_of(search->include.begin(), search->include.end(), holds)
+		    && std::none_of(search->exclude.begin(), search->exclude.end(), holds))
 		{
-			active_searches.erase(it);
-			delete container;
-			break;
+			return search->id;
 		}
 	}
-}
 
-void QuickDC::Share::SearchManager::handle(QuickDC::Share::SearchResult* result)
-{
-	if (!result || !active_searches.size()) return;
-	
-	std::vector<SearchContainer*>::iterator it = active_searches.begin();
-	const char* token = result->getToken();
-	if (token) {
-		for (; it != active_searches.end(); it++) {
-			SearchContainer* container = (*it);
-			const char* wanted = container->request->getToken();
-			if (wanted && std::string_view(token) == wanted) {
-				container->handler->EventSearchResult(result);
-			}
-		}
-	} else {
-		/* FIXME: Ignoring token-less search for now. */
-	}
+	return 0;
 }

@@ -665,6 +665,7 @@ QuickDC::Core::Core(const Home& home)
 	references = 0;
 
 	const std::string& dir = home.directory;
+	homeDirectory = dir;
 	Samurai::IO::File::mkdir(dir.c_str(),                     0700);
 	Samurai::IO::File::mkdir((dir + "/hub").c_str(),          0700);
 	Samurai::IO::File::mkdir((dir + "/hub/bbs").c_str(),      0700);
@@ -824,6 +825,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 	/* The file lists too, for the same reason: they are written whenever the share changes. */
 	const size_t slash = config_file.rfind('/');
 	const std::string lists = slash == std::string::npos ? "." : config_file.substr(0, slash);
+	homeDirectory = lists;
 	shares = new QuickDC::Share::Manager(config, hash, lists.c_str());
 
 	/* Peer sessions reach for this without checking whether there is one. */

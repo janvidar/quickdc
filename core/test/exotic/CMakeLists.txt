@@ -81,6 +81,7 @@ set(QUICKDC_EXOTIC_TESTS
     twocores.tcc
     sharefolders.tcc
     userlists.tcc
+    chatmedia.tcc
     zupload.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)

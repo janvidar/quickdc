@@ -128,6 +128,13 @@ inline constexpr Text   ClientId                {"User", "Client ID", ""};
 /* [Downloads]; read by a user interface to name what it queues, created by the core. */
 inline constexpr Text   DownloadDirectory       {"Downloads", "Directory", "~/.quickdc/downloads"};
 
+/* [Chat media]; a hub's own group in the session store may override the first. */
+inline constexpr Flag   ChatMediaFetch          {"Chat media", "Fetch automatically", false};
+/** Two megabytes: enough for a photograph, small enough to arrive unnoticed. */
+inline constexpr Number ChatMediaLimit          {"Chat media", "Maximum size", 2 * 1024 * 1024};
+/** About six months; zero keeps them for ever. */
+inline constexpr Number ChatMediaKeepDays       {"Chat media", "Keep pasted for days", 180};
+
 /* [Local hub] */
 inline constexpr Flag   HubEnabled              {"Local hub", "Enabled", false};
 inline constexpr Text   HubName                 {"Local hub", "Name", "A QuickDC hub"};

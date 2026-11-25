@@ -367,3 +367,36 @@ EXO_TEST(service_a_favourite_is_kept_and_let_go,
 	running.onCore([&] { subscription.reset(); });
 	return 1;
 });
+
+/* The core numbers each search and says which request it was; the front end invents nothing. */
+EXO_TEST(service_each_search_is_numbered_by_the_core,
+{
+	namespace Ev = QuickDC::Api::Events;
+	using Search = QuickDC::Api::Commands::Search;
+
+	Running running;
+	Recorder recorder;
+	QuickDC::Subscription subscription;
+	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
+
+	Search first;
+	first.request = 7;
+	first.include = {"one"};
+	Search second;
+	second.request = 8;
+	second.include = {"two"};
+	EXO_ASSERT(running.core->submit(first));
+	EXO_ASSERT(running.core->submit(second));
+
+	const auto a = recorder.waitForEvent<Ev::SearchSent>([](const Ev::SearchSent& e) { return e.request == 7; });
+	const auto b = recorder.waitForEvent<Ev::SearchSent>([](const Ev::SearchSent& e) { return e.request == 8; });
+	EXO_ASSERT(a && b);
+	if (a && b)
+	{
+		EXO_ASSERT(a->search != 0 && b->search != 0 && a->search != b->search);
+		EXO_ASSERT(a->hubsAsked == 0);
+	}
+
+	running.onCore([&] { subscription.reset(); });
+	return 1;
+});
