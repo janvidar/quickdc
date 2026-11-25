@@ -9,7 +9,6 @@
 #include "network/adc/adccommands.h"
 #include "network/adc/cid.h"
 #include "network/keyprint.h"
-#include <string_view>
 
 /*****************************************************************************/
 /*****************************************************************************/
@@ -529,14 +528,13 @@ bool ADC::CmdResult::invoke(ADC::Command* cmd) {
 }
 
 /*
- * The grammar in ADC 0.12 flags the token "TO", but the DC++ family sends it as
- * a plain positional field and reads it back the same way, so accept either.
+ * Positional, as ADC 1.0 and the DC++ family have it, and taken whole. The 0.12
+ * grammar flagged it "TO", but no flag can be told apart from a token that merely
+ * starts with those letters - one in 1024 of our own - and a token read short is
+ * one the peer quotes back and nobody recognises.
  */
 static char* adc_connect_token(ADC::Command* cmd, size_t position) {
-	char* token = cmd->getArgument(position);
-	if (token && std::string_view(token).starts_with("TO")) return &token[2];
-	if (token) return token;
-	return cmd->getArgument("TO", 2, position);
+	return cmd->getArgument(position);
 }
 
 bool ADC::CmdPartialStatus::invoke(ADC::Command* cmd) {

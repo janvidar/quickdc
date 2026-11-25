@@ -2152,6 +2152,41 @@ EXO_TEST(hubsession_an_unknown_protocol_is_refused_whatever_the_setting,
 });
 
 /*
+ * A connect token is taken whole, whatever letters it starts with. One beginning
+ * "TO" was read as the 0.12 flag and lost them, so the peer was dialled with a
+ * token it never issued and the download it asked for waited until it timed out.
+ * The refusal quotes the token back, which is what shows how it was read.
+ */
+EXO_TEST(hubsession_a_connect_token_starting_with_to_is_kept_whole,
+{
+	for (const char* request : { "DCTM BBBB AAAA ADC/1.0 1412 TOJOB1", "DRCM BBBB AAAA ADC/1.0 TOJOB1" })
+	{
+		Session s;
+		if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+		EXO_ASSERT(s.ready);
+		EXO_ASSERT(s.login());
+
+		setRequireEncryption(true);
+		EXO_ASSERT(announcePeer(s, "BBBB"));
+
+		std::string line;
+		s.hub.drain();
+		s.hub.received.clear();
+
+		s.say(request);
+
+		EXO_ASSERT(s.hub.nextLine(line));
+		EXO_ASSERT(line.compare(0, 5, "DSTA ") == 0);
+		if (line.find(" TOTOJOB1") == std::string::npos)
+		{
+			const std::string why = std::string("\"") + request + "\" was refused with \"" + line + "\"";
+			EXO_FAIL(why.c_str());
+		}
+	}
+	return 1;
+});
+
+/*
  * A hub reached over ADCS requires its peer connections to be encrypted too, and
  * does not ask the preference: a client that took the trouble to reach the hub
  * encrypted has said what it wants, and the files a peer connection carries are the
