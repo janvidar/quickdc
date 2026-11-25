@@ -157,14 +157,28 @@ QuickDC::Cli::Runner::~Runner()
 bool QuickDC::Cli::Runner::start(const std::string& name, const std::string& home,
                         const QuickDC::Api::SettingsSnapshot& presets, std::string& failure)
 {
-	if (impl->find(name))
+	Host* existing = impl->find(name);
+	if (existing)
 	{
-		failure = "there is already a core called '" + name + "'";
-		return false;
+		std::lock_guard<std::mutex> guard(existing->mutex);
+		if (existing->state != State::Stopped && existing->state != State::Failed)
+		{
+			failure = "there is already a core called '" + name + "'";
+			return false;
+		}
 	}
 
-	impl->hosts.push_back(std::make_unique<Host>());
-	Host& host = *impl->hosts.back();
+	if (!existing)
+	{
+		impl->hosts.push_back(std::make_unique<Host>());
+		existing = impl->hosts.back().get();
+	}
+
+	Host& host = *existing;
+	if (host.thread.joinable()) host.thread.join();
+	host.state = State::Starting;
+	host.stopRequested = false;
+	host.failure.clear();
 	host.name = name;
 	host.home = home;
 	host.presets = presets;
@@ -206,4 +220,18 @@ void QuickDC::Cli::Runner::stop()
 
 	for (const std::unique_ptr<Host>& host : impl->hosts)
 		if (host->thread.joinable()) host->thread.join();
+}
+
+void QuickDC::Cli::Runner::stop(const std::string& name)
+{
+	Host* host = impl->find(name);
+	if (!host) return;
+
+	{
+		std::lock_guard<std::mutex> guard(host->mutex);
+		host->stopRequested = true;
+		if (host->core) host->core->requestStop();
+	}
+
+	if (host->thread.joinable()) host->thread.join();
 }

@@ -84,6 +84,7 @@ void QuickDC::Cli::Session::take(const Delivery& delivery)
 	};
 
 	Heard heard;
+	heard.core = delivery.core;
 	heard.event = describe(delivery.core, delivery.event, name);
 	heard.line = heard.event.serialized();
 
@@ -373,4 +374,37 @@ Api::SettingsSnapshot QuickDC::Cli::Session::presets(const std::string& core) co
 	}
 
 	return out;
+}
+
+QuickDC::Cli::Outcome QuickDC::Cli::Session::restart(const Line& line, const std::string& core)
+{
+	runner.stop(core);
+
+	/* Everything it said before it stopped is queued by now. */
+	pump(std::chrono::steady_clock::now());
+	std::erase_if(backlog, [&core](const Heard& heard) { return heard.core == core; });
+	cores.erase(core);
+
+	std::string failure;
+	if (!runner.start(core, base + "/" + core, presets(core), failure))
+		return fail(line, "core '" + core + "' did not start again: " + failure);
+	return Outcome::Next;
+}
+
+QuickDC::Cli::Outcome QuickDC::Cli::Session::serve(const Line& line, int port, const std::string& directory)
+{
+	if (servers.count(port)) return fail(line, "something is already served on port " + std::to_string(port));
+
+	auto server = std::make_unique<FileServer>();
+	std::string why;
+	if (!server->start(port, directory, why)) return fail(line, why);
+	servers[port] = std::move(server);
+	return Outcome::Next;
+}
+
+std::optional<int> QuickDC::Cli::Session::served(int port) const
+{
+	const auto found = servers.find(port);
+	if (found == servers.end()) return std::nullopt;
+	return found->second->served();
 }

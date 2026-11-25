@@ -799,6 +799,69 @@ Step parseExpectNo(const Line& line)
 	return [line, expected](Session& session) { return session.expectNone(line, expected); };
 }
 
+Step parseHublistRefresh(const Line& line)
+{
+	line.expect(0, 1);
+	if (line.args.size() == 1 && line.args[0] != "force")
+		throw ScriptError("'" + line.args[0] + "' is not force");
+
+	const bool force = line.args.size() == 1;
+	const std::string core = line.requireCore();
+
+	return [line, core, force](Session& session) {
+		return session.submit(line, core, Cmd::RefreshHubDirectory{force});
+	};
+}
+
+int parsePort(const std::string& text)
+{
+	int port = 0;
+	const auto parsed = std::from_chars(text.data(), text.data() + text.size(), port);
+	if (parsed.ec != std::errc() || parsed.ptr != text.data() + text.size() || port <= 0 || port > 65535)
+		throw ScriptError("'" + text + "' is not a port");
+	return port;
+}
+
+/* Relative to the run's home where it is not absolute. */
+Step parseServe(const Line& line)
+{
+	line.expect(2, 2);
+	const int port = parsePort(line.args[0]);
+	const std::string directory = line.args[1];
+
+	return [line, port, directory](Session& session) {
+		return session.serve(line, port, session.resolve(line, directory));
+	};
+}
+
+Step parseExpectServed(const Line& line)
+{
+	line.expect(2, 2);
+	const int port = parsePort(line.args[0]);
+
+	int count = 0;
+	const std::string& text = line.args[1];
+	const auto parsed = std::from_chars(text.data(), text.data() + text.size(), count);
+	if (parsed.ec != std::errc() || parsed.ptr != text.data() + text.size() || count < 0)
+		throw ScriptError("'" + text + "' is not a count");
+
+	return [line, port, count](Session& session) {
+		const std::optional<int> served = session.served(port);
+		if (!served) return session.fail(line, "nothing is served on port " + std::to_string(port));
+		if (*served != count)
+			return session.fail(line, "port " + std::to_string(port) + " served " + std::to_string(*served)
+				+ " files, not " + std::to_string(count));
+		return Outcome::Next;
+	};
+}
+
+Step parseRestart(const Line& line)
+{
+	line.expect(0, 0);
+	const std::string core = line.requireCore();
+	return [line, core](Session& session) { return session.restart(line, core); };
+}
+
 Step parseSleep(const Line& line)
 {
 	line.expect(1, 1);
@@ -842,6 +905,13 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"recent-clear", "recent-clear",                                     parseBare<Cmd::ClearRecentHubs>},
 		{"completed-forget", "completed-forget <path>",                      parseCompletedForget},
 		{"completed-clear", "completed-clear",                               parseBare<Cmd::ClearCompletedDownloads>},
+		{"hublist-add", "hublist-add <url>",                                 parseNaming<Cmd::AddHubListSource>},
+		{"hublist-remove", "hublist-remove <url>",                           parseNaming<Cmd::RemoveHubListSource>},
+		{"hublist-reset", "hublist-reset",                                   parseBare<Cmd::ResetHubListSources>},
+		{"hublist-refresh", "hublist-refresh [force]",                       parseHublistRefresh},
+		{"serve",      "serve <port> <directory>",                           parseServe},
+		{"expect-served", "expect-served <port> <count>",                    parseExpectServed},
+		{"restart",    "restart",                                            parseRestart},
 		{"open",       "open <url> [as <name>]",                             parseOpen},
 		{"close",      "close <hub>",                                        parseClose},
 		{"connect",    "connect <hub>",                                      parseConnect},

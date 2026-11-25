@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Hublist>
+  <Hubs>
+    <Hub Name="Alpha" Address="adcs://alpha.example.org:412" Description="The first hub" Users="10"/>
+    <Hub Name="Beta" Address="beta.example.org" Users="5"/>
+    <Hub Name="Gamma" Address="adcs://gamma.example.org:1511" Description="Kept by both" Users="7"/>
+  </Hubs>
+</Hublist>

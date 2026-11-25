@@ -1,0 +1,61 @@
+# The public hub directory: two lists served on loopback merged into one, a
+# list nobody serves reported with the reason while the others still list, the
+# merge read back from the cache by a core built again over the same home, and
+# a list this program once shipped and has withdrawn left out of the sources.
+
+preset application Hublists Total 4
+preset application Hublists "List 0" http://127.0.0.1:${HTTP}/one.xml
+preset application Hublists "List 1" http://127.0.0.1:${HTTP}/two.xml
+preset application Hublists "List 2" https://dchublist.biz/hublist.xml.bz2
+preset application Hublists "List 3" http://127.0.0.1:${CLOSED}/gone.xml
+
+serve ${HTTP} ${LISTS}
+
+# Nothing is fetched until the directory is asked to be current.
+state
+wait HubListSources request!=0 sources.0.url=http://127.0.0.1:${HTTP}/one.xml sources.1.url=http://127.0.0.1:${HTTP}/two.xml sources.2.url=http://127.0.0.1:${CLOSED}/gone.xml sources.0.fetched=0
+expect-no HubListSources sources.3.url!=
+expect-no HubListSources sources.*.url=https://dchublist.biz/hublist.xml.bz2
+wait HubDirectory request!=0 hubs=[]
+expect-served ${HTTP} 0
+
+hublist-refresh
+wait HubListSources sources.2.fetching=false sources.2.error!= timeout=30s
+wait HubDirectory sources.1=http://127.0.0.1:${HTTP}/two.xml hubs.3.address=adc://delta.example.org:2780 timeout=30s
+
+# Each hub once, the earlier list's description kept and filled in from the
+# later one, the larger user count, the address with the keyprint, and both
+# lists credited.
+state
+wait HubListSources request!=0 sources.0.hubs=3 sources.0.cached=false sources.0.fetched!=0 sources.1.hubs=3 sources.2.error!= sources.2.hubs=0
+wait HubDirectory request!=0 hubs.0.name=Alpha hubs.0.listedBy=[0] hubs.1.address=beta.example.org hubs.1.name=Beta "hubs.1.description=The second hub" hubs.1.country=NO hubs.1.users=50 hubs.1.listedBy=[0,1] hubs.2.address=adcs://gamma.example.org:1511/?kp=SHA256/GAMMAKEYPRINT hubs.2.name=Gamma hubs.2.listedBy=[0,1] hubs.3.listedBy=[1]
+expect-no HubDirectory hubs.4.address!=
+expect-served ${HTTP} 2
+
+# Built again over the same home: the directory is there before anything is
+# fetched, and a fresh cache is not fetched again.
+restart
+state
+wait HubListSources request!=0 sources.0.cached=true sources.0.hubs=3 sources.1.cached=true sources.2.hubs=0
+wait HubDirectory request!=0 hubs.1.users=50 hubs.1.listedBy=[0,1] hubs.3.address=adc://delta.example.org:2780
+expect-served ${HTTP} 2
+
+hublist-refresh
+state
+wait HubListSources request!=0 sources.0.fetching=false sources.1.fetching=false
+expect-served ${HTTP} 2
+
+hublist-refresh force
+wait HubListSources sources.0.cached=false sources.1.cached=false sources.0.fetching=false sources.1.fetching=false timeout=30s
+expect-served ${HTTP} 4
+
+# A list taken out takes its hubs and its credit with it, and comes back when added.
+hublist-remove http://127.0.0.1:${HTTP}/two.xml
+wait HubDirectory "sources=[\"http://127.0.0.1:${HTTP}/one.xml\"]" hubs.1.users=5 hubs.1.listedBy=[0]
+hublist-add http://127.0.0.1:${HTTP}/two.xml
+wait HubListSources sources.2.url=http://127.0.0.1:${HTTP}/two.xml sources.2.fetching=false sources.2.hubs=3 timeout=30s
+wait HubDirectory hubs.1.listedBy=[0,1] hubs.3.listedBy=[1]
+
+hublist-reset
+wait HubListSources sources.0.url=https://dchublist.org/hublist.xml.bz2 sources.1.url=https://te-home.net/?do=hublist&get=hublist.xml.bz2 sources.2.url=https://hublist.eu/hublist.xml.bz2
+wait HubDirectory hubs=[]

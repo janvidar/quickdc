@@ -423,6 +423,35 @@ Value hubListEntry(const QuickDC::HubListEntry& h)
 	};
 }
 
+Value hubListSource(const Api::HubListSource& s)
+{
+	return Object{
+		{"url", s.url},
+		{"fetched", s.fetched},
+		{"hubs", s.hubs},
+		{"cached", s.cached},
+		{"fetching", s.fetching},
+		{"error", s.error},
+	};
+}
+
+Value directoryHub(const Api::DirectoryHub& h)
+{
+	return Object{
+		{"name", h.hub.name},
+		{"address", h.hub.address},
+		{"description", h.hub.description},
+		{"country", h.hub.country},
+		{"users", h.hub.users},
+		{"shared", h.hub.shared},
+		{"minshare", h.hub.minshare},
+		{"minslots", h.hub.minslots},
+		{"maxhubs", h.hub.maxhubs},
+		{"maxusers", h.hub.maxusers},
+		{"listedBy", each(h.listedBy, [](uint32_t n) { return Value(n); })},
+	};
+}
+
 Value dropVerdict(const QuickDC::DropVerdict& v)
 {
 	return Object{
@@ -458,6 +487,17 @@ struct Fields {
 	Out operator()(const Ev::HubListFailed& e) const
 	{
 		return {"HubListFailed", {{"url", e.url}, {"reason", e.reason}}};
+	}
+
+	Out operator()(const Ev::HubListSources& e) const
+	{
+		return {"HubListSources", {{"request", e.request}, {"sources", each(e.sources, hubListSource)}}};
+	}
+
+	Out operator()(const Ev::HubDirectory& e) const
+	{
+		return {"HubDirectory", {
+			{"request", e.request}, {"sources", strings(e.sources)}, {"hubs", each(e.hubs, directoryHub)}}};
 	}
 
 	Out operator()(const Ev::ReachabilityCheckStarted& e) const

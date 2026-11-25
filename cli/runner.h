@@ -38,7 +38,8 @@ class Runner {
 		/**
 		 * Build the core 'name' over the directory 'home', with 'presets' taken
 		 * as what its files hold, and wait until it takes commands. False, with
-		 * 'failure' saying why, if it could not be built.
+		 * 'failure' saying why, if it could not be built. A core that was stopped
+		 * may be started again by its name.
 		 */
 		bool start(const std::string& name, const std::string& home,
 		           const QuickDC::Api::SettingsSnapshot& presets, std::string& failure);
@@ -51,6 +52,9 @@ class Runner {
 
 		/** Stop every core and wait for its thread. The events they leave stay queued. */
 		void stop();
+
+		/** Stop the core 'name' and wait for its thread, as stop() does. */
+		void stop(const std::string& name);
 
 	private:
 		struct Impl;

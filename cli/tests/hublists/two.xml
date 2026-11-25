@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Hublist>
+  <Hubs>
+    <Hub Address="dchub://BETA.example.org:411" Description="The second hub" Country="NO" Users="50"/>
+    <Hub Name="Gamma elsewhere" Address="adcs://gamma.example.org:1511/?kp=SHA256/GAMMAKEYPRINT" Users="3"/>
+    <Hub Name="Delta" Address="adc://delta.example.org:2780" Country="SE" Users="1"/>
+  </Hubs>
+</Hublist>

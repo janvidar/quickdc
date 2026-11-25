@@ -6,6 +6,7 @@
 #ifndef HAVE_QUICKDC_CLI_SESSION_H
 #define HAVE_QUICKDC_CLI_SESSION_H
 
+#include "fileserver.h"
 #include "json.h"
 #include "runner.h"
 #include "script.h"
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -129,8 +131,21 @@ class Session {
 
 		QuickDC::Api::SettingsSnapshot presets(const std::string& core) const;
 
+		/**
+		 * Stop 'core' and build it again over the same home, with the same presets,
+		 * forgetting what it said and the hubs it had open.
+		 */
+		Outcome restart(const Line& line, const std::string& core);
+
+		/** Serve the files under 'directory' over HTTP on the loopback address at 'port'. */
+		Outcome serve(const Line& line, int port, const std::string& directory);
+
+		/** How many files the server on 'port' has handed out; nothing where there is none. */
+		std::optional<int> served(int port) const;
+
 	private:
 		struct Heard {
+			std::string core;
 			Json::Value event;
 			std::string line;
 			bool claimed = false;
@@ -162,6 +177,7 @@ class Session {
 		uint64_t requests = 0;
 		std::string base;
 		std::map<std::string, std::string> remembered;
+		std::map<int, std::unique_ptr<FileServer>> servers;
 };
 
 }

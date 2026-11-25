@@ -7,6 +7,7 @@ add_executable(qdc
     main.cpp
     commands.cpp
     eventjson.cpp
+    fileserver.cpp
     freeport.cpp
     json.cpp
     runner.cpp
@@ -45,6 +46,11 @@ if(QUICKDC_BUILD_TESTS)
                     ${scripts}/${name}.qdc)
         set_tests_properties(cli_${test} PROPERTIES TIMEOUT 120)
     endforeach()
+
+    add_test(NAME cli_hub_directory
+        COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --free-port HTTP --free-port CLOSED
+                -D LISTS=${scripts}/hublists --quiet ${scripts}/hub-directory.qdc)
+    set_tests_properties(cli_hub_directory PROPERTIES TIMEOUT 120)
 
     add_test(NAME cli_favourites
         COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --quiet ${scripts}/favourites.qdc)
