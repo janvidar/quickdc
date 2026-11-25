@@ -119,9 +119,9 @@ void QuickDC::Cli::Session::observe(Hubs& hubs, const Api::Event& event)
 	}
 }
 
-bool QuickDC::Cli::Session::matches(const Heard& heard, const Expectation& expected) const
+bool QuickDC::Cli::Session::matches(const Heard& heard, const Expectation& expected, bool claimedToo) const
 {
-	if (heard.claimed) return false;
+	if (heard.claimed && !claimedToo) return false;
 
 	const Json::Value* event = heard.event.find("event");
 	if (!event || event->text() != expected.event) return false;
@@ -178,6 +178,17 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::wait(const Line& line, const Expect
 	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(expected.timeout);
 	return fail(line, "timed out after " + std::to_string(ms.count()) + "ms waiting for "
 	                  + expected.describe());
+}
+
+QuickDC::Cli::Outcome QuickDC::Cli::Session::expectNone(const Line& line, const Expectation& expected)
+{
+	pump(std::chrono::steady_clock::now());
+
+	for (const Heard& heard : backlog)
+		if (matches(heard, expected, true))
+			return fail(line, "heard " + heard.line);
+
+	return Outcome::Next;
 }
 
 std::string QuickDC::Cli::Session::valueOf(const FieldTest& test) const

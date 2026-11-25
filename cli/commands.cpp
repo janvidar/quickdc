@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <optional>
 
 namespace Api = QuickDC::Api;
 namespace Cmd = QuickDC::Api::Commands;
@@ -107,6 +108,77 @@ Step parseSave(const Line& line)
 	return [line, core, command](Session& session) mutable {
 		command.request = session.nextRequest();
 		return session.submit(line, core, command);
+	};
+}
+
+QuickDC::NetworkMode networkMode(const std::string& word)
+{
+	if (word == "automatic") return QuickDC::NetworkMode::Automatic;
+	if (word == "advanced") return QuickDC::NetworkMode::Advanced;
+	if (word == "passive") return QuickDC::NetworkMode::Passive;
+	throw ScriptError("'" + word + "' is not a mode; it is automatic, advanced or passive");
+}
+
+/* What advanced leaves to the user, named; the other modes decide it. */
+Step parseMode(const Line& line)
+{
+	line.expect(1, 3);
+
+	Cmd::SetConnectionMode command;
+	command.mode = networkMode(line.args[0]);
+	for (size_t n = 1; n < line.args.size(); ++n)
+	{
+		if (line.args[n] == "upnp") command.useUpnp = true;
+		else if (line.args[n] == "force-active") command.forceActive = true;
+		else throw ScriptError("'" + line.args[n] + "' is neither upnp nor force-active");
+	}
+	const std::string core = line.requireCore();
+
+	return [line, core, command](Session& session) mutable {
+		command.origin = session.nextRequest();
+		return session.submit(line, core, command);
+	};
+}
+
+Step parseState(const Line& line)
+{
+	line.expect(0, 0);
+	const std::string core = line.requireCore();
+
+	return [line, core](Session& session) {
+		return session.submit(line, core, Cmd::ReportState{session.nextRequest()});
+	};
+}
+
+/* A command that names one thing, given whole as the rest of the line. */
+template<typename Command>
+Step parseNaming(const Line& line)
+{
+	line.expect(1, std::numeric_limits<size_t>::max());
+	const std::string what = line.rest(0);
+	const std::string core = line.requireCore();
+
+	return [line, core, what](Session& session) { return session.submit(line, core, Command{what}); };
+}
+
+template<typename Command>
+Step parseBare(const Line& line)
+{
+	line.expect(0, 0);
+	const std::string core = line.requireCore();
+
+	return [line, core](Session& session) { return session.submit(line, core, Command{}); };
+}
+
+/* A path is the core's own, relative to its home as everything else here is. */
+Step parseCompletedForget(const Line& line)
+{
+	line.expect(1, 1);
+	const std::string path = line.args[0];
+	const std::string core = line.requireCore();
+
+	return [line, core, path](Session& session) {
+		return session.submit(line, core, Cmd::ForgetCompletedDownload{session.resolve(line, path)});
 	};
 }
 
@@ -361,6 +433,47 @@ Step parseShare(const Line& line)
 	};
 }
 
+/* Relative to the core's home where it names one, as 'share' is. */
+Step parseShareAdd(const Line& line)
+{
+	if (line.args.size() != 1 && !(line.args.size() == 3 && line.args[1] == "as"))
+		throw ScriptError("wrong arguments");
+
+	const std::string directory = line.args[0];
+	const std::string name = line.args.size() == 3 ? line.args[2] : std::string();
+	const std::string core = line.requireCore();
+
+	return [line, core, directory, name](Session& session) {
+		return session.submit(line, core,
+			Cmd::AddShareFolder{session.resolve(line, directory), name, session.nextRequest()});
+	};
+}
+
+Step parseShareRemove(const Line& line)
+{
+	line.expect(1, 1);
+	const std::string directory = line.args[0];
+	const std::string core = line.requireCore();
+
+	return [line, core, directory](Session& session) {
+		return session.submit(line, core,
+			Cmd::RemoveShareFolder{session.resolve(line, directory), session.nextRequest()});
+	};
+}
+
+Step parseShareRename(const Line& line)
+{
+	line.expect(2, std::numeric_limits<size_t>::max());
+	const std::string directory = line.args[0];
+	const std::string name = line.rest(1);
+	const std::string core = line.requireCore();
+
+	return [line, core, directory, name](Session& session) {
+		return session.submit(line, core,
+			Cmd::RenameShareFolder{session.resolve(line, directory), name, session.nextRequest()});
+	};
+}
+
 Step parseShareStatus(const Line& line)
 {
 	line.expect(0, 0);
@@ -527,7 +640,8 @@ Step parseExpectFile(const Line& line)
 	throw ScriptError("'" + how + "' is neither same-as nor size");
 }
 
-Step parseWait(const Line& line)
+/* The event a line names and the fields it tests, from 'line.args[0]' on. */
+QuickDC::Cli::Expectation expectation(const Line& line, std::optional<std::chrono::milliseconds>& timeout)
 {
 	line.expect(1, std::numeric_limits<size_t>::max());
 
@@ -538,7 +652,6 @@ Step parseWait(const Line& line)
 	QuickDC::Cli::Expectation expected;
 	expected.core = line.addressed ? line.core : std::string();
 	expected.event = line.args[0];
-	std::optional<std::chrono::milliseconds> timeout;
 
 	for (size_t n = 1; n < line.args.size(); ++n)
 	{
@@ -568,10 +681,28 @@ Step parseWait(const Line& line)
 		else expected.fields.push_back({field, value, differs});
 	}
 
+	return expected;
+}
+
+Step parseWait(const Line& line)
+{
+	std::optional<std::chrono::milliseconds> timeout;
+	QuickDC::Cli::Expectation expected = expectation(line, timeout);
+
 	return [line, expected, timeout](Session& session) mutable {
 		expected.timeout = timeout.value_or(session.options().waitTimeout);
 		return session.wait(line, expected);
 	};
+}
+
+Step parseExpectNo(const Line& line)
+{
+	std::optional<std::chrono::milliseconds> timeout;
+	const QuickDC::Cli::Expectation expected = expectation(line, timeout);
+	if (timeout || !expected.remember.empty())
+		throw ScriptError("expect-no waits for nothing and remembers nothing");
+
+	return [line, expected](Session& session) { return session.expectNone(line, expected); };
 }
 
 Step parseSleep(const Line& line)
@@ -609,6 +740,14 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"set",        "set <application|session> <group> <key> <value...>", parseSet},
 		{"unset",      "unset <application|session> <group> <key>",          parseUnset},
 		{"save",       "save [application|session]",                         parseSave},
+		{"mode",       "mode <automatic|advanced|passive> [upnp] [force-active]", parseMode},
+		{"state",      "state",                                              parseState},
+		{"favourite-add", "favourite-add <url>",                             parseNaming<Cmd::AddFavouriteHub>},
+		{"favourite-remove", "favourite-remove <url>",                       parseNaming<Cmd::RemoveFavouriteHub>},
+		{"recent-forget", "recent-forget <url>",                             parseNaming<Cmd::ForgetRecentHub>},
+		{"recent-clear", "recent-clear",                                     parseBare<Cmd::ClearRecentHubs>},
+		{"completed-forget", "completed-forget <path>",                      parseCompletedForget},
+		{"completed-clear", "completed-clear",                               parseBare<Cmd::ClearCompletedDownloads>},
 		{"open",       "open <url> [as <name>]",                             parseOpen},
 		{"close",      "close <hub>",                                        parseClose},
 		{"connect",    "connect <hub>",                                      parseConnect},
@@ -618,6 +757,9 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"password",   "password <hub> <password>",                          parsePassword},
 		{"file",       "file <path> <size>[k|M|G] [seed]",                   parseFile, true},
 		{"share",      "share <directory> [as <name>]",                      parseShare, true},
+		{"share-add",  "share-add <directory> [as <name>]",                  parseShareAdd},
+		{"share-remove", "share-remove <directory>",                         parseShareRemove},
+		{"share-rename", "share-rename <directory> <name...>",               parseShareRename},
 		{"share-status", "share-status",                                     parseShareStatus},
 		{"search",     "search <word|-word ...> [as <token>]",               parseSearch},
 		{"download",   "download <hub> <name|tth> [from <nick>] [to <path>]", parseDownload},
@@ -627,6 +769,7 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"dequeue",    "dequeue <path> [delete-partial]",                    parseDequeue},
 		{"expect-file", "expect-file <path> same-as <path> | size <size>",   parseExpectFile},
 		{"wait",       "wait <Event> [field=value|field!=value ...] [remember NAME=field ...] [timeout=<N>s|<N>ms]", parseWait},
+		{"expect-no",  "expect-no <Event> [field=value|field!=value ...]",   parseExpectNo},
 		{"sleep",      "sleep <N>s|<N>ms",                                   parseSleep},
 		{"echo",       "echo <text...>",                                     parseEcho},
 		{"quit",       "quit",                                               parseQuit},

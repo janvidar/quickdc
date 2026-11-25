@@ -1,0 +1,35 @@
+# A download that finishes is recorded by the core that fetched it, and can be
+# forgotten again without touching the file.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+preset application Network "Active mode" 1
+@a preset application Network Port ${PORT}
+@b preset application Network Port ${PORT_B}
+@a preset application "Local hub" Enabled 1
+@a preset application User Nickname alice
+@b preset application User Nickname bob
+
+@b file share/small.bin 200k 31
+@b share share as files
+@b wait ShareStatus hashing=false files=1 timeout=30s
+
+@a open adc://127.0.0.1:${PORT} as hub
+@a connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b open adc://127.0.0.1:${PORT} as hub
+@b connect hub
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait UserUpdated hub=hub user.nick=bob
+
+@a search small.bin as s1
+@a wait SearchResult hub=hub hit.token=s1 hit.user.nick=bob
+@a download hub small.bin from bob
+@a wait DownloadCompleted size=204800 timeout=20s remember FILE=filename
+@a wait CompletedDownloads downloads.0.filename=$FILE downloads.0.size=204800 downloads.0.finished!=0
+@b expect-no CompletedDownloads
+
+@a completed-forget downloads/small.bin
+@a wait CompletedDownloads downloads=[]
+@a expect-file downloads/small.bin same-as ../b/share/small.bin

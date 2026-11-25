@@ -143,6 +143,20 @@ const char* name(Ev::AttachmentFailed::Why why)
 	return "?";
 }
 
+const char* name(Ev::ShareFolderRefused::Why why)
+{
+	using W = Ev::ShareFolderRefused::Why;
+	switch (why)
+	{
+		case W::AlreadyShared: return "AlreadyShared";
+		case W::InsideShared:  return "InsideShared";
+		case W::NotADirectory: return "NotADirectory";
+		case W::NotShared:     return "NotShared";
+		case W::NoName:        return "NoName";
+	}
+	return "?";
+}
+
 const char* name(Ev::ReachabilityCheckFailed::Why why)
 {
 	using W = Ev::ReachabilityCheckFailed::Why;
@@ -151,6 +165,17 @@ const char* name(Ev::ReachabilityCheckFailed::Why why)
 		case W::NoConfiguration: return "NoConfiguration";
 		case W::NoServer:        return "NoServer";
 		case W::CheckFailed:     return "CheckFailed";
+	}
+	return "?";
+}
+
+const char* name(QuickDC::NetworkMode mode)
+{
+	switch (mode)
+	{
+		case QuickDC::NetworkMode::Automatic: return "automatic";
+		case QuickDC::NetworkMode::Advanced:  return "advanced";
+		case QuickDC::NetworkMode::Passive:   return "passive";
 	}
 	return "?";
 }
@@ -258,7 +283,23 @@ Value transfer(const Api::Transfer& t)
 		{"finished", t.finished},
 		{"secure", t.secure},
 		{"peerKeyprint", t.peerKeyprint},
+		{"outbound", t.outbound},
 	};
+}
+
+Value shareFolder(const Api::ShareFolder& f)
+{
+	return Object{{"name", f.name}, {"path", f.path}};
+}
+
+Value recentHub(const Api::RecentHub& h)
+{
+	return Object{{"url", h.url}, {"name", h.name}, {"visited", h.visited}};
+}
+
+Value completedDownload(const Api::CompletedDownload& d)
+{
+	return Object{{"filename", d.filename}, {"tth", d.tth}, {"size", d.size}, {"finished", d.finished}};
 }
 
 Value queueItem(const Api::QueueItem& q)
@@ -481,6 +522,16 @@ struct Fields {
 			{"request", e.request}, {"files", e.files}, {"size", e.size}, {"hashing", e.hashing}}};
 	}
 
+	Out operator()(const Ev::ShareFolders& e) const
+	{
+		return {"ShareFolders", {{"request", e.request}, {"folders", each(e.folders, shareFolder)}}};
+	}
+
+	Out operator()(const Ev::ShareFolderRefused& e) const
+	{
+		return {"ShareFolderRefused", {{"request", e.request}, {"path", e.path}, {"why", name(e.why)}}};
+	}
+
 	Out operator()(const Ev::HubOpenFailed& e) const
 	{
 		return {"HubOpenFailed", {{"hub", hub(e.hub)}}};
@@ -662,6 +713,30 @@ struct Fields {
 	Out operator()(const Ev::SettingsSaved& e) const
 	{
 		return {"SettingsSaved", {{"store", name(e.store)}, {"request", e.request}, {"ok", e.ok}}};
+	}
+
+	Out operator()(const Ev::FavouriteHubs& e) const
+	{
+		return {"FavouriteHubs", {{"request", e.request}, {"urls", strings(e.urls)}}};
+	}
+
+	Out operator()(const Ev::RecentHubs& e) const
+	{
+		return {"RecentHubs", {{"request", e.request}, {"hubs", each(e.hubs, recentHub)}}};
+	}
+
+	Out operator()(const Ev::CompletedDownloads& e) const
+	{
+		return {"CompletedDownloads", {
+			{"request", e.request}, {"downloads", each(e.downloads, completedDownload)}}};
+	}
+
+	Out operator()(const Ev::ConnectionMode& e) const
+	{
+		return {"ConnectionMode", {
+			{"request", e.request}, {"mode", name(e.mode)}, {"activeMode", e.activeMode},
+			{"useUpnp", e.useUpnp}, {"forceActive", e.forceActive},
+			{"reachabilityServer", e.reachabilityServer}}};
 	}
 };
 

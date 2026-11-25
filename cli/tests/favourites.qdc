@@ -1,0 +1,18 @@
+# The hubs kept: added however they are spelled, kept once, listed in the order
+# they were added, and let go.
+
+favourite-add example.org
+wait FavouriteHubs urls.0=dchub://example.org:411
+
+favourite-add dchub://example.org:411
+favourite-add adcs://hub.example.org:1511
+wait FavouriteHubs urls.0=dchub://example.org:411 urls.1=adcs://hub.example.org:1511
+expect-no FavouriteHubs urls.1=dchub://example.org:411
+
+state
+wait FavouriteHubs request!=0 urls.1=adcs://hub.example.org:1511
+
+favourite-remove example.org
+wait FavouriteHubs urls.0=adcs://hub.example.org:1511
+favourite-remove adcs://hub.example.org:1511
+wait FavouriteHubs urls=[]

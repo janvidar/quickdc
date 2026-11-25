@@ -73,6 +73,9 @@ class Session {
 		/** Take the oldest unclaimed event that meets 'expected', waiting for one if need be. */
 		Outcome wait(const Line& line, const Expectation& expected);
 
+		/** Fail if any event heard so far, claimed or not, meets 'expected'. */
+		Outcome expectNone(const Line& line, const Expectation& expected);
+
 		/** Say something about the run, which is never mixed into the events. */
 		void note(const std::string& text) const;
 
@@ -136,7 +139,7 @@ class Session {
 
 		void take(const Delivery& delivery);
 		void observe(Hubs& hubs, const QuickDC::Api::Event& event);
-		bool matches(const Heard& heard, const Expectation& expected) const;
+		bool matches(const Heard& heard, const Expectation& expected, bool claimedToo = false) const;
 		bool remember(const Line& line, const Heard& heard, const Expectation& expected);
 		std::string valueOf(const FieldTest& test) const;
 		void print(const std::string& line) const;
