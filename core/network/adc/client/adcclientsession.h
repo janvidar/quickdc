@@ -267,6 +267,11 @@ class ClientSession :
 
 		std::unique_ptr<Samurai::Timer> handshakeDeadline;
 
+		/** Looks every QUICKDC_DOWNLOAD_STALL_SECONDS for data having arrived. */
+		std::unique_ptr<Samurai::Timer> stallCheck;
+		bool receivedSinceCheck = false;
+		void watchForStall();
+
 		/** Tell the peer this connection is for nothing we know of, and hang up. */
 		void refuseUnexpected(const char* quoted);
 

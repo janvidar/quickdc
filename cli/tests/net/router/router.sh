@@ -11,6 +11,16 @@
 #
 # UPNP "on" runs miniupnpd (UPnP IGD, NAT-PMP, PCP) on the lan: what it maps is
 # forwarded through the filter above. Its log is READY_FILE's directory/NAME.upnp.
+#
+# Either address may be empty where that side has no IPv4. From the environment:
+#   WAN6, LAN6  the IPv6 addresses, where the networks have them. IPv6 is routed,
+#               never translated; with NAT other than none, new inbound IPv6 is
+#               dropped as a home router does, unless FW6=open
+#   ROUTES6     "PREFIX via ADDR;..." - the other lans' prefixes, via their routers
+#   LINK        netem options for both directions (e.g. "delay 75ms 5ms loss 2%")
+#   CUT         "BYTES:SECONDS[:reboot]": once BYTES have been forwarded, drop
+#               everything for SECONDS, then restore the link; reboot also
+#               forgets every connection, as a router that restarted would
 
 set -eu
 
@@ -19,14 +29,31 @@ lan_ip="$2"
 nat="$3"
 ready="$4"
 upnp="${5:-off}"
+wan6="${WAN6:-}"
+lan6="${LAN6:-}"
+fw6="${FW6:-closed}"
 
 iface_of() {
-	ip -o -4 addr show | awk -v ip="$1" '{ split($4, a, "/"); if (a[1] == ip) print $2 }'
+	[ -n "$1" ] || return 0
+	ip -o addr show | awk -v ip="$1" '{ split($4, a, "/"); if (a[1] == ip) print $2 }'
 }
 
+# A static IPv6 address is unusable until duplicate address detection is done.
+while ip -6 addr show | grep -q tentative
+do
+	sleep 0.05
+done
+
 wan=$(iface_of "$wan_ip")
+[ -n "$wan" ] || wan=$(iface_of "$wan6")
 lan=$(iface_of "$lan_ip")
-[ -n "$wan" ] && [ -n "$lan" ] || { echo "router: no interface for $wan_ip or $lan_ip" >&2; exit 1; }
+[ -n "$lan" ] || lan=$(iface_of "$lan6")
+[ -n "$wan" ] && [ -n "$lan" ] || { echo "router: no interface for $wan_ip$wan6 or $lan_ip$lan6" >&2; exit 1; }
+
+echo "${ROUTES6:-}" | tr ';' '\n' | while read -r route
+do
+	[ -z "$route" ] || ip -6 route replace $route
+done
 
 case "$nat" in
 home)      masq="masquerade" ;;
@@ -59,6 +86,70 @@ table ip filter {
 	}
 }
 NFT
+fi
+
+if [ -n "$wan6" ] && [ -n "$masq" ]
+then
+	open=
+	[ "$fw6" = open ] && open="iifname \"$wan\" oifname \"$lan\" accept"
+	nft -f - <<NFT
+table ip6 filter {
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+		ct state established,related accept
+		meta l4proto icmpv6 accept
+		iifname "$lan" oifname "$wan" accept
+		$open
+	}
+}
+NFT
+fi
+
+if [ -n "${LINK:-}" ]
+then
+	tc qdisc add dev "$wan" root netem $LINK
+	tc qdisc add dev "$lan" root netem $LINK
+fi
+
+if [ -n "${CUT:-}" ]
+then
+	cut_bytes=${CUT%%:*}
+	cut_seconds=${CUT#*:}
+	cut_reboot=
+	case "$cut_seconds" in
+	*:reboot) cut_seconds=${cut_seconds%:reboot}; cut_reboot=1 ;;
+	esac
+	nft -f - <<NFT
+table inet cut {
+	chain forward {
+		type filter hook forward priority filter - 2; policy accept;
+		counter
+	}
+}
+NFT
+	(
+		until [ "$(nft list chain inet cut forward | awk '/counter/ { print $5 }')" -ge "$cut_bytes" ]
+		do
+			sleep 0.05
+		done
+		for dev in "$wan" "$lan"
+		do
+			tc qdisc replace dev "$dev" root netem loss 100%
+		done
+		echo "cut $(date +%s.%N)" >>"$(dirname "$ready")/$(hostname).link"
+		sleep "$cut_seconds"
+		[ -z "$cut_reboot" ] || conntrack -F 2>/dev/null
+		for dev in "$wan" "$lan"
+		do
+			if [ -n "${LINK:-}" ]
+			then
+				tc qdisc replace dev "$dev" root netem $LINK
+			else
+				tc qdisc del dev "$dev" root
+			fi
+		done
+		echo "restored $(date +%s.%N)" >>"$(dirname "$ready")/$(hostname).link"
+	) &
 fi
 
 if [ "$upnp" = on ]

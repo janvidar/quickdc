@@ -18,6 +18,7 @@
 #include "network/hubmanager.h"
 #include "network/hubsession.h"
 #include "network/keyprint.h"
+#include "network/localaddresses.h"
 #include "network/securitymanager.h"
 #include "network/usermanager.h"
 #include "network/adc/adcbbs.h"
@@ -39,6 +40,11 @@
 #include "network/user.h"
 #include "config/settings.h"
 #include <optional>
+#ifdef _WIN32
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
 #include <string>
 #include <string_view>
 #include <samurai/crypto/digest/tiger.h>
@@ -139,6 +145,22 @@ static bool reachable(QuickDC::Core& core, QuickDC::Preferences* config, bool ip
 	if (!known) return true;
 
 	return known->tcp() != QuickDC::Reachability::State::Unreachable;
+}
+
+/*
+ * The same for the UDP port, which only a measurement can disprove; see
+ * Reachability::udp(). Where it has, a peer told the port would send its search
+ * results into a filter, so the port is not published and the results come
+ * through the hub.
+ */
+static bool reachableByDatagram(QuickDC::Core& core, QuickDC::Preferences* config, bool ipv6)
+{
+	if (QuickDC::networkModeKeysInForce(*config).forceActive) return true;
+
+	const QuickDC::Reachability* known = core.reachabilityFor(ipv6);
+	if (!known) return true;
+
+	return known->udp() != QuickDC::Reachability::State::Unreachable;
 }
 
 /*
@@ -748,7 +770,11 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		? getCore().transfers->freeUploadSlots(QuickDC::Settings::read(*getCore().config, QuickDC::Settings::Slots))
 		: std::nullopt;
 
-	if (user->getAddressIPv4() && user->getPortIPv4() && getCore().server)
+	const bool udp4 = *user->getAddressIPv4() && user->getPortIPv4();
+	const bool udp6 = !udp4 && *user->getAddressIPv6() && user->getPortIPv6()
+		&& getCore().server && getCore().server->listeningUdp(true);
+
+	if ((udp4 || udp6) && getCore().server)
 	{
 		/* Send UDP packet */
 
@@ -763,7 +789,9 @@ void ADC::HubSession::EventSearchReply(QuickDC::Share::SearchReply* reply)
 		Samurai::IO::Buffer buffer;
 		cmd.write(&buffer);
 		Samurai::IO::Net::DatagramPacket packet(&buffer);
-		Samurai::IO::Net::InetSocketAddress peerAddr(user->getAddressIPv4(), user->getPortIPv4(), Samurai::IO::Net::InetAddress::Version::IPv4);
+		Samurai::IO::Net::InetSocketAddress peerAddr = udp4
+			? Samurai::IO::Net::InetSocketAddress(user->getAddressIPv4(), user->getPortIPv4(), Samurai::IO::Net::InetAddress::Version::IPv4)
+			: Samurai::IO::Net::InetSocketAddress(user->getAddressIPv6(), user->getPortIPv6(), Samurai::IO::Net::InetAddress::Version::IPv6);
 		packet.setAddress(&peerAddr);
 		getCore().server->send(&packet);
 
@@ -1030,26 +1058,11 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * granted a different one, and it is the granted one anything can reach.
 	 */
 	QuickDC::Core* core = &getCore();
-	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		QuickDC::networkModeKeysInForce(*config).activeMode,
-		core->server != 0 && core->server->listening(false),
-		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
-		observedAddress,
-		core->peerPort(),
-		core->portforward);
+	const QuickDC::PeerEndpoint endpoint = ownEndpoint();
 
 	QDBG("Active mode %d (server=%p)\n", endpoint.active ? 1 : 0, core->server);
 
-	/*
-	 * The IPv6 endpoint, which no gateway is involved in: the address is the one
-	 * a server outside reported for that family, since there is nothing
-	 * configured to fall back on and no wildcard a hub would fill in.
-	 */
-	const QuickDC::PeerEndpoint endpoint6 = QuickDC::peerEndpoint6(
-		QuickDC::networkModeKeysInForce(*config).activeMode,
-		core->server != 0 && core->server->listening(true),
-		QuickDC::lastDropVerdict(*core, true).publicAddress,
-		core->peerPort());
+	const QuickDC::PeerEndpoint endpoint6 = ownEndpoint6();
 
 	/* Evidence belongs to the endpoint it was gathered for; announcing a different
 	   one discards what was known about the old. */
@@ -1114,9 +1127,10 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 */
 	fields.emplace_back("I4", announcedAddress(endpoint));
 
-	/* Nothing to say for U4 when nobody can connect here, and saying nothing is
-	   also what withdraws a port announced while we still could. */
-	fields.emplace_back("U4", endpoint.active ? std::to_string(endpoint.port) : std::string());
+	/* Nothing to say for U4 when nothing can reach it, and saying nothing is
+	   also what withdraws a port announced while something still could. */
+	const bool udp4 = endpoint.active && reachableByDatagram(getCore(), config, false);
+	fields.emplace_back("U4", udp4 ? std::to_string(endpoint.port) : std::string());
 
 	if (endpoint.active)
 	{
@@ -1138,12 +1152,7 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 		 */
 		if (reachable(getCore(), config, false)) claim(ADC_EXT_TCP4);
 
-		/*
-		 * UDP4 is not withdrawn, because nothing can disprove it: a peer that
-		 * cannot reach this port has no datagram it could send to say so. Claimed
-		 * whenever the port is open, as before.
-		 */
-		claim(ADC_EXT_UDP4);
+		if (udp4) claim(ADC_EXT_UDP4);
 	}
 
 	/*
@@ -1155,13 +1164,13 @@ void ADC::HubSession::collectClientInfo(std::vector<ADC::InfField>& fields)
 	 * empty field is what withdraws a claim made while we did know.
 	 */
 	fields.emplace_back("I6", endpoint6.active ? endpoint6.address : std::string());
-	fields.emplace_back("U6", endpoint6.active ? std::to_string(endpoint6.port)
-	                                           : std::string());
+	const bool udp6 = endpoint6.active && reachableByDatagram(getCore(), config, true);
+	fields.emplace_back("U6", udp6 ? std::to_string(endpoint6.port) : std::string());
 
 	if (endpoint6.active)
 	{
 		if (reachable(getCore(), config, true)) claim(ADC_EXT_TCP6);
-		claim(ADC_EXT_UDP6);
+		if (udp6) claim(ADC_EXT_UDP6);
 	}
 
 	/*
@@ -1345,8 +1354,6 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	if (!user) return;
 	if (!token) return;
 
-	QuickDC::Preferences* config = getCore().config;
-
 	/*
 	 * The same endpoint the INF advertised, rather than the configured port and a
 	 * second opinion about whether we are active.
@@ -1360,26 +1367,10 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 	 * the INF could disagree: a client that told the hub it was passive could still
 	 * answer with a CTM.
 	 */
-	const QuickDC::Core* core = &getCore();
-	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		QuickDC::networkModeKeysInForce(*config).activeMode,
-		core->server != 0 && core->server->listening(false),
-		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
-		observedAddress,
-		core->peerPort(),
-		core->portforward);
+	const uint16_t port = connectablePort();
+	const bool connectable = port != 0;
 
-	/*
-	 * Which protocol to name depends on what the peer said it speaks, and on who is
-	 * going to dial whom:
-	 *
-	 *  - CTM tells the peer to connect to us, so we have to be able to accept
-	 *    whatever we name - see canAcceptTls().
-	 *
-	 *  - RCM asks the peer to send us a CTM, so we dial out, and outbound TLS is
-	 *    handled by ADC::ClientSession, which needs no certificate of our own.
-	 */
-	const char* protocol = peerConnectProtocol(user, endpoint.active);
+	const char* protocol = peerConnectProtocol(user, connectable);
 
 	if (!protocol)
 	{
@@ -1402,12 +1393,12 @@ void ADC::HubSession::sendConnectionRequest(const QuickDC::User* user, const cha
 		return;
 	}
 
-	if (endpoint.active)
+	if (connectable)
 	{
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), localSid(), user->getID());
 		cmd->addArgument(protocol);
-		cmd->addArgument(std::to_string(endpoint.port).c_str());
+		cmd->addArgument(std::to_string(port).c_str());
 		cmd->addArgument(token);
 		send(cmd);
 
@@ -2324,10 +2315,10 @@ void ADC::HubSession::onActiveConnect(const char* from, const char* proto, uint1
 	const QuickDC::User* user = users->getUser(from);
 	if (!user) return;
 
-	const char* ip = user->getAddressIPv4();
-	QDBG("Requested to connect to '%s' at %s using '%s' on port %d (token=%s)", from, ip, proto, port, token);
+	const std::string ip = addressToDial(user);
+	QDBG("Requested to connect to '%s' at %s using '%s' on port %d (token=%s)", from, ip.c_str(), proto, port, token);
 
-	if (!ip)
+	if (ip.empty())
 	{
 		QERR("No IP to connect to");
 		sendPeerError(from, "242", "No IP given in INF", token, proto);
@@ -2444,6 +2435,76 @@ uint16_t ADC::HubSession::privateEndpointPort() const
 	if (socket->isProxied()) return 0;
 
 	return socket->getLocalPort();
+}
+
+
+QuickDC::PeerEndpoint ADC::HubSession::ownEndpoint() const
+{
+	QuickDC::Core* core = &getCore();
+	QuickDC::Preferences* config = core->config;
+	return QuickDC::peerEndpoint(
+		QuickDC::networkModeKeysInForce(*config).activeMode,
+		core->server != 0 && core->server->listening(false),
+		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
+		observedAddress,
+		core->peerPort(),
+		core->portforward);
+}
+
+
+/* Where this hub connection leaves from, where that is a global IPv6 address. */
+static std::string globalIPv6Of(const Samurai::IO::Net::Socket* socket)
+{
+	if (!socket || socket->isProxied()) return std::string();
+
+	const Samurai::IO::Net::InetAddress* local = socket->getLocalAddress();
+	if (!local || local->getType() != Samurai::IO::Net::InetAddress::Version::IPv6)
+		return std::string();
+
+	const std::string text = local->toString();
+	in6_addr raw;
+	if (inet_pton(AF_INET6, text.c_str(), &raw) != 1) return std::string();
+	return QuickDC::isGlobalIPv6(raw.s6_addr) ? text : std::string();
+}
+
+
+QuickDC::PeerEndpoint ADC::HubSession::ownEndpoint6() const
+{
+	QuickDC::Core* core = &getCore();
+	std::string address = QuickDC::lastDropVerdict(*core, true).publicAddress;
+	if (address.empty()) address = globalIPv6Of(socket.get());
+
+	return QuickDC::peerEndpoint6(
+		QuickDC::networkModeKeysInForce(*core->config).activeMode,
+		core->server != 0 && core->server->listening(true),
+		address,
+		core->peerPort());
+}
+
+
+uint16_t ADC::HubSession::connectablePort() const
+{
+	QuickDC::Core& core = getCore();
+
+	const QuickDC::PeerEndpoint endpoint = ownEndpoint();
+	if (endpoint.active && reachable(core, core.config, false)) return endpoint.port;
+
+	const QuickDC::PeerEndpoint endpoint6 = ownEndpoint6();
+	if (endpoint6.active && reachable(core, core.config, true)) return endpoint6.port;
+
+	return 0;
+}
+
+
+std::string ADC::HubSession::addressToDial(const QuickDC::User* user) const
+{
+	const std::string v4 = user->getAddressIPv4();
+	const std::string v6 = user->getAddressIPv6();
+
+	const bool reach6 = !globalIPv6Of(socket.get()).empty() || QuickDC::hostHasGlobalIPv6();
+	if (!v6.empty() && reach6 && (v4.empty() || user->supports(ADC_EXT_TCP6))) return v6;
+
+	return v4;
 }
 
 
@@ -2592,7 +2653,6 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 
 	QDBG("Requested to setup connection to '%s' using '%s' (token=%s)", from, proto, token);
 
-	QuickDC::Preferences* config = getCore().config;
 
 	/*
 	 * Answering an RCM means telling the peer to connect to us, so as in
@@ -2655,20 +2715,13 @@ void ADC::HubSession::onPassiveConnect(const char* from, const char* proto, cons
 
 	/* The endpoint the INF advertised, for the same reason as in
 	   sendConnectionRequest(): a gateway may have granted another port. */
-	const QuickDC::Core* core = &getCore();
-	const QuickDC::PeerEndpoint endpoint = QuickDC::peerEndpoint(
-		QuickDC::networkModeKeysInForce(*config).activeMode,
-		core->server != 0 && core->server->listening(false),
-		QuickDC::Settings::read(*config, QuickDC::Settings::Address),
-		observedAddress,
-		core->peerPort(),
-		core->portforward);
+	const uint16_t port = connectablePort();
 
-	if (endpoint.active) {
+	if (port) {
 		QDBG("Requesting active connection to user: %s", user->getNick());
 		ADC::Command* cmd = new ADC::Command(FOURCC('D','C','T','M'), localSid(), user->getID());
 		cmd->addArgument(protocol);
-		cmd->addArgument(std::to_string(endpoint.port).c_str());
+		cmd->addArgument(std::to_string(port).c_str());
 		if (token) cmd->addArgument(token);
 
 		/* Add to securitymanager */

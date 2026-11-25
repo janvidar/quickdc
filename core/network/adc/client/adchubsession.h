@@ -316,6 +316,30 @@ class HubSession :
 		 */
 		uint16_t privateEndpointPort() const;
 
+		/** Where peers are told to reach this client over IPv4. */
+		QuickDC::PeerEndpoint ownEndpoint() const;
+
+		/**
+		 * The same over IPv6. The address is the one the reachability server saw,
+		 * or until it has said, this hub connection's own where that is a global
+		 * IPv6 address: nothing translates IPv6, so that is where peers reach us.
+		 */
+		QuickDC::PeerEndpoint ownEndpoint6() const;
+
+		/**
+		 * The port a CTM names, which is the IPv4 endpoint's or, where only IPv6
+		 * gets in, the IPv6 one's. Zero where the evidence says neither does, so
+		 * the peer is asked to let us dial instead.
+		 */
+		uint16_t connectablePort() const;
+
+		/**
+		 * Where to dial 'user': its IPv6 address where it says a connection gets
+		 * through there (or has no IPv4 one) and this host can reach IPv6, else
+		 * its IPv4 one. Empty where the hub passed on neither.
+		 */
+		std::string addressToDial(const QuickDC::User* user) const;
+
 		/**
 		 * Dial a peer from this hub connection's own local port.
 		 *

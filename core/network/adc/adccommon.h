@@ -224,6 +224,14 @@ inline std::string adc_status_code(int severity, int code)
  */
 #define QUICKDC_TRAVERSAL_SECONDS       10
 
+/*
+ * How long a download may receive nothing before the connection is given up and
+ * the queue asked to try again. A connection whose path went away (a router that
+ * restarted and forgot its NAT mapping) never fails by itself: the receiving end
+ * sends nothing, so nothing tells it the sender's packets are being dropped.
+ */
+#define QUICKDC_DOWNLOAD_STALL_SECONDS  30
+
 namespace ADC {
 
 /*

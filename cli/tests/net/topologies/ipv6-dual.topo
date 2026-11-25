@@ -1,0 +1,15 @@
+# Dual stack: a hub and a reachability server on the internet; a behind a home
+# router whose IPv6 firewall lets inbound through, b behind one that drops it
+# (both NAT IPv4 and drop inbound there), and c on a lan with no IPv6 at all.
+net wan ipv6=on
+net home1 ipv6=on
+net home2 ipv6=on
+net home3
+node r1   router wan.11 home1.254 nat=home fw6=open
+node r2   router wan.12 home2.254 nat=home
+node r3   router wan.13 home3.254 nat=home
+node drop drop wan.40
+node hub  public wan.20
+node a    client home1.10
+node b    client home2.10
+node c    client home3.10

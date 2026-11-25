@@ -1,0 +1,56 @@
+# Each family measured on its own: a is open on IPv6 and filtered on IPv4, b
+# filtered on both, and c - with no IPv6 address - never asks about IPv6. Over a
+# hub reached by IPv6 (which passes on I6 and not I4) a and b transfer both
+# ways: b dials a, and a, measured unreachable on IPv4 only, still names its
+# port, which b dials over IPv6.
+
+preset application Network Mode advanced
+preset application Network Port 4111
+preset application Network Bind 0.0.0.0
+preset application Network "Active mode" 1
+preset application Network "Reachability server" ${DROP}
+@hub preset application "Local hub" Enabled 1
+@hub preset application User Nickname hubby
+@a preset application User Nickname alice
+@b preset application User Nickname bob
+
+@a file share/a.bin 1M 31
+@a share share as files
+@b file share/b.bin 1M 32
+@b share share as files
+@a wait ShareStatus hashing=false files=1 timeout=30s
+@b wait ShareStatus hashing=false files=1 timeout=30s
+
+@a wait ReachabilityMeasured verdict.ipv6=false verdict.tcp=filtered verdict.mode=Passive verdict.publicAddress=${IP_r1} timeout=30s
+@a wait ReachabilityMeasured verdict.ipv6=true verdict.tcp=open verdict.udp=open verdict.mode=Active verdict.publicAddress=${IP6_a} timeout=30s
+@b wait ReachabilityMeasured verdict.ipv6=false verdict.tcp=filtered verdict.mode=Passive timeout=30s
+@b wait ReachabilityMeasured verdict.ipv6=true verdict.tcp=filtered verdict.udp=no_response verdict.mode=Passive verdict.publicAddress=${IP6_b} timeout=30s
+@c wait ReachabilityMeasured verdict.ipv6=false verdict.tcp=filtered verdict.publicAddress=${IP_r3} timeout=30s
+@c measure
+@c wait ReachabilityMeasured verdict.ipv6=false timeout=30s
+@c expect-no ReachabilityCheckStarted ipv6=true
+@c expect-no ReachabilityMeasured verdict.ipv6=true
+
+@hub open adc://[${IP6_hub}]:4111 as hub
+@hub connect hub
+@hub wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a open adc://[${IP6_hub}]:4111 as hub
+@a connect hub
+@b open adc://[${IP6_hub}]:4111 as hub
+@b connect hub
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait UserUpdated hub=hub user.nick=bob user.addressIPv6=${IP6_b} user.addressIPv4=""
+@b wait UserUpdated hub=hub user.nick=alice user.addressIPv6=${IP6_a} user.addressIPv4=""
+
+@b search a.bin as s1
+@b wait SearchResult hub=hub search=$s1 hit.user.nick=alice
+@b download hub a.bin from alice
+@b wait DownloadCompleted size=1048576 timeout=30s
+@b expect-file downloads/a.bin same-as ../a/share/a.bin
+
+@a search b.bin as s2
+@a wait SearchResult hub=hub search=$s2 hit.user.nick=bob
+@a download hub b.bin from bob
+@a wait DownloadCompleted size=1048576 timeout=30s
+@a expect-file downloads/b.bin same-as ../b/share/b.bin

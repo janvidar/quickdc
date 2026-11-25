@@ -1,0 +1,9 @@
+# A hub and an active client on the internet; a behind a home router on a bad
+# link: 75 ms each way (150 ms round trip) with 10 ms of jitter, which reorders,
+# and 2% loss each way.
+net wan
+net home1
+node r1  router wan.11 home1.254 nat=home link=delay=75ms/10ms,loss=2%
+node hub public wan.20
+node w   public wan.30
+node a   client home1.10

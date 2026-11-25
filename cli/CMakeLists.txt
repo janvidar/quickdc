@@ -143,7 +143,12 @@ if(QUICKDC_BUILD_TESTS)
             "traversal_symmetric|public-hub-symmetric|traversal-fails|"
             "traversal_one_symmetric|public-hub-one-symmetric|traversal-fails|"
             "reach_upnp|upnp|reach-upnp|"
-            "reach_occupied|occupied|reach-occupied|")
+            "reach_occupied|occupied|reach-occupied|"
+            "ipv6_dual_stack|ipv6-dual|ipv6-dual|"
+            "ipv6_only|ipv6-only|ipv6-only|"
+            "lossy_link|lossy|lossy|"
+            "link_cut|link-cut|link-cut|"
+            "router_restart|link-reboot|link-cut|")
         string(REPLACE "|" ";" parts "${spec}")
         list(GET parts 0 test)
         list(GET parts 1 topology)

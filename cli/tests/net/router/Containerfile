@@ -4,5 +4,5 @@
 FROM docker.io/library/ubuntu:26.04
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        nftables iproute2 miniupnpd-nftables openssl \
+        nftables iproute2 miniupnpd-nftables openssl conntrack \
  && rm -rf /var/lib/apt/lists/*

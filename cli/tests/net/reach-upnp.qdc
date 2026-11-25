@@ -38,10 +38,6 @@ preset application Network "Reachability server" ${DROP}
 @b wait ReachabilityMeasured verdict.tcp=filtered verdict.port=4222 timeout=30s
 @a wait ReachabilityMeasured verdict.tcp=open verdict.udp=open verdict.mode=Active verdict.publicAddress=${IP_r1} verdict.port=4111 timeout=30s
 
-# Advanced mode advertises what it is told to, measured or not; b says passive.
-@b mode passive
-@b wait ConnectionMode activeMode=false
-
 @hub open adc://${IP_hub}:4111 as hub
 @hub connect hub
 @hub wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
@@ -53,6 +49,8 @@ preset application Network "Reachability server" ${DROP}
 @b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
 
 @b wait UserUpdated hub=hub user.nick=alice user.addressIPv4=${IP_r1}
+# b is set active but measured passive: it publishes no UDP port, so a's
+# result comes through the hub rather than into r2's filter.
 @b search a.bin as s1
 @b wait SearchResult hub=hub search=$s1 hit.user.nick=alice
 @b download hub a.bin from alice

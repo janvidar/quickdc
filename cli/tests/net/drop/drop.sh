@@ -1,16 +1,18 @@
 #!/bin/sh
 #
-# Run DROP's own server, dropd, on a test wan: drop.sh DROPD IP DIR
+# Run DROP's own server, dropd, on a test wan: drop.sh DROPD DIR IP [IP6]
 #
 # Makes a CA and a certificate for drop.test, ipv4.drop.test and ipv6.drop.test
-# in DIR (DIR/ca.pem is what every qdc trusts), configures dropd for IP with
-# STUN on 3478 and short probe timeouts, and writes DIR/ready once it listens.
+# in DIR (DIR/ca.pem is what every qdc trusts), configures dropd for IP (and
+# IP6) with STUN on 3478 and short probe timeouts, and writes DIR/ready once it
+# listens.
 
 set -eu
 
 dropd="$1"
-ip="$2"
-dir="$3"
+dir="$2"
+ip="$3"
+ip6="${4:-}"
 cd "$dir"
 
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout ca.key -out ca.pem \
@@ -51,6 +53,8 @@ dir = "$dir/state"
 primary_bind = "$ip"
 primary_advertise = "$ip"
 primary_port = 3478
+
+$([ -z "$ip6" ] || printf '[stun.ipv6]\nprimary_bind = "%s"\nprimary_advertise = "%s"\nprimary_port = 3478\n' "$ip6" "$ip6")
 
 [development]
 allow_unroutable_advertise = true

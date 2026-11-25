@@ -2696,6 +2696,46 @@ EXO_TEST(hubsession_an_active_client_asks_the_peer_to_connect_to_it,
 });
 
 /*
+ * Unless a measurement found the port filtered: the peer is asked to have us dial
+ * it instead, which is what can still work.
+ */
+EXO_TEST(hubsession_an_active_client_measured_unreachable_asks_to_dial_instead,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	EXO_ASSERT(s.login());
+
+	ActiveCore active;
+	EXO_ASSERT(announcePeer(s, "BBBB"));
+
+	const QuickDC::User* peer = s.session->getUser("BBBB");
+	EXO_ASSERT_NOT_NULL(peer);
+
+	/* A measurement is about an advertised endpoint, so one is advertised first. */
+	QuickDC::Reachability* known = core->reachability;
+	known->forget();
+	s.session->forgetAnnouncedInfo();
+	s.session->sendClientInfo();
+	known->measured(QuickDC::Reachability::State::Unreachable,
+	                QuickDC::Reachability::State::Unreachable, time(0));
+
+	s.hub.drain();
+	s.hub.received.clear();
+
+	s.session->sendConnectionRequest(peer, "job1");
+
+	std::string line;
+	const bool sent = s.hub.nextLine(line);
+	known->forget();
+
+	EXO_ASSERT(sent);
+	EXO_ASSERT(line.compare(0, 5, "DRCM ") == 0);
+	EXO_ASSERT(line.find("job1") != std::string::npos);
+	return 1;
+});
+
+/*
  * And the port it names is the one the gateway granted, not the one configured.
  *
  * This is the case the bug lived in and the only one that can tell the two apart:
@@ -3054,6 +3094,38 @@ EXO_TEST(hubsession_the_tcp4_claim_is_withdrawn_once_peers_report_failing,
 
 	/* Still an endpoint to publish: passive for connections, not absent. */
 	EXO_ASSERT(hasField(inf, "I4"));
+	return 1;
+});
+
+/*
+ * A measurement that found the UDP port filtered withdraws it: a peer told U4
+ * sends its search results there, and they are lost.
+ */
+EXO_TEST(hubsession_a_udp_port_measured_unreachable_is_not_published,
+{
+	Session s;
+	if (!s.hub.listening) EXO_SKIP("could not listen on a loopback port");
+	EXO_ASSERT(s.ready);
+	ActiveCore active;
+	EXO_ASSERT(s.login());
+
+	QuickDC::Reachability* known = core->reachability;
+	known->forget();
+
+	std::string inf;
+	EXO_ASSERT(announcedSupport(s, inf));
+	EXO_ASSERT(hasField(inf, "U4"));
+
+	known->measured(QuickDC::Reachability::State::Unreachable,
+	                QuickDC::Reachability::State::Unreachable, time(0));
+
+	EXO_ASSERT(announcedSupport(s, inf));
+	EXO_ASSERT(!hasField(inf, "U4"));
+	EXO_ASSERT(!claims(inf, "UDP4"));
+	EXO_ASSERT(!claims(inf, "TCP4"));
+	EXO_ASSERT(hasField(inf, "I4"));
+
+	known->forget();
 	return 1;
 });
 

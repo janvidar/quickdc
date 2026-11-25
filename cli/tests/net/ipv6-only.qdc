@@ -1,0 +1,46 @@
+# A client with no IPv4 at all logs in to a hub over IPv6, chats, and transfers
+# both ways with a dual-stack client there; no reachability server, so a's
+# address is its own (nothing translates IPv6).
+
+preset application Network Mode advanced
+preset application Network Port 4111
+preset application Network Bind 0.0.0.0
+preset application Network "Active mode" 1
+@hub preset application "Local hub" Enabled 1
+@hub preset application User Nickname hubby
+@w preset application User Nickname wally
+@a preset application User Nickname alice
+
+@a file share/a.bin 1M 41
+@a share share as files
+@w file share/w.bin 1M 42
+@w share share as files
+@a wait ShareStatus hashing=false files=1 timeout=30s
+@w wait ShareStatus hashing=false files=1 timeout=30s
+
+@hub open adc://[${IP6_hub}]:4111 as hub
+@hub connect hub
+@hub wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@w open adc://[${IP6_hub}]:4111 as hub
+@w connect hub
+@a open adc://[${IP6_hub}]:4111 as hub
+@a connect hub
+@w wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@w wait UserUpdated hub=hub user.nick=alice user.addressIPv6=${IP6_a}
+@a wait UserUpdated hub=hub user.nick=wally user.addressIPv6=${IP6_w}
+
+@a chat hub hello over six
+@w wait ChatReceived hub=hub line.text="hello over six" line.from.nick=alice timeout=10s
+
+@w search a.bin as s1
+@w wait SearchResult hub=hub search=$s1 hit.user.nick=alice
+@w download hub a.bin from alice
+@w wait DownloadCompleted size=1048576 timeout=30s
+@w expect-file downloads/a.bin same-as ../a/share/a.bin
+
+@a search w.bin as s2
+@a wait SearchResult hub=hub search=$s2 hit.user.nick=wally
+@a download hub w.bin from wally
+@a wait DownloadCompleted size=1048576 timeout=30s
+@a expect-file downloads/w.bin same-as ../w/share/w.bin

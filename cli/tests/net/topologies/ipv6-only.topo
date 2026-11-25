@@ -1,0 +1,8 @@
+# A lan with no IPv4, behind a router that lets inbound IPv6 through; a
+# dual-stack hub and client on the internet.
+net wan ipv6=on
+net home1 ipv6=only
+node r1  router wan.11 home1.254 nat=home fw6=open
+node hub public wan.20
+node w   public wan.30
+node a   client home1.10

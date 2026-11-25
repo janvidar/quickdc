@@ -1,0 +1,38 @@
+# a downloads from w over a link that goes dead partway through and comes back
+# 40 s later: the transfer recovers and the file arrives byte-identical.
+
+preset application Network Mode advanced
+preset application Network Bind6 ""
+preset application Network Port 4111
+@hub preset application Network Bind ${IP_hub}
+@hub preset application "Local hub" Enabled 1
+@hub preset application User Nickname hubby
+@w preset application Network Bind ${IP_w}
+@w preset application Network "Active mode" 1
+@w preset application User Nickname wally
+@a preset application Network Bind 0.0.0.0
+@a preset application Network Mode passive
+@a preset application User Nickname alice
+
+@w file share/w.bin 8M 52
+@w share share as files
+@w wait ShareStatus hashing=false files=1 timeout=30s
+
+@hub open adc://${IP_hub}:4111 as hub
+@hub connect hub
+@hub wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@w open adc://${IP_hub}:4111 as hub
+@w connect hub
+@a open adc://${IP_hub}:4111 as hub
+@a connect hub
+@w wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
+@w wait UserUpdated hub=hub user.nick=alice user.addressIPv4=${IP_r1}
+@a wait UserUpdated hub=hub user.nick=wally
+
+@a search w.bin as s1
+@a wait SearchResult hub=hub search=$s1 hit.user.nick=wally timeout=20s
+@a download hub w.bin from wally
+@a wait DownloadCompleted size=8388608 timeout=150s
+@a expect-file downloads/w.bin same-as ../w/share/w.bin
+

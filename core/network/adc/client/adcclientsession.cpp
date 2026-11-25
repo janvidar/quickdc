@@ -80,6 +80,7 @@ ADC::ClientSession::~ClientSession()
 {
 	handshakeDeadline.reset();
 	redial.reset();
+	stallCheck.reset();
 	releaseTransfer();
 	discardLeafPart();
 	delete proxy;
@@ -282,11 +283,33 @@ void ADC::ClientSession::setHandshakeDeadline(std::chrono::milliseconds within)
 	handshakeDeadline = std::make_unique<Samurai::Timer>(getCore().loop(), this, within, true);
 }
 
+void ADC::ClientSession::watchForStall()
+{
+	receivedSinceCheck = false;
+	if (!stallCheck)
+		stallCheck = std::make_unique<Samurai::Timer>(getCore().loop(), this,
+			std::chrono::seconds(QUICKDC_DOWNLOAD_STALL_SECONDS), false);
+}
+
 void ADC::ClientSession::EventTimeout(Samurai::Timer* timer)
 {
 	if (timer == redial.get())
 	{
 		redialTraversal();
+		return;
+	}
+
+	if (timer == stallCheck.get())
+	{
+		if (!transfer || !transfer->isDownload() || receivedSinceCheck)
+		{
+			receivedSinceCheck = false;
+			return;
+		}
+
+		QERR("Nothing received for %d seconds; giving the download up to be tried again",
+			QUICKDC_DOWNLOAD_STALL_SECONDS);
+		socket->disconnect();
 		return;
 	}
 
@@ -998,6 +1021,7 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 
 		QuickDC::Download* download = new QuickDC::Download(xfrmgr, this, proxy->socket, file, 0, length);
 		transfer = download;
+		watchForStall();
 		state = StateData;
 		proxy->handOverTo(download);
 		return;
@@ -1033,6 +1057,7 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 
 		QuickDC::Download* download = new QuickDC::Download(xfrmgr, this, proxy->socket, file, 0, length);
 		transfer = download;
+		watchForStall();
 		state = StateData;
 		proxy->handOverTo(download);
 		return;
@@ -1079,6 +1104,7 @@ void ADC::ClientSession::onSND(const char* filename, uint32_t type, uint64_t off
 
 	QuickDC::Download* download = new QuickDC::Download(xfrmgr, this, proxy->socket, file, offset, length);
 	transfer = download;
+	watchForStall();
 	state = StateData;
 	proxy->handOverTo(download);
 }
@@ -1208,6 +1234,7 @@ void ADC::ClientSession::EventDataAvailable(const Samurai::IO::Net::Socket*)
 {
 	if (transfer && transfer->isDownload())
 	{
+		receivedSinceCheck = true;
 		transfer->exec();
 	}
 	else

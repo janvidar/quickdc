@@ -1,0 +1,9 @@
+# As public-hub-two-lans' first half, with a's link slowed to 4 Mbit/s so a
+# transfer takes a while, and cut for good measure once 1.5 MB have crossed it:
+# nothing gets through for 40 s, then everything does again.
+net wan
+net home1
+node r1  router wan.11 home1.254 nat=home link=rate=4mbit cut=1500000:40
+node hub public wan.20
+node w   public wan.30
+node a   client home1.10
