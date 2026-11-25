@@ -49,7 +49,8 @@
 #define QHUB(format, ...)  do { QuickDC_Hub(__PRETTY_FUNCTION__, __FILE__, __LINE__, format __VA_OPT__(,) __VA_ARGS__); } while(0)
 
 #undef QDBG_INIT
-#define QDBG_INIT do { QuickDC_Debug_Init(); } while(0)
+#define QDBG_INIT do { QuickDC_Debug_Init(nullptr); } while(0)
+#define QDBG_INIT_AT(home) do { QuickDC_Debug_Init(home); } while(0)
 
 #undef QDBG_FINI
 #define QDBG_FINI do { QuickDC_Debug_Fini(); } while(0)
@@ -61,7 +62,8 @@
  * in core/ and nothing covers the logging, so the check has to come from the
  * compiler.
  */
-void QuickDC_Debug_Init();
+/** Opened by the first core and closed by the last; a home of its own (not null) keeps them in home/debug. */
+void QuickDC_Debug_Init(const char* home);
 void QuickDC_Debug_Fini();
 
 void QuickDC_Debug(const char* func, const char* file, int line, const char *format, ...) QUICKDC_PRINTF_LIKE(4, 5);
@@ -92,6 +94,7 @@ void QuickDC_Hub(const char* func, const char* file, int line, const char *forma
 
 #undef QDBG_INIT
 #define QDBG_INIT do { } while(0)
+#define QDBG_INIT_AT(home) do { (void) (home); } while(0)
 
 #undef QDBG_FINI
 #define QDBG_FINI do { } while(0)

@@ -10,6 +10,8 @@
  * - so a build that did not ask for tracing carries neither these functions nor
  * the log files they open.
  */
+#include <mutex>
+#include <string>
 #include "debug/dbg.h"
 
 #ifdef DEBUG
@@ -21,10 +23,6 @@
 #include <samurai/debug/dbg.h>
 #include <samurai/io/file.h>
 
-#define DUMP_FILE_NETWORK "~/.quickdc/debug/network.log"
-#define DUMP_FILE_SEARCH  "~/.quickdc/debug/search.log"
-#define DUMP_FILE_DEBUG   "~/.quickdc/debug/debug.log"
-#define DUMP_FILE_HUB     "~/.quickdc/debug/hub.log"
 
 #define PREFIX "../"
 
@@ -44,39 +42,54 @@ static Samurai::IO::File* quickdc_dump_hub;
 
 static bool g_debug_stderr = false;
 
-void QuickDC_Debug_Init() {
+/*
+ * The logs are the process's, written by every core's thread: opened by the first
+ * core and closed by the last, with every write under the lock.
+ */
+static std::mutex quickdc_dump_lock;
+static int quickdc_dump_users = 0;
+
+void QuickDC_Debug_Init(const char* home) {
+	std::lock_guard<std::mutex> guard(quickdc_dump_lock);
+	if (quickdc_dump_users++ > 0) return;
+
 	fprintf(stderr, "%s starting up...\n", PRODUCT " " VERSION " (build " BUILD ") - debug code enabled");
-	
-	Samurai::IO::File::mkdir("~/.quickdc",       0700);
-	Samurai::IO::File::mkdir("~/.quickdc/debug",   0700);
-	
+
+	const bool own = home && *home;
+	const std::string dir = own ? std::string(home) + "/debug" : "~/.quickdc/debug";
+	if (!own) Samurai::IO::File::mkdir("~/.quickdc", 0700);
+	Samurai::IO::File::mkdir(dir.c_str(), 0700);
+
 	if (getenv("QUICKDC_DEBUG"))
 	{
 		g_debug_stderr = true;
 		fprintf(stderr, "    (dumping debug messages to stderr)\n");
 	}
-	
-	quickdc_dump_net = new Samurai::IO::File(DUMP_FILE_NETWORK);
-	quickdc_dump_sch = new Samurai::IO::File(DUMP_FILE_SEARCH);
-	quickdc_dump_dbg = new Samurai::IO::File(DUMP_FILE_DEBUG);
-	quickdc_dump_hub = new Samurai::IO::File(DUMP_FILE_HUB);
+
+	quickdc_dump_net = new Samurai::IO::File(dir + "/network.log");
+	quickdc_dump_sch = new Samurai::IO::File(dir + "/search.log");
+	quickdc_dump_dbg = new Samurai::IO::File(dir + "/debug.log");
+	quickdc_dump_hub = new Samurai::IO::File(dir + "/hub.log");
 	quickdc_dump_net->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
 	quickdc_dump_sch->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Append);
 	quickdc_dump_dbg->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Truncate);
 	quickdc_dump_hub->open(Samurai::IO::File::Mode::Write | Samurai::IO::File::Mode::Append);
 
 	/*
-	 * Samurai keeps its own set of sinks under ~/.samurai/debug, and each of its
-	 * log functions returns without writing until they are open. Nothing else
-	 * opens them, so a QuickDC process that did not do this here would drop
-	 * everything the socket, TLS and event layers trace - which is the half of a
-	 * disconnect that the protocol layer above cannot see. Its stderr flag is
-	 * read separately, from SAMURAI_DEBUG.
+	 * Samurai keeps its own set of sinks, and each of its log functions returns
+	 * without writing until they are open. Nothing else opens them, so a QuickDC
+	 * process that did not do this here would drop everything the socket, TLS and
+	 * event layers trace - which is the half of a disconnect that the protocol
+	 * layer above cannot see. Its stderr flag is read separately, from
+	 * SAMURAI_DEBUG.
 	 */
-	samurai_debug_init();
+	samurai_debug_init(own ? (dir + "/samurai").c_str() : nullptr);
 }
 
 void QuickDC_Debug_Fini() {
+	std::lock_guard<std::mutex> guard(quickdc_dump_lock);
+	if (quickdc_dump_users == 0 || --quickdc_dump_users > 0) return;
+
 	samurai_debug_fini();
 
 	delete quickdc_dump_sch; quickdc_dump_sch = 0;
@@ -86,6 +99,7 @@ void QuickDC_Debug_Fini() {
 }
 
 void QuickDC_Debug(const char* /*func*/, const char* file, int line, const char *format, ...) {
+	std::lock_guard<std::mutex> guard(quickdc_dump_lock);
 	char logmsg[1024];
 	char location[1024];
 	va_list args;
@@ -112,6 +126,7 @@ void QuickDC_Debug(const char* /*func*/, const char* file, int line, const char 
 }
 
 void QuickDC_Error(const char* /*func*/, const char* file, int line, const char *format, ...) {
+	std::lock_guard<std::mutex> guard(quickdc_dump_lock);
 	char logmsg[1024];
 	char location[1024];
 	va_list args;
@@ -138,6 +153,7 @@ void QuickDC_Error(const char* /*func*/, const char* file, int line, const char 
 }
 
 void QuickDC_Net(const char*, const char* , int, const char *format, ...) {
+	std::lock_guard<std::mutex> guard(quickdc_dump_lock);
 	if (!quickdc_dump_net) return;
 	
 	char logmsg[1024];
@@ -164,6 +180,7 @@ void QuickDC_Net(const char*, const char* , int, const char *format, ...) {
 }
 
 void QuickDC_Search(const char*, const char* , int, const char *format, ...) {
+	std::lock_guard<std::mutex> guard(quickdc_dump_lock);
 	if (!quickdc_dump_sch) return;
 	
 	char logmsg[1024];
@@ -191,6 +208,7 @@ void QuickDC_Search(const char*, const char* , int, const char *format, ...) {
 }
 
 void QuickDC_Hub(const char*, const char* , int, const char *format, ...) {
+	std::lock_guard<std::mutex> guard(quickdc_dump_lock);
 	if (!quickdc_dump_hub) return;
 	
 	char logmsg[1024];

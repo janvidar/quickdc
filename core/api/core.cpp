@@ -658,7 +658,7 @@ QuickDC::Core::Core() : Core(Home{QUICKDC_HOME, {}, {}})
 
 QuickDC::Core::Core(const Home& home)
 {
-	QDBG_INIT;
+	QDBG_INIT_AT(home.directory == QUICKDC_HOME ? nullptr : home.directory.c_str());
 
 	startup = time(0);
 
