@@ -4,6 +4,7 @@
  */
 
 #include "api/service.h"
+#include "config/settingskeeper.h"
 #include "api/core.h"
 #include "api/dropverdict.h"
 #include "api/networkmode.h"
@@ -570,6 +571,13 @@ QuickDC::Api::Service::Service(Core& core_)
 {
 	if (core.shares) core.shares->setHashedCallback([this] { publish(shareStatus(0)); });
 
+	/* A write the core made of its own accord is answered as request 0. */
+	if (core.settingsKeeper)
+		core.settingsKeeper->written = [this](const Preferences& store, bool ok) {
+			publish(Events::SettingsSaved{&store == core.session ? SettingsStore::Session
+			                                                     : SettingsStore::Application, 0, ok});
+		};
+
 	if (core.config)
 	{
 		favourites = std::make_unique<QuickDC::FavouriteHubs>(*core.config);
@@ -592,6 +600,8 @@ QuickDC::Api::Service::Service(Core& core_)
 
 QuickDC::Api::Service::~Service()
 {
+	if (core.settingsKeeper) core.settingsKeeper->written = nullptr;
+
 	/* An attachment still being hashed would otherwise report to this. */
 	if (core.shares)
 	{

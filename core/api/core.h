@@ -64,6 +64,7 @@ class PortForward;
 class Reachability;
 class SearchTokens;
 class Preferences;
+class SettingsKeeper;
 class Server;
 class ShareManager;
 class TransferManager;
@@ -177,6 +178,9 @@ class Core {
 		 * immediately before reading or writing, never rely on one set earlier.
 		 */
 		Preferences* session;
+
+		/** Writes both stores soon after they change, and at shutdown. */
+		SettingsKeeper* settingsKeeper = nullptr;
 
 		/**
 		 * This client's identity, read from 'config' or made and stored there.

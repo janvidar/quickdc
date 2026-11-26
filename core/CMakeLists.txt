@@ -78,6 +78,7 @@ set(QUICKDC_SOURCES
     config/backend.cpp
     config/iniparser.cpp
     config/preferences.cpp
+    config/settingskeeper.cpp
     config/userlists.cpp
     debug/dbg.cpp
     api/core.cpp

@@ -22,6 +22,7 @@
 #include "api/service.h"
 #include "chat/archive.h"
 #include "config/preferences.h"
+#include "config/settingskeeper.h"
 #include "config/migrations.h"
 #include "config/settings.h"
 #include "network/connectionmanager.h"
@@ -697,6 +698,7 @@ QuickDC::Core::Core(const Home& home)
 	 * file's own absence, which nothing below can change.
 	 */
 	migrateSettings(*config, *session, config->existed() == false);
+	settingsKeeper = new SettingsKeeper(eventLoop, *config, *session);
 	identity = new ADC::CID(*config);
 	automation = new Automation(this);
 	service = 0;
@@ -810,6 +812,7 @@ QuickDC::Core::Core(const std::string& config_file, const std::string& session_f
 
 	config = new Preferences(config_file);
 	session = new Preferences(session_file);
+	settingsKeeper = new SettingsKeeper(eventLoop, *config, *session);
 
 	connections = new ConnectionManager(eventLoop);
 	hubs = new HubManager(*this);
@@ -912,6 +915,7 @@ QuickDC::Core::~Core()
 	delete shares; shares = 0;
 	/* After the hubs, which borrow it and write through it on the way out. */
 	delete identity; identity = 0;
+	delete settingsKeeper; settingsKeeper = 0;
 	delete session; session = 0;
 	delete config; config = 0;
 	delete hash; hash = 0;

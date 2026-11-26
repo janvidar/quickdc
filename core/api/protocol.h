@@ -292,7 +292,10 @@ struct ReplaceGroup {
 	uint64_t origin = 0;
 };
 
-/** Write the store to its file; answered by SettingsSaved. */
+/**
+ * Write the store to its file now; answered by SettingsSaved. The core writes
+ * a changed store by itself shortly after, so this is only for a confirmation.
+ */
 struct SaveSettings {
 	SettingsStore store = SettingsStore::Application;
 	uint64_t request = 0;

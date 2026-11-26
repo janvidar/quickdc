@@ -84,7 +84,8 @@ set(QUICKDC_EXOTIC_TESTS
     sharefolders.tcc
     userlists.tcc
     chatmedia.tcc
-    zupload.tcc)
+    zupload.tcc
+    settingskeeper.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)
     cmake_path(GET input STEM stem)
