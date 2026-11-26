@@ -7,10 +7,14 @@
 
 #include <cerrno>
 #include <cstddef>
-
 #include <cstdio>
+#include <cstdlib>
+#include <random>
+#include <string>
 
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -44,6 +48,10 @@ int bound(int type, in_port_t port)
  * which needs no file and goes with the process however it ends. Elsewhere every
  * claim succeeds, and two runs at once can still be handed the same port.
  */
+/*
+ * Held for the life of the process, so no other qdc is offered the port while this
+ * one runs: an abstract socket on Linux, a locked file elsewhere.
+ */
 bool claim(in_port_t port)
 {
 #ifdef __linux__
@@ -62,40 +70,50 @@ bool claim(in_port_t port)
 		return false;
 	}
 #else
-	(void) port;
+	const char* tmp = std::getenv("TMPDIR");
+	std::string path = (tmp && *tmp) ? tmp : "/tmp";
+	path += "/quickdc-qdc-port-" + std::to_string(port) + ".lock";
+
+	const int fd = open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+	if (fd == -1) return false;
+	if (flock(fd, LOCK_EX | LOCK_NB) != 0)
+	{
+		close(fd);
+		return false;
+	}
 #endif
 	return true;
 }
+
+/*
+ * Below every system's ephemeral range (Linux 32768 and up, macOS and the BSDs 49152),
+ * so a port let go here is not handed to some outgoing connection before the core
+ * binds it - which, with the core moving up from a taken port, could land it on
+ * another core's.
+ */
+constexpr int FIRST = 20000;
+constexpr int LAST = 31999;
 
 }
 
 int QuickDC::Cli::freePort()
 {
-	/* The core listens on both, so a port the kernel offers for TCP may still be taken for UDP. */
-	for (int attempt = 0; attempt < 32; ++attempt)
+	std::mt19937 pick(std::random_device{}() ^ static_cast<unsigned>(getpid()));
+	std::uniform_int_distribution<int> range(FIRST, LAST);
+
+	/* The core listens on both, so a port free for TCP may still be taken for UDP. */
+	for (int attempt = 0; attempt < 256; ++attempt)
 	{
-		const int tcp = bound(SOCK_STREAM, 0);
-		if (tcp == -1) return -1;
+		const in_port_t port = static_cast<in_port_t>(range(pick));
 
-		sockaddr_in address {};
-		socklen_t length = sizeof(address);
-		if (getsockname(tcp, reinterpret_cast<sockaddr*>(&address), &length) != 0)
-		{
-			const int saved = errno;
-			close(tcp);
-			errno = saved;
-			return -1;
-		}
-
-		const in_port_t port = ntohs(address.sin_port);
+		const int tcp = bound(SOCK_STREAM, port);
+		if (tcp == -1) continue;
 		const int udp = bound(SOCK_DGRAM, port);
 		close(tcp);
 		if (udp == -1) continue;
 		close(udp);
 
-		/* Another run may have been offered it a moment ago, and not bound it yet. */
 		if (!claim(port)) continue;
-
 		return port;
 	}
 

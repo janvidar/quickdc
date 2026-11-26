@@ -278,6 +278,14 @@ class FakeHub :
 			return true;
 		}
 
+		/* The next line that is not an INF: one sent just before may still be on its way. */
+		bool nextRequest(std::string& out)
+		{
+			while (nextLine(out))
+				if (out.compare(0, 5, "BINF ") != 0) return true;
+			return false;
+		}
+
 		void drain()
 		{
 			if (!peer) return;
@@ -2681,7 +2689,7 @@ EXO_TEST(hubsession_an_active_client_asks_the_peer_to_connect_to_it,
 	s.session->sendConnectionRequest(peer, "job1");
 
 	std::string line;
-	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(s.hub.nextRequest(line));
 
 	/* A CTM, not an RCM: we can be connected to. */
 	EXO_ASSERT(line.compare(0, 5, "DCTM ") == 0);
@@ -2726,7 +2734,7 @@ EXO_TEST(hubsession_an_active_client_measured_unreachable_asks_to_dial_instead,
 	s.session->sendConnectionRequest(peer, "job1");
 
 	std::string line;
-	const bool sent = s.hub.nextLine(line);
+	const bool sent = s.hub.nextRequest(line);
 	known->forget();
 
 	EXO_ASSERT(sent);
@@ -2776,7 +2784,7 @@ EXO_TEST(hubsession_an_active_client_names_the_port_the_gateway_granted,
 	s.session->sendConnectionRequest(peer, "job4");
 
 	std::string line;
-	const bool got = s.hub.nextLine(line);
+	const bool got = s.hub.nextRequest(line);
 
 	/* Put the core back before asserting, since a failed assertion leaves. */
 	core->portforward = previous;
@@ -2813,7 +2821,7 @@ EXO_TEST(hubsession_a_passive_client_asks_the_peer_to_invite_it,
 	s.session->sendConnectionRequest(peer, "job2");
 
 	std::string line;
-	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(s.hub.nextRequest(line));
 	EXO_ASSERT(line.compare(0, 5, "DRCM ") == 0);
 	EXO_ASSERT(line.find("job2") != std::string::npos);
 	return 1;
@@ -2846,7 +2854,7 @@ EXO_TEST(hubsession_passive_mode_asks_for_a_reverse_connection_whatever_active_m
 	s.session->sendConnectionRequest(peer, "job5");
 
 	std::string line;
-	const bool got = s.hub.nextLine(line);
+	const bool got = s.hub.nextRequest(line);
 	config->remove("Network", "Mode");
 
 	EXO_ASSERT(got);
@@ -3754,7 +3762,7 @@ EXO_TEST(hubsession_a_connect_request_names_what_the_peer_announced,
 		pump([] { return false; }, 60);
 
 		std::string line;
-		EXO_ASSERT(s.hub.nextLine(line));
+		EXO_ASSERT(s.hub.nextRequest(line));
 
 		if (line.compare(0, 5, "DCTM ") != 0
 			|| line.find(std::string(" ") + c.expected + " ") == std::string::npos)
@@ -3791,7 +3799,7 @@ EXO_TEST(hubsession_a_reverse_request_names_what_the_peer_announced,
 	pump([] { return false; }, 60);
 
 	std::string line;
-	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(s.hub.nextRequest(line));
 	EXO_ASSERT(line.compare(0, 5, "DRCM ") == 0);
 	EXO_ASSERT(line.find(std::string(" ") + ADC_TLS_PROTO_DRAFT + " ") != std::string::npos);
 	return 1;
@@ -3822,7 +3830,7 @@ EXO_TEST(hubsession_a_silent_peer_is_still_asked_for_encryption_where_it_is_requ
 	pump([] { return false; }, 60);
 
 	std::string line;
-	EXO_ASSERT(s.hub.nextLine(line));
+	EXO_ASSERT(s.hub.nextRequest(line));
 	EXO_ASSERT(line.compare(0, 5, "DRCM ") == 0);
 	EXO_ASSERT(line.find(std::string(" ") + ADC_TLS_PROTO + " ") != std::string::npos);
 	return 1;
