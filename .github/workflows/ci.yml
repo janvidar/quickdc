@@ -9,9 +9,9 @@
 ## test green, so a run that skipped it looks exactly like one that did not - see
 ## core/test/autotests/CMakeLists.txt.
 ##
-## QuickDC carries neither of its dependencies, so every job checks out three
-## repositories side by side and configures the middle one. That is the same
-## layout a developer gets, and the same one a superproject building all three
+## QuickDC carries none of its dependencies, so every job checks out four
+## repositories side by side and configures QuickDC. That is the same
+## layout a developer gets, and the same one a superproject building all four
 ## produces, so the lookups being exercised here are the ones that run anywhere
 ## else. samurai is taken at its tip rather than pinned: the pin lives in the
 ## superproject that ships them together, and a samurai change that breaks the
@@ -58,6 +58,11 @@ jobs:
         with:
           repository: janvidar/exotic
           path: exotic
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/libdrop-cpp
+          path: libdrop-cpp
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -127,6 +132,11 @@ jobs:
           repository: janvidar/exotic
           path: exotic
 
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/libdrop-cpp
+          path: libdrop-cpp
+
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -186,6 +196,11 @@ jobs:
           repository: janvidar/exotic
           path: exotic
 
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/libdrop-cpp
+          path: libdrop-cpp
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -233,6 +248,11 @@ jobs:
         with:
           repository: janvidar/exotic
           path: exotic
+
+      - uses: actions/checkout@v4
+        with:
+          repository: janvidar/libdrop-cpp
+          path: libdrop-cpp
 
       - name: Install dependencies
         run: |
