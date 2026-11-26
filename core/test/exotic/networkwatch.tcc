@@ -33,7 +33,9 @@ EXO_TEST(networkwatch_addresses_that_change_are_told_once_settled,
 	Samurai::EventLoop loop;
 	std::string addresses = "10.0.0.5";
 	int told = 0;
-	QuickDC::NetworkWatch watch(loop, [&] { told++; }, [&] { return addresses; }, FAST);
+	/* Settling far longer than the step between changes, so a slow runner cannot settle in between. */
+	const QuickDC::NetworkWatch::Timing settling{20ms, 200ms};
+	QuickDC::NetworkWatch watch(loop, [&] { told++; }, [&] { return addresses; }, settling);
 
 	run(loop, 100ms);
 	EXO_ASSERT(told == 0);
@@ -41,7 +43,7 @@ EXO_TEST(networkwatch_addresses_that_change_are_told_once_settled,
 	addresses = "10.0.0.5 192.0.2.7";
 	run(loop, 50ms);
 	addresses = "192.0.2.7";
-	run(loop, 250ms);
+	run(loop, 700ms);
 	EXO_ASSERT(told == 1);
 	return 1;
 });
