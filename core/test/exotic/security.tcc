@@ -33,6 +33,14 @@
 #include <string>
 #include <samurai/posix.h>
 
+/* Whether this build lets a loopback peer in without a clearance; asserted either way. */
+#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
+constexpr bool LOOPBACK_AUTH = true;
+#else
+constexpr bool LOOPBACK_AUTH = false;
+#endif
+
+
 static std::unique_ptr<Samurai::EventLoop> loop;
 
 EXO_SETUP({
@@ -304,11 +312,7 @@ EXO_TEST(security_a_loopback_peer_with_no_clearance_is_refused,
 
 	const bool answer = mgr.isAuthorized(Clearance::ADC, 0,
 		pair.accepted.get(), "CIDA", "t1");
-#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
-	EXO_ASSERT(answer);
-#else
-	EXO_ASSERT(!answer);
-#endif
+	EXO_ASSERT(answer == LOOPBACK_AUTH);
 	return 1;
 });
 
@@ -329,17 +333,12 @@ EXO_TEST(security_a_cleared_loopback_peer_is_authorised,
 
 	const bool wrong = mgr.isAuthorized(Clearance::ADC, 0,
 		pair.accepted.get(), "CIDA", "wrong-token");
-#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
 	/*
-	 * Asserted rather than tolerated, because it is the whole reason the
-	 * shortcut is not on by default: the address is answered before the token is
-	 * looked at, so a peer on the loopback does not need to know the token at
-	 * all.
+	 * With the shortcut on, asserted rather than tolerated, because it is the whole
+	 * reason it is not on by default: the address is answered before the token is
+	 * looked at, so a peer on the loopback does not need to know the token at all.
 	 */
-	EXO_ASSERT(wrong);
-#else
-	EXO_ASSERT(!wrong);
-#endif
+	EXO_ASSERT(wrong == LOOPBACK_AUTH);
 	return 1;
 });
 

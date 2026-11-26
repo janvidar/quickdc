@@ -32,7 +32,11 @@
 #include <string.h>
 #include <string>
 #include <samurai/posix.h>
+#ifdef _WIN32
+#include <sys/utime.h>
+#else
 #include <utime.h>
+#endif
 #include <vector>
 
 /* The pid is in the name because a run that dies leaves its files behind, and

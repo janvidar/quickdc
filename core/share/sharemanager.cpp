@@ -3,11 +3,11 @@
  * See the file "COPYING" for licensing details.
  */
 
-#ifndef MINGW
 #define SEARCH_DEBUG
-#endif
 
 #include "quickdc.h"
+
+#include <chrono>
 #include <algorithm>
 #include <filesystem>
 #include <unordered_set>
@@ -34,10 +34,6 @@
 #include "network/transfermanager.h"
 #include "config/settings.h"
 
-#ifdef SEARCH_DEBUG
-#include <sys/time.h>
-#include <time.h>
-#endif
 
 #define BUFSIZE 65536
 
@@ -1031,8 +1027,7 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 	if (!req) return;
 	
 #ifdef SEARCH_DEBUG
-	struct timeval before;
-	gettimeofday(&before, 0);
+	const auto before = std::chrono::steady_clock::now();
 #endif
 	
 	int max = req->getMaxResults();
@@ -1106,9 +1101,8 @@ void QuickDC::Share::Manager::search(SearchRequest* req) {
 	}
 	
 #ifdef SEARCH_DEBUG
-	struct timeval after;
-	gettimeofday(&after, 0);
-	long ms = (((after.tv_usec - before.tv_usec) / 1000) + ((after.tv_sec - before.tv_sec) * 1000));
+	const long ms = static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now() - before).count());
 	QSEARCH("Search '%p', returned %d hits in %d ms", req, hits, static_cast<int>(ms));
 	(void) ms;
 #endif

@@ -35,11 +35,7 @@ static const std::string QUEUE_TEST_HOME =
 
 static bool queue_test_setup()
 {
-#ifdef _WIN32
-	if (_putenv_s("HOME", QUEUE_TEST_HOME.c_str()) != 0) return false;
-#else
 	if (setenv("HOME", QUEUE_TEST_HOME.c_str(), 1) != 0) return false;
-#endif
 	Samurai::IO::File::mkdir(QUEUE_TEST_HOME.c_str(), 0700);
 	Samurai::IO::File::mkdir("~/.quickdc", 0700);
 	Samurai::IO::File(QUICKDC_QUEUE_FILE).remove();

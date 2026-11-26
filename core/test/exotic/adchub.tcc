@@ -60,6 +60,19 @@
 #include <samurai/posix.h>
 #include <vector>
 
+/* Whether this build lets a loopback peer in without a clearance; asserted either way. */
+#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
+constexpr bool LOOPBACK_AUTH = true;
+#else
+constexpr bool LOOPBACK_AUTH = false;
+#endif
+
+/* Non-blocking sockets need no MSG_DONTWAIT; it only says so where it exists. */
+#ifndef MSG_DONTWAIT
+#define MSG_DONTWAIT 0
+#endif
+
+
 /* The fixture's core; built in EXO_SETUP below. */
 static QuickDC::Core* core = 0;
 
@@ -1129,12 +1142,7 @@ EXO_TEST(adchub_a_kicked_user_does_not_leave_its_input_on_the_socket,
 	EXO_ASSERT(user->getState() == ADC::LocalHub::State_WaitDisconnect);
 
 	char peeked = 0;
-	/* The socket is non-blocking already; MSG_DONTWAIT only says so on systems that have it. */
-#ifdef MSG_DONTWAIT
 	EXO_ASSERT(::recv(peer->getFD(), &peeked, 1, MSG_PEEK | MSG_DONTWAIT) < 0);
-#else
-	EXO_ASSERT(::recv(peer->getFD(), &peeked, 1, MSG_PEEK) < 0);
-#endif
 	return 1;
 });
 
@@ -1195,17 +1203,13 @@ EXO_TEST(adchub_a_full_hub_turns_an_ordinary_user_away,
 	EXO_ASSERT(second.connect(s.port()));
 	second.login(makeIdentity(6), "second");
 
-#ifdef QUICKDC_ALLOW_LOOPBACK_AUTH
 	/*
-	 * Both are administrators in this build, and an administrator is exempt -
-	 * the exemption is an 'and', so written as an 'or' it held for everyone,
-	 * which is to say for nobody.
+	 * Without the loopback shortcut the second is refused and the first left alone.
+	 * With it both are administrators, and an administrator is exempt - the
+	 * exemption is an 'and', so written as an 'or' it held for everyone, which is
+	 * to say for nobody.
 	 */
-	EXO_ASSERT(s.hub.countLoggedIn() == 2);
-#else
-	/* The second is refused, and the first is left alone. */
-	EXO_ASSERT(s.hub.countLoggedIn() == 1);
-#endif
+	EXO_ASSERT(s.hub.countLoggedIn() == (LOOPBACK_AUTH ? 2 : 1));
 	return 1;
 });
 

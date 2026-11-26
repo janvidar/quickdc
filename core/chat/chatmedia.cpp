@@ -459,7 +459,13 @@ int QuickDC::sweepPasted(const std::string& folder, int days, std::time_t now)
 		if (entry.path().filename().string().rfind(PASTED, 0) != 0) continue;
 
 		const auto written = entry.last_write_time(error);
-		if (error || std::chrono::file_clock::to_sys(written) >= cutoff) continue;
+		if (error) continue;
+#ifdef _MSC_VER
+		const auto when = std::chrono::clock_cast<std::chrono::system_clock>(written);
+#else
+		const auto when = std::chrono::file_clock::to_sys(written);
+#endif
+		if (when >= cutoff) continue;
 
 		if (fs::remove(entry.path(), error)) ++removed;
 	}

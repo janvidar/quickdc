@@ -246,11 +246,7 @@ std::string hashdb_file;
 }
 
 EXO_SETUP({
-#ifdef _WIN32
-	_putenv_s("HOME", TEST_HOME.c_str());
-#else
 	setenv("HOME", TEST_HOME.c_str(), 1);
-#endif
 
 	Samurai::IO::File::mkdir(TEST_HOME.c_str(), 0700);
 	Samurai::IO::File::mkdir((TEST_HOME + "/downloads").c_str(), 0700);
