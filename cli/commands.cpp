@@ -203,6 +203,27 @@ Step parseOpen(const Line& line)
 	};
 }
 
+/* A hub the core opened itself has a handle and no name: 'name-hub $JOINED as own'. */
+Step parseNameHub(const Line& line)
+{
+	if (line.args.size() != 3 || line.args[1] != "as") throw ScriptError("wrong arguments");
+	const std::string handle = line.args[0];
+	const std::string name = line.args[2];
+	const std::string core = line.requireCore();
+
+	return [line, core, handle, name](Session& session) {
+		const std::string number = session.expand(handle);
+		Api::HubHandle hub = 0;
+		const auto parsed = std::from_chars(number.data(), number.data() + number.size(), hub);
+		if (parsed.ec != std::errc() || parsed.ptr != number.data() + number.size() || hub == 0)
+			return session.fail(line, "'" + number + "' is not a hub handle");
+		if (session.hub(core, name))
+			return session.fail(line, "core '" + core + "' already has a hub called '" + name + "'");
+		session.nameHub(core, name, hub);
+		return Outcome::Next;
+	};
+}
+
 Step parseClose(const Line& line)
 {
 	line.expect(1, 1);
@@ -1341,6 +1362,7 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"restart",    "restart",                                            parseRestart},
 		{"open",       "open <url> [as <name>]",                             parseOpen},
 		{"close",      "close <hub>",                                        parseClose},
+		{"name-hub",   "name-hub <handle> as <name>",                        parseNameHub},
 		{"connect",    "connect <hub>",                                      parseConnect},
 		{"disconnect", "disconnect <hub>",                                   parseDisconnect},
 		{"chat",       "chat <hub> <text...>",                               parseChat},

@@ -134,6 +134,9 @@ class Session {
 		void note(const std::string& text) const;
 
 		/* The handles a script's hub names stand for, one numbering per core. */
+		/** Give 'name' to a hub the core opened itself, as 'handle'. */
+		void nameHub(const std::string& core, const std::string& name, QuickDC::Api::HubHandle handle);
+
 		QuickDC::Api::HubHandle openHub(const std::string& core, const std::string& name,
 		                                const std::string& url);
 		std::optional<QuickDC::Api::HubHandle> hub(const std::string& core, const std::string& name) const;

@@ -292,6 +292,13 @@ Api::HubHandle QuickDC::Cli::Session::openHub(const std::string& core, const std
 	return handle;
 }
 
+void QuickDC::Cli::Session::nameHub(const std::string& core, const std::string& name, Api::HubHandle handle)
+{
+	Hubs& hubs = cores[core];
+	hubs.byName[name] = handle;
+	hubs.names[handle] = name;
+}
+
 std::string QuickDC::Cli::Session::hubUrl(const std::string& core, Api::HubHandle hub) const
 {
 	const auto found = cores.find(core);
