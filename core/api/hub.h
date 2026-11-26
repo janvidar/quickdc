@@ -676,6 +676,7 @@ class Hub
 		const User* sourceUser(const char* id) const;
 		bool isNmdc() const;
 
+	protected:
 		void EventTimeout(Samurai::Timer*) override;
 
 	friend class HubManager;

@@ -1,0 +1,9 @@
+# A hub that takes the connection and then says nothing is reported, once the
+# core has waited for it.
+
+hold ${SILENT}
+open adc://127.0.0.1:${SILENT} as hub
+connect hub
+wait HubNetStatus hub=hub status=Connected timeout=10s
+expect-no HubSystemError hub=hub
+wait HubSystemError hub=hub timeout=30s

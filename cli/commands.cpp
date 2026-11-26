@@ -975,6 +975,13 @@ Step parseServe(const Line& line)
 	};
 }
 
+Step parseHold(const Line& line)
+{
+	line.expect(1, 1);
+	const int port = parsePort(line.args[0]);
+	return [line, port](Session& session) { return session.hold(line, port); };
+}
+
 Step parseExpectServed(const Line& line)
 {
 	line.expect(2, 2);
@@ -1301,6 +1308,7 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"hublist-refresh", "hublist-refresh [force]",                       parseHublistRefresh},
 		{"serve",      "serve <port> <directory>",                           parseServe, false, false, true},
 		{"expect-served", "expect-served <port> <count>",                    parseExpectServed, false, false, true},
+		{"hold",       "hold <port>",                                        parseHold, false, false, true},
 		{"restart",    "restart",                                            parseRestart},
 		{"open",       "open <url> [as <name>]",                             parseOpen},
 		{"close",      "close <hub>",                                        parseClose},

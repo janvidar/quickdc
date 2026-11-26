@@ -4,6 +4,8 @@
  */
 
 #include "api/service.h"
+
+#include <samurai/timer.h>
 #include "config/settingskeeper.h"
 #include "api/core.h"
 #include "api/dropverdict.h"
@@ -308,6 +310,11 @@ QuickDC::Api::HubStatus converted(QuickDC::HubListener::StatusHub status)
  * What the core lends a listener - a User it deletes on the next line, a string
  * in a buffer the next command reuses - is copied here, before publish().
  */
+namespace {
+/* How long a hub may hold a connection without saying anything. */
+constexpr int HUB_SILENCE_SECONDS = 20;
+}
+
 class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public QuickDC::HubListener,
                                                  public QuickDC::BoardKeeper::Link {
 	public:
@@ -368,6 +375,13 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 		{
 			owner.publish(Events::HubNetStatus{handle, converted(netstate), isSecure()});
 
+			const bool up = netstate == NetConnected || netstate == NetTlsConnected;
+			if (up && !silence)
+				silence = std::make_unique<Samurai::Timer>(owner.core.loop(), this,
+					std::chrono::seconds(HUB_SILENCE_SECONDS), true);
+			else if (!up && netstate != NetLookup && netstate != NetConnecting)
+				silence.reset();
+
 			/* What a hub agreed to does not outlive the connection it was agreed on. */
 			if (owner.boards && netstate != NetLookup && netstate != NetConnecting
 			    && netstate != NetConnected && netstate != NetTlsConnected)
@@ -381,6 +395,8 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 
 		void EventHubStatus(enum StatusHub hubstate) override
 		{
+			/* Whatever it says, the hub said something. */
+			if (hubstate != HubNone) silence.reset();
 			owner.publish(Events::HubStatusChanged{handle, converted(hubstate)});
 		}
 
@@ -415,6 +431,18 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 		void EventSystemError(const char* msg) override
 		{
 			owner.publish(Events::HubSystemError{handle, text(msg)});
+		}
+
+		/* Hub's own timer is the reconnect; this one is the hub saying nothing once connected. */
+		void EventTimeout(Samurai::Timer* timer) override
+		{
+			if (timer != silence.get())
+			{
+				Hub::EventTimeout(timer);
+				return;
+			}
+			owner.publish(Events::HubSystemError{handle, opened + " took the connection and then said "
+				"nothing. The hub is most likely not running, however open the port is."});
 		}
 
 		void EventChat(const QuickDC::User* user, const char* message, bool action,
@@ -559,6 +587,8 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 		/** The address it was opened by, which is what the visit was recorded under. */
 		std::string opened;
 		bool allowPeerConnections = true;
+		/** From the connection coming up until the hub first says something. */
+		std::unique_ptr<Samurai::Timer> silence;
 };
 
 QuickDC::Api::Service::Service(Core& core_)

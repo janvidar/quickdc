@@ -195,6 +195,9 @@ class Session {
 		/** Serve the files under 'directory' over HTTP on the loopback address at 'port'. */
 		Outcome serve(const Line& line, int port, const std::string& directory);
 
+		/** Listen on loopback 'port' and never accept: a peer connects, and hears nothing. */
+		Outcome hold(const Line& line, int port);
+
 		/** How many files the server on 'port' has handed out; nothing where there is none. */
 		std::optional<int> served(int port) const;
 
@@ -237,6 +240,15 @@ class Session {
 		std::string base;
 		std::map<std::string, std::string> remembered;
 		std::map<int, std::unique_ptr<FileServer>> servers;
+
+		struct Held {
+			int fd = -1;
+			Held(int fd) : fd(fd) { }
+			Held(const Held&) = delete;
+			Held& operator=(const Held&) = delete;
+			~Held();
+		};
+		std::map<int, std::unique_ptr<Held>> held;
 };
 
 }

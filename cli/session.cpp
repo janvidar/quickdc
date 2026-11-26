@@ -7,6 +7,12 @@
 #include "eventjson.h"
 #include "human.h"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <cerrno>
+#include <cstring>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -463,6 +469,36 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::serve(const Line& line, int port, c
 	std::string why;
 	if (!server->start(port, directory, why)) return fail(line, why);
 	servers[port] = std::move(server);
+	return Outcome::Next;
+}
+
+QuickDC::Cli::Session::Held::~Held()
+{
+	if (fd != -1) ::close(fd);
+}
+
+QuickDC::Cli::Outcome QuickDC::Cli::Session::hold(const Line& line, int port)
+{
+	if (held.count(port) || servers.count(port))
+		return fail(line, "port " + std::to_string(port) + " is already in use here");
+
+	const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	sockaddr_in address {};
+	address.sin_family = AF_INET;
+	address.sin_port = htons(static_cast<uint16_t>(port));
+	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+	const int on = 1;
+	if (fd != -1) setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+	if (fd == -1 || ::bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0
+	    || ::listen(fd, 8) != 0)
+	{
+		const std::string why = std::strerror(errno);
+		if (fd != -1) ::close(fd);
+		return fail(line, "cannot hold port " + std::to_string(port) + ": " + why);
+	}
+
+	held[port] = std::make_unique<Held>(fd);
 	return Outcome::Next;
 }
 
