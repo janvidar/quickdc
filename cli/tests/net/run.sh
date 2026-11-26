@@ -39,7 +39,10 @@
 # in parallel do not collide; in IPv6 2001:db8:N::/64 and 2001:db8:N:k::/64 -
 # the documentation prefix, which nothing routes, and which qdc counts as global
 # (it excludes only link-local, unique-local, loopback, mapped and multicast). Everything is torn down however the run ends;
-# NET_KEEP=1 keeps the run directory (logs, homes) and prints where it is.
+# NET_KEEP=1 keeps the run directory (logs, homes) and prints where it is;
+# NET_KEEP=failed only when the run fails. ASAN_OPTIONS, UBSAN_OPTIONS and
+# LSAN_OPTIONS reach the agents, and an agent log holding a sanitizer report
+# fails the run even where the script passed.
 #
 # Exit: 0 the script passed, 1 it failed, 77 podman or rootless networking is
 # not available here (ctest SKIP_RETURN_CODE).
@@ -74,7 +77,8 @@ teardown() {
 	[ -n "$ids" ] && podman rm -f -t 0 $ids >/dev/null 2>&1
 	ids=$(podman network ls -q --filter "label=quickdc-net.run=$run" 2>/dev/null)
 	[ -n "$ids" ] && podman network rm -f $ids >/dev/null 2>&1
-	if [ "${NET_KEEP:-0}" = 1 ]
+	local status=$?
+	if [ "${NET_KEEP:-0}" = 1 ] || { [ "${NET_KEEP:-0}" = failed ] && [ $status -ne 0 ] && [ $status -ne $SKIP ]; }
 	then
 		echo "net: kept $rundir" >&2
 	else
@@ -284,6 +288,10 @@ wan_setup() {
 
 hosts=()
 agent_env=()
+for var in ASAN_OPTIONS UBSAN_OPTIONS LSAN_OPTIONS
+do
+	[ -z "${!var:-}" ] || agent_env+=(-e "$var=${!var}")
+done
 for name in "${nodes[@]}"
 do
 	[ "${node_role[$name]}" = drop ] || continue
@@ -291,7 +299,7 @@ do
 	hosts+=(--add-host "drop.test:$(ip_of "$1")" --add-host "ipv4.drop.test:$(ip_of "$1")")
 	v6=$(ip6_of "$1")
 	[ -z "$v6" ] || hosts+=(--add-host "ipv6.drop.test:$v6")
-	agent_env=(-e SSL_CERT_FILE=/run/qdc/drop/ca.pem)
+	agent_env+=(-e SSL_CERT_FILE=/run/qdc/drop/ca.pem)
 	defines+=(-D DROP=drop.test)
 done
 
@@ -405,6 +413,18 @@ done
 timeout "$timeout_s" "$qdc" --home "$rundir/home" "${connect[@]}" "${defines[@]}" "${extra[@]}" "$script" \
 	>"$rundir/log/controller.out" 2>"$rundir/log/controller.err"
 status=$?
+
+# The agents end with the controller; their exit is where LeakSanitizer reports.
+for name in "${nodes[@]}"
+do
+	case "${node_role[$name]}" in router|drop) continue ;; esac
+	timeout 30 podman wait "$run-$name" >/dev/null 2>&1
+	if grep -qE "ERROR: (Address|Leak)Sanitizer|runtime error:" "$rundir/log/$name.err" 2>/dev/null
+	then
+		echo "net: a sanitizer reported in agent $name" >&2
+		[ $status -ne 0 ] || status=1
+	fi
+done
 
 if [ $status -ne 0 ]
 then
