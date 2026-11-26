@@ -117,4 +117,11 @@ foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)
     endif()
 
     quickdc_harden(quickdc_test_${stem})
+
+    # GCC 15 reports a vector<string> freed at a test's end as a non-heap free
+    # after inlining; the tests are where the long inline chains are, and the
+    # library is still checked.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
+        target_compile_options(quickdc_test_${stem} PRIVATE -Wno-free-nonheap-object)
+    endif()
 endforeach()

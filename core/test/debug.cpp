@@ -162,7 +162,11 @@ int main(int argc, char** argv) {
 		else if (pollret == -1) break;
 		else {
 			char* buffer = new char[1024];
-			fgets(buffer, 1024, stdin);
+			if (!fgets(buffer, 1024, stdin))
+			{
+				delete[] buffer;
+				break;
+			}
 
 			size_t size = strlen(buffer);
 			for (size_t x = 0; x < size; x++) 

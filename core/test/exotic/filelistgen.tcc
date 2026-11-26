@@ -200,8 +200,7 @@ class Fixture
 		void symlink_to(const std::string& name, const std::string& target)
 		{
 			const std::string path = dir + "/" + name;
-			::symlink(target.c_str(), path.c_str());
-			madeFiles.push_back(path);
+			if (::symlink(target.c_str(), path.c_str()) == 0) madeFiles.push_back(path);
 		}
 
 		/* A file outside the share, standing in for anything private. */

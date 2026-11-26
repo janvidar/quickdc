@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -108,10 +109,15 @@ class Stderr
 		Stderr(const Stderr&) = delete;
 		Stderr& operator=(const Stderr&) = delete;
 
+		/* What was said, less the trace a QUICKDC_TRACE build adds: that names every path it touches. */
 		std::string text()
 		{
 			restore();
-			return readFile(path);
+			std::string kept;
+			std::istringstream lines(readFile(path));
+			for (std::string line; std::getline(lines, line);)
+				if (line.rfind("DEBUG:", 0) != 0) kept += line + "\n";
+			return kept;
 		}
 
 	private:
