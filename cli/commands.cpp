@@ -975,6 +975,18 @@ Step parseServe(const Line& line)
 	};
 }
 
+Step parseNetworkChanged(const Line& line)
+{
+	line.expect(0, 1);
+	if (!line.args.empty() && line.args[0] != "offline")
+		throw ScriptError("network-changed takes nothing or 'offline'");
+	const bool online = line.args.empty();
+	const std::string core = line.requireCore();
+	return [line, core, online](Session& session) {
+		return session.submit(line, core, Cmd::NoteNetworkChange{online});
+	};
+}
+
 Step parseHold(const Line& line)
 {
 	line.expect(1, 1);
@@ -1294,6 +1306,7 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"mode",       "mode <automatic|advanced|passive> [upnp] [force-active]", parseMode},
 		{"state",      "state",                                              parseState},
 		{"measure",    "measure",                                            parseBare<Cmd::MeasureReachability>},
+		{"network-changed", "network-changed [offline]",                     parseNetworkChanged},
 		{"favourite-add", "favourite-add <url>",                             parseNaming<Cmd::AddFavouriteHub>},
 		{"favourite-remove", "favourite-remove <url>",                       parseNaming<Cmd::RemoveFavouriteHub>},
 		{"recent-forget", "recent-forget <url>",                             parseNaming<Cmd::ForgetRecentHub>},

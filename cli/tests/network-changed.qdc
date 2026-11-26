@@ -1,0 +1,8 @@
+# A front end telling the core the network changed is answered once that has
+# settled - unless it also said nothing beyond it answers.
+
+network-changed offline
+sleep 5s
+expect-no NetworkChanged
+network-changed
+wait NetworkChanged timeout=10s

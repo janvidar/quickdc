@@ -788,6 +788,11 @@ struct Fields {
 		return {"HubDescription", {{"hub", hub(e.hub)}, {"description", e.description}}};
 	}
 
+	Out operator()(const Ev::NetworkChanged&) const
+	{
+		return {"NetworkChanged", {}};
+	}
+
 	Out operator()(const Ev::HubSystemError& e) const
 	{
 		return {"HubSystemError", {{"hub", hub(e.hub)}, {"message", e.message}}};

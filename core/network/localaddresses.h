@@ -7,6 +7,8 @@
 #define HAVE_QUICKDC_LOCALADDRESSES_H
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace QuickDC {
 
@@ -26,6 +28,20 @@ bool isGlobalIPv6(const uint8_t address[16]);
  * the answer is yes, so that not knowing never stops a check.
  */
 bool hostHasGlobalIPv6();
+
+/**
+ * The addresses of the interfaces that are up, less loopback and link-local,
+ * sorted and joined: equal while nothing about where this host sits has
+ * changed. Empty where the interfaces cannot be listed.
+ */
+std::string addressFingerprint();
+
+/**
+ * 'addresses' as addressFingerprint() compares them: loopback and link-local
+ * dropped (on every machine, or what a host gives itself while DHCP decides),
+ * duplicates folded, and sorted, since interfaces come back in no fixed order.
+ */
+std::string fingerprintOf(std::vector<std::string> addresses);
 
 }
 

@@ -28,6 +28,7 @@
 namespace QuickDC {
 
 class Core;
+class NetworkWatch;
 
 namespace Api {
 
@@ -163,6 +164,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::ForgetRecentHub& command);
 		void run(const Commands::ClearRecentHubs& command);
 		void run(const Commands::EndSession& command);
+		void run(const Commands::NoteNetworkChange& command);
 		void run(const Commands::ClearSessionHubs& command);
 		void run(const Commands::ForgetCompletedDownload& command);
 		void run(const Commands::ClearCompletedDownloads& command);
@@ -250,6 +252,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		std::map<HubHandle, std::string> remembered;
 		std::unique_ptr<QuickDC::CompletedDownloads> completed;
 		std::unique_ptr<QuickDC::HubDirectory> directory;
+		std::unique_ptr<QuickDC::NetworkWatch> network;
 
 		/* Last, so the sessions go before the subscriptions they report through. */
 		std::map<HubHandle, std::unique_ptr<HubSession>> hubs;

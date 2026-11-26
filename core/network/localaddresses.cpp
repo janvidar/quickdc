@@ -5,9 +5,12 @@
 
 #include "network/localaddresses.h"
 
+#include <algorithm>
 #include <cstring>
+#include <vector>
 
 #ifndef _WIN32
+#include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
@@ -48,5 +51,64 @@ bool QuickDC::hostHasGlobalIPv6()
 
 	freeifaddrs(list);
 	return found;
+#endif
+}
+
+std::string QuickDC::fingerprintOf(std::vector<std::string> addresses)
+{
+	const auto ignored = [](const std::string& text) {
+#ifndef _WIN32
+		in_addr four {};
+		if (inet_pton(AF_INET, text.c_str(), &four) == 1)
+		{
+			const uint32_t host = ntohl(four.s_addr);
+			return (host >> 24) == 127 || (host >> 16) == 0xa9fe;   /* 127/8, 169.254/16 */
+		}
+		in6_addr six {};
+		if (inet_pton(AF_INET6, text.c_str(), &six) == 1)
+		{
+			const uint8_t* a = six.s6_addr;
+			static const uint8_t loopback[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1};
+			return std::memcmp(a, loopback, 16) == 0 || (a[0] == 0xfe && (a[1] & 0xc0) == 0x80);
+		}
+#endif
+		return text.empty();
+	};
+
+	addresses.erase(std::remove_if(addresses.begin(), addresses.end(), ignored), addresses.end());
+	std::sort(addresses.begin(), addresses.end());
+	addresses.erase(std::unique(addresses.begin(), addresses.end()), addresses.end());
+
+	std::string out;
+	for (const std::string& one : addresses) out += (out.empty() ? "" : " ") + one;
+	return out;
+}
+
+std::string QuickDC::addressFingerprint()
+{
+#ifdef _WIN32
+	return std::string();
+#else
+	ifaddrs* list = nullptr;
+	if (getifaddrs(&list) != 0) return std::string();
+
+	std::vector<std::string> found;
+	for (const ifaddrs* one = list; one; one = one->ifa_next)
+	{
+		if (!one->ifa_addr || !(one->ifa_flags & IFF_UP)) continue;
+
+		char text[INET6_ADDRSTRLEN] = {};
+		const int family = one->ifa_addr->sa_family;
+		if (family == AF_INET)
+			inet_ntop(AF_INET, &reinterpret_cast<const sockaddr_in*>(one->ifa_addr)->sin_addr, text, sizeof(text));
+		else if (family == AF_INET6)
+			inet_ntop(AF_INET6, &reinterpret_cast<const sockaddr_in6*>(one->ifa_addr)->sin6_addr, text, sizeof(text));
+		else continue;
+
+		found.push_back(text);
+	}
+	freeifaddrs(list);
+
+	return fingerprintOf(std::move(found));
 #endif
 }

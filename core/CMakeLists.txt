@@ -30,6 +30,7 @@ set(QUICKDC_SOURCES
     network/dropcheck.cpp
     network/mappingpolicy.cpp
     network/localaddresses.cpp
+    network/networkwatch.cpp
     network/portforward.cpp
     network/reachability.cpp
     network/searchtokens.cpp

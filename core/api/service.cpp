@@ -7,6 +7,7 @@
 
 #include <samurai/timer.h>
 #include "config/settingskeeper.h"
+#include "network/networkwatch.h"
 #include "api/core.h"
 #include "api/dropverdict.h"
 #include "api/networkmode.h"
@@ -613,6 +614,10 @@ QuickDC::Api::Service::Service(Core& core_)
 		favourites = std::make_unique<QuickDC::FavouriteHubs>(*core.config);
 		recents = std::make_unique<QuickDC::RecentHubs>(*core.config);
 		session_ = std::make_unique<QuickDC::SessionHubs>(*core.config);
+		network = std::make_unique<QuickDC::NetworkWatch>(core.loop(), [this] {
+			publish(Events::NetworkChanged{});
+			if (haveReachabilityServer()) startDropCheck(core, false);
+		});
 		completed = std::make_unique<QuickDC::CompletedDownloads>(*core.config);
 		directory = std::make_unique<QuickDC::HubDirectory>(core.loop(), *core.config,
 			core.homeDirectory.empty() ? std::string() : core.homeDirectory + "/hublists",
@@ -1643,6 +1648,11 @@ QuickDC::Api::Events::SessionHubs QuickDC::Api::Service::sessionHubs(uint64_t re
 void QuickDC::Api::Service::run(const Commands::EndSession&)
 {
 	if (session_) session_->ending();
+}
+
+void QuickDC::Api::Service::run(const Commands::NoteNetworkChange& command)
+{
+	if (network) network->changed(command.online);
 }
 
 void QuickDC::Api::Service::run(const Commands::ClearSessionHubs&)

@@ -700,6 +700,14 @@ struct RenameShareFolder {
 /** Measure reachability against the configured server, IPv4 first. */
 struct MeasureReachability { };
 
+/**
+ * The platform says the network changed; 'online' is whether anything beyond
+ * it answers. The core also notices its own addresses changing, so this is
+ * only what a front end knows that the core cannot see. Answered, once it has
+ * settled and the host is online, by NetworkChanged.
+ */
+struct NoteNetworkChange { bool online = true; };
+
 /** Ask the configured server only what public address it sees. */
 struct LookupPublicAddress {
 	bool ipv6 = false;
@@ -926,6 +934,9 @@ struct HubExtensions { HubHandle hub = 0; bool richText = false; };
 struct HubName { HubHandle hub = 0; std::string name; };
 struct HubDescription { HubHandle hub = 0; std::string description; };
 struct HubSystemError { HubHandle hub = 0; std::string message; };
+
+/** The host has settled on another network; reachability is measured again where it can be. */
+struct NetworkChanged { };
 struct HubAuthenticate { HubHandle hub = 0; };
 
 /**
@@ -1309,6 +1320,7 @@ struct Command {
 		Commands::ResetHubListSources,
 		Commands::RefreshHubDirectory,
 		Commands::MeasureReachability,
+		Commands::NoteNetworkChange,
 		Commands::LookupPublicAddress,
 		Commands::ReplayReachability,
 		Commands::AttachFile,
@@ -1409,6 +1421,7 @@ struct Event {
 		Events::HubName,
 		Events::HubDescription,
 		Events::HubSystemError,
+		Events::NetworkChanged,
 		Events::HubAuthenticate,
 		Events::HubRedirect,
 		Events::ChatReceived,
