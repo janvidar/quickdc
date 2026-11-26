@@ -72,12 +72,11 @@ rundir=$(mktemp -d /tmp/qdcnet.XXXXXX) || exit 1
 mkdir -p "$rundir/sock" "$rundir/log" "$rundir/home"
 
 teardown() {
-	local ids
+	local status=$? ids
 	ids=$(podman ps -aq --filter "label=quickdc-net.run=$run" 2>/dev/null)
 	[ -n "$ids" ] && podman rm -f -t 0 $ids >/dev/null 2>&1
 	ids=$(podman network ls -q --filter "label=quickdc-net.run=$run" 2>/dev/null)
 	[ -n "$ids" ] && podman network rm -f $ids >/dev/null 2>&1
-	local status=$?
 	if [ "${NET_KEEP:-0}" = 1 ] || { [ "${NET_KEEP:-0}" = failed ] && [ $status -ne 0 ] && [ $status -ne $SKIP ]; }
 	then
 		echo "net: kept $rundir" >&2

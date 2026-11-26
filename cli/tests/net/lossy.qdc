@@ -44,8 +44,14 @@ preset application Network Port 4111
 @a wait DownloadCompleted size=2097152 timeout=60s
 @a expect-file downloads/w.bin same-as ../w/share/w.bin
 
+# wally is active, so alice answers over UDP and one lost datagram loses the
+# result: ask three times and take whichever answer comes.
 @w search a.bin as s2
-@w wait SearchResult hub=hub search=$s2 hit.user.nick=alice timeout=20s
+@w sleep 3s
+@w search a.bin as s3
+@w sleep 3s
+@w search a.bin as s4
+@w wait SearchResult hub=hub hit.user.nick=alice timeout=20s
 @w download hub a.bin from alice
 @w wait DownloadCompleted size=2097152 timeout=60s
 @w expect-file downloads/a.bin same-as ../a/share/a.bin
