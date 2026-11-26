@@ -5027,6 +5027,39 @@ class QueuedFromSource {
 }
 
 /*
+ * A peer learned by SID - the sender of a chat line with a picture in it - is
+ * filed under their CID, so it is the same source a search result names.
+ */
+EXO_TEST(hubsession_a_peer_named_by_sid_and_by_cid_is_one_source,
+{
+	FakeHub fake;
+	Listener listener;
+	if (!fake.listen()) EXO_SKIP("could not listen on a loopback port");
+
+	const std::string address = "adc://127.0.0.1:" + std::to_string(fake.port());
+	Samurai::IO::Net::URL url(address);
+	QuickDC::Hub ui(*core, &listener, &url);
+	ui.connect();
+	EXO_ASSERT(fake.accepted());
+	EXO_ASSERT(!loginOn(fake).empty());
+	fake.send(std::string("BINF BBBB ID") + SOURCE_CID + " NIalice");
+	pump([] { return false; }, 100);
+
+	QueuedFromSource queued(address);
+	EXO_ASSERT(queued.file != nullptr);
+	if (!queued.file) return 0;
+
+	EXO_ASSERT(core->queue->sourceIdOn(address.c_str(), "BBBB") == SOURCE_CID);
+	EXO_ASSERT(!core->queue->addKnownSource(SOURCE_TTH, address.c_str(), "BBBB"));
+	EXO_ASSERT_EQ_UINT(queued.file->countSources(), 1u);
+
+	/* A SID nobody on the hub has is no source at all. */
+	EXO_ASSERT(!core->queue->addKnownSource(SOURCE_TTH, address.c_str(), "CCCC"));
+	EXO_ASSERT_EQ_UINT(queued.file->countSources(), 1u);
+	return 1;
+});
+
+/*
  * A source whose user is on no hub we are on is not asked for, and that is not
  * counted against it - it used to be a request made and dropped several times a
  * second, for ever.

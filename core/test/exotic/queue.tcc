@@ -637,3 +637,71 @@ EXO_TEST(queue_a_file_list_request_is_announced_as_it_ends,
 	removeFile(path);
 	return 1;
 });
+
+#define CID_A "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+#define CID_B "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+
+/* A CID is the peer on every ADC hub, however the hub is spelled. */
+EXO_TEST(queue_one_cid_on_two_adc_hubs_is_one_source,
+{
+	QuickDC::QueueFile file("/tmp/one-peer.bin", TTH1, 1000);
+	file.addSource(new QuickDC::FileSource("adc://hub.example:412", CID_A));
+	file.addSource(new QuickDC::FileSource("ADC://HUB.example:412", CID_A));
+	file.addSource(new QuickDC::FileSource("adcs://other.example:1511", CID_A));
+	EXO_ASSERT_EQ_UINT(file.countSources(), 1u);
+
+	file.addSource(new QuickDC::FileSource("adc://hub.example:412", CID_B));
+	EXO_ASSERT_EQ_UINT(file.countSources(), 2u);
+	EXO_ASSERT(file.findSource("adcs://other.example:1511", CID_B) != 0);
+	return 1;
+});
+
+/* An NMDC nickname is only somebody on the hub that has it. */
+EXO_TEST(queue_one_nick_is_one_source_per_nmdc_hub,
+{
+	QuickDC::QueueFile file("/tmp/one-nick.bin", TTH1, 1000);
+	file.addSource(new QuickDC::FileSource("dchub://hub.example:411", "alice"));
+	file.addSource(new QuickDC::FileSource("dchub://HUB.EXAMPLE:411", "alice"));
+	EXO_ASSERT_EQ_UINT(file.countSources(), 1u);
+
+	file.addSource(new QuickDC::FileSource("dchub://other.example:411", "alice"));
+	EXO_ASSERT_EQ_UINT(file.countSources(), 2u);
+	return 1;
+});
+
+namespace {
+
+class Scheduler : public QuickDC::QueueManager {
+	public:
+		using QuickDC::QueueManager::QueueManager;
+		using QuickDC::QueueManager::isPeerBusyWith;
+};
+
+}
+
+/* One request per peer and file: a second source naming the same peer is not asked as well. */
+EXO_TEST(queue_a_peer_already_asked_for_a_file_is_not_asked_again,
+{
+	const std::string path = queuePath();
+	{
+		Scheduler queue(path.c_str());
+		QuickDC::QueueFile* file = queue.add("/tmp/asked-once.bin", TTH1, 1000);
+		EXO_ASSERT(file != 0);
+		if (!file) return 0;
+
+		QuickDC::FileSource* asked = new QuickDC::FileSource("adc://hub.example:412", CID_A);
+		file->addSource(asked);
+		EXO_ASSERT(queue.createRequest(file, asked) != 0);
+
+		QuickDC::FileSource elsewhere("adcs://other.example:1511", CID_A);
+		QuickDC::FileSource somebodyElse("adc://hub.example:412", CID_B);
+		EXO_ASSERT(queue.isPeerBusyWith(file, &elsewhere));
+		EXO_ASSERT(!queue.isPeerBusyWith(file, &somebodyElse));
+
+		QuickDC::QueueFile* other = queue.add("/tmp/asked-once-too.bin", TTH2, 1000);
+		EXO_ASSERT(other && !queue.isPeerBusyWith(other, &elsewhere));
+	}
+	removeFile(path);
+	return 1;
+});
+

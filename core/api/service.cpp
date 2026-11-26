@@ -411,7 +411,7 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 
 		void EventBoardsAvailable(bool available) override
 		{
-			owner.publish(Events::BoardsAvailable{handle, available});
+			owner.publish(Events::BoardsAvailable{hubSettingsGroup(text(getUrl())), available});
 			if (owner.boards) owner.boards->available(handle, available);
 		}
 
@@ -428,7 +428,7 @@ class QuickDC::Api::Service::HubSession final : public QuickDC::Hub, public Quic
 		void EventBoardRefused(int code, const char* message, const char* board,
 		                       const char* tth) override
 		{
-			owner.publish(Events::BoardRefused{handle, code, text(message), text(board), text(tth)});
+			owner.publish(Events::BoardRefused{hubSettingsGroup(text(getUrl())), code, text(message), text(board), text(tth)});
 			if (owner.boards) owner.boards->refused(handle, code, text(board), text(tth));
 		}
 
@@ -1876,7 +1876,8 @@ void QuickDC::Api::Service::run(const Commands::RequestBoardEntry& command)
 void QuickDC::Api::Service::run(const Commands::WritePost& command)
 {
 	if (boards) boards->write(command);
-	else publish(Events::PostRefused{command.request, Events::PostRefused::Why::NoHub, 0, 0, std::string()});
+	else publish(Events::PostRefused{command.request, Events::PostRefused::Why::NoHub, 0, 0, std::string(),
+	                                  hubSettingsGroup(command.hubUrl), command.board});
 }
 
 void QuickDC::Api::Service::run(const Commands::WithdrawPost& command)

@@ -6,6 +6,7 @@
 #include "quickdc.h"
 #include "network/downloadqueue.h"
 #include "network/filesource.h"
+#include "network/adc/adcbbs.h"
 #include "network/leafhashes.h"
 #include "network/hubmanager.h"
 #include "api/core.h"
@@ -18,6 +19,7 @@
 #include "share/searchrequest.h"
 #include "config/settings.h"
 
+#include <samurai/stdc.h>
 #include <samurai/util/base32.h>
 #include <samurai/util/random.h>
 #include <samurai/io/file.h>
@@ -955,8 +957,14 @@ std::string QuickDC::QueueManager::sourceIdOn(const char* hubUrl, const char* id
 	if (!id) return std::string();
 
 	QuickDC::Hub* hub = (core && core->hubs && hubUrl) ? core->hubs->getHubByUrl(hubUrl) : 0;
-	const std::string known = (hub) ? hub->sourceIdOf(id) : std::string();
-	return known.empty() ? std::string(id) : known;
+	std::string known = (hub) ? hub->sourceIdOf(id) : std::string();
+	if (known.empty()) known = id;
+
+	/* A source on ADC is only ever found by CID, so a SID nobody there has is no source. */
+	const bool adc = hubUrl && (Samurai::Util::istarts_with(hubUrl, "adc://")
+	                            || Samurai::Util::istarts_with(hubUrl, "adcs://"));
+	if (adc && !ADC::isValidCID(known)) return std::string();
+	return known;
 }
 
 bool QuickDC::QueueManager::addKnownSource(const char* tth, const char* hubUrl, const char* given)

@@ -856,7 +856,7 @@ struct Fields {
 
 	Out operator()(const Ev::BoardsAvailable& e) const
 	{
-		return {"BoardsAvailable", {{"hub", hub(e.hub)}, {"available", e.available}}};
+		return {"BoardsAvailable", {{"hubUrl", e.hubUrl}, {"available", e.available}}};
 	}
 
 	Out operator()(const Ev::BoardUnavailable& e) const
@@ -868,7 +868,7 @@ struct Fields {
 	Out operator()(const Ev::BoardRefused& e) const
 	{
 		return {"BoardRefused", {
-			{"hub", hub(e.hub)}, {"code", e.code}, {"message", e.message},
+			{"hubUrl", e.hubUrl}, {"code", e.code}, {"message", e.message},
 			{"board", e.board}, {"tth", e.tth}}};
 	}
 
@@ -904,14 +904,14 @@ struct Fields {
 	Out operator()(const Ev::PostSubmitted& e) const
 	{
 		return {"PostSubmitted", {
-			{"request", e.request}, {"board", e.board}, {"tth", e.tth}, {"size", e.size}}};
+			{"request", e.request}, {"hubUrl", e.hubUrl}, {"board", e.board}, {"tth", e.tth}, {"size", e.size}}};
 	}
 
 	Out operator()(const Ev::PostRefused& e) const
 	{
 		return {"PostRefused", {
 			{"request", e.request}, {"why", name(e.why)}, {"size", e.size}, {"limit", e.limit},
-			{"reason", e.reason}}};
+			{"reason", e.reason}, {"hubUrl", e.hubUrl}, {"board", e.board}}};
 	}
 
 	Out operator()(const Ev::SettingChanged& e) const

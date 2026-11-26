@@ -894,6 +894,7 @@ struct PostStatus {
 /** WritePost was carried out: the document is offered and submitted under 'tth'. */
 struct PostSubmitted {
 	uint64_t request = 0;
+	std::string hubUrl;
 	std::string board;
 	std::string tth;
 	uint64_t size = 0;
@@ -920,6 +921,8 @@ struct PostRefused {
 	uint64_t size = 0;
 	uint64_t limit = 0;
 	std::string reason;
+	std::string hubUrl;
+	std::string board;
 };
 
 /** OpenHub was given an address no session can be made for. */
@@ -985,7 +988,8 @@ struct UsersCleared { HubHandle hub = 0; };
 /** A result for the live search 'search'; one answering none is not told. */
 struct SearchResult { HubHandle hub = 0; uint64_t search = 0; SearchHit hit; };
 
-struct BoardsAvailable { HubHandle hub = 0; bool available = false; };
+/** Whether the session open on hubUrl (as boards name it) carries boards now. */
+struct BoardsAvailable { std::string hubUrl; bool available = false; };
 
 /** No session on 'hubUrl' carries boards just now, so what was asked was not sent. */
 struct BoardUnavailable {
@@ -996,8 +1000,9 @@ struct BoardUnavailable {
 	std::string tth;
 	Asked asked = Asked::Subscribe;
 };
+/** The hub on hubUrl declined a board request; it names the board or the post and nothing else. */
 struct BoardRefused {
-	HubHandle hub = 0;
+	std::string hubUrl;
 	int code = 0;
 	std::string message;
 	std::string board;

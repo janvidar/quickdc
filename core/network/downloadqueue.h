@@ -815,7 +815,8 @@ class QueueManager {
 		/**
 		 * What a source on that hub is to be recorded under: a SID given on ADC
 		 * becomes the CID of the user who has it there, so a peer is one source
-		 * however it was named. What the hub cannot place is returned as given.
+		 * however it was named. What the hub cannot place is returned as given,
+		 * or empty on ADC where that is not a CID.
 		 */
 		std::string sourceIdOn(const char* hubUrl, const char* id) const;
 

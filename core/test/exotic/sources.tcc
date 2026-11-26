@@ -38,7 +38,7 @@
 #define TTH3 "BBXFLX5NO4T54FMVTGZ6UXER2QKN6J2IGGL3W7A"
 
 #define HUB "adc://hub.example:412"
-#define CID "AAAABBBBCCCCDDDD"
+#define CID "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJ"
 
 /*
  * Scratch paths, named by process as well as by counter.
@@ -289,7 +289,7 @@ EXO_TEST(sources_source_is_taken_over_and_found_again,
 
 		EXO_ASSERT(file.countSources() == 1);
 		EXO_ASSERT(file.findSource(HUB, CID) != 0);
-		EXO_ASSERT(file.findSource(HUB, "SOMEONEELSE") == 0);
+		EXO_ASSERT(file.findSource(HUB, "SOMEONEELSEAAAAAAAAAAAAAAAAAAAAAAAAAAAA") == 0);
 		EXO_ASSERT(file.findSource("dchub://hub.example:412", CID) == 0);
 	
 	return 1;
@@ -1070,7 +1070,7 @@ EXO_TEST(sources_the_same_named_source_twice_is_refused,
 	EXO_ASSERT(fix.queue->getFileByTTH(TTH1)->countSources() == 1);
 
 	/* Somebody else on the same hub is another matter. */
-	EXO_ASSERT(fix.queue->addKnownSource(TTH1, HUB, "SOMEONEELSE"));
+	EXO_ASSERT(fix.queue->addKnownSource(TTH1, HUB, "SOMEONEELSEAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
 	EXO_ASSERT(fix.queue->getFileByTTH(TTH1)->countSources() == 2);
 	return 1;
 });

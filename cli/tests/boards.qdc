@@ -35,7 +35,7 @@ preset application Network "Active mode" 1
 @b wait SettingChanged store=session key="Offer what I have read"
 
 @a board-post hub general Hello The first post.
-@a wait PostSubmitted board=general remember ROOT=tth timeout=30s
+@a wait PostSubmitted hubUrl=adc://127.0.0.1:${PORT_C} board=general remember ROOT=tth timeout=30s
 @a wait PostStatus tth=$ROOT state=Verified post.body="The first post."
 @b wait BoardEntries board=general entries.*.tth=$ROOT unread=1
 
@@ -86,7 +86,7 @@ preset application Network "Active mode" 1
 @a board-subscribe adc://127.0.0.1:${PORT_C} general
 @a wait BoardUnavailable asked=Subscribe
 @a board-post adc://127.0.0.1:${PORT_C} general Late Nobody to send it to.
-@a wait PostRefused why=NoHub
+@a wait PostRefused why=NoHub hubUrl=adc://127.0.0.1:${PORT_C} board=general
 @c board-read hub general $ROOT fetch
 @c wait PostStatus tth=$ROOT state=Verified post.body="The first post." timeout=60s
 
@@ -104,5 +104,5 @@ preset application Network "Active mode" 1
 
 # A board the hub does not have is gone.
 @c board-subscribe hub nosuch
-@c wait BoardRefused hub=hub code=71 board=nosuch
+@c wait BoardRefused hubUrl=adc://127.0.0.1:${PORT_C} code=71 board=nosuch
 @c wait BoardState board=nosuch gone=true

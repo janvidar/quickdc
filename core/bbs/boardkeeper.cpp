@@ -850,24 +850,25 @@ void QuickDC::BoardKeeper::write(const Api::Commands::WritePost& command)
 {
 	using Refused = Api::Events::PostRefused;
 
-	Session* at = sessionFor(hubSettingsGroup(command.hubUrl));
+	const std::string key = hubSettingsGroup(command.hubUrl);
+	Session* at = sessionFor(key);
 	if (!at || !at->link || !at->available || command.board.empty())
 	{
-		publish(Refused{command.request, Refused::Why::NoHub, 0, 0, std::string()});
+		publish(Refused{command.request, Refused::Why::NoHub, 0, 0, std::string(), key, command.board});
 		return;
 	}
 
 	const char* cid = core.identity ? core.identity->getCID() : nullptr;
 	if (!cid || !*cid)
 	{
-		publish(Refused{command.request, Refused::Why::NoIdentity, 0, 0, std::string()});
+		publish(Refused{command.request, Refused::Why::NoIdentity, 0, 0, std::string(), key, command.board});
 		return;
 	}
 
 	const std::string subject = oneLine(command.subject);
 	if (subject.empty() && command.parent.empty())
 	{
-		publish(Refused{command.request, Refused::Why::NoSubject, 0, 0, std::string()});
+		publish(Refused{command.request, Refused::Why::NoSubject, 0, 0, std::string(), key, command.board});
 		return;
 	}
 
@@ -885,13 +886,13 @@ void QuickDC::BoardKeeper::write(const Api::Commands::WritePost& command)
 	const uint64_t limit = board == at->described.end() ? 0 : board->second.maxSize;
 	if (limit > 0 && document.size() > limit)
 	{
-		publish(Refused{command.request, Refused::Why::TooLarge, document.size(), limit, std::string()});
+		publish(Refused{command.request, Refused::Why::TooLarge, document.size(), limit, std::string(), key, command.board});
 		return;
 	}
 
 	if (home.empty() || !core.shares)
 	{
-		publish(Refused{command.request, Refused::Why::NotWritten, 0, 0, "there is nowhere to keep it"});
+		publish(Refused{command.request, Refused::Why::NotWritten, 0, 0, "there is nowhere to keep it", key, command.board});
 		return;
 	}
 
@@ -901,7 +902,7 @@ void QuickDC::BoardKeeper::write(const Api::Commands::WritePost& command)
 	std::filesystem::create_directories(folder, error);
 	if (error)
 	{
-		publish(Refused{command.request, Refused::Why::NotWritten, 0, 0, folder + ": " + error.message()});
+		publish(Refused{command.request, Refused::Why::NotWritten, 0, 0, folder + ": " + error.message(), key, command.board});
 		return;
 	}
 
@@ -920,7 +921,7 @@ void QuickDC::BoardKeeper::write(const Api::Commands::WritePost& command)
 	out.close();
 	if (!out)
 	{
-		publish(Refused{command.request, Refused::Why::NotWritten, 0, 0, path + " could not be written"});
+		publish(Refused{command.request, Refused::Why::NotWritten, 0, 0, path + " could not be written", key, command.board});
 		return;
 	}
 
@@ -930,7 +931,7 @@ void QuickDC::BoardKeeper::write(const Api::Commands::WritePost& command)
 	if (!core.shares->attach(path.c_str(), this, Share::Manager::Persistence::Session, Share::Manager::SlotCost::Free))
 	{
 		writing.erase(path);
-		publish(Refused{command.request, Refused::Why::NotOffered, 0, 0, path + " could not be offered"});
+		publish(Refused{command.request, Refused::Why::NotOffered, 0, 0, path + " could not be offered", key, command.board});
 	}
 }
 
@@ -946,12 +947,13 @@ void QuickDC::BoardKeeper::EventAttachmentReady(const char* path, const char* tt
 	if (!at || !at->link
 	    || !at->link->submitPost(tth, size, done.command.board, done.subject, done.command.parent))
 	{
-		publish(Api::Events::PostRefused{done.command.request, Api::Events::PostRefused::Why::NoHub, 0, 0, std::string()});
+		publish(Api::Events::PostRefused{done.command.request, Api::Events::PostRefused::Why::NoHub, 0, 0, std::string(),
+		                                 done.hub, done.command.board});
 		return;
 	}
 
 	written[tth] = done.path;
-	publish(Api::Events::PostSubmitted{done.command.request, done.command.board, tth, size});
+	publish(Api::Events::PostSubmitted{done.command.request, done.hub, done.command.board, tth, size});
 }
 
 void QuickDC::BoardKeeper::EventAttachmentFailed(const char* path, const char* reason)
@@ -959,9 +961,10 @@ void QuickDC::BoardKeeper::EventAttachmentFailed(const char* path, const char* r
 	const auto found = writing.find(path ? path : "");
 	if (found == writing.end()) return;
 
-	const uint64_t request = found->second.command.request;
+	const Writing done = found->second;
 	writing.erase(found);
-	publish(Api::Events::PostRefused{request, Api::Events::PostRefused::Why::NotOffered, 0, 0, reason ? reason : ""});
+	publish(Api::Events::PostRefused{done.command.request, Api::Events::PostRefused::Why::NotOffered, 0, 0,
+	                                 reason ? reason : "", done.hub, done.command.board});
 }
 
 void QuickDC::BoardKeeper::policyChanged()
