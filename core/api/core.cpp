@@ -504,7 +504,7 @@ NetworkPlan planFrom(const QuickDC::Preferences& config)
 	NetworkPlan plan;
 	plan.mode = QuickDC::networkModeInForce(config);
 	plan.keys = QuickDC::networkModeKeysInForce(config);
-	plan.endpoint.port = static_cast<uint16_t>(QuickDC::Settings::read(config, QuickDC::Settings::Port));
+	plan.endpoint.port = QuickDC::Settings::peerPort(config);
 	plan.endpoint.bind = QuickDC::Settings::read(config, QuickDC::Settings::Bind);
 
 	/* An emptied field, saved: there is no address that means, so it is the default. */
@@ -1028,5 +1028,5 @@ uint16_t QuickDC::Core::peerPort() const
 {
 	const uint16_t bound = server ? server->boundPort() : 0;
 	if (bound) return bound;
-	return config ? static_cast<uint16_t>(Settings::read(*config, Settings::Port)) : 0;
+	return config ? Settings::peerPort(*config) : 0;
 }

@@ -22,8 +22,8 @@ namespace {
 
 }
 
-/** How many ports are picked for TCP before giving up on finding one UDP has free too. */
-#define QUICKDC_PICK_PORT_ATTEMPTS 16
+/** How many ports from the configured one up are tried for a pair TCP and UDP both have free. */
+#define QUICKDC_PORT_FALLBACK_STEPS 50
 
 namespace QuickDC {
 
@@ -74,7 +74,7 @@ class DCServer : public Samurai::IO::Net::ServerSocketEventHandler, public Samur
 			return ipv6 ? dgram6 != nullptr : dgram != nullptr;
 		}
 
-		/** The port peers are taken on, as bound - so the one picked where 0 was asked for - or 0. */
+		/** The port peers are taken on, as bound - above the configured one where that was taken - or 0. */
 		uint16_t boundPort() const;
 
 		/** The same for search results and other datagrams, which is the same port wherever both came up. */

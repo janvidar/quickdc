@@ -34,11 +34,11 @@ if(QUICKDC_BUILD_TESTS)
     set(scenario ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenario.sh)
     set(scripts ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 
-    # These two ask for port 0 and learn the port picked from CoreStatus.
+    # These two give both cores one port and learn where each bound from CoreStatus.
     foreach(name two-cores-chat download-active)
         string(REPLACE "-" "_" test ${name})
         add_test(NAME cli_${test}
-            COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --core a --core b --quiet ${scripts}/${name}.qdc)
+            COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --core a --core b --free-port PORT --quiet ${scripts}/${name}.qdc)
         set_tests_properties(cli_${test} PROPERTIES TIMEOUT 120)
     endforeach()
 

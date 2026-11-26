@@ -561,7 +561,7 @@ EXO_TEST(service_the_local_hub_is_administered_through_commands,
 
 	QuickDC::Core::Home where;
 	where.directory = home;
-	where.settings["Network"] = {{"Mode", "advanced"}, {"Bind", "127.0.0.1"}, {"Bind6", ""}, {"Port", "0"}};
+	where.settings["Network"] = {{"Mode", "advanced"}, {"Bind", "127.0.0.1"}, {"Bind6", ""}, {"Port", "41411"}};
 	where.settings["Local hub"] = {{"Enabled", "1"}};
 
 	{

@@ -100,6 +100,13 @@ inline void write(Preferences& to, const Flag& setting, bool value)
 
 /* [Network] */
 inline constexpr Number Port                    {"Network", "Port", 1411};
+
+/** The peer port asked for; 0 or out of range is the default, since 0 is not a port to offer. */
+inline uint16_t peerPort(const Preferences& from)
+{
+	const int port = read(from, Port);
+	return static_cast<uint16_t>(port < 1 || port > 65535 ? Port.fallback : port);
+}
 inline constexpr Text   Bind                    {"Network", "Bind", "0.0.0.0"};
 inline constexpr Text   Bind6                   {"Network", "Bind6", "::"};
 /** The address to advertise; "0.0.0.0" has a hub use what it sees. */

@@ -16,6 +16,7 @@
 #include "api/core.h"
 #include "api/server.h"
 #include "config/preferences.h"
+#include "config/settings.h"
 #include "network/hubmanager.h"
 
 #include <samurai/io/file.h>
@@ -127,53 +128,46 @@ EXO_TEST(networkplan_a_changed_port_is_listened_on_without_a_restart,
 });
 
 /*
- * Port 0 is one port picked for both services: a peer is told one number, and a
- * search result sent to it has to arrive where its connection would.
+ * A taken port moves the peer port up to the first one free for TCP and UDP both,
+ * and that is the port advertised; the configured one stays as it was.
  */
-EXO_TEST(networkplan_port_0_picks_one_port_for_tcp_and_udp,
+EXO_TEST(networkplan_a_taken_port_moves_up_to_a_free_pair,
 {
 	Fixture f;
+	const uint16_t held = sparePort();
+	if (!held || held > 65000) EXO_SKIP("no spare port");
+
 	QuickDC::DCServer::Endpoint at;
-	at.port = 0;
-	at.bind = "127.0.0.1";
-	at.bind6 = "";
-
-	for (int n = 0; n < 20; n++)
-	{
-		QuickDC::DCServer server(*f.core, at);
-		EXO_ASSERT(server.listening(false) && server.listeningUdp(false));
-		EXO_ASSERT(server.boundPort() != 0);
-		EXO_ASSERT_EQ_INT(server.boundUdpPort(), server.boundPort());
-	}
-
-	/* And the one bound is what is advertised, not the 0 configured. */
-	delete f.core->server;
-	f.core->server = new QuickDC::DCServer(*f.core, at);
-	f.core->config->setNumber("Network", "Port", 0);
-	EXO_ASSERT(f.core->peerPort() != 0);
-	EXO_ASSERT_EQ_INT(f.core->peerPort(), f.core->server->boundPort());
-	return 1;
-});
-
-/*
- * A port another program holds is not shared for UDP either: a datagram socket
- * would bind it beside that program and take its datagrams.
- */
-EXO_TEST(networkplan_a_taken_port_is_not_bound_for_udp_either,
-{
-	Fixture f;
-	QuickDC::DCServer::Endpoint at;
-	at.port = 0;
+	at.port = held;
 	at.bind = "127.0.0.1";
 	at.bind6 = "";
 	QuickDC::DCServer holder(*f.core, at);
 	EXO_ASSERT(holder.listening(false) && holder.listeningUdp(false));
+	EXO_ASSERT_EQ_INT(holder.boundPort(), held);
 
-	at.port = holder.boundPort();
 	QuickDC::DCServer second(*f.core, at);
-	EXO_ASSERT(!second.listening(false));
-	EXO_ASSERT(!second.listeningUdp(false));
-	EXO_ASSERT_EQ_INT(second.boundPort(), 0);
+	EXO_ASSERT(second.listening(false) && second.listeningUdp(false));
+	EXO_ASSERT(second.boundPort() > held);
+	EXO_ASSERT(second.boundPort() < held + QUICKDC_PORT_FALLBACK_STEPS);
+	EXO_ASSERT_EQ_INT(second.boundUdpPort(), second.boundPort());
+	EXO_ASSERT_EQ_INT(second.endpoint().port, held);
+
+	delete f.core->server;
+	f.core->server = new QuickDC::DCServer(*f.core, at);
+	f.core->config->setNumber("Network", "Port", held);
+	EXO_ASSERT_EQ_INT(f.core->peerPort(), f.core->server->boundPort());
+	EXO_ASSERT(f.core->peerPort() != held);
+	return 1;
+});
+
+/* 0 is not a port to offer: the setting reads as the default. */
+EXO_TEST(networkplan_port_0_is_the_default,
+{
+	Fixture f;
+	f.core->config->setNumber("Network", "Port", 0);
+	EXO_ASSERT_EQ_INT(QuickDC::Settings::peerPort(*f.core->config), QuickDC::Settings::Port.fallback);
+	f.core->config->setNumber("Network", "Port", 70000);
+	EXO_ASSERT_EQ_INT(QuickDC::Settings::peerPort(*f.core->config), QuickDC::Settings::Port.fallback);
 	return 1;
 });
 

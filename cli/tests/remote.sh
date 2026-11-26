@@ -69,7 +69,7 @@ do
 done
 
 started=$(date +%s)
-QDC_AGENT_KEY="${controller_key:-$QDC_AGENT_KEY}" "$qdc" --home "$home" $connect --quiet "$script" >"$home/stdout" 2>"$home/stderr" &
+QDC_AGENT_KEY="${controller_key:-$QDC_AGENT_KEY}" "$qdc" --home "$home" $connect --free-port PORT --quiet "$script" >"$home/stdout" 2>"$home/stderr" &
 controller=$!
 
 failed=0

@@ -1234,6 +1234,8 @@ struct CoreStatus {
 	uint64_t started = 0;
 	/** The port peers and the local hub are reached on, as bound; 0 where nothing is. */
 	uint16_t port = 0;
+	/** The port asked for; not 'port' where that one was taken. */
+	uint16_t configuredPort = 0;
 	bool tcp = false;
 	bool tcp6 = false;
 	bool udp = false;

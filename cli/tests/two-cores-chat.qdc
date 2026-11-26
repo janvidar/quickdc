@@ -2,23 +2,23 @@
 
 # Taken as the files' contents before either core starts, so neither binds the
 # default port, maps one through the gateway or asks a server outside about it.
-# Port 0 is one port picked for TCP and UDP alike, which CoreStatus tells.
+# Both ask for one port; whichever binds second moves up, which CoreStatus tells.
 preset application Network Mode advanced
 preset application Network Bind 127.0.0.1
 preset application Network Bind6 ""
-preset application Network Port 0
+preset application Network Port ${PORT}
 
 # Applied live, as a settings page would; the hub takes a turn to follow, and
 # CoreStatus says when it takes logins.
 @a set application User Nickname alice
 @b set application User Nickname bob
 @a set application "Local hub" Enabled 1
-@a wait CoreStatus localHub=true tcp=true udp=true port!=0 remember PORT=port
+@a wait CoreStatus localHub=true tcp=true udp=true port!=0 configuredPort=${PORT} remember HUB=port
 
 # Neither login waits for the other.
-@a open adc://127.0.0.1:$PORT as hub
+@a open adc://127.0.0.1:$HUB as hub
 @a connect hub
-@b open adc://127.0.0.1:$PORT as hub
+@b open adc://127.0.0.1:$HUB as hub
 @b connect hub
 @a wait HubStatusChanged hub=hub status=LoggedIn timeout=30s
 @b wait HubStatusChanged hub=hub status=LoggedIn timeout=30s

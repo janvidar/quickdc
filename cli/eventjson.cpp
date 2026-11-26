@@ -966,7 +966,7 @@ struct Fields {
 	Out operator()(const Ev::CoreStatus& e) const
 	{
 		return {"CoreStatus", {
-			{"request", e.request}, {"version", e.version}, {"started", e.started}, {"port", e.port},
+			{"request", e.request}, {"version", e.version}, {"started", e.started}, {"port", e.port}, {"configuredPort", e.configuredPort},
 			{"tcp", e.tcp}, {"tcp6", e.tcp6}, {"udp", e.udp}, {"udp6", e.udp6}, {"localHub", e.localHub}}};
 	}
 

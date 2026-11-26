@@ -1,6 +1,6 @@
 # Two ways a reachability check used to test a port some other program answers,
 # and so report it "occupied". a starts in automatic mode on 1411, which x on the
-# same host holds: a must neither map nor measure a port it did not bind. Moved
+# same host holds: a moves up to 1412, and maps and measures that one. Moved
 # to 4111 with UPnP, a asks for a port c's mapping already has, and the gateway
 # grants another: the check must test the granted port, not 4111 (which is c).
 
@@ -16,9 +16,8 @@ preset application Network Bind6 ""
 @a preset application Network "Reachability server" ${DROP}
 
 @c wait ReachabilityMeasured verdict.tcp=open verdict.udp=open verdict.port=4111 timeout=30s
-@a wait CoreStatus port=0
-@a measure
-@a wait ReachabilityCheckFailed why=CheckFailed reason="IPv4: there is no peer port to test" timeout=30s
+@a wait CoreStatus port=1412 configuredPort=1411 tcp=true udp=true
+@a wait ReachabilityMeasured verdict.tcp=open verdict.udp=open timeout=30s
 
 @a set application Network Port 4111
 @a wait CoreStatus port=4111 timeout=10s
@@ -26,6 +25,8 @@ preset application Network Bind6 ""
 @a set application Network "Active mode" 1
 @a set application Network Mode advanced
 @a wait ReachabilityMeasured verdict.tcp=open verdict.udp=open verdict.port!=4111 remember EXTERNAL=verdict.port timeout=30s
+# The drop server limits how often one address asks.
+@a sleep 5s
 @a measure
 @a wait ReachabilityMeasured verdict.tcp=open verdict.udp=open verdict.port=$EXTERNAL timeout=30s
 @a expect-no ReachabilityMeasured verdict.tcp=occupied

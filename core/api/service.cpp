@@ -1204,6 +1204,7 @@ QuickDC::Api::Events::CoreStatus QuickDC::Api::Service::listening() const
 	if (core.server)
 	{
 		status.port = core.server->boundPort();
+		status.configuredPort = core.server->endpoint().port;
 		status.tcp = core.server->listening(false);
 		status.tcp6 = core.server->listening(true);
 		status.udp = core.server->listeningUdp(false);
@@ -1218,7 +1219,7 @@ void QuickDC::Api::Service::checkStatus()
 {
 	const Events::CoreStatus now = listening();
 	const auto same = [](const Events::CoreStatus& a, const Events::CoreStatus& b) {
-		return a.port == b.port && a.tcp == b.tcp && a.tcp6 == b.tcp6 && a.udp == b.udp
+		return a.port == b.port && a.configuredPort == b.configuredPort && a.tcp == b.tcp && a.tcp6 == b.tcp6 && a.udp == b.udp
 			&& a.udp6 == b.udp6 && a.localHub == b.localHub;
 	};
 
@@ -1662,7 +1663,7 @@ void QuickDC::Api::Service::reconcileLocalJoin()
 	/* By the settings, not by whether it listens yet: a hub coming up is reconnected to. */
 	std::string wanted;
 	if (Settings::read(*core.config, Settings::HubEnabled) && Settings::read(*core.config, Settings::HubJoin))
-		wanted = canonicalHubUrl("adc://127.0.0.1:" + std::to_string(Settings::read(*core.config, Settings::Port)));
+		wanted = canonicalHubUrl("adc://127.0.0.1:" + std::to_string(core.peerPort()));
 
 	if (wanted.empty()) localJoinDeclined.clear();
 	if (localJoin && localJoinUrl == wanted) return;

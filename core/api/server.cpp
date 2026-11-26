@@ -46,50 +46,42 @@ void QuickDC::DCServer::listen(const Endpoint& endpoint)
 	Samurai::IO::Net::InetAddress localAddr(bindaddr.c_str());
 
 	/*
-	 * Port 0 is one port picked for both: TCP is given one, and UDP is asked for
-	 * the same number. One taken for UDP already is given back and another one
-	 * picked, so a peer told the port finds both services on it.
+	 * The configured port, or the first free one above it: one number for TCP and
+	 * UDP both, so a peer told the port finds both services on it. A datagram
+	 * socket binds a port another program holds (SO_REUSEADDR) and would take its
+	 * datagrams, so TCP is bound first and decides.
 	 */
-	uint16_t port = at.port;
-	for (int attempt = 0; attempt < QUICKDC_PICK_PORT_ATTEMPTS; attempt++)
+	uint16_t port = 0;
+	for (int step = 0; step < QUICKDC_PORT_FALLBACK_STEPS && at.port && at.port + step <= 65535; step++)
 	{
-		dgram.reset();
+		const uint16_t trying = static_cast<uint16_t>(at.port + step);
 		socket = Samurai::IO::Net::ServerSocket::create(core.loop(), this,
-			Samurai::IO::Net::InetSocketAddress(localAddr, at.port));
-
+			Samurai::IO::Net::InetSocketAddress(localAddr, trying));
 		if (!socket->listen())
 		{
-			QDBG("Error: could not bind to port for TCP service. Disabling service");
 			socket.reset();
+			continue;
 		}
 
-		port = (at.port || !socket) ? at.port : socket->getLocalPort();
 		dgram = Samurai::IO::Net::DatagramSocket::create(core.loop(), this,
-			Samurai::IO::Net::InetSocketAddress(localAddr, port));
+			Samurai::IO::Net::InetSocketAddress(localAddr, trying));
+		if (dgram->listen())
+		{
+			port = trying;
+			break;
+		}
 
-		if (dgram->listen()) break;
-
-		QDBG("Error: could not bind to port %d for UDP service", port);
 		dgram.reset();
-		if (at.port || !socket) break;
-	}
-
-	if (!at.port && socket && !dgram)
-	{
-		QDBG("No port was free for both TCP and UDP; disabling the peer port");
 		socket.reset();
-		port = 0;
 	}
 
-	/*
-	 * A datagram socket binds a port another program holds (SO_REUSEADDR) and then
-	 * takes its datagrams, so where TCP found the port taken UDP lets it be.
-	 */
-	if (!socket && dgram)
+	if (!port)
 	{
-		QDBG("Port %d is taken; not sharing it for UDP either", static_cast<int>(port));
-		dgram.reset();
+		QERR("No port from %d up was free for both TCP and UDP; not listening", static_cast<int>(at.port));
+		return;
 	}
+	if (port != at.port)
+		QDBG("Port %d is taken; listening on %d", static_cast<int>(at.port), static_cast<int>(port));
 
 	/*
 	 * The same port on the other family, in sockets of its own: a wildcard bound
