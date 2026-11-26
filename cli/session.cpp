@@ -6,6 +6,7 @@
 #include "session.h"
 #include "eventjson.h"
 #include "human.h"
+#include "sockets.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -489,7 +490,7 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::hold(const Line& line, int port)
 	if (held.count(port) || servers.count(port))
 		return fail(line, "port " + std::to_string(port) + " is already in use here");
 
-	const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	const int fd = streamSocket(AF_INET);
 	sockaddr_in address {};
 	address.sin_family = AF_INET;
 	address.sin_port = htons(static_cast<uint16_t>(port));
