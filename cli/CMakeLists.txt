@@ -88,7 +88,9 @@ if(QUICKDC_BUILD_TESTS)
     add_test(NAME cli_recent_hubs
         COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --free-port PORT --quiet
                 ${scripts}/recent-hubs.qdc)
-    set_tests_properties(cli_favourites cli_recent_hubs PROPERTIES TIMEOUT 120)
+    add_test(NAME cli_session_hubs
+        COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --quiet ${scripts}/session-hubs.qdc)
+    set_tests_properties(cli_favourites cli_recent_hubs cli_session_hubs PROPERTIES TIMEOUT 120)
 
     add_test(NAME cli_interactive
         COMMAND ${scripts}/interactive.sh $<TARGET_FILE:qdc>)

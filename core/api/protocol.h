@@ -429,7 +429,15 @@ struct ClearCompletedDownloads { };
 struct OpenHub {
 	HubHandle hub = 0;
 	std::string url;
+	/** Kept among the hubs to open on the next start (SessionHubs) while open. */
+	bool remember = true;
 };
+
+/** The front end is going away: hubs it closes from here on stay in SessionHubs. */
+struct EndSession { };
+
+/** Nothing to open on the next start but what is opened from now on. */
+struct ClearSessionHubs { };
 
 /** Disconnect the session and forget it. */
 struct CloseHub { HubHandle hub = 0; };
@@ -1147,6 +1155,15 @@ struct RecentHubs {
 	std::vector<RecentHub> hubs;
 };
 
+/**
+ * The hubs to open on the next start: those open now, and those closed by the
+ * session ending (EndSession). Told on ReportState and on every change.
+ */
+struct SessionHubs {
+	uint64_t request = 0;
+	std::vector<std::string> urls;
+};
+
 /** What finished downloading, newest first; told on ReportState and on every change. */
 struct CompletedDownloads {
 	uint64_t request = 0;
@@ -1347,6 +1364,8 @@ struct Command {
 		Commands::RemoveFavouriteHub,
 		Commands::ForgetRecentHub,
 		Commands::ClearRecentHubs,
+		Commands::EndSession,
+		Commands::ClearSessionHubs,
 		Commands::ForgetCompletedDownload,
 		Commands::ClearCompletedDownloads
 	>;
@@ -1415,6 +1434,7 @@ struct Event {
 		Events::ConnectionMode,
 		Events::FavouriteHubs,
 		Events::RecentHubs,
+		Events::SessionHubs,
 		Events::CompletedDownloads,
 		Events::KickRefused,
 		Events::CoreStatus,

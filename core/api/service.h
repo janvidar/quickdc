@@ -162,11 +162,14 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		void run(const Commands::RemoveFavouriteHub& command);
 		void run(const Commands::ForgetRecentHub& command);
 		void run(const Commands::ClearRecentHubs& command);
+		void run(const Commands::EndSession& command);
+		void run(const Commands::ClearSessionHubs& command);
 		void run(const Commands::ForgetCompletedDownload& command);
 		void run(const Commands::ClearCompletedDownloads& command);
 
 		Events::FavouriteHubs favouriteHubs(uint64_t request) const;
 		Events::RecentHubs recentHubs(uint64_t request) const;
+		Events::SessionHubs sessionHubs(uint64_t request) const;
 		Events::CompletedDownloads completedDownloads(uint64_t request) const;
 
 		/** What a hub opened as 'url' calls itself. */
@@ -242,6 +245,9 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		/* Null without a configuration to keep them in. */
 		std::unique_ptr<QuickDC::FavouriteHubs> favourites;
 		std::unique_ptr<QuickDC::RecentHubs> recents;
+		std::unique_ptr<QuickDC::SessionHubs> session_;
+		/** The address each remembered hub was opened with, for its close. */
+		std::map<HubHandle, std::string> remembered;
 		std::unique_ptr<QuickDC::CompletedDownloads> completed;
 		std::unique_ptr<QuickDC::HubDirectory> directory;
 

@@ -1291,6 +1291,8 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"favourite-remove", "favourite-remove <url>",                       parseNaming<Cmd::RemoveFavouriteHub>},
 		{"recent-forget", "recent-forget <url>",                             parseNaming<Cmd::ForgetRecentHub>},
 		{"recent-clear", "recent-clear",                                     parseBare<Cmd::ClearRecentHubs>},
+		{"end-session", "end-session",                                       parseBare<Cmd::EndSession>},
+		{"session-clear", "session-clear",                                   parseBare<Cmd::ClearSessionHubs>},
 		{"completed-forget", "completed-forget <path>",                      parseCompletedForget},
 		{"completed-clear", "completed-clear",                               parseBare<Cmd::ClearCompletedDownloads>},
 		{"hublist-add", "hublist-add <url>",                                 parseNaming<Cmd::AddHubListSource>},

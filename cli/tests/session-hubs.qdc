@@ -1,0 +1,20 @@
+# The core keeps the hubs open, to open again on the next start: a close takes
+# a hub off, a close once the session is ending does not, and a hub opened
+# with nothing to remember is never on it.
+
+open adc://127.0.0.1:1 as one
+wait SessionHubs urls.0=adc://127.0.0.1:1
+open dchub://127.0.0.1:2 as two
+wait SessionHubs urls.1=dchub://127.0.0.1:2
+
+close one
+wait SessionHubs urls.0=dchub://127.0.0.1:2
+expect-no SessionHubs urls.1=adc://127.0.0.1:1
+
+end-session
+close two
+state
+wait SessionHubs urls.0=dchub://127.0.0.1:2
+
+session-clear
+wait SessionHubs urls=[]

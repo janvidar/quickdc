@@ -209,6 +209,63 @@ void QuickDC::RecentHubs::store()
 	writeNumbered(config, "Recent hubs", "Hub ", lines, stored);
 }
 
+QuickDC::SessionHubs::SessionHubs(Preferences& config_)
+	: config(config_)
+{
+	const char* group = "Windows";
+	stored = total(config, group, LIMIT);
+
+	for (int n = 0; n < stored; ++n)
+	{
+		const std::string url = config.peekString(group, numbered("Hub ", n), "");
+		const bool seen = std::any_of(hubs.begin(), hubs.end(), [&url](const std::string& hub) {
+			return hubSettingsGroup(hub) == hubSettingsGroup(url);
+		});
+		if (!url.empty() && !seen) hubs.push_back(url);
+	}
+}
+
+bool QuickDC::SessionHubs::opened(const std::string& url)
+{
+	frozen = false;
+
+	const std::string group = hubSettingsGroup(url);
+	const bool seen = std::any_of(hubs.begin(), hubs.end(),
+		[&group](const std::string& hub) { return hubSettingsGroup(hub) == group; });
+	if (seen || static_cast<int>(hubs.size()) >= LIMIT) return false;
+
+	hubs.push_back(url);
+	store();
+	return true;
+}
+
+bool QuickDC::SessionHubs::closed(const std::string& url)
+{
+	if (frozen) return false;
+
+	const std::string group = hubSettingsGroup(url);
+	const auto gone = std::remove_if(hubs.begin(), hubs.end(),
+		[&group](const std::string& hub) { return hubSettingsGroup(hub) == group; });
+	if (gone == hubs.end()) return false;
+
+	hubs.erase(gone, hubs.end());
+	store();
+	return true;
+}
+
+bool QuickDC::SessionHubs::clear(const std::vector<std::string>& open)
+{
+	if (hubs == open) return false;
+	hubs = open;
+	store();
+	return true;
+}
+
+void QuickDC::SessionHubs::store()
+{
+	writeNumbered(config, "Windows", "Hub ", hubs, stored);
+}
+
 QuickDC::CompletedDownloads::CompletedDownloads(Preferences& config_)
 	: config(config_)
 {

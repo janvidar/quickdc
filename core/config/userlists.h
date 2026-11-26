@@ -96,6 +96,42 @@ class RecentHubs {
 		int stored = 0;
 };
 
+/**
+ *     [Windows]
+ *     Total=1
+ *     Hub 0=adcs://hub.example.org:1511
+ *
+ * The hubs open, in the order they were opened, for opening again on the next
+ * start. A hub closed while the session is ending stays on it.
+ */
+class SessionHubs {
+	public:
+		static constexpr int LIMIT = 256;
+
+		explicit SessionHubs(Preferences& config);
+
+		const std::vector<std::string>& urls() const { return hubs; }
+
+		/** A hub opened, which also starts a new session after ending(). @return whether the list changed. */
+		bool opened(const std::string& url);
+		/** @return whether the list changed. */
+		bool closed(const std::string& url);
+
+		/** Forgets the hubs not open now. @return whether the list changed. */
+		bool clear(const std::vector<std::string>& open);
+
+		/** Until the next opened(), a close is the session ending, not somebody closing a hub. */
+		void ending() { frozen = true; }
+
+	private:
+		void store();
+
+		Preferences& config;
+		std::vector<std::string> hubs;
+		int stored = 0;
+		bool frozen = false;
+};
+
 struct CompletedDownload {
 	std::string filename;
 	std::string tth;

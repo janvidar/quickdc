@@ -932,6 +932,11 @@ struct Fields {
 		return {"FavouriteHubs", {{"request", e.request}, {"urls", strings(e.urls)}}};
 	}
 
+	Out operator()(const Ev::SessionHubs& e) const
+	{
+		return {"SessionHubs", {{"request", e.request}, {"urls", strings(e.urls)}}};
+	}
+
 	Out operator()(const Ev::RecentHubs& e) const
 	{
 		return {"RecentHubs", {{"request", e.request}, {"hubs", each(e.hubs, recentHub)}}};

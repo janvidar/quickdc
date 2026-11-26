@@ -582,6 +582,7 @@ QuickDC::Api::Service::Service(Core& core_)
 	{
 		favourites = std::make_unique<QuickDC::FavouriteHubs>(*core.config);
 		recents = std::make_unique<QuickDC::RecentHubs>(*core.config);
+		session_ = std::make_unique<QuickDC::SessionHubs>(*core.config);
 		completed = std::make_unique<QuickDC::CompletedDownloads>(*core.config);
 		directory = std::make_unique<QuickDC::HubDirectory>(core.loop(), *core.config,
 			core.homeDirectory.empty() ? std::string() : core.homeDirectory + "/hublists",
@@ -628,8 +629,8 @@ void QuickDC::Api::Service::announceState()
 std::vector<QuickDC::Api::Event> QuickDC::Api::Service::state(uint64_t request) const
 {
 	return {coreStatus(request), connectionMode(request), shareFolders(request), favouriteHubs(request),
-	        recentHubs(request), completedDownloads(request), hubListSources(request),
-	        hubDirectory(request)};
+	        recentHubs(request), sessionHubs(request), completedDownloads(request),
+	        hubListSources(request), hubDirectory(request)};
 }
 
 void QuickDC::Api::Service::run(const Commands::ReportState& command)
@@ -1565,6 +1566,12 @@ void QuickDC::Api::Service::run(const Commands::OpenHub& command)
 	if (boards) boards->opened(command.hub, made.get(), command.url);
 	hubs[command.hub] = std::move(made);
 
+	if (session_ && command.remember)
+	{
+		if (session_->opened(command.url)) publish(sessionHubs(0));
+		remembered[command.hub] = command.url;
+	}
+
 	if (recents)
 	{
 		recents->visited(command.url, static_cast<uint64_t>(time(0)));
@@ -1593,6 +1600,28 @@ QuickDC::Api::Events::RecentHubs QuickDC::Api::Service::recentHubs(uint64_t requ
 		for (const QuickDC::RecentHub& hub : recents->entries())
 			told.hubs.push_back(Api::RecentHub{hub.url, hub.name, hub.visited});
 	return told;
+}
+
+QuickDC::Api::Events::SessionHubs QuickDC::Api::Service::sessionHubs(uint64_t request) const
+{
+	Events::SessionHubs told;
+	told.request = request;
+	if (session_) told.urls = session_->urls();
+	return told;
+}
+
+void QuickDC::Api::Service::run(const Commands::EndSession&)
+{
+	if (session_) session_->ending();
+}
+
+void QuickDC::Api::Service::run(const Commands::ClearSessionHubs&)
+{
+	if (!session_) return;
+
+	std::vector<std::string> open;
+	for (const auto& [hub, url] : remembered) open.push_back(url);
+	if (session_->clear(open)) publish(sessionHubs(0));
 }
 
 QuickDC::Api::Events::CompletedDownloads QuickDC::Api::Service::completedDownloads(uint64_t request) const
@@ -1652,6 +1681,12 @@ void QuickDC::Api::Service::run(const Commands::CloseHub& command)
 	std::unique_ptr<HubSession> closing = std::move(found->second);
 	hubs.erase(found);
 	if (boards) boards->closed(command.hub);
+
+	if (const auto kept = remembered.find(command.hub); kept != remembered.end())
+	{
+		if (session_ && session_->closed(kept->second)) publish(sessionHubs(0));
+		remembered.erase(kept);
+	}
 	closing->disconnect();
 }
 
