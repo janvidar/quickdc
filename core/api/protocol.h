@@ -184,6 +184,12 @@ struct LocalHubBan {
  */
 using HubHandle = uint64_t;
 
+/**
+ * Handles from here up are the core's, for hubs it opens itself (LocalHubJoin);
+ * a front end numbers its own below.
+ */
+inline constexpr HubHandle CORE_HUB_HANDLES = HubHandle(1) << 62;
+
 enum class NetStatus {
 	Invalid, Lookup, Connecting, Connected, Disconnected, TlsConnected,
 	TlsDisconnected, ErrorTimeout, ErrorConnectionRefused, ErrorHostNotFound,
@@ -1268,6 +1274,18 @@ struct LocalHubState {
 	std::vector<LocalHubBan> bans;
 };
 
+/**
+ * The session the core opened to the hub it runs ([Local hub] Join), or
+ * 'joined' 0 for none - not 'hub', since this is the core's news, not that hub's; a front end adopts it rather than opening its own. Told on
+ * ReportState and on every change. A CloseHub of it holds until the hub is
+ * turned off and on, or its port changes.
+ */
+struct LocalHubJoin {
+	uint64_t request = 0;
+	HubHandle joined = 0;
+	std::string url;
+};
+
 struct LocalHubRefused {
 	enum class Why {
 		/** This core runs no hub. */
@@ -1449,6 +1467,7 @@ struct Event {
 		Events::FavouriteHubs,
 		Events::RecentHubs,
 		Events::SessionHubs,
+		Events::LocalHubJoin,
 		Events::CompletedDownloads,
 		Events::KickRefused,
 		Events::CoreStatus,

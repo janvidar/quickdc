@@ -667,7 +667,7 @@ void QuickDC::Api::Service::announceState()
 std::vector<QuickDC::Api::Event> QuickDC::Api::Service::state(uint64_t request) const
 {
 	return {coreStatus(request), connectionMode(request), shareFolders(request), favouriteHubs(request),
-	        recentHubs(request), sessionHubs(request), completedDownloads(request),
+	        recentHubs(request), sessionHubs(request), localHubJoin(request), completedDownloads(request),
 	        hubListSources(request), hubDirectory(request)};
 }
 
@@ -1222,6 +1222,8 @@ void QuickDC::Api::Service::checkStatus()
 			&& a.udp6 == b.udp6 && a.localHub == b.localHub;
 	};
 
+	reconcileLocalJoin();
+
 	if (statusTold && same(*statusTold, now)) return;
 	statusTold = now;
 	publish(coreStatus(0));
@@ -1648,6 +1650,49 @@ QuickDC::Api::Events::SessionHubs QuickDC::Api::Service::sessionHubs(uint64_t re
 	return told;
 }
 
+QuickDC::Api::Events::LocalHubJoin QuickDC::Api::Service::localHubJoin(uint64_t request) const
+{
+	return Events::LocalHubJoin{request, localJoin, localJoin ? localJoinUrl : std::string()};
+}
+
+void QuickDC::Api::Service::reconcileLocalJoin()
+{
+	if (!core.config) return;
+
+	/* By the settings, not by whether it listens yet: a hub coming up is reconnected to. */
+	std::string wanted;
+	if (Settings::read(*core.config, Settings::HubEnabled) && Settings::read(*core.config, Settings::HubJoin))
+		wanted = canonicalHubUrl("adc://127.0.0.1:" + std::to_string(Settings::read(*core.config, Settings::Port)));
+
+	if (wanted.empty()) localJoinDeclined.clear();
+	if (localJoin && localJoinUrl == wanted) return;
+	if (!localJoin && (wanted.empty() || wanted == localJoinDeclined)) return;
+
+	if (localJoin)
+	{
+		const HubHandle closing = localJoin;
+		localJoin = 0;
+		run(Commands::CloseHub{closing});
+	}
+
+	if (!wanted.empty() && wanted != localJoinDeclined)
+	{
+		localJoinDeclined.clear();
+		const HubHandle opening = nextOwnHandle++;
+		run(Commands::OpenHub{opening, wanted, false});
+		if (hubs.count(opening))
+		{
+			localJoin = opening;
+			localJoinUrl = wanted;
+			publish(localHubJoin(0));
+			run(Commands::ConnectHub{opening});
+			return;
+		}
+	}
+
+	publish(localHubJoin(0));
+}
+
 void QuickDC::Api::Service::run(const Commands::EndSession&)
 {
 	if (session_) session_->ending();
@@ -1727,6 +1772,14 @@ void QuickDC::Api::Service::run(const Commands::CloseHub& command)
 {
 	const auto found = hubs.find(command.hub);
 	if (found == hubs.end()) return;
+
+	/* Closed by somebody, it stays closed; closed by a front end going away, it is opened again. */
+	if (command.hub == localJoin)
+	{
+		localJoin = 0;
+		if (!session_ || !session_->isEnding()) localJoinDeclined = localJoinUrl;
+		publish(localHubJoin(0));
+	}
 
 	std::unique_ptr<HubSession> closing = std::move(found->second);
 	hubs.erase(found);

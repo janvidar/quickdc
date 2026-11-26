@@ -90,8 +90,11 @@ struct Host {
 
 		try
 		{
+			/* A script opens the hubs it means to, its own included; a preset can say otherwise. */
+			auto application = presets.application;
+			application["Local hub"].emplace("Join", "0");
 			built = std::make_unique<QuickDC::Core>(
-				QuickDC::Core::Home{home, presets.application, presets.session});
+				QuickDC::Core::Home{home, application, presets.session});
 		}
 		catch (const std::exception& e)
 		{

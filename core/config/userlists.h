@@ -122,6 +122,7 @@ class SessionHubs {
 
 		/** Until the next opened(), a close is the session ending, not somebody closing a hub. */
 		void ending() { frozen = true; }
+		bool isEnding() const { return frozen; }
 
 	private:
 		void store();

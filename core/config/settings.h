@@ -148,6 +148,8 @@ inline constexpr Number BoardCache              {"Boards", "Cache size", 256 * 1
 
 /* [Local hub] */
 inline constexpr Flag   HubEnabled             {"Local hub", "Enabled", false};
+/* Whether the core logs in to the hub it runs, as a user of its own hub. */
+inline constexpr Flag   HubJoin                {"Local hub", "Join", true};
 inline constexpr Text   HubName                 {"Local hub", "Name", "A QuickDC hub"};
 inline constexpr Text   HubDescription          {"Local hub", "Description", "My QuickDC hub"};
 inline constexpr Number HubMaxUsers             {"Local hub", "Max users", 128};

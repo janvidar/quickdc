@@ -92,6 +92,11 @@ if(QUICKDC_BUILD_TESTS)
         COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --quiet ${scripts}/network-changed.qdc)
     set_tests_properties(cli_network_changed PROPERTIES TIMEOUT 120)
 
+    add_test(NAME cli_local_hub_join
+        COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --free-port PORT --free-port PORT_B --quiet
+                ${scripts}/local-hub-join.qdc)
+    set_tests_properties(cli_local_hub_join PROPERTIES TIMEOUT 120)
+
     add_test(NAME cli_silent_hub
         COMMAND ${scenario} 0 - $<TARGET_FILE:qdc> --free-port SILENT --quiet ${scripts}/silent-hub.qdc)
     set_tests_properties(cli_silent_hub PROPERTIES TIMEOUT 120)

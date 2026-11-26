@@ -937,6 +937,11 @@ struct Fields {
 		return {"FavouriteHubs", {{"request", e.request}, {"urls", strings(e.urls)}}};
 	}
 
+	Out operator()(const Ev::LocalHubJoin& e) const
+	{
+		return {"LocalHubJoin", {{"request", e.request}, {"joined", hub(e.joined)}, {"url", e.url}}};
+	}
+
 	Out operator()(const Ev::SessionHubs& e) const
 	{
 		return {"SessionHubs", {{"request", e.request}, {"urls", strings(e.urls)}}};

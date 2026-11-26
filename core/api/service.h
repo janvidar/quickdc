@@ -172,6 +172,9 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		Events::FavouriteHubs favouriteHubs(uint64_t request) const;
 		Events::RecentHubs recentHubs(uint64_t request) const;
 		Events::SessionHubs sessionHubs(uint64_t request) const;
+		Events::LocalHubJoin localHubJoin(uint64_t request) const;
+		/** Open, move or close the session to our own hub, as the settings and the hub say. */
+		void reconcileLocalJoin();
 		Events::CompletedDownloads completedDownloads(uint64_t request) const;
 
 		/** What a hub opened as 'url' calls itself. */
@@ -253,6 +256,12 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		std::unique_ptr<QuickDC::CompletedDownloads> completed;
 		std::unique_ptr<QuickDC::HubDirectory> directory;
 		std::unique_ptr<QuickDC::NetworkWatch> network;
+
+		HubHandle nextOwnHandle = CORE_HUB_HANDLES;
+		HubHandle localJoin = 0;
+		std::string localJoinUrl;
+		/** The address a front end closed the join of; not opened again while it is wanted. */
+		std::string localJoinDeclined;
 
 		/* Last, so the sessions go before the subscriptions they report through. */
 		std::map<HubHandle, std::unique_ptr<HubSession>> hubs;

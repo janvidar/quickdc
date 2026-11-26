@@ -1,0 +1,19 @@
+# With [Local hub] Join the core logs in to the hub it runs by itself, moves
+# with its port, and lets go of it when the hub is turned off.
+
+preset application Network Mode advanced
+preset application Network Bind 127.0.0.1
+preset application Network Bind6 ""
+preset application Network Port ${PORT}
+preset application "Local hub" Enabled 1
+preset application "Local hub" Join 1
+
+wait LocalHubJoin joined!=0 url=adc://127.0.0.1:${PORT} timeout=10s
+wait HubStatusChanged status=LoggedIn timeout=30s
+
+set application Network Port ${PORT_B}
+wait LocalHubJoin joined!=0 url=adc://127.0.0.1:${PORT_B} timeout=20s
+wait HubStatusChanged status=LoggedIn timeout=30s
+
+set application "Local hub" Enabled 0
+wait LocalHubJoin joined=0 timeout=10s
