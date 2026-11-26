@@ -422,7 +422,8 @@ struct ForgetRecentHub { std::string url; };
 struct ClearRecentHubs { };
 
 /** Forget a finished download by the file it went to; the file is left alone. */
-struct ForgetCompletedDownload { std::string filename; };
+/** 'deleteFile' also deletes it from disk - only ever a file this list holds. */
+struct ForgetCompletedDownload { std::string filename; bool deleteFile = false; };
 struct ClearCompletedDownloads { };
 
 /** Start a session for the hub at 'url', not yet connected; see ConnectHub. */

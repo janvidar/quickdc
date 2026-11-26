@@ -1,5 +1,5 @@
 # A download that finishes is recorded by the core that fetched it, and can be
-# forgotten again without touching the file.
+# forgotten again without touching the file - or, asked to, deleted with it.
 
 preset application Network Mode advanced
 preset application Network Bind 127.0.0.1
@@ -32,4 +32,13 @@ preset application Network "Active mode" 1
 
 @a completed-forget downloads/small.bin
 @a wait CompletedDownloads downloads=[]
+@a expect-file downloads/small.bin same-as ../b/share/small.bin
+
+@a download hub small.bin from bob to again.bin
+@a wait DownloadCompleted size=204800 timeout=20s remember AGAIN=filename
+@a wait CompletedDownloads downloads.0.filename=$AGAIN
+@a completed-forget $AGAIN delete
+@a wait CompletedDownloads downloads=[]
+@a expect-file $AGAIN missing
+@a completed-forget downloads/small.bin delete
 @a expect-file downloads/small.bin same-as ../b/share/small.bin

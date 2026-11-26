@@ -6,6 +6,9 @@
 #include "api/service.h"
 
 #include <samurai/timer.h>
+
+#include <algorithm>
+#include <cstdio>
 #include "config/settingskeeper.h"
 #include "network/networkwatch.h"
 #include "api/core.h"
@@ -1704,7 +1707,14 @@ void QuickDC::Api::Service::run(const Commands::ClearRecentHubs&)
 
 void QuickDC::Api::Service::run(const Commands::ForgetCompletedDownload& command)
 {
-	if (completed && completed->remove(command.filename)) publish(completedDownloads(0));
+	if (!completed) return;
+
+	const auto& done = completed->entries();
+	const bool listed = std::any_of(done.begin(), done.end(),
+		[&command](const QuickDC::CompletedDownload& one) { return one.filename == command.filename; });
+
+	if (listed && command.deleteFile) std::remove(command.filename.c_str());
+	if (completed->remove(command.filename)) publish(completedDownloads(0));
 }
 
 void QuickDC::Api::Service::run(const Commands::ClearCompletedDownloads&)

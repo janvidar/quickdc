@@ -173,12 +173,15 @@ Step parseBare(const Line& line)
 /* A path is the core's own, relative to its home as everything else here is. */
 Step parseCompletedForget(const Line& line)
 {
-	line.expect(1, 1);
+	line.expect(1, 2);
 	const std::string path = line.args[0];
+	if (line.args.size() == 2 && line.args[1] != "delete")
+		throw ScriptError("completed-forget takes a path and, to delete the file too, 'delete'");
+	const bool erase = line.args.size() == 2;
 	const std::string core = line.requireCore();
 
-	return [line, core, path](Session& session) {
-		return session.submit(line, core, Cmd::ForgetCompletedDownload{session.resolve(line, path)});
+	return [line, core, path, erase](Session& session) {
+		return session.submit(line, core, Cmd::ForgetCompletedDownload{session.resolve(line, session.expand(path)), erase});
 	};
 }
 
@@ -845,9 +848,22 @@ Step parseDequeue(const Line& line)
 
 Step parseExpectFile(const Line& line)
 {
-	line.expect(3, 3);
+	line.expect(2, 3);
 	const std::string path = line.args[0];
 	const std::string how = line.args[1];
+
+	if (how == "missing")
+	{
+		line.expect(2, 2);
+		return [line, path](Session& session) {
+			const std::string where = session.resolve(line, session.expand(path));
+			std::error_code error;
+			if (std::filesystem::exists(where, error)) return session.fail(line, "'" + where + "' is still there");
+			return Outcome::Next;
+		};
+	}
+
+	line.expect(3, 3);
 	const std::string what = line.args[2];
 
 	if (how == "same-as")
@@ -872,7 +888,7 @@ Step parseExpectFile(const Line& line)
 		};
 	}
 
-	throw ScriptError("'" + how + "' is neither same-as nor size");
+	throw ScriptError("'" + how + "' is not same-as, size or missing");
 }
 
 /* The event a line names and the fields it tests, from 'line.args[0]' on. */
@@ -1313,7 +1329,7 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"recent-clear", "recent-clear",                                     parseBare<Cmd::ClearRecentHubs>},
 		{"end-session", "end-session",                                       parseBare<Cmd::EndSession>},
 		{"session-clear", "session-clear",                                   parseBare<Cmd::ClearSessionHubs>},
-		{"completed-forget", "completed-forget <path>",                      parseCompletedForget},
+		{"completed-forget", "completed-forget <path> [delete]",             parseCompletedForget},
 		{"completed-clear", "completed-clear",                               parseBare<Cmd::ClearCompletedDownloads>},
 		{"hublist-add", "hublist-add <url>",                                 parseNaming<Cmd::AddHubListSource>},
 		{"hublist-remove", "hublist-remove <url>",                           parseNaming<Cmd::RemoveHubListSource>},
@@ -1357,7 +1373,7 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"transfers",  "transfers",                                          parseTransfers},
 		{"priority",   "priority <path> <paused|low|normal|high>",           parsePriority},
 		{"dequeue",    "dequeue <path> [delete-partial]",                    parseDequeue},
-		{"expect-file", "expect-file <path> same-as <path> | size <size>",   parseExpectFile},
+		{"expect-file", "expect-file <path> same-as <path> | size <size> | missing", parseExpectFile},
 		{"wait",       "wait <Event> [field=value|field!=value ...] [remember NAME=field ...] [timeout=<N>s|<N>ms]", parseWait, false, false, true},
 		{"expect-no",  "expect-no <Event> [field=value|field!=value ...]",   parseExpectNo, false, false, true},
 		{"status",     "status",                                             parseReport<Cmd::ReportStatus>},
