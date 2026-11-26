@@ -59,7 +59,7 @@
 #include <string.h>
 #include <string>
 #include <system_error>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 /* The fixture's core; built in EXO_SETUP below. */

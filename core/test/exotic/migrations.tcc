@@ -16,7 +16,7 @@
 
 #include <samurai/io/file.h>
 
-#include <unistd.h>
+#include <samurai/posix.h>
 
 #include <string>
 

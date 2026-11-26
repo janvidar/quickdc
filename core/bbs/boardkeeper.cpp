@@ -909,7 +909,11 @@ void QuickDC::BoardKeeper::write(const Api::Commands::WritePost& command)
 	char stamp[32];
 	const time_t now = static_cast<time_t>(clock.epochSeconds());
 	struct tm local;
+#ifdef _WIN32
+	localtime_s(&local, &now);
+#else
 	localtime_r(&now, &local);
+#endif
 	strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &local);
 
 	std::string path = folder + "/post-" + stamp + "-" + std::to_string(command.request);

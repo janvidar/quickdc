@@ -25,7 +25,7 @@
 #include <samurai/messagehandler.h>
 #include <samurai/timer.h>
 
-#include <unistd.h>
+#include <samurai/posix.h>
 
 #include <atomic>
 #include <chrono>

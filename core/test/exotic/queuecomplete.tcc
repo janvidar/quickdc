@@ -26,6 +26,8 @@
 #include "hash/hashmanager.h"
 #include "network/downloadqueue.h"
 
+#include <chrono>
+#include <thread>
 #include <samurai/io/file.h>
 
 #include <memory>
@@ -33,7 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 /* The fixture's core; built in EXO_SETUP below. */
 QuickDC::Core* core = 0;
@@ -154,7 +156,7 @@ static bool pump(QuickDC::QueueManager* queue, Predicate ready, int timeout_ms =
 		if (queue) queue->process();
 
 		if (ready()) return true;
-		usleep(10000);
+		std::this_thread::sleep_for(std::chrono::microseconds(10000));
 	}
 	return ready();
 }
@@ -244,7 +246,11 @@ std::string hashdb_file;
 }
 
 EXO_SETUP({
+#ifdef _WIN32
+	_putenv_s("HOME", TEST_HOME.c_str());
+#else
 	setenv("HOME", TEST_HOME.c_str(), 1);
+#endif
 
 	Samurai::IO::File::mkdir(TEST_HOME.c_str(), 0700);
 	Samurai::IO::File::mkdir((TEST_HOME + "/downloads").c_str(), 0700);

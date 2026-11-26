@@ -31,7 +31,7 @@
 #include <samurai/crypto/digest/tiger.h>
 #include <samurai/io/file.h>
 
-#include <unistd.h>
+#include <samurai/posix.h>
 
 #include <ctime>
 #include <filesystem>

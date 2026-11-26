@@ -24,7 +24,7 @@
 #include <samurai/io/net/serversocket.h>
 #include <samurai/io/net/socketaddress.h>
 
-#include <unistd.h>
+#include <samurai/posix.h>
 
 #include <memory>
 #include <string>

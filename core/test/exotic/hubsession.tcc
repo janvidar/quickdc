@@ -25,6 +25,7 @@
 #include "network/hubmanager.h"
 #include "api/server.h"
 #include "network/reachability.h"
+#include <thread>
 #include <samurai/io/net/datagram.h>
 #include "network/adc/adcudp.h"
 #include "network/adc/parser.h"
@@ -59,7 +60,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 /* The fixture's core; built in EXO_SETUP below. */
@@ -4005,7 +4006,7 @@ class Offered
 			while (hashes->process() || hashes->isBusy())
 			{
 				if (std::chrono::steady_clock::now() > deadline) return;
-				usleep(1000);
+				std::this_thread::sleep_for(std::chrono::microseconds(1000));
 			}
 
 			tth = listener.tth;

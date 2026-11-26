@@ -28,7 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 /*
  * The scratch file, removed however the case that owns it ends - including the

@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 static std::string scratch(const char* leaf)

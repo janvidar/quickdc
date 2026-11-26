@@ -46,7 +46,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 /* The fixture's core; built in EXO_SETUP below. */

@@ -13,7 +13,7 @@
 #include "config/preferences.h"
 #include "config/settings.h"
 
-#include <unistd.h>
+#include <samurai/posix.h>
 
 #include <chrono>
 #include <filesystem>

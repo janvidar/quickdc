@@ -24,6 +24,7 @@
 #include "share/searchrequest.h"
 #include "share/searchresult.h"
 
+#include <thread>
 #include <samurai/io/file.h>
 
 #include <chrono>
@@ -32,7 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 using Request = QuickDC::Share::SearchRequest;
@@ -182,7 +183,7 @@ class Share
 			while (hashes->process() || hashes->isBusy())
 			{
 				if (std::chrono::steady_clock::now() > deadline) return false;
-				usleep(1000);
+				std::this_thread::sleep_for(std::chrono::microseconds(1000));
 			}
 			hashes->process();
 			return true;

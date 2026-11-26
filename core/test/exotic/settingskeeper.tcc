@@ -15,7 +15,7 @@
 #include <chrono>
 #include <stdio.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 static std::string scratch(const char* leaf)
 {

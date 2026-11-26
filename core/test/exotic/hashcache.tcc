@@ -21,6 +21,7 @@
 #include "hash/hashjob.h"
 #include "hash/hashstorage.h"
 
+#include <thread>
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
 
@@ -30,7 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <utime.h>
 #include <vector>
 
@@ -89,7 +90,7 @@ static bool drain(QuickDC::Hash::Manager& mgr)
 	while (mgr.process() || mgr.isBusy())
 	{
 		if (std::chrono::steady_clock::now() > deadline) return false;
-		usleep(1000);
+		std::this_thread::sleep_for(std::chrono::microseconds(1000));
 	}
 	mgr.process();
 	return true;

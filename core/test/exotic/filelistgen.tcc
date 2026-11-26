@@ -24,6 +24,7 @@
 #include "share/sharemanager.h"
 #include "share/dcfilelist.h"
 
+#include <thread>
 #include <samurai/io/file.h>
 #include <samurai/io/buffer.h>
 #include <samurai/io/codec.h>
@@ -32,7 +33,9 @@
 #include <chrono>
 #include <memory>
 #include <span>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -196,11 +199,20 @@ class Fixture
 			madeDirs.push_back(path);
 		}
 
-		/* A symlink inside the share, aimed at whatever is given. */
-		void symlink_to(const std::string& name, const std::string& target)
+		/* A symlink inside the share, aimed at whatever is given; false where none could be
+		   made - always on Windows, where it needs privileges. */
+		bool symlink_to(const std::string& name, const std::string& target)
 		{
+#ifdef _WIN32
+			(void) name;
+			(void) target;
+			return false;
+#else
 			const std::string path = dir + "/" + name;
-			if (::symlink(target.c_str(), path.c_str()) == 0) madeFiles.push_back(path);
+			if (::symlink(target.c_str(), path.c_str()) != 0) return false;
+			madeFiles.push_back(path);
+			return true;
+#endif
 		}
 
 		/* A file outside the share, standing in for anything private. */
@@ -246,7 +258,7 @@ class Fixture
 			while (hashes->process() || hashes->isBusy())
 			{
 				if (std::chrono::steady_clock::now() > deadline) return false;
-				usleep(1000);
+				std::this_thread::sleep_for(std::chrono::microseconds(1000));
 			}
 			hashes->process();
 
@@ -405,7 +417,7 @@ EXO_TEST(filelistgen_a_symlink_out_of_the_share_is_not_published,
 		Fixture f("symlink");
 		const std::string secret = f.outsideFile("private.key", "PRIVATE KEY");
 		f.file("public.bin");
-		f.symlink_to("leaked.key", secret);
+		if (!f.symlink_to("leaked.key", secret)) EXO_SKIP("no symlinks here");
 		f.generate();
 
 		const std::string xml = f.plain();
@@ -425,7 +437,7 @@ EXO_TEST(filelistgen_a_symlinked_directory_is_not_descended_into,
 		Fixture f("symlinkdir");
 		f.subdir("real");
 		f.file("real/inside.txt");
-		f.symlink_to("loop", f.dir);
+		if (!f.symlink_to("loop", f.dir)) EXO_SKIP("no symlinks here");
 		f.generate();
 
 		const std::string decoded = decode(f.plain());

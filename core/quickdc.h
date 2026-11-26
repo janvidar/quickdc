@@ -24,7 +24,7 @@
 #include "debug/dbg.h"
 
 #include <stdlib.h>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <limits.h>
 
 namespace QuickDC

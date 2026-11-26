@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 #include <samurai/io/dir.h>
 #include <samurai/io/file.h>

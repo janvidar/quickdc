@@ -31,6 +31,7 @@
 #include "share/sharefile.h"
 #include "share/searchrequest.h"
 
+#include <thread>
 #include <samurai/io/file.h>
 #include <samurai/io/net/socket.h>
 
@@ -42,7 +43,7 @@
 #include <string.h>
 #include <sstream>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 using Persistence = QuickDC::Share::Manager::Persistence;
@@ -331,7 +332,7 @@ class Fixture
 			while (hashes->process() || hashes->isBusy())
 			{
 				if (std::chrono::steady_clock::now() > deadline) return false;
-				usleep(1000);
+				std::this_thread::sleep_for(std::chrono::microseconds(1000));
 			}
 			hashes->process();
 			return true;

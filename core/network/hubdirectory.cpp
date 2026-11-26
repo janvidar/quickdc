@@ -62,7 +62,7 @@ class QuickDC::HubDirectory::Fetch final : public QuickDC::HubListListener {
 
 namespace {
 
-const char GROUP[] = "Hublists";
+const char HUBLISTS_GROUP[] = "Hublists";
 const char TOTAL[] = "Total";
 
 std::string listKey(int index)
@@ -490,7 +490,7 @@ void QuickDC::HubDirectory::load()
 	 * Asked before anything is read, so that "no sources configured" and "every
 	 * source deliberately removed" - a Total of nought - stay two different things.
 	 */
-	const bool configured = config.haveSetting(GROUP, TOTAL);
+	const bool configured = config.haveSetting(HUBLISTS_GROUP, TOTAL);
 
 	std::vector<std::string> urls;
 	bool rewritten = false;
@@ -498,11 +498,11 @@ void QuickDC::HubDirectory::load()
 	if (configured)
 	{
 		const std::vector<std::string> retired = retiredSources();
-		stored = std::clamp(config.peekNumber(GROUP, TOTAL, 0), 0, SOURCE_LIMIT);
+		stored = std::clamp(config.peekNumber(HUBLISTS_GROUP, TOTAL, 0), 0, SOURCE_LIMIT);
 
 		for (int n = 0; n < stored; ++n)
 		{
-			const std::string url = trimmed(config.peekString(GROUP, listKey(n), ""));
+			const std::string url = trimmed(config.peekString(HUBLISTS_GROUP, listKey(n), ""));
 			if (url.empty() || std::find(urls.begin(), urls.end(), url) != urls.end()) continue;
 
 			if (std::find(retired.begin(), retired.end(), url) != retired.end())
@@ -533,9 +533,9 @@ void QuickDC::HubDirectory::load()
 void QuickDC::HubDirectory::store()
 {
 	const int count = static_cast<int>(list.size());
-	for (int n = 0; n < count; ++n) config.setString(GROUP, listKey(n), list[n].url);
-	for (int n = count; n < stored; ++n) config.remove(GROUP, listKey(n));
-	config.setNumber(GROUP, TOTAL, count);
+	for (int n = 0; n < count; ++n) config.setString(HUBLISTS_GROUP, listKey(n), list[n].url);
+	for (int n = count; n < stored; ++n) config.remove(HUBLISTS_GROUP, listKey(n));
+	config.setNumber(HUBLISTS_GROUP, TOTAL, count);
 	config.write();
 	stored = count;
 }

@@ -23,7 +23,7 @@
 
 #include <stdio.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 using QuickDC::NetworkMode;
 using QuickDC::NetworkModeKeys;

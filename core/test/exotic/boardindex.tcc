@@ -32,6 +32,7 @@
 #include "hash/hashmanager.h"
 #include "share/sharemanager.h"
 
+#include <thread>
 #include <samurai/io/file.h>
 
 #include <chrono>
@@ -40,7 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 /* A scratch directory of its own per process; see the note in queuecomplete. */
@@ -1544,7 +1545,7 @@ class Served
 			while (hashes->process() || hashes->isBusy())
 			{
 				if (std::chrono::steady_clock::now() > deadline) return false;
-				usleep(1000);
+				std::this_thread::sleep_for(std::chrono::microseconds(1000));
 			}
 
 			hashes->process();

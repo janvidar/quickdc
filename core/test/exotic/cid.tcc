@@ -34,7 +34,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 /* The fixture's core; built in EXO_SETUP below. */
 QuickDC::Core* core = 0;

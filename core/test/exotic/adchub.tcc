@@ -57,7 +57,7 @@
 #include <string.h>
 #include <string>
 #include <system_error>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 /* The fixture's core; built in EXO_SETUP below. */
@@ -1129,7 +1129,12 @@ EXO_TEST(adchub_a_kicked_user_does_not_leave_its_input_on_the_socket,
 	EXO_ASSERT(user->getState() == ADC::LocalHub::State_WaitDisconnect);
 
 	char peeked = 0;
+	/* The socket is non-blocking already; MSG_DONTWAIT only says so on systems that have it. */
+#ifdef MSG_DONTWAIT
 	EXO_ASSERT(::recv(peer->getFD(), &peeked, 1, MSG_PEEK | MSG_DONTWAIT) < 0);
+#else
+	EXO_ASSERT(::recv(peer->getFD(), &peeked, 1, MSG_PEEK) < 0);
+#endif
 	return 1;
 });
 

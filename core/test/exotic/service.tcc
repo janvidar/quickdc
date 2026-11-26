@@ -19,7 +19,7 @@
 #include <samurai/io/file.h>
 
 #include <stdlib.h>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 #include <chrono>
 #include <condition_variable>

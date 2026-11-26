@@ -20,7 +20,7 @@
 #include <samurai/eventloop.h>
 #include <samurai/io/net/socketmonitor.h>
 
-#include <unistd.h>
+#include <samurai/posix.h>
 
 #include <algorithm>
 #include <chrono>

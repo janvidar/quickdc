@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 /* A scratch directory of its own per process; see the note in queuecomplete. */

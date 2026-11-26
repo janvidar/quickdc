@@ -25,7 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 /*
  * Counting every allocation in the binary is what makes the abandoned-command

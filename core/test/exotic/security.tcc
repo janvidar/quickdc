@@ -31,7 +31,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 static std::unique_ptr<Samurai::EventLoop> loop;
 

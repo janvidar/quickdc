@@ -424,7 +424,11 @@ bool QuickDC::chatMediaFetchedOn(const Preferences& config, const Preferences& s
 std::string QuickDC::pastedName(std::time_t when, std::string_view suffix)
 {
 	std::tm local{};
+#ifdef _WIN32
+	localtime_s(&local, &when);
+#else
 	localtime_r(&when, &local);
+#endif
 	char stamp[32];
 	std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &local);
 

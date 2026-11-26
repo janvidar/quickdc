@@ -14,7 +14,7 @@
 #include "quickdc.h"
 #include "network/localaddresses.h"
 
-#include <arpa/inet.h>
+#include <samurai/io/net/socketglue.h>
 
 #include <string>
 

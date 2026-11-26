@@ -24,7 +24,7 @@
 
 #ifdef SAMURAI_POSIX
 #include <sys/socket.h>
-#include <unistd.h>
+#include <samurai/posix.h>
 #endif
 
 /*
@@ -199,7 +199,7 @@ EXO_TEST(a_socket_the_peer_closed_releases_its_descriptor, {
 	if (was == INVALID_SOCKET) return false;
 
 	/* End of stream, which is what the monitor reports as a close. */
-	::close(pair.writer);
+	Samurai::IO::Net::socket_close(pair.writer);
 	pair.writer = INVALID_SOCKET;
 
 	loop->monitor().wait(0);

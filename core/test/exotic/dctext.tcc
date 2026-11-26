@@ -25,7 +25,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#ifndef _WIN32
 #include <sys/resource.h>
+#endif
 
 static std::string escape(const std::string& in)
 {
@@ -44,12 +46,16 @@ static std::string unescape(const std::string& in)
 /* Peak resident bytes, for the leak that cannot be seen any other way. */
 static size_t peakBytes()
 {
+#ifdef _WIN32
+	return 0;
+#else
 	struct rusage usage;
 	if (getrusage(RUSAGE_SELF, &usage) != 0) return 0;
 #ifdef __APPLE__
 	return (size_t) usage.ru_maxrss;
 #else
 	return (size_t) usage.ru_maxrss * 1024;
+#endif
 #endif
 }
 
@@ -59,7 +65,7 @@ static size_t peakBytes()
  * the allocator's and says nothing about the code. The loop still runs - where
  * a sanitizer is in play its own leak detection is the better check anyway.
  */
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(__SANITIZE_ADDRESS__) || defined(_WIN32)
 #define MEASURE_RESIDENT_GROWTH 0
 #elif defined(__has_feature)
 #if __has_feature(address_sanitizer)

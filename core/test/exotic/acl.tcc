@@ -25,7 +25,7 @@
 #include <string.h>
 #include <string>
 #include <sys/stat.h>
-#include <unistd.h>
+#include <samurai/posix.h>
 
 /*
  * Named by process as well as by counter, because each case here runs as a

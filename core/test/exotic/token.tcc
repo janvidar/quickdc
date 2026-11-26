@@ -29,7 +29,7 @@
 #include <set>
 #include <stdio.h>
 #include <string>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <vector>
 
 namespace {

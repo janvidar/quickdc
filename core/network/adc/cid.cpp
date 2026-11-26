@@ -16,7 +16,7 @@
 #include <span>
 #include <openssl/rand.h>
 #include <openssl/crypto.h>
-#include <unistd.h>
+#include <samurai/posix.h>
 #include <string>
 
 #ifdef WIN32

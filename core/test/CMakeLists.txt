@@ -10,10 +10,15 @@ add_executable(testfile file.cpp)
 add_executable(testshare share.cpp)
 add_executable(testlock lock.cpp)
 
-add_executable(testdebug debug.cpp)
+if(NOT WIN32)
+    add_executable(testdebug debug.cpp)
+endif()
 
 set(QUICKDC_TEST_APPS
-    testfile testshare testlock testdebug)
+    testfile testshare testlock)
+if(NOT WIN32)
+    list(APPEND QUICKDC_TEST_APPS testdebug)
+endif()
 
 # A name left here after its source was retired makes the configure fail with a
 # confusing message about a target that does not exist, so it is checked first.
