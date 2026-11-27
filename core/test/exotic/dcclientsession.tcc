@@ -701,12 +701,18 @@ EXO_TEST(dcclientsession_a_handshake_completed_in_time_cancels_the_deadline,
 	Fixture f;
 	if (!f.ready) EXO_SKIP(NO_LOOPBACK);
 
-	f.session->setHandshakeDeadline(std::chrono::milliseconds(300));
+	/* Room for the steps below, which pause as they go, on a loaded machine; then
+	   past where the deadline would have fallen. */
+	const auto deadline = std::chrono::milliseconds(1000);
+	const auto set = std::chrono::steady_clock::now();
+	f.session->setHandshakeDeadline(deadline);
 	EXO_ASSERT(f.handshake());
 	f.say("$Supports ADCGet TTHF");
 	f.say("$Direction Download 12345");
 	f.sayKey();
-	pump([] { return false; }, 600);
+	const auto spent = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - set);
+	EXO_ASSERT(spent < deadline);
+	pump([] { return false; }, static_cast<int>((deadline - spent).count()) + 300);
 	EXO_ASSERT(!f.peer.gone);
 	return 1;
 });

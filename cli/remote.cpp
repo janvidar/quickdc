@@ -94,6 +94,7 @@ std::vector<std::pair<sockaddr_storage, socklen_t>> resolveAddress(const Address
 		return out;
 	}
 
+	QuickDC::Cli::socketsReady();
 	addrinfo hints {};
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
