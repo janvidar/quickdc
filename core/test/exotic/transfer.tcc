@@ -25,13 +25,13 @@
 #include <samurai/io/net/socketaddress.h>
 #include <samurai/io/net/inetaddress.h>
 
-#include <fcntl.h>
+#include <samurai/io/net/socketglue.h>
+#include <samurai/posix.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <memory>
 #include <string>
 
@@ -123,16 +123,16 @@ EXO_TEARDOWN({
 class Pair
 {
 	public:
-		Pair() : peer(-1)
+		Pair() : peer(INVALID_SOCKET)
 		{
-			int fds[2];
-			if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) return;
+			socket_t fds[2];
+			if (!Samurai::IO::Net::socket_pair(fds)) return;
 
-			fcntl(fds[0], F_SETFL, O_NONBLOCK);
-			fcntl(fds[1], F_SETFL, O_NONBLOCK);
+			Samurai::IO::Net::set_nonblocking(fds[0]);
+			Samurai::IO::Net::set_nonblocking(fds[1]);
 
 			int sndbuf = SMALL_SNDBUF;
-			setsockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+			Samurai::IO::Net::set_sockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
 			Samurai::IO::Net::InetSocketAddress addr("127.0.0.1", 0,
 				Samurai::IO::Net::InetAddress::Version::IPv4);
@@ -151,16 +151,16 @@ class Pair
 
 		void closePeer()
 		{
-			if (peer != -1) { ::close(peer); peer = -1; }
+			if (peer != INVALID_SOCKET) { Samurai::IO::Net::socket_close(peer); peer = INVALID_SOCKET; }
 		}
 
 		/* Whatever the peer can see right now. */
 		void drain(std::string& out)
 		{
-			if (peer == -1) return;
+			if (peer == INVALID_SOCKET) return;
 			char buf[4096];
 			ssize_t got;
-			while ((got = ::read(peer, buf, sizeof(buf))) > 0)
+			while ((got = Samurai::IO::Net::socket_recv(peer, buf, sizeof(buf))) > 0)
 				out.append(buf, got);
 		}
 
@@ -169,16 +169,15 @@ class Pair
 			size_t sent = 0;
 			while (sent < data.size())
 			{
-				ssize_t out = ::write(peer, &data[sent], data.size() - sent);
+				ssize_t out = Samurai::IO::Net::socket_send(peer, &data[sent], data.size() - sent);
 				if (out > 0) { sent += (size_t) out; continue; }
-				if (out == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) return false;
 				return false;
 			}
 			return true;
 		}
 
 		std::shared_ptr<Samurai::IO::Net::Socket> sock;
-		int peer;
+		socket_t peer;
 };
 
 /*
@@ -214,7 +213,7 @@ static bool runDownload(QuickDC::Transfer* transfer, Pair& pair, const std::stri
 		if (sent < payload.size())
 		{
 			const size_t take = std::min<size_t>(1024, payload.size() - sent);
-			ssize_t out = ::write(pair.peer, &payload[sent], take);
+			ssize_t out = Samurai::IO::Net::socket_send(pair.peer, &payload[sent], take);
 			if (out > 0) sent += (size_t) out;
 		}
 		done = transfer->exec();

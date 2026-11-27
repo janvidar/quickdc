@@ -88,11 +88,6 @@ set(QUICKDC_EXOTIC_TESTS
     settingskeeper.tcc
     networkwatch.tcc)
 
-# Over a socketpair(AF_UNIX), which Windows does not have; to be ported.
-if(WIN32)
-    list(REMOVE_ITEM QUICKDC_EXOTIC_TESTS transfer.tcc zupload.tcc)
-endif()
-
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)
     cmake_path(GET input STEM stem)
 

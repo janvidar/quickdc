@@ -34,12 +34,12 @@
 #include <samurai/io/net/socketaddress.h>
 #include <samurai/io/net/inetaddress.h>
 
-#include <fcntl.h>
+#include <samurai/io/net/socketglue.h>
+#include <samurai/posix.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <unistd.h>
 #include <memory>
 #include <span>
 #include <string>
@@ -92,19 +92,19 @@ static bool run_transfer(bool compress, const std::string& data, std::vector<cha
 {
 	unsupported = false;
 
-	int fds[2];
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
+	socket_t fds[2];
+	if (!Samurai::IO::Net::socket_pair(fds))
 	{
 		unsupported = true;
 		return false;
 	}
 
 	/* Non-blocking, so a full send buffer reports EAGAIN instead of waiting. */
-	fcntl(fds[0], F_SETFL, O_NONBLOCK);
-	fcntl(fds[1], F_SETFL, O_NONBLOCK);
+	Samurai::IO::Net::set_nonblocking(fds[0]);
+	Samurai::IO::Net::set_nonblocking(fds[1]);
 
 	int sndbuf = SMALL_SNDBUF;
-	setsockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+	Samurai::IO::Net::set_sockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
 	Samurai::IO::Net::InetSocketAddress addr("127.0.0.1", 0, Samurai::IO::Net::InetAddress::Version::IPv4);
 	auto sock = Samurai::IO::Net::Socket::create(*loop, fds[0], addr);
@@ -128,14 +128,14 @@ static bool run_transfer(bool compress, const std::string& data, std::vector<cha
 
 		char buf[4096];
 		ssize_t got;
-		while ((got = ::read(fds[1], buf, sizeof(buf))) > 0)
+		while ((got = Samurai::IO::Net::socket_recv(fds[1], buf, sizeof(buf))) > 0)
 			out.insert(out.end(), buf, buf + got);
 	}
 
 	/* The last write may still be sitting in the socket buffer. */
 	char buf[4096];
 	ssize_t got;
-	while ((got = ::read(fds[1], buf, sizeof(buf))) > 0)
+	while ((got = Samurai::IO::Net::socket_recv(fds[1], buf, sizeof(buf))) > 0)
 		out.insert(out.end(), buf, buf + got);
 
 	ratio = transfer->getRatio();
@@ -146,7 +146,7 @@ static bool run_transfer(bool compress, const std::string& data, std::vector<cha
 
 	delete transfer;
 	sock.reset();
-	::close(fds[1]);
+	Samurai::IO::Net::socket_close(fds[1]);
 
 	return complete && listener.stopped;
 }
