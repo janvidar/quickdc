@@ -1664,8 +1664,10 @@ EXO_TEST(adchub_a_claim_that_nothing_answers_is_reported,
 	alice.send("DCTM " + alice.sid + " " + bob.sid + " ADC/1.0 "
 		+ std::to_string(closed) + " tok1");
 
+	/* Past the check's own deadline: Windows takes seconds to call a refused
+	   connection refused, and the check may conclude by timing out instead. */
 	std::string line;
-	EXO_ASSERT(alice.waitFor("ISTA", line));
+	EXO_ASSERT(alice.waitFor("ISTA", line, QUICKDC_CLAIMCHECK_TIMEOUT_SECONDS * 1000 + 3000));
 	EXO_ASSERT(line.compare(0, strlen(CLAIM_FAILED), CLAIM_FAILED) == 0);
 
 	/* The port in the text, and 'PR' meaning what it means: the protocol from
