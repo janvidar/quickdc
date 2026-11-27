@@ -367,7 +367,7 @@ bool ADC::LocalHub::ACL::Table::save() {
 	Samurai::IO::Buffer* xmlout = new Samurai::IO::Buffer();
 	xmlout->append("<?xml version=\"1.1\" encoding=\"utf-8\" standalone=\"yes\"?>" XML_NEWLINE);
 	xmlout->append("<AccessList version=\"1\" generator=\"" PRODUCT "/" VERSION " (" SYSTEM "/" CPU ")\" updated=\"");
-	xmlout->append(Samurai::TimeStamp().getTime("%s"));
+	xmlout->append(std::to_string(static_cast<int64_t>(Samurai::TimeStamp().getInternalData())));
 	xmlout->append("\">" XML_NEWLINE);
 
 	std::vector<ADC::LocalHub::ACL::Authorization*>::iterator it;
@@ -380,7 +380,7 @@ bool ADC::LocalHub::ACL::Table::save() {
 		xmlout->append("\" description=\"");
 		XML::escape(xmlout, auth->description);
 		xmlout->append("\" expire=\"");
-		xmlout->append(auth->expire.getTime("%s"));
+		xmlout->append(std::to_string(static_cast<int64_t>(auth->expire.getInternalData())));
 		xmlout->append("\">" XML_NEWLINE);
 
 		

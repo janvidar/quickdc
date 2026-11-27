@@ -2270,7 +2270,7 @@ bool QuickDC::QueueManager::save()
 
 	xmlout->append("<?xml version=\"1.1\" encoding=\"utf-8\" standalone=\"yes\"?>" XML_NEWLINE);
 	xmlout->append("<DownloadQueue version=\"1\" generator=\"" PRODUCT "/" VERSION " (" SYSTEM "/" CPU ")\" updated=\"");
-	xmlout->append(Samurai::TimeStamp().getTime("%s"));
+	xmlout->append(std::to_string(static_cast<int64_t>(Samurai::TimeStamp().getInternalData())));
 	xmlout->append("\">" XML_NEWLINE);
 
 	size_t stored = 0;
@@ -2292,7 +2292,7 @@ bool QuickDC::QueueManager::save()
 		xmlout->append("\" tth=\"");
 		XML::escape(xmlout, file->getTTH());
 		xmlout->append("\" added=\"");
-		xmlout->append(file->added.getTime("%s"));
+		xmlout->append(std::to_string(static_cast<int64_t>(file->added.getInternalData())));
 		xmlout->append("\" priority=\"");
 		xmlout->append(QueueFile::convertPriority(file->getPriority()));
 		xmlout->append("\">" XML_NEWLINE);
