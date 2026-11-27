@@ -4,6 +4,7 @@
  */
 
 #include "fileserver.h"
+#include "sockets.h"
 
 #include <cerrno>
 #include <cstring>
@@ -11,11 +12,6 @@
 #include <iterator>
 #include <utility>
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
 namespace {
 
@@ -27,8 +23,8 @@ void writeAll(int fd, const std::string& data)
 	size_t sent = 0;
 	while (sent < data.size())
 	{
-		const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
-		if (n < 0 && errno == EINTR) continue;
+		const ssize_t n = QuickDC::Cli::sendSome(fd, data.data() + sent, data.size() - sent);
+		if (n < 0 && QuickDC::Cli::interrupted(QuickDC::Cli::socketError())) continue;
 		if (n <= 0) return;
 		sent += static_cast<size_t>(n);
 	}
@@ -47,36 +43,36 @@ QuickDC::Cli::FileServer::~FileServer()
 	if (thread.joinable())
 	{
 		const char stop = 0;
-		[[maybe_unused]] const ssize_t ignored = ::write(wake[1], &stop, 1);
+		[[maybe_unused]] const ssize_t ignored = QuickDC::Cli::sendSome(wake[1], &stop, 1);
 		thread.join();
 	}
 	for (int fd : {listener, wake[0], wake[1]})
-		if (fd != -1) ::close(fd);
+		QuickDC::Cli::closeSocket(fd);
 }
 
 bool QuickDC::Cli::FileServer::start(int port, std::string directory, std::string& why)
 {
 	root = std::move(directory);
 
-	listener = ::socket(AF_INET, SOCK_STREAM, 0);
-	if (listener == -1 || ::pipe(wake) != 0)
+	/* A socket pair rather than a pipe, so the wake-up can be polled with the listener on Winsock too. */
+	listener = QuickDC::Cli::streamSocket(AF_INET);
+	if (listener == -1 || !QuickDC::Cli::streamPair(wake))
 	{
-		why = std::strerror(errno);
+		why = QuickDC::Cli::lastSocketError();
 		return false;
 	}
 
-	const int on = 1;
-	::setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+	QuickDC::Cli::reuseAddress(listener);
 
 	sockaddr_in address {};
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	address.sin_port = htons(static_cast<in_port_t>(port));
+	address.sin_port = htons(static_cast<uint16_t>(port));
 
-	if (::bind(listener, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0
-		|| ::listen(listener, 16) != 0)
+	if (::bind(QuickDC::Cli::native(listener), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0
+		|| ::listen(QuickDC::Cli::native(listener), 16) != 0)
 	{
-		why = "cannot listen on port " + std::to_string(port) + ": " + std::strerror(errno);
+		why = "cannot listen on port " + std::to_string(port) + ": " + QuickDC::Cli::lastSocketError();
 		return false;
 	}
 
@@ -88,19 +84,19 @@ void QuickDC::Cli::FileServer::run()
 {
 	while (true)
 	{
-		pollfd watched[2] = {{listener, POLLIN, 0}, {wake[0], POLLIN, 0}};
-		if (::poll(watched, 2, -1) < 0)
+		QuickDC::Cli::Watched watched[2] = {{listener, POLLIN}, {wake[0], POLLIN}};
+		if (QuickDC::Cli::waitFor(watched, 2, -1) < 0)
 		{
-			if (errno == EINTR) continue;
+			if (QuickDC::Cli::interrupted(QuickDC::Cli::socketError())) continue;
 			return;
 		}
 		if (watched[1].revents) return;
 		if (!(watched[0].revents & POLLIN)) continue;
 
-		const int client = ::accept(listener, nullptr, nullptr);
+		const int client = QuickDC::Cli::acceptClosing(listener);
 		if (client == -1) continue;
 		answer(client);
-		::close(client);
+		QuickDC::Cli::closeSocket(client);
 	}
 }
 
@@ -109,12 +105,11 @@ void QuickDC::Cli::FileServer::answer(int client)
 	std::string request;
 	while (request.find("\r\n\r\n") == std::string::npos && request.size() < REQUEST_LIMIT)
 	{
-		pollfd readable = {client, POLLIN, 0};
-		if (::poll(&readable, 1, READ_TIMEOUT_MS) <= 0) return;
+		if (QuickDC::Cli::waitFor(client, POLLIN, READ_TIMEOUT_MS) <= 0) return;
 
 		char buffer[1024];
-		const ssize_t n = ::recv(client, buffer, sizeof(buffer), 0);
-		if (n < 0 && errno == EINTR) continue;
+		const ssize_t n = QuickDC::Cli::receiveSome(client, buffer, sizeof(buffer));
+		if (n < 0 && QuickDC::Cli::interrupted(QuickDC::Cli::socketError())) continue;
 		if (n <= 0) return;
 		request.append(buffer, static_cast<size_t>(n));
 	}

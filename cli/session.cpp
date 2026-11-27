@@ -8,10 +8,6 @@
 #include "human.h"
 #include "sockets.h"
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
 #include <cerrno>
 #include <cstring>
 #include <algorithm>
@@ -482,7 +478,7 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::serve(const Line& line, int port, c
 
 QuickDC::Cli::Session::Held::~Held()
 {
-	if (fd != -1) ::close(fd);
+	closeSocket(fd);
 }
 
 QuickDC::Cli::Outcome QuickDC::Cli::Session::hold(const Line& line, int port)
@@ -496,13 +492,12 @@ QuickDC::Cli::Outcome QuickDC::Cli::Session::hold(const Line& line, int port)
 	address.sin_port = htons(static_cast<uint16_t>(port));
 	address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-	const int on = 1;
-	if (fd != -1) setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-	if (fd == -1 || ::bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0
-	    || ::listen(fd, 8) != 0)
+	if (fd != -1) reuseAddress(fd);
+	if (fd == -1 || ::bind(native(fd), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0
+	    || ::listen(native(fd), 8) != 0)
 	{
-		const std::string why = std::strerror(errno);
-		if (fd != -1) ::close(fd);
+		const std::string why = lastSocketError();
+		closeSocket(fd);
 		return fail(line, "cannot hold port " + std::to_string(port) + ": " + why);
 	}
 

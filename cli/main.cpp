@@ -16,14 +16,22 @@
 #include "script.h"
 #include "session.h"
 
-#include <poll.h>
-#include <unistd.h>
+#include "sockets.h"
+
+#ifdef _WIN32
+#include <io.h>
+#include <random>
+#endif
 
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <condition_variable>
 #include <filesystem>
+#include <memory>
+#include <mutex>
+#include <thread>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -33,6 +41,15 @@
 #include <vector>
 
 namespace {
+
+bool inputIsTerminal()
+{
+#ifdef _WIN32
+	return _isatty(_fileno(stdin)) != 0;
+#else
+	return isatty(STDIN_FILENO) != 0;
+#endif
+}
 
 const int EXIT_PASSED = 0;
 const int EXIT_FAILED = 1;
@@ -131,7 +148,7 @@ Arguments parseArguments(int argc, char** argv)
 			const int port = QuickDC::Cli::freePort();
 			if (port <= 0)
 			{
-				std::fprintf(stderr, "qdc: no free port for %s: %s\n", name.c_str(), std::strerror(errno));
+				std::fprintf(stderr, "qdc: no free port for %s: every one tried was taken\n", name.c_str());
 				std::exit(EXIT_FAILED);
 			}
 			out.grammar.variables[name] = std::to_string(port);
@@ -221,7 +238,7 @@ Arguments parseArguments(int argc, char** argv)
 
 	if (out.script.empty() && !out.interactive)
 	{
-		if (!isatty(STDIN_FILENO))
+		if (!inputIsTerminal())
 		{
 			usage(stderr);
 			std::exit(EXIT_USAGE);
@@ -319,10 +336,31 @@ class Scratch {
 		bool make()
 		{
 			const char* tmp = std::getenv("TMPDIR");
-			std::string pattern = std::string(tmp && *tmp ? tmp : "/tmp") + "/qdc-XXXXXX";
+			std::error_code ec;
+			std::string directory = tmp && *tmp ? std::string(tmp) : std::filesystem::temp_directory_path(ec).generic_string();
+			if (directory.empty()) directory = "/tmp";
+#ifdef _WIN32
+			/* No mkdtemp(): a random name, made only if it was not there. */
+			std::mt19937_64 pick(std::random_device{}());
+			for (int attempt = 0; attempt < 100; ++attempt)
+			{
+				char name[32];
+				std::snprintf(name, sizeof(name), "/qdc-%012llx",
+				              static_cast<unsigned long long>(pick() & 0xffffffffffffULL));
+				std::string candidate = directory + name;
+				if (std::filesystem::create_directory(candidate, ec))
+				{
+					path = candidate;
+					return true;
+				}
+			}
+			return false;
+#else
+			std::string pattern = directory + "/qdc-XXXXXX";
 			if (!mkdtemp(pattern.data())) return false;
 			path = pattern;
 			return true;
+#endif
 		}
 
 		std::string path;
@@ -439,7 +477,8 @@ int agent(const Arguments& arguments)
 	const int status = QuickDC::Cli::serveController(listener, arguments.cores, runner, session,
 		[&]() { return startCores(arguments, base, runner, session); });
 
-	if (arguments.serve.find('/') != std::string::npos) unlink(bound.c_str());
+	std::error_code ignored;
+	if (arguments.serve.find('/') != std::string::npos) std::filesystem::remove(bound, ignored);
 	return status;
 }
 
@@ -457,10 +496,19 @@ int controller(const Arguments& arguments, const std::vector<QuickDC::Cli::State
 	return QuickDC::Cli::control(arguments.connect, arguments.grammar, statements, session);
 }
 
-/* Lines from a descriptor, read while the events that arrive in the meantime are printed. */
+/* Lines from standard input, read while the events that arrive in the meantime are printed. */
 class LineReader {
 	public:
-		explicit LineReader(int fd) : fd(fd) { }
+#ifdef _WIN32
+		/*
+		 * A console or pipe cannot be polled with the sockets, so a thread reads it.
+		 * It is left blocked in its read when this goes, holding its share of the state.
+		 */
+		LineReader() : input(std::make_shared<Input>())
+		{
+			std::thread([input = input] { readAll(*input); }).detach();
+		}
+#endif
 
 		/** The next line, without its end; nothing once the input has ended. */
 		std::optional<std::string> next(QuickDC::Cli::Session& session)
@@ -472,6 +520,7 @@ class LineReader {
 				{
 					std::string line = buffer.substr(0, end);
 					buffer.erase(0, end + 1);
+					if (!line.empty() && line.back() == '\r') line.pop_back();
 					return line;
 				}
 
@@ -481,22 +530,62 @@ class LineReader {
 					return std::exchange(buffer, std::string());
 				}
 
-				pollfd watched{fd, POLLIN, 0};
-				const int ready = poll(&watched, 1, 50);
+				waitForInput();
 				session.pump(std::chrono::steady_clock::now());
-
-				if (ready < 0 && errno != EINTR) ended = true;
-				if (ready <= 0) continue;
-
-				char chunk[4096];
-				const ssize_t got = read(fd, chunk, sizeof(chunk));
-				if (got > 0) buffer.append(chunk, static_cast<size_t>(got));
-				else if (got == 0 || (errno != EINTR && errno != EAGAIN)) ended = true;
 			}
 		}
 
 	private:
-		int fd;
+#ifdef _WIN32
+		struct Input {
+			std::mutex mutex;
+			std::condition_variable changed;
+			std::string arrived;
+			bool finished = false;
+		};
+
+		static void readAll(Input& input)
+		{
+			char chunk[4096];
+			while (true)
+			{
+				const size_t got = std::fread(chunk, 1, sizeof(chunk), stdin);
+				const bool over = got < sizeof(chunk) && (std::feof(stdin) || std::ferror(stdin));
+				{
+					std::lock_guard<std::mutex> lock(input.mutex);
+					input.arrived.append(chunk, got);
+					input.finished = over;
+				}
+				input.changed.notify_one();
+				if (over) return;
+			}
+		}
+
+		void waitForInput()
+		{
+			std::unique_lock<std::mutex> lock(input->mutex);
+			input->changed.wait_for(lock, std::chrono::milliseconds(50),
+				[this] { return !input->arrived.empty() || input->finished; });
+			buffer += std::exchange(input->arrived, std::string());
+			if (input->finished) ended = true;
+		}
+
+		std::shared_ptr<Input> input;
+#else
+		void waitForInput()
+		{
+			pollfd watched{STDIN_FILENO, POLLIN, 0};
+			const int ready = poll(&watched, 1, 50);
+			if (ready < 0 && errno != EINTR) ended = true;
+			if (ready <= 0) return;
+
+			char chunk[4096];
+			const ssize_t got = read(STDIN_FILENO, chunk, sizeof(chunk));
+			if (got > 0) buffer.append(chunk, static_cast<size_t>(got));
+			else if (got == 0 || (errno != EINTR && errno != EAGAIN)) ended = true;
+		}
+#endif
+
 		std::string buffer;
 		bool ended = false;
 };
@@ -515,12 +604,12 @@ int interact(const Arguments& arguments)
 	QuickDC::Cli::Session session(runner, arguments.options);
 	session.setBase(base);
 
-	const bool terminal = isatty(STDIN_FILENO);
+	const bool terminal = inputIsTerminal();
 	if (terminal)
 		session.note("qdc: 'help' lists the commands; the cores start with the first that is not preset, "
 		             "file or share; end with quit or ^D.");
 
-	LineReader reader(STDIN_FILENO);
+	LineReader reader;
 	int status = EXIT_PASSED;
 	bool started = false;
 

@@ -30,14 +30,7 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
     Debug Release RelWithDebInfo MinSizeRel)
 
 option(QUICKDC_BUILD_TESTS "Build the test programs and the autotest suite" ON)
-# qdc is POSIX through and through (Unix sockets, poll on stdin, shell scenarios);
-# it is test tooling, and stays off on Windows until it is ported.
-if(WIN32)
-    set(QUICKDC_BUILD_CLI_DEFAULT OFF)
-else()
-    set(QUICKDC_BUILD_CLI_DEFAULT ON)
-endif()
-option(QUICKDC_BUILD_CLI "Build qdc, the command line front end" ${QUICKDC_BUILD_CLI_DEFAULT})
+option(QUICKDC_BUILD_CLI "Build qdc, the command line front end" ON)
 
 # core/debug/dbg.h compiles the QDBG/QNET/QSEARCH/QHUB macros only when DEBUG is
 # defined, and what they write is not fit to leave on a user's disk: hub

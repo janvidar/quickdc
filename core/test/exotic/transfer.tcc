@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -412,7 +413,9 @@ EXO_TEST(transfer_an_upload_of_a_file_that_shrinks_stops_instead_of_spinning,
 		std::string got;
 		pair.drain(got);
 
-		EXO_ASSERT(truncate(path.c_str(), 1024) == 0);
+		std::error_code shrunk;
+		std::filesystem::resize_file(path, 1024, shrunk);
+		EXO_ASSERT(!shrunk);
 
 		int spins = 0;
 		bool done = false;

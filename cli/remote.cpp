@@ -7,28 +7,27 @@
 #include "json.h"
 #include "sockets.h"
 
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <sys/socket.h>
+#ifndef _WIN32
 #include <sys/stat.h>
-#include <sys/un.h>
-#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <optional>
 
 namespace Json = QuickDC::Cli::Json;
 using QuickDC::Cli::acceptClosing;
+using QuickDC::Cli::closeSocket;
+using QuickDC::Cli::lastSocketError;
+using QuickDC::Cli::socketError;
 using QuickDC::Cli::streamSocket;
+using QuickDC::Cli::waitFor;
 using Clock = std::chrono::steady_clock;
 
 namespace {
@@ -124,7 +123,7 @@ std::string describeBound(int fd, const Address& address)
 
 	sockaddr_storage storage {};
 	socklen_t size = sizeof(storage);
-	if (getsockname(fd, reinterpret_cast<sockaddr*>(&storage), &size) != 0) return std::string();
+	if (getsockname(QuickDC::Cli::native(fd), reinterpret_cast<sockaddr*>(&storage), &size) != 0) return std::string();
 
 	char host[INET6_ADDRSTRLEN] = {};
 	char port[8] = {};
@@ -140,12 +139,12 @@ class Connection {
 	public:
 		explicit Connection(int fd) : fd(fd)
 		{
-			fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+			QuickDC::Cli::setNonBlocking(fd);
 		}
 
 		~Connection()
 		{
-			if (fd != -1) close(fd);
+			closeSocket(fd);
 		}
 
 		Connection(const Connection&) = delete;
@@ -167,10 +166,11 @@ class Connection {
 		{
 			while (!outgoing.empty() && !ended)
 			{
-				const ssize_t sent = ::send(fd, outgoing.data(), outgoing.size(), MSG_NOSIGNAL);
+				const ssize_t sent = QuickDC::Cli::sendSome(fd, outgoing.data(), outgoing.size());
+				const int error = sent < 0 ? socketError() : 0;
 				if (sent > 0) outgoing.erase(0, static_cast<size_t>(sent));
-				else if (sent < 0 && errno == EINTR) continue;
-				else if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
+				else if (sent < 0 && QuickDC::Cli::interrupted(error)) continue;
+				else if (sent < 0 && QuickDC::Cli::wouldBlock(error)) return;
 				else ended = true;
 			}
 		}
@@ -181,10 +181,11 @@ class Connection {
 			while (!ended)
 			{
 				char chunk[65536];
-				const ssize_t got = ::recv(fd, chunk, sizeof(chunk), 0);
+				const ssize_t got = QuickDC::Cli::receiveSome(fd, chunk, sizeof(chunk));
+				const int error = got < 0 ? socketError() : 0;
 				if (got > 0) incoming.append(chunk, static_cast<size_t>(got));
-				else if (got < 0 && errno == EINTR) continue;
-				else if (got < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
+				else if (got < 0 && QuickDC::Cli::interrupted(error)) continue;
+				else if (got < 0 && QuickDC::Cli::wouldBlock(error)) break;
 				else ended = true;
 			}
 			return !ended;
@@ -206,8 +207,7 @@ class Connection {
 			flush();
 			while (!outgoing.empty() && !ended && Clock::now() < deadline)
 			{
-				pollfd watched{fd, POLLOUT, 0};
-				poll(&watched, 1, 50);
+				waitFor(fd, POLLOUT, 50);
 				flush();
 			}
 		}
@@ -323,8 +323,7 @@ bool presentsKey(Connection& connection, const std::string& key)
 			const Json::Value* given = said ? said->find("key") : nullptr;
 			return given && sameKey(given->text(), key);
 		}
-		pollfd watched{connection.fd, POLLIN, 0};
-		poll(&watched, 1, milliseconds(deadline));
+		waitFor(connection.fd, POLLIN, milliseconds(deadline));
 		if (!connection.read() && !connection.line()) return false;
 	}
 	return false;
@@ -345,33 +344,38 @@ int QuickDC::Cli::listenOn(const std::string& endpoint, std::string& bound, std:
 		const int fd = streamSocket(storage.ss_family);
 		if (fd == -1)
 		{
-			why = std::strerror(errno);
+			why = lastSocketError();
 			continue;
 		}
 
 		if (!address.local && !isLoopback(storage) && agentKey().empty())
 		{
 			why = endpoint + " is reachable from other hosts; set QDC_AGENT_KEY on the agent and its controller";
-			close(fd);
+			closeSocket(fd);
 			return -1;
 		}
 
-		const int on = 1;
-		if (!address.local) setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-		else unlink(address.path.c_str());
+		std::error_code ignored;
+		if (!address.local) QuickDC::Cli::reuseAddress(fd);
+		else std::filesystem::remove(address.path, ignored);
 
+		/* The socket file is the owner's alone; Windows has no such mode to give it. */
+#ifndef _WIN32
 		const mode_t mask = address.local ? umask(0177) : 0;
-		const bool isBound = bind(fd, reinterpret_cast<const sockaddr*>(&storage), size) == 0;
+#endif
+		const bool isBound = ::bind(QuickDC::Cli::native(fd), reinterpret_cast<const sockaddr*>(&storage), size) == 0;
+#ifndef _WIN32
 		if (address.local) umask(mask);
+#endif
 
-		if (isBound && listen(fd, 4) == 0)
+		if (isBound && ::listen(QuickDC::Cli::native(fd), 4) == 0)
 		{
 			bound = describeBound(fd, address);
 			return fd;
 		}
 
-		why = endpoint + ": " + std::strerror(errno);
-		close(fd);
+		why = endpoint + ": " + lastSocketError();
+		closeSocket(fd);
 	}
 	return -1;
 }
@@ -386,8 +390,9 @@ int QuickDC::Cli::serveController(int listener, const std::vector<std::string>& 
 		const int fd = acceptClosing(listener);
 		if (fd == -1)
 		{
-			if (errno == EINTR || errno == ECONNABORTED) continue;
-			std::fprintf(stderr, "qdc: accept: %s\n", std::strerror(errno));
+			const int error = socketError();
+			if (QuickDC::Cli::interrupted(error) || QuickDC::Cli::aborted(error)) continue;
+			std::fprintf(stderr, "qdc: accept: %s\n", QuickDC::Cli::errorText(error).c_str());
 			return EXIT_FAILED;
 		}
 
@@ -398,7 +403,7 @@ int QuickDC::Cli::serveController(int listener, const std::vector<std::string>& 
 			accepted.reset();
 		}
 	}
-	close(listener);
+	closeSocket(listener);
 
 	Connection& connection = *accepted;
 	AgentRelay relay(connection);
@@ -427,8 +432,7 @@ int QuickDC::Cli::serveController(int listener, const std::vector<std::string>& 
 
 	while (!stopping && !connection.ended)
 	{
-		pollfd watched{connection.fd, connection.events(), 0};
-		poll(&watched, 1, 50);
+		waitFor(connection.fd, connection.events(), 50);
 		session.pump(Clock::now());
 		connection.flush();
 		if (!connection.read()) break;
@@ -537,13 +541,13 @@ int connectTo(const std::string& endpoint, std::string& why)
 		{
 			const int fd = streamSocket(storage.ss_family);
 			if (fd == -1) continue;
-			if (connect(fd, reinterpret_cast<const sockaddr*>(&storage), size) == 0) return fd;
-			why = endpoint + ": " + std::strerror(errno);
-			close(fd);
+			if (::connect(QuickDC::Cli::native(fd), reinterpret_cast<const sockaddr*>(&storage), size) == 0) return fd;
+			why = endpoint + ": " + lastSocketError();
+			closeSocket(fd);
 		}
 
 		if (Clock::now() >= deadline) return -1;
-		poll(nullptr, 0, 100);
+		waitFor(nullptr, 0, 100);
 	}
 }
 
@@ -599,11 +603,11 @@ class Controller : public QuickDC::Cli::Feed {
 
 				if (!lost.empty() || answered || Clock::now() >= deadline) return std::nullopt;
 
-				std::vector<pollfd> watched;
+				std::vector<QuickDC::Cli::Watched> watched;
 				for (const auto& agent : agents)
 					watched.push_back({agent->connection->ended ? -1 : agent->connection->fd,
-					                   agent->connection->events(), 0});
-				poll(watched.data(), watched.size(), milliseconds(deadline));
+					                   agent->connection->events()});
+				waitFor(watched.data(), watched.size(), milliseconds(deadline));
 
 				for (const auto& agent : agents)
 				{
@@ -686,8 +690,7 @@ class Controller : public QuickDC::Cli::Feed {
 					return true;
 				}
 
-				pollfd watched{agent.connection->fd, POLLIN, 0};
-				poll(&watched, 1, milliseconds(deadline));
+				waitFor(agent.connection->fd, POLLIN, milliseconds(deadline));
 				if (!agent.connection->read() && !agent.connection->line()) break;
 			}
 
