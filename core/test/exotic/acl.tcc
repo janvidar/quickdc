@@ -467,6 +467,8 @@ EXO_TEST(acl_bans_and_accounts_are_found_by_what_identifies_them,
  * The hub has to know an account's password to check a GPA answer, so acl.xml
  * holds it as given; the file is its owner's alone, also one that was not before.
  */
+/* POSIX mode bits, which Windows does not have. */
+#ifndef _WIN32
 EXO_TEST(acl_the_saved_list_is_readable_by_its_owner_alone,
 {
 	const std::string path = aclPath();
@@ -487,3 +489,4 @@ EXO_TEST(acl_the_saved_list_is_readable_by_its_owner_alone,
 	EXO_ASSERT_EQ_INT(static_cast<int>(info.st_mode & 0777), 0600);
 	return 1;
 });
+#endif

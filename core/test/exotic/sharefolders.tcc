@@ -189,9 +189,11 @@ EXO_TEST(sharefolders_writing_a_shorter_list_leaves_no_tail,
 
 EXO_TEST(sharefolders_a_path_has_one_spelling,
 {
-	EXO_ASSERT(QuickDC::Share::cleanFolderPath(" /home//me/./Music/ ") == "/home/me/Music");
-	EXO_ASSERT(QuickDC::Share::cleanFolderPath("/home/me/x/../Music") == "/home/me/Music");
-	EXO_ASSERT(QuickDC::Share::cleanFolderPath("/") == "/");
+	/* Compared with what resolvePath() makes of the clean spelling, which has a drive on Windows. */
+	const std::string music = Samurai::IO::File::resolvePath("/home/me/Music");
+	EXO_ASSERT(QuickDC::Share::cleanFolderPath(" /home//me/./Music/ ") == music);
+	EXO_ASSERT(QuickDC::Share::cleanFolderPath("/home/me/x/../Music") == music);
+	EXO_ASSERT(QuickDC::Share::cleanFolderPath("/") == Samurai::IO::File::resolvePath("/"));
 	EXO_ASSERT(QuickDC::Share::cleanFolderPath("  ").empty());
 	return 1;
 });
