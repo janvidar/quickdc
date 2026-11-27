@@ -400,7 +400,7 @@ EXO_TEST(dctext_a_hub_count_that_cannot_be_read_frees_its_copy_grew,
 		DC::Tag tag(line.c_str());
 
 		const size_t before = peakBytes();
-		EXO_ASSERT(before > 0);
+		if (!before) EXO_SKIP("this system does not say how much memory the process has used");
 
 		for (int n = 0; n < 4000; n++)
 		{

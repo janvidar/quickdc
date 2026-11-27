@@ -22,10 +22,8 @@
 #include <memory>
 #include <string.h>
 
-#ifdef SAMURAI_POSIX
-#include <sys/socket.h>
+#include <samurai/io/net/socketglue.h>
 #include <samurai/posix.h>
-#endif
 
 /*
  * SPIN_LIMIT in socketmonitor.cpp, which is not exported - so this is the figure
@@ -74,7 +72,7 @@ class MonitorTestTrickle : public Samurai::IO::Net::SocketEventHandler
 /*
  * A connected pair, one end wrapped in a monitored Socket.
  *
- * A socketpair rather than a loopback connection: what is under test is what the
+ * A socket pair rather than a listener: what is under test is what the
  * monitor does with a readable descriptor, and this reaches that state without
  * a listener, an accept and a connect timeout to wait for.
  */
@@ -86,9 +84,8 @@ struct MonitorTestPair
 
 	MonitorTestPair(Samurai::IO::Net::SocketEventHandler* handler)
 	{
-#ifdef SAMURAI_POSIX
 		socket_t pair[2];
-		if (::socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0) return;
+		if (!Samurai::IO::Net::socket_pair(pair)) return;
 
 		writer = pair[1];
 
@@ -96,35 +93,27 @@ struct MonitorTestPair
 		const Samurai::IO::Net::InetSocketAddress addr(loopback, 0);
 
 		sock = Samurai::IO::Net::Socket::create(*loop, pair[0], addr);
-		if (!sock) { ::close(pair[0]); return; }
+		if (!sock) { Samurai::IO::Net::socket_close(pair[0]); return; }
 
 		sock->setNonBlocking(true);
 
 		/* Registers the socket for reading, which is what puts it in the poll. */
 		sock->setEventHandler(handler);
 		ok = true;
-#endif
 	}
 
 	~MonitorTestPair()
 	{
-#ifdef SAMURAI_POSIX
 		sock.reset();
-		if (writer != INVALID_SOCKET) ::close(writer);
-#endif
+		if (writer != INVALID_SOCKET) Samurai::IO::Net::socket_close(writer);
 	}
 
 	bool send(size_t bytes)
 	{
-#ifdef SAMURAI_POSIX
 		char block[4096];
 		if (bytes > sizeof(block)) return false;
 		memset(block, 'x', bytes);
-		return ::send(writer, block, bytes, 0) == (ssize_t) bytes;
-#else
-		(void) bytes;
-		return false;
-#endif
+		return ::send(writer, block, static_cast<int>(bytes), 0) == static_cast<int>(bytes);
 	}
 };
 
