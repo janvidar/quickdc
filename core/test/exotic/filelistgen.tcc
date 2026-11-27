@@ -320,16 +320,23 @@ EXO_TEST(filelistgen_nesting_is_preserved,
 });
 
 /* A name with XML in it is escaped on the way out and read back whole. */
+/* Windows allows no '<' or '>' in a file name; an ampersand is still worth escaping. */
+#ifdef _WIN32
+static const std::string XML_NAME = "a & b 'c'.txt";
+#else
+static const std::string XML_NAME = "a & b <c>.txt";
+#endif
+
 EXO_TEST(filelistgen_a_name_containing_xml_is_escaped_and_read_back,
 {
 		Fixture f("escaping");
-		f.file("a & b <c>.txt");
+		f.file(XML_NAME);
 		f.generate();
 
 		const std::string xml = f.plain();
 		EXO_ASSERT(xml.find("&amp;") != std::string::npos);
-		EXO_ASSERT(xml.find("&lt;") != std::string::npos);
-		EXO_ASSERT(decode(xml).find("(a & b <c>.txt)") != std::string::npos);
+		if (XML_NAME.find('<') != std::string::npos) EXO_ASSERT(xml.find("&lt;") != std::string::npos);
+		EXO_ASSERT(decode(xml).find("(" + XML_NAME + ")") != std::string::npos);
 	
 	return 1;
 });
