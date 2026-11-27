@@ -45,8 +45,9 @@
 #include <vector>
 
 /* A scratch directory of its own per process; see the note in queuecomplete. */
-static const std::string BOARD_HOME =
-	"/tmp/quickdc_board_" + std::to_string((int) getpid());
+/* Resolved, so the paths built from it compare with what resolvePath() gives (a drive on Windows). */
+static const std::string BOARD_HOME = Samurai::IO::File::resolvePath(
+	"/tmp/quickdc_board_" + std::to_string((int) getpid()));
 
 static const std::string INDEX_HOME = BOARD_HOME + "/index";
 

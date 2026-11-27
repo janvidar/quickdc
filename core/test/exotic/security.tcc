@@ -17,6 +17,7 @@
 #include "quickdc.h"
 #include "network/securitymanager.h"
 
+#include <filesystem>
 #include <samurai/eventloop.h>
 #include <samurai/io/net/inetaddress.h>
 #include <samurai/io/net/serversocket.h>
@@ -486,7 +487,7 @@ EXO_TEST(security_the_certificate_paths_are_under_the_client_directory,
 	/* Resolved to somewhere absolute, and not to a directory called '~'. */
 	const std::string resolved = Samurai::IO::File::resolvePath(key);
 	EXO_ASSERT(!resolved.empty());
-	EXO_ASSERT(resolved[0] == '/');
+	EXO_ASSERT(std::filesystem::path(resolved).is_absolute());
 	EXO_ASSERT(resolved.find("/~/") == std::string::npos);
 	return 1;
 });
