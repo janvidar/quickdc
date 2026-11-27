@@ -634,6 +634,8 @@ QuickDC::Api::Service::Service(Core& core_)
 			},
 			[this](const Event& event) { publish(event); });
 		sweepPasted(mediaFolder(), Settings::read(*core.config, Settings::ChatMediaKeepDays), time(0));
+		updater = std::make_unique<QuickDC::Update::Updater>(core.loop(), *core.config, core.homeDirectory,
+			VERSION, [this](const Event& event) { publish(event); });
 	}
 }
 
@@ -786,6 +788,11 @@ void QuickDC::Api::Service::run(const Commands::MeasureReachability&)
 	if (!haveReachabilityServer()) return;
 
 	startDropCheck(core, false);
+}
+
+void QuickDC::Api::Service::run(const Commands::CheckForUpdate&)
+{
+	if (updater) updater->check();
 }
 
 void QuickDC::Api::Service::run(const Commands::LookupPublicAddress& command)

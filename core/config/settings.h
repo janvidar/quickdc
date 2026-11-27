@@ -132,6 +132,11 @@ inline constexpr Text   Password                {"User", "Password", ""};
 inline constexpr Text   PrivateId               {"User", "Private ID", ""};
 inline constexpr Text   ClientId                {"User", "Client ID", ""};
 
+/* [Updates]; Channel overrides the one the package was built for, Feed where it is asked. */
+inline constexpr Flag   UpdatesEnabled          {"Updates", "Enabled", true};
+inline constexpr Text   UpdateChannel           {"Updates", "Channel", ""};
+inline constexpr Text   UpdateFeed              {"Updates", "Feed", "https://download.quickdc.org"};
+
 /* [Downloads]; read by a user interface to name what it queues, created by the core. */
 inline constexpr Text   DownloadDirectory       {"Downloads", "Directory", "~/.quickdc/downloads"};
 

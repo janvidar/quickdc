@@ -1343,6 +1343,7 @@ const std::vector<QuickDC::Cli::Verb>& QuickDC::Cli::verbs()
 		{"mode",       "mode <automatic|advanced|passive> [upnp] [force-active]", parseMode},
 		{"state",      "state",                                              parseState},
 		{"measure",    "measure",                                            parseBare<Cmd::MeasureReachability>},
+		{"update",     "update",                                             parseBare<Cmd::CheckForUpdate>},
 		{"network-changed", "network-changed [offline]",                     parseNetworkChanged},
 		{"favourite-add", "favourite-add <url>",                             parseNaming<Cmd::AddFavouriteHub>},
 		{"favourite-remove", "favourite-remove <url>",                       parseNaming<Cmd::RemoveFavouriteHub>},

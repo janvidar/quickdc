@@ -86,6 +86,7 @@ set(QUICKDC_EXOTIC_TESTS
     chatmedia.tcc
     zupload.tcc
     settingskeeper.tcc
+    update.tcc
     networkwatch.tcc)
 
 foreach(input IN LISTS QUICKDC_EXOTIC_TESTS)

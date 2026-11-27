@@ -22,6 +22,10 @@ set(QUICKDC_SOURCES
     network/downloadqueue.cpp
     network/filesource.cpp
     network/hublist.cpp
+    update/feed.cpp
+    update/keys.cpp
+    update/updater.cpp
+    update/version.cpp
     network/hubdirectory.cpp
     network/hubsession.cpp
     network/hubmanager.cpp
@@ -145,6 +149,11 @@ target_compile_definitions(quickdc
 # calls samurai's Samurai::IO::BZip2Compressor. Samurai compiles its codecs
 # unconditionally, so these are always safe to enable.
 target_compile_definitions(quickdc PRIVATE ZLIB BZIP2)
+
+# The update channel a package is built for: stable, nightly, or none for a build
+# made by hand, which then never updates unless [Updates] Channel says otherwise.
+set(QUICKDC_UPDATE_CHANNEL "" CACHE STRING "The update channel this build follows (stable, nightly, or empty)")
+target_compile_definitions(quickdc PRIVATE QUICKDC_UPDATE_CHANNEL="${QUICKDC_UPDATE_CHANNEL}")
 
 # PUBLIC so the security test can assert whichever behaviour it was built with,
 # rather than only the default one.

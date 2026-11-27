@@ -235,6 +235,25 @@ const char* name(Ev::ReachabilityCheckFailed::Why why)
 	return "?";
 }
 
+const char* name(Ev::UpdateFailed::Why why)
+{
+	using W = Ev::UpdateFailed::Why;
+	switch (why)
+	{
+		case W::Disabled:     return "Disabled";
+		case W::NoChannel:    return "NoChannel";
+		case W::NoKey:        return "NoKey";
+		case W::NoPlatform:   return "NoPlatform";
+		case W::Unreachable:  return "Unreachable";
+		case W::Invalid:      return "Invalid";
+		case W::BadSignature: return "BadSignature";
+		case W::WrongFeed:    return "WrongFeed";
+		case W::Integrity:    return "Integrity";
+		case W::Storage:      return "Storage";
+	}
+	return "?";
+}
+
 const char* name(Ev::BoardUnavailable::Asked asked)
 {
 	using A = Ev::BoardUnavailable::Asked;
@@ -664,6 +683,26 @@ struct Fields {
 	Out operator()(const Ev::ReachabilityCheckFailed& e) const
 	{
 		return {"ReachabilityCheckFailed", {{"why", name(e.why)}, {"reason", e.reason}}};
+	}
+
+	Out operator()(const Ev::UpdateCurrent& e) const
+	{
+		return {"UpdateCurrent", {{"version", e.version}, {"offered", e.offered}}};
+	}
+
+	Out operator()(const Ev::UpdateAvailable& e) const
+	{
+		return {"UpdateAvailable", {{"version", e.version}}};
+	}
+
+	Out operator()(const Ev::UpdateReady& e) const
+	{
+		return {"UpdateReady", {{"version", e.version}, {"path", e.path}}};
+	}
+
+	Out operator()(const Ev::UpdateFailed& e) const
+	{
+		return {"UpdateFailed", {{"why", name(e.why)}, {"reason", e.reason}}};
 	}
 
 	Out operator()(const Ev::AttachmentReady& e) const

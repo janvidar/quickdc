@@ -708,6 +708,13 @@ struct RenameShareFolder {
 struct MeasureReachability { };
 
 /**
+ * Ask the channel's feed now rather than when the schedule would. Answered by
+ * UpdateCurrent, UpdateReady (after UpdateAvailable, where it had to be fetched)
+ * or UpdateFailed.
+ */
+struct CheckForUpdate { };
+
+/**
  * The platform says the network changed; 'online' is whether anything beyond
  * it answers. The core also notices its own addresses changing, so this is
  * only what a front end knows that the core cannot see. Answered, once it has
@@ -1332,6 +1339,53 @@ struct ReachabilityCheckFailed {
 	std::string reason;
 };
 
+/** Nothing newer than this build on its channel. */
+struct UpdateCurrent {
+	std::string version;
+	/** What the feed offers, which is this or older. */
+	std::string offered;
+};
+
+/** A newer version is on offer and is being fetched. */
+struct UpdateAvailable {
+	std::string version;
+};
+
+/** A newer version is downloaded and checked, and is installed on quit. */
+struct UpdateReady {
+	std::string version;
+	/** The package, in the home's updates directory. */
+	std::string path;
+};
+
+struct UpdateFailed {
+	enum class Why {
+		/** [Updates] Enabled is off. Said only when asked. */
+		Disabled,
+		/** This build has no channel, being built by hand. Said only when asked. */
+		NoChannel,
+		/** The channel has no key to check a feed with yet. */
+		NoKey,
+		/** This platform has no packages. */
+		NoPlatform,
+		/** The feed or the package could not be fetched. */
+		Unreachable,
+		/** The feed is malformed, or names something not to be fetched. */
+		Invalid,
+		/** The feed's signature does not verify. */
+		BadSignature,
+		/** A feed for another channel or platform than the one asked for. */
+		WrongFeed,
+		/** The package is not the size or the hash the feed says. */
+		Integrity,
+		/** The package could not be kept on disk. */
+		Storage
+	};
+
+	Why why = Why::Unreachable;
+	std::string reason;
+};
+
 }
 
 /*
@@ -1346,6 +1400,7 @@ struct Command {
 		Commands::ResetHubListSources,
 		Commands::RefreshHubDirectory,
 		Commands::MeasureReachability,
+		Commands::CheckForUpdate,
 		Commands::NoteNetworkChange,
 		Commands::LookupPublicAddress,
 		Commands::ReplayReachability,
@@ -1423,6 +1478,10 @@ struct Event {
 		Events::ReachabilityCheckStarted,
 		Events::ReachabilityMeasured,
 		Events::ReachabilityCheckFailed,
+		Events::UpdateCurrent,
+		Events::UpdateAvailable,
+		Events::UpdateReady,
+		Events::UpdateFailed,
 		Events::AttachmentReady,
 		Events::AttachmentFailed,
 		Events::PastedKept,

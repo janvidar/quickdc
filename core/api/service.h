@@ -18,6 +18,7 @@
 #include "network/hubdirectory.h"
 #include "bbs/boardkeeper.h"
 #include "api/subscription.h"
+#include "update/updater.h"
 
 #include <map>
 #include <memory>
@@ -77,6 +78,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		Events::HubListSources hubListSources(uint64_t request) const;
 		Events::HubDirectory hubDirectory(uint64_t request) const;
 		void run(const Commands::MeasureReachability& command);
+		void run(const Commands::CheckForUpdate& command);
 		void run(const Commands::LookupPublicAddress& command);
 		void run(const Commands::ReplayReachability& command);
 		void run(const Commands::AttachFile& command);
@@ -255,6 +257,7 @@ class Service : private DropCheckListener, private Share::AttachmentListener,
 		std::map<HubHandle, std::string> remembered;
 		std::unique_ptr<QuickDC::CompletedDownloads> completed;
 		std::unique_ptr<QuickDC::HubDirectory> directory;
+		std::unique_ptr<QuickDC::Update::Updater> updater;
 		std::unique_ptr<QuickDC::NetworkWatch> network;
 
 		HubHandle nextOwnHandle = CORE_HUB_HANDLES;
