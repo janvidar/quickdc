@@ -74,6 +74,21 @@ class Recorder : public QuickDC::Api::EventSink {
 			return found;
 		}
 
+		/* How many events of type T arrived; others (a status, a network note) may come between. */
+		template<typename T>
+		size_t count()
+		{
+			std::lock_guard<std::mutex> guard(mutex);
+			return countLocked<T>();
+		}
+
+		template<typename T>
+		bool waitForCount(size_t n, std::chrono::seconds limit = std::chrono::seconds(10))
+		{
+			std::unique_lock<std::mutex> lock(mutex);
+			return arrived.wait_for(lock, limit, [&] { return countLocked<T>() >= n; });
+		}
+
 		std::vector<QuickDC::Api::Event> taken()
 		{
 			std::lock_guard<std::mutex> guard(mutex);
@@ -81,6 +96,15 @@ class Recorder : public QuickDC::Api::EventSink {
 		}
 
 	private:
+		template<typename T>
+		size_t countLocked() const
+		{
+			size_t n = 0;
+			for (const QuickDC::Api::Event& event : events)
+				if (event.as<T>()) n++;
+			return n;
+		}
+
 		std::mutex mutex;
 		std::condition_variable arrived;
 		std::vector<QuickDC::Api::Event> events;
@@ -168,11 +192,9 @@ EXO_TEST(service_a_hublist_nobody_serves_is_reported_as_failed,
 
 	const std::string url = "http://127.0.0.1:1/hublist.xml";
 	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::FetchHubList{url}));
-	EXO_ASSERT(recorder.waitFor(1));
-
-	const std::vector<QuickDC::Api::Event> events = recorder.taken();
-	const auto* failed = events[0].as<QuickDC::Api::Events::HubListFailed>();
-	EXO_ASSERT(failed != nullptr);
+	const auto failed = recorder.waitForEvent<QuickDC::Api::Events::HubListFailed>(
+		[](const QuickDC::Api::Events::HubListFailed&) { return true; });
+	EXO_ASSERT(failed.has_value());
 	if (failed)
 	{
 		EXO_ASSERT(failed->url == url);
@@ -191,10 +213,7 @@ EXO_TEST(service_an_address_that_is_not_one_is_reported_as_failed,
 	running.onCore([&] { subscription = running.core->subscribe(&recorder); });
 
 	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::FetchHubList{"not an address"}));
-	EXO_ASSERT(recorder.waitFor(1));
-
-	const std::vector<QuickDC::Api::Event> events = recorder.taken();
-	EXO_ASSERT(events[0].as<QuickDC::Api::Events::HubListFailed>() != nullptr);
+	EXO_ASSERT(recorder.waitForCount<QuickDC::Api::Events::HubListFailed>(1));
 
 	running.onCore([&] { subscription.reset(); });
 	return 1;
@@ -214,13 +233,14 @@ EXO_TEST(service_an_ended_subscription_is_told_nothing_more,
 	});
 
 	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::FetchHubList{"not an address"}));
-	EXO_ASSERT(staying.waitFor(1) && gone.waitFor(1));
+	using Failed = QuickDC::Api::Events::HubListFailed;
+	EXO_ASSERT(staying.waitForCount<Failed>(1) && gone.waitForCount<Failed>(1));
 
 	running.onCore([&] { a.reset(); });
 
 	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::FetchHubList{"still not one"}));
-	EXO_ASSERT(staying.waitFor(2));
-	EXO_ASSERT_EQ_UINT(gone.taken().size(), 1u);
+	EXO_ASSERT(staying.waitForCount<Failed>(2));
+	EXO_ASSERT_EQ_UINT(gone.count<Failed>(), 1u);
 
 	running.onCore([&] { b.reset(); });
 	return 1;
@@ -236,11 +256,9 @@ EXO_TEST(service_a_file_list_nobody_could_be_asked_for_is_refused,
 
 	EXO_ASSERT(running.core->submit(QuickDC::Api::Commands::RequestFilelist{
 		"adc://hub.example.org:412", "../escape"}));
-	EXO_ASSERT(recorder.waitFor(1));
-
-	const std::vector<QuickDC::Api::Event> events = recorder.taken();
-	const auto* failed = events[0].as<QuickDC::Api::Events::FilelistFailed>();
-	EXO_ASSERT(failed != nullptr);
+	const auto failed = recorder.waitForEvent<QuickDC::Api::Events::FilelistFailed>(
+		[](const QuickDC::Api::Events::FilelistFailed&) { return true; });
+	EXO_ASSERT(failed.has_value());
 	if (failed) EXO_ASSERT(failed->sourceId == "../escape");
 
 	running.onCore([&] { subscription.reset(); });
