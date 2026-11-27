@@ -62,13 +62,14 @@ bool IniParser::write() {
 }
 
 /**
- * Strip leading and trailing spaces and tabs.
+ * Strip leading and trailing spaces, tabs and carriage returns - the last so a
+ * file saved with Windows line endings (Notepad, a test writing text) reads.
  */
 std::string remove_whitespace(const std::string& str) {
-	const size_t first = str.find_first_not_of(" \t");
+	const size_t first = str.find_first_not_of(" \t\r");
 	if (first == std::string::npos) return std::string("");
 
-	const size_t last = str.find_last_not_of(" \t");
+	const size_t last = str.find_last_not_of(" \t\r");
 	return str.substr(first, last - first + 1);
 }
 
