@@ -23,6 +23,7 @@ set(QUICKDC_SOURCES
     network/filesource.cpp
     network/hublist.cpp
     update/feed.cpp
+    update/install.cpp
     update/keys.cpp
     update/updater.cpp
     update/version.cpp
@@ -174,6 +175,11 @@ target_link_libraries(quickdc PUBLIC samurai::samurai_static)
 # own types, through api/dropverdict.h, so that neither an exported target nor
 # a front end has to have Drop on its include path to read one.
 target_link_libraries(quickdc PRIVATE drop::drop)
+
+# update/install.cpp asks Windows where Program Files is.
+if(WIN32)
+    target_link_libraries(quickdc PRIVATE shell32 ole32)
+endif()
 
 # -Wall -Wextra, the curated -Werror set, and the stack, bounds and branch
 # protections. See cmake/QuickDCHardening.cmake.

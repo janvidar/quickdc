@@ -86,6 +86,7 @@ set(QUICKDC_EXOTIC_TESTS
     chatmedia.tcc
     zupload.tcc
     settingskeeper.tcc
+    install.tcc
     update.tcc
     networkwatch.tcc)
 

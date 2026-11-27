@@ -284,6 +284,8 @@ void QuickDC::Update::Updater::feedArrived(const std::string& body)
 
 	if (current && !isNewer(*offered, *current))
 	{
+		/* Whatever was kept has been installed by now, or been overtaken. */
+		sweep(std::string());
 		publish(Api::Events::UpdateCurrent{running, feed->version});
 		finish();
 		return;
