@@ -275,6 +275,7 @@ endif()
 add_subdirectory(core)
 
 if(QUICKDC_BUILD_CLI)
+    add_subdirectory(tools)
     add_subdirectory(cli)
 endif()
 

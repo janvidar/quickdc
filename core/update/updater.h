@@ -74,11 +74,17 @@ class Updater final : private Samurai::IO::Net::HTTP::RequestEventHandler,
 		/** Whether 'url' may be fetched for 'channel': https, or a test channel on the loopback. */
 		bool allowed(const std::string& url) const;
 
+		/** Why 'url' is not allowed(), said of 'what'. */
+		std::string refusal(const char* what, const std::string& url) const;
+
 		void feedArrived(const std::string& body);
 		void packageArrived(const std::string& body);
 
-		/** The file 'feed''s package is kept as, or empty for one of no kind this installs. */
-		std::string packagePath(const Feed& feed) const;
+		/** Where the package 'named' in a feed is: as given, or beside the feed; empty for nowhere. */
+		std::string packageUrl(const std::string& named) const;
+
+		/** The file the package at 'url' is kept as, or empty for one of no kind this installs. */
+		std::string packagePath(const Feed& feed, const std::string& url) const;
 
 		/** Whether 'path' holds exactly what 'feed' signed for. */
 		static bool holds(const std::string& path, const Feed& feed);
@@ -107,6 +113,9 @@ class Updater final : private Samurai::IO::Net::HTTP::RequestEventHandler,
 		Stage stage = Stage::Idle;
 		std::string channel;
 		std::optional<Feed> offer;
+		std::string offerPath;
+		/** The channel's directory on the feed server, ending in a slash. */
+		std::string feedDirectory;
 };
 
 }

@@ -119,6 +119,10 @@ if(QDC_SHELL_TESTS)
         COMMAND ${QDC_SH} ${scenario} 0 - $<TARGET_FILE:qdc> --free-port SILENT --quiet ${scripts}/silent-hub.qdc)
     set_tests_properties(cli_silent_hub PROPERTIES TIMEOUT 120)
 
+    add_test(NAME cli_update
+        COMMAND ${QDC_SH} ${scripts}/update.sh $<TARGET_FILE:qdc> $<TARGET_FILE:update-feed> ${scripts})
+    set_tests_properties(cli_update PROPERTIES TIMEOUT 120)
+
     add_test(NAME cli_session_hubs
         COMMAND ${QDC_SH} ${scenario} 0 - $<TARGET_FILE:qdc> --quiet ${scripts}/session-hubs.qdc)
     set_tests_properties(cli_favourites cli_recent_hubs cli_session_hubs PROPERTIES TIMEOUT 120)

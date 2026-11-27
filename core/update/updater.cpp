@@ -15,6 +15,7 @@
 #include <samurai/io/net/url.h>
 #include <samurai/util/random.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
@@ -164,12 +165,12 @@ void QuickDC::Update::Updater::begin(bool asked)
 
 	std::string base = Settings::read(config, Settings::UpdateFeed);
 	while (!base.empty() && base.back() == '/') base.pop_back();
-	const std::string url = base + "/" + channel + "/" + platformName() + ".json";
+	feedDirectory = base + "/" + channel + "/";
+	const std::string url = feedDirectory + platformName() + ".json";
 
 	if (!allowed(url))
 	{
-		fail(Why::Invalid, "the feed address " + url + " is not https"
-			+ (channel == "test" ? " on the loopback" : ""));
+		fail(Why::Invalid, refusal("the feed", url));
 		return;
 	}
 
@@ -194,6 +195,13 @@ void QuickDC::Update::Updater::fetch(const Samurai::IO::Net::HTTP::Client::Optio
 	client = std::make_unique<Samurai::IO::Net::HTTP::Client>(
 		loop, static_cast<Samurai::IO::Net::HTTP::RequestEventHandler*>(this), options);
 	client->get(url);
+}
+
+std::string QuickDC::Update::Updater::refusal(const char* what, const std::string& url) const
+{
+	if (channel == "test")
+		return std::string(what) + " at " + url + " is not on the loopback, the only place the test key is trusted from";
+	return std::string(what) + " at " + url + " is not https";
 }
 
 bool QuickDC::Update::Updater::allowed(const std::string& url) const
@@ -281,16 +289,23 @@ void QuickDC::Update::Updater::feedArrived(const std::string& body)
 		return;
 	}
 
-	const std::string path = packagePath(*feed);
+	const std::string where = packageUrl(feed->url);
+	if (where.empty())
+	{
+		fail(Why::Invalid, "the feed names its package as '" + feed->url + "', which is not a place to fetch it");
+		return;
+	}
+
+	const std::string path = packagePath(*feed, where);
 	if (path.empty())
 	{
 		fail(Why::Invalid, "the feed names a package of a kind this platform does not install");
 		return;
 	}
 
-	if (!allowed(feed->url))
+	if (!allowed(where))
 	{
-		fail(Why::Invalid, "the package address " + feed->url + " is not https");
+		fail(Why::Invalid, refusal("the package", where));
 		return;
 	}
 
@@ -301,15 +316,16 @@ void QuickDC::Update::Updater::feedArrived(const std::string& body)
 		return;
 	}
 
-	const Samurai::IO::Net::URL parsed(feed->url);
+	const Samurai::IO::Net::URL parsed(where);
 	if (!parsed.isValid())
 	{
-		fail(Why::Invalid, "the package address " + feed->url + " is not a URL");
+		fail(Why::Invalid, "the package address " + where + " is not a URL");
 		return;
 	}
 
 	publish(Api::Events::UpdateAvailable{feed->version});
 	offer = std::move(feed);
+	offerPath = path;
 	stage = Stage::Package;
 	fetch(fetchOptions(true), parsed);
 }
@@ -331,7 +347,7 @@ void QuickDC::Update::Updater::packageArrived(const std::string& body)
 		return;
 	}
 
-	const std::string path = packagePath(feed);
+	const std::string path = offerPath;
 	const std::string partial = path + ".partial";
 	std::error_code ec;
 	std::filesystem::create_directories(directory(), ec);
@@ -361,9 +377,26 @@ void QuickDC::Update::Updater::packageArrived(const std::string& body)
 	finish();
 }
 
-std::string QuickDC::Update::Updater::packagePath(const Feed& feed) const
+std::string QuickDC::Update::Updater::packageUrl(const std::string& named) const
 {
-	const std::string file = Samurai::IO::Net::URL(feed.url).getPath();
+	if (named.find("://") != std::string::npos) return named;
+
+	/* Beside the feed, or below it: never above it, and never another host's. */
+	if (named.empty() || named[0] == '/' || named.find('\\') != std::string::npos) return std::string();
+	size_t start = 0;
+	while (start <= named.size())
+	{
+		const size_t end = std::min(named.find('/', start), named.size());
+		const std::string part = named.substr(start, end - start);
+		if (part.empty() || part == "." || part == "..") return std::string();
+		start = end + 1;
+	}
+	return feedDirectory + named;
+}
+
+std::string QuickDC::Update::Updater::packagePath(const Feed& feed, const std::string& url) const
+{
+	const std::string file = Samurai::IO::Net::URL(url).getPath();
 	std::string kind;
 	for (const char* known : {".AppImage", ".exe", ".zip"})
 	{

@@ -1,0 +1,52 @@
+# The updater: a newer version fetched, checked and kept; asked again, it is
+# already in hand; nothing newer said as such; a forged signature, a package that
+# is not what the feed signed for, a feed for another channel and a package
+# outside the feed's directory each refused; and nothing asked once updates are
+# turned off. Feeds are built by update.sh, signed with the test key.
+
+preset application Updates Channel test
+preset application Updates Feed http://127.0.0.1:${HTTP}/good
+
+serve ${HTTP} ${FEEDS}
+
+update
+wait UpdateAvailable version=99.0.0
+wait UpdateReady version=99.0.0 timeout=30s
+expect-served ${HTTP} 2
+
+update
+wait UpdateReady version=99.0.0
+expect-served ${HTTP} 3
+
+set application Updates Feed http://127.0.0.1:${HTTP}/old
+update
+wait UpdateCurrent offered=0.0.1
+
+set application Updates Feed http://127.0.0.1:${HTTP}/forged
+update
+wait UpdateFailed why=BadSignature
+
+set application Updates Feed http://127.0.0.1:${HTTP}/lying
+update
+wait UpdateFailed why=Integrity timeout=30s
+
+set application Updates Feed http://127.0.0.1:${HTTP}/elsewhere
+update
+wait UpdateFailed why=WrongFeed
+
+set application Updates Feed http://127.0.0.1:${HTTP}/outside
+update
+wait UpdateFailed why=Invalid
+
+set application Updates Feed http://127.0.0.1:${HTTP}/missing
+update
+wait UpdateFailed why=Unreachable
+
+# A feed that is not on the loopback is not trusted with the test key at all.
+set application Updates Feed https://example.org
+update
+wait UpdateFailed why=Invalid
+
+set application Updates Enabled 0
+update
+wait UpdateFailed why=Disabled
