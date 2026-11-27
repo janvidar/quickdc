@@ -172,6 +172,16 @@ endif()
 # ---------------------------------------------------------------------------
 
 set(QUICKDC_PRODUCT "QuickDC")
+
+# The version announced to hubs, peers and web servers (VERSION): the core's own,
+# unless the application it is built into names its own, which is what a user
+# installed and what a server should see.
+set(QUICKDC_VERSION_STRING "" CACHE STRING "The version the core announces; empty for its own")
+if(QUICKDC_VERSION_STRING)
+    set(QUICKDC_ANNOUNCED_VERSION "${QUICKDC_VERSION_STRING}")
+else()
+    set(QUICKDC_ANNOUNCED_VERSION "${PROJECT_VERSION}")
+endif()
 set(QUICKDC_SYSTEM  "${CMAKE_SYSTEM_NAME}")
 set(QUICKDC_CPU     "${CMAKE_SYSTEM_PROCESSOR}")
 
@@ -333,6 +343,7 @@ message(STATUS "")
 message(STATUS "QuickDC ${PROJECT_VERSION} configured:")
 message(STATUS "  Build type      : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build id        : ${QUICKDC_BUILD_ID}")
+message(STATUS "  Announced as    : ${QUICKDC_PRODUCT} ${QUICKDC_ANNOUNCED_VERSION}")
 message(STATUS "  Target          : ${QUICKDC_SYSTEM}/${QUICKDC_CPU}")
 message(STATUS "  Loopback auth   : ${QUICKDC_ALLOW_LOOPBACK_AUTH}")
 message(STATUS "  Samurai         : ${QUICKDC_SAMURAI_ORIGIN}")

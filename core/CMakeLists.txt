@@ -136,7 +136,7 @@ set_target_properties(quickdc PROPERTIES
 target_compile_definitions(quickdc
     PUBLIC
         PRODUCT="${QUICKDC_PRODUCT}"
-        VERSION="${PROJECT_VERSION}"
+        VERSION="${QUICKDC_ANNOUNCED_VERSION}"
         SYSTEM="${QUICKDC_SYSTEM}"
         CPU="${QUICKDC_CPU}"
         BUILD="${QUICKDC_BUILD_ID}")
