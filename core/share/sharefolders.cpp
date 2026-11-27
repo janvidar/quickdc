@@ -76,9 +76,11 @@ std::string QuickDC::Share::cleanFolderPath(const std::string& path)
 	const std::string given = trimmed(path);
 	if (given.empty()) return given;
 
-	std::string clean = std::filesystem::path(given).lexically_normal().string();
+	/* Forward slashes on Windows too, which is how every path here is compared. */
+	std::string clean = std::filesystem::path(given).lexically_normal().generic_string();
 
-	while (clean.size() > 1 && clean.back() == '/') clean.pop_back();
+	while (clean.size() > 1 && clean.back() == '/' && !(clean.size() == 3 && clean[1] == ':'))
+		clean.pop_back();
 	return clean;
 }
 

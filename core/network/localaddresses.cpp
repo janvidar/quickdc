@@ -9,12 +9,13 @@
 #include <cstring>
 #include <vector>
 
-#ifndef _WIN32
-#include <arpa/inet.h>
+#include <samurai/io/net/socketglue.h>
+
+#ifdef _WIN32
+#include <iphlpapi.h>
+#else
 #include <ifaddrs.h>
 #include <net/if.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 #endif
 
 bool QuickDC::isGlobalIPv6(const uint8_t a[16])
@@ -57,7 +58,7 @@ bool QuickDC::hostHasGlobalIPv6()
 std::string QuickDC::fingerprintOf(std::vector<std::string> addresses)
 {
 	const auto ignored = [](const std::string& text) {
-#ifndef _WIN32
+		Samurai::IO::Net::winsock_ready();
 		in_addr four {};
 		if (inet_pton(AF_INET, text.c_str(), &four) == 1)
 		{
@@ -71,7 +72,6 @@ std::string QuickDC::fingerprintOf(std::vector<std::string> addresses)
 			static const uint8_t loopback[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1};
 			return std::memcmp(a, loopback, 16) == 0 || (a[0] == 0xfe && (a[1] & 0xc0) == 0x80);
 		}
-#endif
 		return text.empty();
 	};
 
@@ -86,18 +86,49 @@ std::string QuickDC::fingerprintOf(std::vector<std::string> addresses)
 
 std::string QuickDC::addressFingerprint()
 {
+	std::vector<std::string> found;
+	char text[INET6_ADDRSTRLEN] = {};
+
 #ifdef _WIN32
-	return std::string();
+	Samurai::IO::Net::winsock_ready();
+
+	ULONG size = 16 * 1024;
+	std::vector<unsigned char> buffer;
+	ULONG result = ERROR_BUFFER_OVERFLOW;
+	for (int attempt = 0; attempt < 3 && result == ERROR_BUFFER_OVERFLOW; attempt++)
+	{
+		buffer.resize(size);
+		result = GetAdaptersAddresses(AF_UNSPEC,
+			GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+			nullptr, reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()), &size);
+	}
+	if (result != NO_ERROR) return std::string();
+
+	for (const IP_ADAPTER_ADDRESSES* one = reinterpret_cast<const IP_ADAPTER_ADDRESSES*>(buffer.data());
+	     one; one = one->Next)
+	{
+		if (one->OperStatus != IfOperStatusUp) continue;
+
+		for (const IP_ADAPTER_UNICAST_ADDRESS* address = one->FirstUnicastAddress; address; address = address->Next)
+		{
+			const sockaddr* at = address->Address.lpSockaddr;
+			if (!at) continue;
+			if (at->sa_family == AF_INET)
+				inet_ntop(AF_INET, &reinterpret_cast<const sockaddr_in*>(at)->sin_addr, text, sizeof(text));
+			else if (at->sa_family == AF_INET6)
+				inet_ntop(AF_INET6, &reinterpret_cast<const sockaddr_in6*>(at)->sin6_addr, text, sizeof(text));
+			else continue;
+			found.push_back(text);
+		}
+	}
 #else
 	ifaddrs* list = nullptr;
 	if (getifaddrs(&list) != 0) return std::string();
 
-	std::vector<std::string> found;
 	for (const ifaddrs* one = list; one; one = one->ifa_next)
 	{
 		if (!one->ifa_addr || !(one->ifa_flags & IFF_UP)) continue;
 
-		char text[INET6_ADDRSTRLEN] = {};
 		const int family = one->ifa_addr->sa_family;
 		if (family == AF_INET)
 			inet_ntop(AF_INET, &reinterpret_cast<const sockaddr_in*>(one->ifa_addr)->sin_addr, text, sizeof(text));
@@ -108,7 +139,7 @@ std::string QuickDC::addressFingerprint()
 		found.push_back(text);
 	}
 	freeifaddrs(list);
+#endif
 
 	return fingerprintOf(std::move(found));
-#endif
 }
